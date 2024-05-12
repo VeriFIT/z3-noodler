@@ -497,6 +497,42 @@ namespace smt::noodler {
         return l_undef;
     }
 
+    lbool theory_str_noodler::run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
+        STRACE("str", tout << "Trying length-based procedure" << std::endl);
+        LengthDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
+        expr_ref block_len(m.mk_false(), m);
+        if (nproc.preprocess() == l_false) {
+            STRACE("str", tout << "len: unsat from preprocessing\n");
+            block_curr_len(block_len);
+            return l_false;
+        }
+        nproc.init_computation();
+        while (true) {
+            lbool result = nproc.compute_next_solution();
+            if (result == l_true) {
+                expr_ref lengths = len_node_to_z3_formula(nproc.get_lengths().first);
+                if (check_len_sat(lengths) == l_true) {
+                    return l_true;
+                } else {
+                    STRACE("str", tout << "len: unsat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
+                    if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
+                        block_curr_len(lengths);
+                        return l_false;
+                    } else {
+                        return l_undef;
+                    }
+                }
+            } else if (result == l_false) { // never happens
+                block_curr_len(block_len);
+                return l_false;
+            } else {
+                // we could not decide if there is solution, continue with other decision procedure
+                break;
+            }
+        }
+        return l_undef;
+    }
+
     lbool theory_str_noodler::run_membership_heur() {
         STRACE("str", tout << "Trying heuristic for the case we only have 'x (not)in RE'" << std::endl);
         const auto& reg_data = this->m_membership_todo_rel[0];
