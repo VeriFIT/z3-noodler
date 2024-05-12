@@ -468,35 +468,6 @@ namespace smt::noodler {
         return true;
     }
 
-    lbool theory_str_noodler::run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
-        STRACE("str", tout << "Trying nielsen" << std::endl);
-        NielsenDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
-        nproc.preprocess();
-        expr_ref block_len(m.mk_false(), m);
-        nproc.init_computation();
-        while (true) {
-            lbool result = nproc.compute_next_solution();
-            if (result == l_true) {
-                expr_ref lengths = len_node_to_z3_formula(nproc.get_lengths().first);
-                if (check_len_sat(lengths) == l_true) {
-                    return l_true;
-                } else {
-                    STRACE("str", tout << "nielsen len unsat" <<  mk_pp(lengths, m) << std::endl;);
-                    block_len = m.mk_or(block_len, lengths);
-                }
-            } else if (result == l_false) {
-                // we did not find a solution (with satisfiable length constraints)
-                // we need to block current assignment
-                block_curr_len(block_len);
-                return l_false;
-            } else {
-                // we could not decide if there is solution, continue with noodler decision procedure
-                break;
-            }
-        }
-        return l_undef;
-    }
-
     lbool theory_str_noodler::run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
         STRACE("str", tout << "Trying length-based procedure" << std::endl);
         LengthDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
@@ -606,6 +577,35 @@ namespace smt::noodler {
         return true;
     }
 
+    lbool theory_str_noodler::run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
+        STRACE("str", tout << "Trying nielsen" << std::endl);
+        NielsenDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
+        nproc.preprocess();
+        expr_ref block_len(m.mk_false(), m);
+        nproc.init_computation();
+        while (true) {
+            lbool result = nproc.compute_next_solution();
+            if (result == l_true) {
+                expr_ref lengths = len_node_to_z3_formula(nproc.get_lengths().first);
+                if (check_len_sat(lengths) == l_true) {
+                    return l_true;
+                } else {
+                    STRACE("str", tout << "nielsen len unsat" <<  mk_pp(lengths, m) << std::endl;);
+                    block_len = m.mk_or(block_len, lengths);
+                }
+            } else if (result == l_false) {
+                // we did not find a solution (with satisfiable length constraints)
+                // we need to block current assignment
+                block_curr_len(block_len);
+                return l_false;
+            } else {
+                // we could not decide if there is solution, continue with noodler decision procedure
+                break;
+            }
+        }
+        return l_undef;
+    }
+
     lbool theory_str_noodler::run_mult_membership_heur() {
         STRACE("str", tout << "trying multiple regex membership heuristic" << std::endl;);
 
@@ -675,35 +675,6 @@ namespace smt::noodler {
 
         STRACE("str", tout << "intersection is not empty => SAT" << std::endl;);
         return l_true;
-    }
-    
-    lbool theory_str_noodler::run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
-        STRACE("str", tout << "Trying length-based procedure" << std::endl);
-        LengthDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
-        nproc.preprocess();
-        expr_ref block_len(m.mk_false(), m);
-        nproc.init_computation();
-        while (true) {
-            lbool result = nproc.compute_next_solution();
-            if (result == l_true) {
-                expr_ref lengths = len_node_to_z3_formula(nproc.get_lengths());
-                if (check_len_sat(lengths) == l_true) {
-                    return l_true;
-                } else {
-                    STRACE("str", tout << "length-based procedure len unsat" <<  mk_pp(lengths, m) << std::endl;);
-                    block_len = m.mk_or(block_len, lengths);
-                }
-            } else if (result == l_false) {
-                // we did not find a solution (with satisfiable length constraints)
-                // we need to block current assignment
-                block_curr_len(block_len);
-                return l_false;
-            } else {
-                // we could not decide if there is solution, continue with noodler decision procedure
-                break;
-            }
-        }
-        return l_undef;
     }
 
     lbool theory_str_noodler::run_loop_protection() {
