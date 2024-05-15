@@ -488,21 +488,21 @@ namespace smt::noodler {
                     STRACE("str", tout << "len: unsat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
                     block_len = m.mk_or(block_len, lengths);
 
-                    if(nproc.precision == LenNodePrecision::UNDERAPPROX && nproc.get_formula().get_predicates().size() >= 10) {
-                        ctx.get_fparams().is_underapprox = true;
-                        block_curr_len(expr_ref(m.mk_false(), m));
-                    } else if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
-                        block_curr_len(lengths);
-                    } else {
-                        return l_undef;
-                    }
-                    return l_false;
-                    // if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
+                    // if(nproc.precision == LenNodePrecision::UNDERAPPROX && nproc.get_formula().get_predicates().size() >= 10) {
+                    //     ctx.get_fparams().is_underapprox = true;
+                    //     block_curr_len(expr_ref(m.mk_false(), m));
+                    // } else if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
                     //     block_curr_len(lengths);
-                    //     return l_false;
                     // } else {
                     //     return l_undef;
                     // }
+                    // return l_false;
+                    if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
+                        block_curr_len(lengths);
+                        return l_false;
+                    } else {
+                        return l_undef;
+                    }
                 }
             } else if (result == l_false) { // never happens
                 block_curr_len(block_len);

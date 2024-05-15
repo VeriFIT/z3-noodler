@@ -368,7 +368,7 @@ namespace smt::noodler {
             tout << "-----\n";
         );  
 
-        for (std::pair<zstring, VarConstraint> it : pool) {
+        for (const std::pair<zstring, VarConstraint>& it : pool) {
             if (pool[it.first].parse(pool, lit_conversion) == false) {
                 // There is a cycle
                 STRACE("str", tout << "len: Cyclic dependecy.\n";);
@@ -381,7 +381,7 @@ namespace smt::noodler {
             implicit_len_formula.emplace_back(LenNode(LenFormulaType::LEQ, {0, v}));
         }
 
-        for (std::pair<zstring, VarConstraint> it : pool) {
+        for (const std::pair<zstring, VarConstraint>& it : pool) {
             computed_len_formula.emplace_back(pool[it.first].get_lengths(pool, lit_conversion));
         }
 
