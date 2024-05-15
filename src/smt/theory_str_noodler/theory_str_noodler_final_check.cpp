@@ -486,12 +486,21 @@ namespace smt::noodler {
                     return l_true;
                 } else {
                     STRACE("str", tout << "len: unsat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
-                    if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
-                        block_curr_len(lengths);
-                        return l_false;
+                    block_len = m.mk_or(block_len, lengths);
+
+                    if(nproc.precision == LenNodePrecision::UNDERAPPROX) {
+                        ctx.get_fparams().is_underapprox = true;
+                        block_curr_len(expr_ref(m.mk_false(), m));
                     } else {
-                        return l_undef;
+                        block_curr_len(lengths);
                     }
+                    return l_false;
+                    // if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
+                    //     block_curr_len(lengths);
+                    //     return l_false;
+                    // } else {
+                    //     return l_undef;
+                    // }
                 }
             } else if (result == l_false) { // never happens
                 block_curr_len(block_len);
