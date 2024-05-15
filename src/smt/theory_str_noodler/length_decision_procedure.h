@@ -115,6 +115,10 @@ namespace smt::noodler {
         static bool is_suitable(const Formula &form, const AutAssignment& init_aut_ass);
 
         void add_to_pool(std::map<zstring, VarConstraint>& pool, const Predicate& pred);
+
+        const Formula& get_formula() const {
+            return this->formula;
+        } 
     };
 }
 
