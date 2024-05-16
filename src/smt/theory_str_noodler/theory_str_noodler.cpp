@@ -859,16 +859,6 @@ namespace smt::noodler {
             }
         }
 
-        // try the length decision procedure (if enabled) to solve
-        if(m_params.m_try_length_proc && LengthDecisionProcedure::is_suitable(instance, aut_assignment) && contains_equations_only) {
-            lbool result = run_length_proc(instance, aut_assignment, init_length_sensitive_vars);
-            if(result == l_true) {
-                return FC_DONE;
-            } else if(result == l_false) {
-                return FC_CONTINUE;
-            }
-        }
-
         // try Nielsen transformation (if enabled) to solve
         if(m_params.m_try_nielsen && is_nielsen_suitable(instance, init_length_sensitive_vars)) {
             lbool result = run_nielsen(instance, aut_assignment, init_length_sensitive_vars);
@@ -880,7 +870,7 @@ namespace smt::noodler {
         }
 
         // try length-based decision procedure (if enabled) to solve
-        if(m_params.m_try_length_proc && LengthDecisionProcedure::is_suitable(instance, aut_assignment)) {
+        if(m_params.m_try_length_proc && LengthDecisionProcedure::is_suitable(instance, aut_assignment) && contains_equations_only) {
             lbool result = run_length_proc(instance, aut_assignment, init_length_sensitive_vars);
             if(result == l_true) {
                 return FC_DONE;
