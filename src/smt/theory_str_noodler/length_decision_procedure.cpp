@@ -469,14 +469,17 @@ namespace smt::noodler {
             }
         }
 
+        // if the automata are too big --> skip the length decision procedure
+        for (const auto &it : init_aut_ass) {
+            if(it.second->num_of_states() > 100) {
+                return false;
+            }
+        }
+
         for (const BasicTerm& t : form.get_vars()) {
             // t has language of sigma*
             if(init_aut_ass.at(t)->num_of_states() <= 1) {
                     continue;
-            }
-
-            if(init_aut_ass.at(t)->num_of_states() > 1000) {
-                return false;
             }
 
             // t is co-finite (we can underapproximate it)

@@ -870,7 +870,7 @@ namespace smt::noodler {
         }
 
         // try length-based decision procedure (if enabled) to solve
-        if(m_params.m_try_length_proc && LengthDecisionProcedure::is_suitable(instance, aut_assignment) && contains_equations_only) {
+        if(m_params.m_try_length_proc && contains_equations_only && LengthDecisionProcedure::is_suitable(instance, aut_assignment)) {
             lbool result = run_length_proc(instance, aut_assignment, init_length_sensitive_vars);
             if(result == l_true) {
                 return FC_DONE;
