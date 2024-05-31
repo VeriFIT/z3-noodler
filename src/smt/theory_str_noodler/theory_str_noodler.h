@@ -38,6 +38,7 @@ Eternal glory to Yu-Fang.
 #include "regex.h"
 #include "var_union_find.h"
 #include "nielsen_decision_procedure.h"
+#include "counter_automaton.h"
 
 namespace smt::noodler {
 
