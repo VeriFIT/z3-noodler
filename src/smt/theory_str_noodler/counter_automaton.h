@@ -30,10 +30,8 @@ namespace smt::noodler::ca {
 
         StructAlphabet() : alph_symb_mata(), alph_mata_symb() { }
 
-        void a(const typename std::remove_reference<T>::type & b) {}
-
         mata::Symbol add_symbol(const T& symb) {
-            mata::Symbol new_symbol = this->alph_map.size();
+            mata::Symbol new_symbol = this->alph_symb_mata.size();
             auto iter = this->alph_symb_mata.find(symb);
             if (iter != this->alph_symb_mata.end()) {
                 return iter->second;
@@ -49,19 +47,51 @@ namespace smt::noodler::ca {
         }
 
         const T& get_symbol(const mata::Symbol symb) {
-            this->alph_mata_symb.at(symb);
+            return this->alph_mata_symb.at(symb);
         }
 
     };
 
     using CounterAlphabet = StructAlphabet<std::vector<int>>;
     using CA = std::pair<mata::nfa::Nfa, CounterAlphabet>;
+    using Transition = std::tuple<mata::nfa::State, mata::Symbol, mata::nfa::State>;
 
 
-    LenNode compute_parikh_image(const CA& ca) {
-        
+    static LenNode compute_parikh_image(const CA& ca) {
+        const auto& [nfa, alph] = ca;
+        // pool of fresh variables
+        std::vector<BasicTerm> gamma_init {};
+        std::vector<BasicTerm> gamma_fin {};
+        std::vector<BasicTerm> sigma {};
+        // mapping of transitions to concrete variables
+        std::map<Transition, BasicTerm> trans {};
+
+        LenNode phi_init(LenFormulaType::AND);
+        LenNode sum(LenFormulaType::PLUS);
+        for(size_t state = 0; state < nfa.num_of_states(); state++) {
+            // create fresh vars
+            gamma_init.push_back(util::mk_noodler_var_fresh("gamma_init"));
+            if(nfa.initial.contains(state)) {
+                // 0 <= gamma_init[state] <= 1
+                sum.succ.emplace_back(gamma_init[state]);
+                phi_init.succ.emplace_back( LenNode(LenFormulaType::AND, {
+                    LenNode(LenFormulaType::LEQ, {0, gamma_init[state]}),
+                    LenNode(LenFormulaType::LEQ, {gamma_init[state], 1})
+                }) );
+            } else {
+                // gamma_init[state] == 0
+                phi_init.succ.emplace_back( LenNode(LenFormulaType::EQ, {0, gamma_init[state]}) );
+            }
+        }
+        // sum gamma_init[state] for state is initial == 1
+        // exactly one initial state is selected
+        phi_init.succ.emplace_back( LenNode(LenFormulaType::EQ, {sum, 1}) );
+
+        return phi_init;
     }
 
+    
 }
+
 
 #endif
