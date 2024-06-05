@@ -54,7 +54,20 @@ namespace smt::noodler::ca {
     };
 
     using CounterAlphabet = StructAlphabet<std::vector<int>>;
-    using CA = std::pair<mata::nfa::Nfa, CounterAlphabet>;
+
+    /**
+     * @brief Counter Automaton
+     */
+    struct CA {
+        // underlying nfa
+        mata::nfa::Nfa nfa;
+        // structured alphabed with registe updates
+        CounterAlphabet alph;
+        // number of registers
+        size_t registers;
+    };
+
+    
 }
 
 

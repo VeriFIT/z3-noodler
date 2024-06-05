@@ -22,6 +22,9 @@ namespace smt::noodler::parikh {
 using Transition = std::tuple<mata::nfa::State, mata::Symbol, mata::nfa::State>;
 using TransitionCol = std::vector<std::vector<Transition>>;
 
+/**
+ * @brief Parikh image computation of NFA
+ */
 class ParikhImage {
 
 private:
@@ -37,6 +40,7 @@ private:
     // sigma_q = -1 <--> q does not occur on the run
     std::vector<BasicTerm> sigma {};
     // variable for each transition 
+    // counting the number times the transition was taken during the run
     std::map<Transition, BasicTerm> trans {};
 
 
@@ -80,7 +84,39 @@ public:
      * 
      * @return LenNode Parikh image 
      */
-    LenNode compute_parikh_image();
+    virtual LenNode compute_parikh_image();
+
+    const std::map<Transition, BasicTerm>& get_trans_vars() const {
+        return this->trans;
+    }
+
+    virtual ~ParikhImage() { }
+};
+
+
+/**
+ * @brief Parikh image computation of CA
+ */
+class ParikhImageCA : public ParikhImage {
+
+private:
+    ca::CA ca;
+    // variable for each register denoting the value of the register on the run.
+    std::vector<BasicTerm> reg_var {};
+
+public:
+    ParikhImageCA(const ca::CA& ca) : ParikhImage(ca.nfa) { }
+
+    /**
+     * @brief Compute Parikh image with the free variables containing values of registers. 
+     * Assumes that each register is set in each symbol of the CA alphabet.
+     * @return LenNode phi_parikh
+     */
+    LenNode compute_parikh_image() override;
+
+    const std::vector<BasicTerm>& get_register_vars() const {
+        return this->reg_var;
+    }
 };
 
 }

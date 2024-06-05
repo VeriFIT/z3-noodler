@@ -203,7 +203,54 @@ namespace smt::noodler::parikh {
             phi_kirch,
             phi_span
         });
-}
+    }
+
+    /**
+     * @brief Compute Parikh image with the free variables containing values of registers. 
+     * Assumes that each register is set in each symbol of the CA alphabet.
+     * 
+     * phi_reg := (conj r = (sum #t * a_r for each t \in Delta) for each register r)
+     * phi_parikh := phi_parikh(nfa) && phi_reg
+     * 
+     * @return LenNode phi_parikh
+     */
+    LenNode ParikhImageCA::compute_parikh_image() {
+        this->reg_var.clear();
+        // pi is of the form of AND
+        LenNode pi = ParikhImage::compute_parikh_image();
+        const std::map<Transition, BasicTerm>& trans_vars = this->get_trans_vars();
+
+        std::vector<LenNode> sum_reg {};
+        // create fresh variable for each regiser
+        for(size_t i = 0; i < this->ca.registers; i++) {
+            this->reg_var.push_back(util::mk_noodler_var_fresh("reg"));
+            sum_reg.push_back(LenNode(LenFormulaType::PLUS));
+        }
+
+        LenNode phi_reg(LenFormulaType::AND);
+        for(const auto& [trans, var] : trans_vars) {
+            auto symb = this->ca.alph.get_symbol(std::get<1>(trans));
+            for(size_t i = 0; i < this->ca.registers; i++) {
+                sum_reg[i].succ.push_back(LenNode(LenFormulaType::TIMES, {
+                    var,
+                    symb[i]
+                }));
+            }
+        }
+        for(size_t i = 0; i < this->ca.registers; i++) {
+            if(sum_reg[i].succ.size() > 0) {
+                phi_reg.succ.push_back(LenNode(LenFormulaType::EQ, {
+                    this->reg_var[i],
+                    sum_reg[i]
+                }));
+            }
+        }
+
+        return LenNode(LenFormulaType::AND, {
+            pi,
+            phi_reg
+        });
+    }
 
 
 }
