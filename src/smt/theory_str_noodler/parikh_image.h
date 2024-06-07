@@ -16,6 +16,7 @@
 
 #include "formula.h"
 #include "counter_automaton.h"
+#include "formula_preprocess.h"
 
 namespace smt::noodler::parikh {
 
@@ -101,11 +102,31 @@ class ParikhImageCA : public ParikhImage {
 
 private:
     ca::CA ca;
-    // variable for each register denoting the value of the register on the run.
+    // fresh variable for each register denoting the value of the register on the run.
     std::vector<BasicTerm> reg_var {};
+    // map variable of the CA -> register (each register corresponds to a variable --- different variable from reg_var)
+    std::map<BasicTerm, size_t> ca_var_reg {}; 
+
+protected:
+    /**
+     * @brief Get the formula describing |L| != |R| where L != R is @p diseq.
+     * 
+     * @param diseq Disequation L != R
+     * @return LenNode 
+     */
+    LenNode get_diseq_length(const Predicate& diseq);
+    /**
+     * @brief Get the mismatch formula saying that mismatch of the left side is equal to the mismatch of the right side.
+     * phi := var_{r_cl} = var_{r_cr}. 
+     * 
+     * @param cl CA variable computing the left mismatch
+     * @param cr CA variable computing the right mismatch
+     * @return LenNode phi
+     */
+    LenNode get_mismatch_eq(const BasicTerm& cl, const BasicTerm& cr);
 
 public:
-    ParikhImageCA(const ca::CA& ca) : ParikhImage(ca.nfa) { }
+    ParikhImageCA(const ca::CA& ca, const std::map<BasicTerm, size_t>& ca_var_reg) : ParikhImage(ca.nfa), ca_var_reg(ca_var_reg) { }
 
     /**
      * @brief Compute Parikh image with the free variables containing values of registers. 
@@ -117,6 +138,17 @@ public:
     const std::vector<BasicTerm>& get_register_vars() const {
         return this->reg_var;
     }
+
+    /**
+     * @brief Get Length formula for a disequation. 
+     * phi := compute_parikh_image && (get_diseq_length || get_mismatch_eq)
+     * 
+     * @param cl CA variable computing the left mismatch of @p diseq
+     * @param cr CA variable computing the right mismatch of @p diseq
+     * @param diseq Diseq
+     * @return LenNode phi
+     */
+    LenNode get_diseq_formula(const BasicTerm& cl, const BasicTerm& cr, const Predicate& diseq);
 };
 
 }

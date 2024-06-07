@@ -253,4 +253,44 @@ namespace smt::noodler::parikh {
     }
 
 
+    LenNode ParikhImageCA::get_diseq_length(const Predicate& diseq) {
+        // e.g., for x.y get var_{r_x} + var_{r_y} where r_x is the CA register corresponding to the string variable x and 
+        // var_r is int variable describing value of register r after the run.
+        auto concat_len = [&](const Concat& con) -> LenNode {
+            LenNode sum_len(LenFormulaType::PLUS);
+            for(const BasicTerm& bt : con) {
+                sum_len.succ.push_back(LenNode(LenFormulaType::LEAF, { this->reg_var[this->ca_var_reg.at(bt)] }));
+            }
+            return sum_len;
+        };
+
+        return LenNode(LenFormulaType::NEQ, {
+            concat_len(diseq.get_left_side()), 
+            concat_len(diseq.get_right_side())
+        });
+    }
+
+
+    LenNode ParikhImageCA::get_mismatch_eq(const BasicTerm& cl, const BasicTerm& cr) {
+        return LenNode(LenFormulaType::EQ, {
+            LenNode(LenFormulaType::LEAF, { this->reg_var[this->ca_var_reg.at(cl)] }),
+            LenNode(LenFormulaType::LEAF, { this->reg_var[this->ca_var_reg.at(cr)] }),
+        });
+    }
+
+
+    LenNode ParikhImageCA::get_diseq_formula(const BasicTerm& cl, const BasicTerm& cr, const Predicate& diseq) {
+        LenNode parikh = compute_parikh_image();
+        LenNode diseq_len = get_diseq_length(diseq);
+        LenNode mismatch = get_mismatch_eq(cl, cr);
+        
+        return LenNode(LenFormulaType::AND, {
+            parikh,
+            LenNode(LenFormulaType::OR, {
+                diseq_len,
+                mismatch,
+            })
+        });
+    }
+
 }
