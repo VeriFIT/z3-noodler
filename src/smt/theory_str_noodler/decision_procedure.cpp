@@ -618,6 +618,12 @@ namespace smt::noodler {
         conjuncts.push_back(conv_form_with_precision.first);
         precision = conv_form_with_precision.second;
 
+
+        // if we solve disequations using CA --> get the LIA formula describing solutions
+        if(this->m_params.m_ca_constr) {
+            conjuncts.push_back(get_formula_for_ca_diseqs());
+        }
+
         LenNode result(LenFormulaType::AND, conjuncts);
         STRACE("str", tout << "Final " << (precision == LenNodePrecision::PRECISE ? "precise" : "underapproximating") << " formula from get_lengths(): " << result << std::endl;);
         return {result, precision};
@@ -1157,6 +1163,34 @@ namespace smt::noodler {
         return {result, res_precision};
     }
 
+    LenNode DecisionProcedure::get_formula_for_ca_diseqs() {
+        Formula proj_diseqs {};
+
+        auto proj_concat = [&](const Concat& con) -> Concat {
+            Concat ret {};
+            for(const BasicTerm& bt : con) {
+                Concat subst = this->solution.get_substituted_vars(bt);
+                ret.insert(ret.end(), subst.begin(), subst.end());
+            }
+            return ret;
+        };
+
+        // take the original disequations (taken from input) and 
+        // propagate substitutions involved by the current substitution map of 
+        // a stable solution
+        for(const Predicate& dis : this->disequations.get_predicates()) {
+            proj_diseqs.add_predicate(Predicate(PredicateType::Inequation, {
+                proj_concat(dis.get_left_side()),
+                proj_concat(dis.get_right_side()),
+            }));
+        }
+
+        STRACE("str", tout << "CA-DISEQS (original): " << std::endl << this->disequations.to_string() << std::endl;);
+        STRACE("str", tout << "CA-DISEQS (substituted): " << std::endl << proj_diseqs.to_string() << std::endl;);
+
+        return ca::get_lia_for_disequations(proj_diseqs, this->solution.aut_ass);
+    }
+
     /**
      * @brief Creates initial inclusion graph according to the preprocessed instance.
      */
@@ -1166,8 +1200,13 @@ namespace smt::noodler {
             if (dis_or_eq.is_equation()) {
                 equations.add_predicate(dis_or_eq);
             } else if (dis_or_eq.is_inequation()) {
-                for (auto const &eq_from_diseq : replace_disequality(dis_or_eq)) {
-                    equations.add_predicate(eq_from_diseq);
+                // if we solve diesquations using CA --> we store the disequations to be solved later on
+                if(this->m_params.m_ca_constr) {
+                    this->disequations.add_predicate(dis_or_eq);
+                } else {
+                    for (auto const &eq_from_diseq : replace_disequality(dis_or_eq)) {
+                        equations.add_predicate(eq_from_diseq);
+                    }
                 }
             } else {
                 util::throw_error("Decision procedure can handle only equations and disequations");

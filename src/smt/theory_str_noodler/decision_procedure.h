@@ -11,6 +11,7 @@
 #include "aut_assignment.h"
 #include "state_len.h"
 #include "formula_preprocess.h"
+#include "ca_str_constr.h"
 
 namespace smt::noodler {
 
@@ -295,6 +296,9 @@ namespace smt::noodler {
         // contains to/from_code/int conversions
         std::vector<TermConversion> conversions;
 
+        // disequations that are supposed to be solved after a stable solution is found
+        Formula disequations;
+
         // the length formula from preprocessing, get_lengths should create conjunct with it
         LenNode preprocessing_len_formula = LenNode(LenFormulaType::TRUE,{});
         // keeps the length formulas from replace_disequality(), they need to hold for solution to be satisfiable (get_lengths should create conjunct from them)
@@ -314,6 +318,11 @@ namespace smt::noodler {
          * @brief Gets the formula encoding to_code/from_code/to_int/from_int conversions
          */
         std::pair<LenNode, LenNodePrecision> get_formula_for_conversions();
+
+        /**
+         * @brief Gets the formula encoding handling disequations using CA
+         */
+        LenNode get_formula_for_ca_diseqs();
 
         /**
          * Returns the code var version of @p var used to encode to_code/from_code in get_formula_for_conversions
