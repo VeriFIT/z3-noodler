@@ -1163,6 +1163,14 @@ namespace smt::noodler {
         return {result, res_precision};
     }
 
+    void DecisionProcedure::init_ca_diseq(const Predicate& diseq) {
+        this->disequations.add_predicate(diseq);
+        // include variables occurring in the diseqations into init_length_sensitive_vars
+        for(const BasicTerm& var : diseq.get_vars()) {
+            this->init_length_sensitive_vars.insert(var);
+        }
+    }
+
     LenNode DecisionProcedure::get_formula_for_ca_diseqs() {
         Formula proj_diseqs {};
 
@@ -1202,7 +1210,7 @@ namespace smt::noodler {
             } else if (dis_or_eq.is_inequation()) {
                 // if we solve diesquations using CA --> we store the disequations to be solved later on
                 if(this->m_params.m_ca_constr) {
-                    this->disequations.add_predicate(dis_or_eq);
+                    init_ca_diseq(dis_or_eq);
                 } else {
                     for (auto const &eq_from_diseq : replace_disequality(dis_or_eq)) {
                         equations.add_predicate(eq_from_diseq);

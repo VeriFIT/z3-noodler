@@ -320,6 +320,12 @@ namespace smt::noodler {
         std::pair<LenNode, LenNodePrecision> get_formula_for_conversions();
 
         /**
+         * @brief Initialize disquation for CA-based handling. Assumed to be called during 
+         * the decision procedure initialization.
+         */
+        void init_ca_diseq(const Predicate& diseq);
+
+        /**
          * @brief Gets the formula encoding handling disequations using CA
          */
         LenNode get_formula_for_ca_diseqs();
