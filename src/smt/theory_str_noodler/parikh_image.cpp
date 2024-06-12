@@ -206,60 +206,21 @@ namespace smt::noodler::parikh {
     }
 
     /**
-     * @brief Compute Parikh image with the free variables containing values of registers. 
-     * Assumes that each register is set in each symbol of the CA alphabet.
+     * @brief Get the formula describing |L| != |R| where L != R is @p diseq.
+     * For x_1 ... x_n != y_1 ... x_m create
+     * phi := #<L,x_1> + ... + #<L,x_n> != #<L,y_1> + ... + #<L,y_m>
      * 
-     * phi_reg := (conj r = (sum #t * a_r for each t \in Delta) for each register r)
-     * phi_parikh := phi_parikh(nfa) && phi_reg
-     * 
-     * @return LenNode phi_parikh
+     * @param diseq Disequation L != R
+     * @return LenNode phi
      */
-    LenNode ParikhImageCA::compute_parikh_image() {
-        this->reg_var.clear();
-        // pi is of the form of AND
-        LenNode pi = ParikhImage::compute_parikh_image();
-        const std::map<Transition, BasicTerm>& trans_vars = this->get_trans_vars();
-
-        std::vector<LenNode> sum_reg {};
-        // create fresh variable for each regiser
-        for(size_t i = 0; i < this->ca.registers; i++) {
-            this->reg_var.push_back(util::mk_noodler_var_fresh("reg"));
-            sum_reg.push_back(LenNode(LenFormulaType::PLUS));
-        }
-
-        LenNode phi_reg(LenFormulaType::AND);
-        for(const auto& [trans, var] : trans_vars) {
-            auto symb = this->ca.alph.get_symbol(std::get<1>(trans));
-            for(size_t i = 0; i < this->ca.registers; i++) {
-                sum_reg[i].succ.push_back(LenNode(LenFormulaType::TIMES, {
-                    var,
-                    symb[i]
-                }));
-            }
-        }
-        for(size_t i = 0; i < this->ca.registers; i++) {
-            if(sum_reg[i].succ.size() > 0) {
-                phi_reg.succ.push_back(LenNode(LenFormulaType::EQ, {
-                    this->reg_var[i],
-                    sum_reg[i]
-                }));
-            }
-        }
-
-        return LenNode(LenFormulaType::AND, {
-            pi,
-            phi_reg
-        });
-    }
-
-
     LenNode ParikhImageCA::get_diseq_length(const Predicate& diseq) {
         // e.g., for x.y get var_{r_x} + var_{r_y} where r_x is the CA register corresponding to the string variable x and 
         // var_r is int variable describing value of register r after the run.
         auto concat_len = [&](const Concat& con) -> LenNode {
             LenNode sum_len(LenFormulaType::PLUS);
             for(const BasicTerm& bt : con) {
-                sum_len.succ.push_back(LenNode(LenFormulaType::LEAF, { this->reg_var[this->ca_var_reg.at(bt)] }));
+                ca::AtomicSymbol as = {0, bt, 2}; // <L,x> symbol
+                sum_len.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at(as) }));
             }
             return sum_len;
         };
@@ -271,18 +232,22 @@ namespace smt::noodler::parikh {
     }
 
 
-    LenNode ParikhImageCA::get_mismatch_eq(const BasicTerm& cl, const BasicTerm& cr) {
-        return LenNode(LenFormulaType::EQ, {
-            LenNode(LenFormulaType::LEAF, { this->reg_var[this->ca_var_reg.at(cl)] }),
-            LenNode(LenFormulaType::LEAF, { this->reg_var[this->ca_var_reg.at(cr)] }),
-        });
+    LenNode ParikhImageCA::get_all_mismatch_formula(const Predicate& diseq) {
+        // create formula OR( mismatch(i,j) where i is position of left of diseq and j is position of right of diseq )
+        LenNode mismatch(LenFormulaType::OR);
+        for(size_t i = 0; i < diseq.get_left_side().size(); i++) {
+            for (size_t j = 0; j < diseq.get_right_side().size(); j++) {
+                mismatch.succ.push_back(get_mismatch_formula(i, j, diseq));
+            }
+        }
+        return mismatch;
     }
 
 
-    LenNode ParikhImageCA::get_diseq_formula(const BasicTerm& cl, const BasicTerm& cr, const Predicate& diseq) {
+    LenNode ParikhImageCA::get_diseq_formula(const Predicate& diseq) {
         LenNode parikh = compute_parikh_image();
         LenNode diseq_len = get_diseq_length(diseq);
-        LenNode mismatch = get_mismatch_eq(cl, cr);
+        LenNode mismatch = get_all_mismatch_formula(diseq);
         
         return LenNode(LenFormulaType::AND, {
             parikh,
@@ -290,6 +255,93 @@ namespace smt::noodler::parikh {
                 diseq_len,
                 mismatch,
             })
+        });
+    }
+
+    /**
+     * @brief Construct formula counting number of AtomicSymbol in each set on the transitions.
+     * For each AtomicSymbol e.q., <L,x> create a fresh variable #<L,x> and generate
+     * #<L,x> = sum( #t, where transition symbol -- set of AtomicSymbol -- contains <L,x> )
+     * 
+     * @return LenNode AND (#symb for each AtomicSymbol symb)
+     */
+    LenNode ParikhImageCA::symbol_count_formula() {
+        this->symbol_var.clear();
+        const std::map<Transition, BasicTerm>& trans_vars = this->get_trans_vars();
+
+        // create mapping: AtomicSymbol a -> var_a
+        std::map<ca::AtomicSymbol, LenNode> sum_symb {};
+        for(const ca::AtomicSymbol& as : this->atomic_symbols) {
+            this->symbol_var.insert({as, util::mk_noodler_var_fresh("symb")});
+            sum_symb.insert( {as, LenNode(LenFormulaType::PLUS)});
+        }
+
+        LenNode phi_cnt(LenFormulaType::AND);
+        for(const auto& [trans, var] : trans_vars) {
+            // set of atomic symbols
+            auto symb = this->ca.alph.get_symbol(std::get<1>(trans));
+            for(const ca::AtomicSymbol& as : symb) {
+                sum_symb.at(as).succ.push_back(LenNode(LenFormulaType::LEAF, { var }));
+            }
+        }
+
+        // generate equations var_a = #t_1 + #t_2 ... where #t_1 is variable of a 
+        // transition containing in symbol set a
+        for (const auto& [as, var] : this->symbol_var) {
+            const LenNode& act = sum_symb.at(as);
+            if(act.succ.size() > 0) {
+                phi_cnt.succ.push_back(LenNode(LenFormulaType::EQ, {
+                    this->symbol_var.at(as),
+                    act
+                }));
+            }
+        }
+
+        return phi_cnt;
+    }
+
+    /**
+     * @brief Get mismatch formula for particular positions @p i and @p j. 
+     * For x_1 ... x_n != y_1 ... y_m create 
+     * mismatch(i,j) := #<L,x_1> + ... + #<L,x_{i-1}> + #<P,x_i,0> = #<L,y_1> + ... + #<L,y_{j-1}> + #<P,y_j,1>
+     * where #symb is LIA variable counting number of occurrences of the symbol symb during 
+     * the run. Stored in this->symbol_var and computed by symbol_count_formula.
+     * 
+     * E.g., for x_1 x_2 x_3 != y_1 y_2 create a formula 
+     * mismatch(3,2) := #<L,x_1> + #<L,x_2> + #<P,x_3,0> = #<L,y_1> + #<P,y_2,1>
+     * 
+     * 
+     * @param i Position on the left side of @p diseq
+     * @param j Position on the right side of @p diseq
+     * @param diseq Diseq
+     * @return LenNode mismatch(i,j)
+     */
+    LenNode ParikhImageCA::get_mismatch_formula(size_t i, size_t j, const Predicate& diseq) {
+        auto concat_len = [&](const Concat& con, size_t max_ind) -> LenNode {
+            LenNode sum_len(LenFormulaType::PLUS);
+            size_t ind = 0;
+            for(const BasicTerm& bt : con) {
+                if (ind > max_ind) {
+                    break;
+                }
+                ca::AtomicSymbol as = {0, bt, 2}; // <L,x> symbol
+                sum_len.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at(as) }));
+                ++ind;
+            }
+            return sum_len;
+        };
+
+        LenNode left = concat_len(diseq.get_left_side(), i - 1);
+        // add symbol <P, var, 0> where var is i-th variable on left side of diseq
+        left.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at({1, diseq.get_left_side()[i], 0}) }));
+
+        LenNode right = concat_len(diseq.get_right_side(), j-1);
+        // add symbol <P, var, 1> where var is j-th variable on left side of diseq
+        right.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at({1, diseq.get_right_side()[j], 1}) }));
+
+        return LenNode(LenFormulaType::EQ, {
+            left,
+            right
         });
     }
 

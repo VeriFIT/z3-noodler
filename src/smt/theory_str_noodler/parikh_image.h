@@ -102,10 +102,11 @@ class ParikhImageCA : public ParikhImage {
 
 private:
     ca::CA ca;
-    // fresh variable for each register denoting the value of the register on the run.
-    std::vector<BasicTerm> reg_var {};
-    // map variable of the CA -> register (each register corresponds to a variable --- different variable from reg_var)
-    std::map<BasicTerm, size_t> ca_var_reg {}; 
+    // fresh variable for each AtomicSymbol. for symb, we use #symb to denote the corresponding variable
+    std::map<ca::AtomicSymbol, BasicTerm> symbol_var {}; 
+    // set of atomic symbols used in ca
+    std::set<ca::AtomicSymbol> atomic_symbols {};
+
 
 protected:
     /**
@@ -115,40 +116,50 @@ protected:
      * @return LenNode 
      */
     LenNode get_diseq_length(const Predicate& diseq);
+
     /**
-     * @brief Get the mismatch formula saying that mismatch of the left side is equal to the mismatch of the right side.
-     * phi := var_{r_cl} = var_{r_cr}. 
+     * @brief Get the mismatch formula for each pair (i,j) of positions in @p diseq.
+     * phi := OR( mismatch(i,j) where i is position of left of diseq and j is position of right of diseq )
      * 
-     * @param cl CA variable computing the left mismatch
-     * @param cr CA variable computing the right mismatch
+     * @param diseq Disequation
      * @return LenNode phi
      */
-    LenNode get_mismatch_eq(const BasicTerm& cl, const BasicTerm& cr);
+    LenNode get_all_mismatch_formula(const Predicate& diseq);
+
+    /**
+     * @brief Get mismatch formula for particular positions @p i and @p j. 
+     * 
+     * @param i Position on the left side of @p diseq
+     * @param j Position on the right side of @p diseq
+     * @param diseq Diseq
+     * @return LenNode mismatch(i,j)
+     */
+    LenNode get_mismatch_formula(size_t i, size_t j, const Predicate& diseq);
 
 public:
-    ParikhImageCA(const ca::CA& ca, const std::map<BasicTerm, size_t>& ca_var_reg) : ParikhImage(ca.nfa), ca_var_reg(ca_var_reg) { }
+    ParikhImageCA(const ca::CA& ca, std::set<ca::AtomicSymbol> atomic_symbols) : ParikhImage(ca.nfa), symbol_var(), atomic_symbols(atomic_symbols) { }
 
     /**
      * @brief Compute Parikh image with the free variables containing values of registers. 
      * Assumes that each register is set in each symbol of the CA alphabet.
      * @return LenNode phi_parikh
      */
-    LenNode compute_parikh_image() override;
+    LenNode compute_parikh_image() override { return symbol_count_formula(); };
 
-    const std::vector<BasicTerm>& get_register_vars() const {
-        return this->reg_var;
-    }
+    /**
+     * @brief Construct formula counting number of AtomicSymbol in each set on the transitions.
+     * @return LenNode AND (#symb for each AtomicSymbol symb)
+     */
+    LenNode symbol_count_formula();
 
     /**
      * @brief Get Length formula for a disequation. 
-     * phi := compute_parikh_image && (get_diseq_length || get_mismatch_eq)
+     * phi := compute_parikh_image && (get_diseq_length || get_all_mismatch_formula)
      * 
-     * @param cl CA variable computing the left mismatch of @p diseq
-     * @param cr CA variable computing the right mismatch of @p diseq
      * @param diseq Diseq
      * @return LenNode phi
      */
-    LenNode get_diseq_formula(const BasicTerm& cl, const BasicTerm& cr, const Predicate& diseq);
+    LenNode get_diseq_formula(const Predicate& diseq);
 };
 
 }

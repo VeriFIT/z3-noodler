@@ -20,7 +20,7 @@
 namespace smt::noodler::ca {
 
     template <typename T>
-    requires std::totally_ordered<T>
+    requires std::strict_weak_order<std::less<T>, T const&, T const&>
     class StructAlphabet {
 
     private:
@@ -53,7 +53,35 @@ namespace smt::noodler::ca {
 
     };
 
-    using CounterAlphabet = StructAlphabet<std::vector<int>>;
+    /**
+     * @brief Symbols of the form <mark, var, label>
+     */
+    struct AtomicSymbol {
+        char mark; // 0 = L; 1 = P
+        BasicTerm var; // variable from string constraint
+        char label; // 2 = missing value
+
+        bool operator<(const AtomicSymbol& as) const {
+            auto cmp = mark <=> as.mark ;
+            if(cmp < 0) {
+                return true;
+            } else if (cmp > 0) {
+                return false;
+            } else {
+                cmp = label <=> as.label;
+                if(cmp < 0) {
+                    return true;
+                } else if (cmp > 0) {
+                    return false;
+                } else {
+                    return var < as.var;
+                }
+            }
+        }
+        bool operator==(const AtomicSymbol&) const = default;
+    };
+
+    using CounterAlphabet = StructAlphabet<std::set<AtomicSymbol>>;
 
     /**
      * @brief Counter Automaton
