@@ -43,11 +43,11 @@ namespace smt::noodler::ca {
             }
         };
 
-        mata::Symbol get_mata_symbol(const T& symb) {
+        mata::Symbol get_mata_symbol(const T& symb) const {
             return this->alph_symb_mata.at(symb);
         }
 
-        const T& get_symbol(const mata::Symbol symb) {
+        const T& get_symbol(const mata::Symbol symb) const {
             return this->alph_mata_symb.at(symb);
         }
 
@@ -88,7 +88,17 @@ namespace smt::noodler::ca {
         }
         bool operator==(const AtomicSymbol&) const = default;
 
-        // TODO: add method for a pretty-printing 
+        std::string to_string() const {
+            std::string ret;
+            std::string marks[3] = {"L", "P", "R"};
+
+            std::string label_str = label == 0 ? "" : "," + std::to_string(int(label));
+            std::string symbol_str = mark == 2 ? std::to_string(symbol) : "";
+            std::string var_str = mark < 2 ? "," + var.to_string() : "";
+
+            ret = std::format("<{}{}{}{}>", marks[size_t(mark)], var_str, label_str, symbol_str);
+            return ret;
+        }
     };
 
     using CounterAlphabet = StructAlphabet<std::set<AtomicSymbol>>;
@@ -101,8 +111,42 @@ namespace smt::noodler::ca {
         mata::nfa::Nfa nfa;
         // structured alphabed with registe updates
         CounterAlphabet alph;
-        // number of registers
-        size_t registers;
+
+        std::string symbol_to_string(const std::set<AtomicSymbol>& sym) const {
+            std::string ret;
+            for(const AtomicSymbol& as : sym) {
+                ret += as.to_string() + " ";
+            }
+            return ret;
+        }
+
+        // taken and modified from Mata
+        void print_to_DOT(std::ostream &output) const {
+            output << "digraph finiteAutomaton {" << std::endl
+                        << "node [shape=circle];" << std::endl;
+
+            for (mata::nfa::State final_state: nfa.final) {
+                output << final_state << " [shape=doublecircle];" << std::endl;
+            }
+
+            const size_t delta_size = nfa.delta.num_of_states();
+            for (mata::nfa::State source = 0; source != delta_size; ++source) {
+                for (const mata::nfa::SymbolPost &move: nfa.delta[source]) {
+                    output << source << " -> {";
+                    for (mata::nfa::State target: move.targets) {
+                        output << target << " ";
+                    }
+                    output << "} [label=" << symbol_to_string(alph.get_symbol(move.symbol)) << "];" << std::endl;
+                }
+            }
+
+            output << "node [shape=none, label=\"\"];" << std::endl;
+            for (mata::nfa::State init_state: nfa.initial) {
+                output << "i" << init_state << " -> " << init_state << ";" << std::endl;
+            }
+
+            output << "}" << std::endl;
+        }
     };
 
     

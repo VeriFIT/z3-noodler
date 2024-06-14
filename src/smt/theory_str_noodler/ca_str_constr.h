@@ -90,7 +90,7 @@ namespace smt::noodler::ca {
 
     public:
 
-        mata::nfa::Nfa construct_tag_aut();
+        ca::CA construct_tag_aut();
 
     };
 

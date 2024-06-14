@@ -104,7 +104,7 @@ namespace smt::noodler::ca {
         }
     }
 
-    mata::nfa::Nfa CADiseqGen::construct_tag_aut() {
+    ca::CA CADiseqGen::construct_tag_aut() {
 
         std::vector<BasicTerm> var_order = this->aut_matrix.get_var_order();
         // update symbols for each inner automaton
@@ -126,7 +126,7 @@ namespace smt::noodler::ca {
         }
 
         // TODO: add epsilon connection between variable automata
-        return aut_union;
+        return { aut_union, this->alph };
     }
 
 
