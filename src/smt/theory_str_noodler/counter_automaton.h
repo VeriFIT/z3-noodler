@@ -54,12 +54,13 @@ namespace smt::noodler::ca {
     };
 
     /**
-     * @brief Symbols of the form <mark, var, label>
+     * @brief Symbols of the form <mark, var, label, symbol>
      */
     struct AtomicSymbol {
-        char mark; // 0 = L; 1 = P
+        char mark; // 0 = L; 1 = P; 2 = R
         BasicTerm var; // variable from string constraint
-        char label; // 2 = missing value
+        char label; // 0 = missing value
+        mata::Symbol symbol; // symbol (used for the R-case)
 
         bool operator<(const AtomicSymbol& as) const {
             auto cmp = mark <=> as.mark ;
@@ -74,11 +75,20 @@ namespace smt::noodler::ca {
                 } else if (cmp > 0) {
                     return false;
                 } else {
-                    return var < as.var;
+                    cmp = symbol <=> as.symbol;
+                    if(cmp < 0) {
+                        return true;
+                    } else if (cmp > 0) {
+                        return false;
+                    } else {
+                        return var < as.var;
+                    }
                 }
             }
         }
         bool operator==(const AtomicSymbol&) const = default;
+
+        // TODO: add method for a pretty-printing 
     };
 
     using CounterAlphabet = StructAlphabet<std::set<AtomicSymbol>>;

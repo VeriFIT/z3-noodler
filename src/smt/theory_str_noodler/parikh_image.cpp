@@ -219,7 +219,7 @@ namespace smt::noodler::parikh {
         auto concat_len = [&](const Concat& con) -> LenNode {
             LenNode sum_len(LenFormulaType::PLUS);
             for(const BasicTerm& bt : con) {
-                ca::AtomicSymbol as = {0, bt, 2}; // <L,x> symbol
+                ca::AtomicSymbol as = {0, bt, 0, 0}; // <L,x> symbol
                 sum_len.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at(as) }));
             }
             return sum_len;
@@ -324,7 +324,7 @@ namespace smt::noodler::parikh {
                 if (ind > max_ind) {
                     break;
                 }
-                ca::AtomicSymbol as = {0, bt, 2}; // <L,x> symbol
+                ca::AtomicSymbol as = {0, bt, 0, 0}; // <L,x> symbol
                 sum_len.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at(as) }));
                 ++ind;
             }
@@ -332,12 +332,12 @@ namespace smt::noodler::parikh {
         };
 
         LenNode left = concat_len(diseq.get_left_side(), i - 1);
-        // add symbol <P, var, 0> where var is i-th variable on left side of diseq
-        left.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at({1, diseq.get_left_side()[i], 0}) }));
+        // add symbol <P, var, 0, 0> where var is i-th variable on left side of diseq
+        left.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at({1, diseq.get_left_side()[i], 1, 0}) }));
 
         LenNode right = concat_len(diseq.get_right_side(), j-1);
-        // add symbol <P, var, 1> where var is j-th variable on left side of diseq
-        right.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at({1, diseq.get_right_side()[j], 1}) }));
+        // add symbol <P, var, 1, 0> where var is j-th variable on left side of diseq
+        right.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at({1, diseq.get_right_side()[j], 2, 0}) }));
 
         return LenNode(LenFormulaType::EQ, {
             left,
