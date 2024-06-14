@@ -346,6 +346,10 @@ class seq_rewriter {
     void remove_empty_and_concats(expr_ref_vector& es);
     void remove_leading(unsigned n, expr_ref_vector& es);
 
+    // for NOODLER, used for str.len == numeral, str.len <= numeral and str.to_int == numeral (see mk_le_core, mk_eq_core)
+    bool reduce_length_eq_leq(expr *l, expr *r, bool is_equality, expr_ref& result);
+    bool reduce_stoi_eq(expr *l, expr *r, expr_ref& result);
+
     class seq_util::rex& re() { return u().re; }
     class seq_util::rex const& re() const { return u().re; }
     class seq_util::str& str() { return u().str; }

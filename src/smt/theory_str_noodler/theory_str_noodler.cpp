@@ -19,6 +19,7 @@ Eternal glory to Yu-Fang.
 
 #include "decision_procedure.h"
 #include "theory_str_noodler.h"
+#include "smt/theory_str_noodler/ugly_global_variables.h"
 
 namespace smt::noodler {
 
@@ -140,8 +141,9 @@ namespace smt::noodler {
             string_theory_propagation(ex, true, false);
             
         }
-        add_conversion_num_axioms();
-        add_len_num_axioms();
+        // not needed anymore, as we do this in rewriter
+        // add_conversion_num_axioms();
+        // add_len_num_axioms();
         STRACE("str", tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
 
     }
@@ -875,6 +877,8 @@ namespace smt::noodler {
             }
         }
 
+        rewrite_shitty_things = false;
+
         DecisionProcedure dec_proc = DecisionProcedure{ instance, aut_assignment, init_length_sensitive_vars, m_params, conversions };
 
         STRACE("str", tout << "Starting preprocessing" << std::endl);
@@ -882,6 +886,7 @@ namespace smt::noodler {
         if (result == l_false) {
             STRACE("str", tout << "Unsat from preprocessing" << std::endl);
             block_curr_len(expr_ref(m.mk_false(), m), false, true); // we do not store for loop protection
+            rewrite_shitty_things = true;
             return FC_CONTINUE;
         } // we do not check for l_true, because we will get it in get_another_solution() anyway TODO: should we check?
 
@@ -891,6 +896,7 @@ namespace smt::noodler {
         if(check_len_sat(lengths) == l_false) {
             STRACE("str", tout << "Unsat from initial lengths" << std::endl);
             block_curr_len(lengths, true, true);
+            rewrite_shitty_things = true;
             return FC_CONTINUE;
         }
 
@@ -910,6 +916,7 @@ namespace smt::noodler {
                     STRACE("str", tout << "len sat " << mk_pp(lengths, m) << std::endl;);
                     // save the current assignment to catch it during the loop protection
                     block_curr_len(lengths, true, false);
+                    rewrite_shitty_things = true;
                     return FC_DONE;
                 } else if (is_lengths_sat == l_false /*&& precision != LenNodePrecision::UNDERAPPROX*/) {
                     // TODO is handling underapprox correct here? is it even safe to underapproximate? we do not have a case where we underapproximate, but for the future
@@ -928,6 +935,7 @@ namespace smt::noodler {
                 if (was_something_approximated) {
                     // if some length formula was an approximation and it did not lead to solution, we have to give up
                     STRACE("str", tout << "there was approximating - giving up" << std::endl);
+                    rewrite_shitty_things = true;
                     return FC_GIVEUP;
                 }
 
@@ -936,10 +944,12 @@ namespace smt::noodler {
                 } else {
                     block_curr_len(block_len);
                 }
+                rewrite_shitty_things = true;
                 return FC_CONTINUE;
             } else {
                 // we could not decide if there is solution, let's just give up
                 STRACE("str", tout << "giving up" << std::endl);
+                rewrite_shitty_things = true;
                 return FC_GIVEUP;
             }
         }

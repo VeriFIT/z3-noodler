@@ -32,6 +32,8 @@ Author:
 #include "math/automata/automaton.h"
 #include "math/automata/symbolic_automata_def.h"
 
+#include "smt/theory_str_noodler/ugly_global_variables.h"
+
 
 expr_ref sym_expr::accept(expr* e) {
     ast_manager& m = m_t.get_manager();
@@ -408,17 +410,36 @@ void seq_rewriter::get_param_descrs(param_descrs & r) {
 }
 
 br_status seq_rewriter::mk_bool_app(func_decl* f, unsigned n, expr* const* args, expr_ref& result) {
+    br_status res_status;
     switch (f->get_decl_kind()) {
     case OP_AND:
-        return mk_bool_app_helper(true, n, args, result);
+      {
+        res_status = mk_bool_app_helper(true, n, args, result);
+        break;
+      }
     case OP_OR:
-        return mk_bool_app_helper(false, n, args, result);
+      {
+        res_status = mk_bool_app_helper(false, n, args, result);
+        break;
+      }
     case OP_EQ:
         SASSERT(n == 2);
         // return mk_eq_helper(args[0], args[1], result);
     default:
-        return BR_FAILED;
+      {
+        res_status = BR_FAILED;
+      }
     }
+
+    TRACE("seq_verbose",
+        tout << mk_pp(m().mk_app(f, n, args), m());
+        if (res_status == BR_FAILED) {
+            tout << " failed to rewrite\n";
+        } else {
+            tout << " -> " << mk_pp(result, m()) << "\n";
+        }
+    );
+    return res_status;
 }
 
 br_status seq_rewriter::mk_bool_app_helper(bool is_and, unsigned n, expr* const* args, expr_ref& result) {
@@ -5362,7 +5383,14 @@ br_status seq_rewriter::reduce_re_eq(expr* l, expr* r, expr_ref& result) {
 }
 
 br_status seq_rewriter::mk_le_core(expr * l, expr * r, expr_ref & result) {
+    // NOODLER: check if we do not have numerical comparison with str.len
+    // WARNING: I do not know if it will work correctly, this function in z3 does nothing because it caused problems I guess?
+    if (smt::noodler::rewrite_shitty_things && reduce_length_eq_leq(l, r, false, result)) {
+        TRACE("seq", tout << mk_pp(l, m()) << " <= " << mk_pp(r, m()) << " -> " << result << "\n");
+        return BR_REWRITE_FULL;
+    }
 
+    TRACE("seq", tout << mk_pp(l, m()) << " <= " << mk_pp(r, m()) << " failed to rewrite\n");
     return BR_FAILED;
 
     // k <= len(x) -> true  if k <= 0
@@ -5387,30 +5415,82 @@ br_status seq_rewriter::mk_le_core(expr * l, expr * r, expr_ref & result) {
 }
 
 br_status seq_rewriter::mk_eq_core(expr * l, expr * r, expr_ref & result) {
-    TRACE("seq", tout << mk_pp(l, m()) << " == " << mk_pp(r, m()) << "\n");
     expr_ref_vector res(m());
     expr_ref_pair_vector new_eqs(m());
-    if (m_util.is_re(l)) {
-        return reduce_re_eq(l, r, result);
-    }
+    br_status res_status;
     bool changed = false;
-    if (reduce_eq_empty(l, r, result)) 
-        return BR_REWRITE_FULL;
-
-    if (!reduce_eq(l, r, new_eqs, changed)) {
+    if (m_util.is_re(l)) {
+        res_status = reduce_re_eq(l, r, result);
+    } else if (reduce_eq_empty(l, r, result))  {
+        res_status = BR_REWRITE_FULL;
+    } else if (!reduce_eq(l, r, new_eqs, changed)) {
         result = m().mk_false();
-        TRACE("seq_verbose", tout << result << "\n";);
-        return BR_DONE;
+        res_status = BR_DONE;
+    } else if (!changed) {
+        if (smt::noodler::rewrite_shitty_things && (reduce_length_eq_leq(l, r, true, result) || reduce_stoi_eq(l, r, result))) {
+            // NOODLER: check if we do not have numerical comparison with str.len or str.to_int
+            res_status = BR_REWRITE_FULL;
+        } else {
+            res_status = BR_FAILED;
+        }
+    } else {
+        for (auto const& p : new_eqs) {
+            expr_ref tmp_result(m().mk_eq(p.first, p.second), m());
+            // NOODLER: check if we do not have numerical comparison with str.len or str.to_int
+            if (smt::noodler::rewrite_shitty_things) {
+                reduce_length_eq_leq(p.first, p.second, true, tmp_result);
+                reduce_stoi_eq(p.first, p.second, tmp_result);
+            }
+            res.push_back(tmp_result);
+        }
+        result = mk_and(res);
+        res_status = BR_REWRITE3;
     }
-    if (!changed) {
-        return BR_FAILED;
+    CTRACE("seq", res_status != BR_FAILED, tout << mk_pp(l, m()) << " == " << mk_pp(r, m()) << " -> " << result << "\n";);
+    CTRACE("seq", res_status == BR_FAILED, tout << mk_pp(l, m()) << " == " << mk_pp(r, m()) << " failed to rewrite\n";);
+    return res_status;
+}
+
+
+bool seq_rewriter::reduce_length_eq_leq(expr *l, expr *r, bool is_equality, expr_ref& result) {
+    // number bound for the conversion of length constraints into regex constraints.
+    // For higher values this conversion could not be beneficial as we would work with 
+    // big automata in the decision procedure.
+    const int MAX_NUM = 64;
+    expr* e = nullptr;
+    unsigned n;
+    if (str().is_length(l,e) && m_autil.is_unsigned(r, n) && 0 < n && n < MAX_NUM) {
+        // for n a numeral:
+        //    (len s) == n -> s \in \Sigma^n
+        //    (len s) <= n -> s \in \Sigma^(0..n)
+        unsigned low = is_equality ? n : 0;
+        result = re().mk_in_re(e, re().mk_loop_proper(re().mk_full_char(nullptr), low, n));
+        return true;
+    } else if (str().is_length(r,e) && m_autil.is_unsigned(l, n) && 0 < n && n < MAX_NUM) {
+        // for n a numeral:
+        //    n <= (len s) -> s \in \Sigma^n\Sigma*
+        result = re().mk_in_re(e, re().mk_concat(re().mk_loop(re().mk_full_char(nullptr), n), re().mk_full_seq(nullptr)));
+        return true;
     }
-    for (auto const& p : new_eqs) {
-        res.push_back(m().mk_eq(p.first, p.second));
+    return false;
+}
+bool seq_rewriter::reduce_stoi_eq(expr *l, expr *r, expr_ref& result) {
+    expr* e = nullptr;
+    rational n;
+    // to_int(x) == n -> x \in 0*to_string(n)) for n>=0
+    // to_int(x) == -1 -> x \not\in [0-9]+
+    // to_int(x) == n -> false for n<-1
+    if (str().is_stoi(l, e) && m_autil.is_numeral(r, n)) {
+        if (n.is_nonneg()) {
+            result = re().mk_in_re(e, re().mk_concat(re().mk_star(re().mk_to_re(str().mk_string("0"))), re().mk_to_re(str().mk_string(n.to_string()))));
+        } else if (n == -1) {
+            result = re().mk_in_re(e, re().mk_complement(re().mk_plus(re().mk_range(str().mk_string("0"), str().mk_string("9")))));
+        } else {
+            result = m().mk_false();
+        }
+        return true;
     }
-    result = mk_and(res);
-    TRACE("seq_verbose", tout << result << "\n";);
-    return BR_REWRITE3;
+    return false;
 }
 
 void seq_rewriter::remove_empty_and_concats(expr_ref_vector& es) {
