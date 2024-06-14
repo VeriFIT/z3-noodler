@@ -80,6 +80,7 @@ z3_add_component(smt
     theory_str_noodler/regex.cpp
     theory_str_noodler/aut_assignment.cpp
     theory_str_noodler/parikh_image.cpp
+    theory_str_noodler/ca_str_constr.cpp
     theory_str_mc.cpp
     theory_str_regex.cpp
     theory_user_propagator.cpp
