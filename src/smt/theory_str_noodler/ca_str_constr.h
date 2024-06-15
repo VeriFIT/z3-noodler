@@ -21,10 +21,6 @@
 
 namespace smt::noodler::ca {
 
-    static LenNode get_lia_for_disequations(const Formula& diseqs, const AutAssignment& autass) {
-        return LenNode(LenFormulaType::FALSE);
-    }
-
     using AutMatrix = std::vector<std::vector<mata::nfa::Nfa>>;
 
     class DiseqAutMatrix {
@@ -83,16 +79,49 @@ namespace smt::noodler::ca {
             aut_ass(aut_ass), diseq(diseq), alph() { }
 
     protected:
-
+        /**
+         * @brief Replace symbols in a particular variable automaton. Replace original symbols with 
+         * the AtomicSymbols of the form <L,x> ...
+         * 
+         * @param copy Copy identifying particular variable automaton
+         * @param var Variable of the automaton
+         */
         void replace_symbols(char copy, size_t var);
 
+        /**
+         * @brief Add connections between copies. 
+         * 
+         * @param copy_start Starting copy (transitions source)
+         * @param var Variable
+         * @param aut_union Union automaton contains all copies in a single automaton.
+         */
         void add_connection(char copy_start, size_t var, mata::nfa::Nfa& aut_union);
 
     public:
-
+        /**
+         * @brief Construct tagged automaton for a single disequation.
+         * 
+         * @return ca::CA Tagged automaton.
+         */
         ca::CA construct_tag_aut();
 
     };
+
+    static LenNode get_lia_for_disequations(const Formula& diseqs, const AutAssignment& autass) {
+
+        CADiseqGen gen(diseqs.get_predicates()[0], autass);
+        ca::CA tag_aut = gen.construct_tag_aut();
+
+        STRACE("str-diseq",
+            tout << "Tag Automaton for diseq: " << diseqs.to_string() << std::endl;
+            tag_aut.print_to_DOT(tout);
+            tout << std::endl;
+        );
+
+        STRACE("str", tout << "CA LIA: finished" << std::endl; );
+
+        return LenNode(LenFormulaType::FALSE);
+    }
 
 }
 

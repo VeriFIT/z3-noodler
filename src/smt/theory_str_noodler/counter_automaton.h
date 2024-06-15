@@ -43,6 +43,11 @@ namespace smt::noodler::ca {
             }
         };
 
+        void insert(const mata::Symbol mata_symb, const T& symb) {
+            this->alph_symb_mata[symb] = mata_symb;
+            this->alph_mata_symb[mata_symb] = symb;
+        }
+
         mata::Symbol get_mata_symbol(const T& symb) const {
             return this->alph_symb_mata.at(symb);
         }
@@ -136,7 +141,7 @@ namespace smt::noodler::ca {
                     for (mata::nfa::State target: move.targets) {
                         output << target << " ";
                     }
-                    output << "} [label=" << symbol_to_string(alph.get_symbol(move.symbol)) << "];" << std::endl;
+                    output << "} [label=\"" << symbol_to_string(alph.get_symbol(move.symbol)) << "\"];" << std::endl;
                 }
             }
 

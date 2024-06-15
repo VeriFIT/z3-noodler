@@ -12,7 +12,7 @@ namespace smt::noodler::ca {
         }
             
         // set offset size
-        this->offsets.resize(3*this->offsets.size() + 1);
+        this->offsets.resize(3*var_set.size() + 1);
         // three copies
         this->aut_matrix.resize(3);
         for(size_t copy = 0; copy < 3; copy++) {
@@ -39,9 +39,12 @@ namespace smt::noodler::ca {
         // assumes that the union is updates the states of the original automaton by 
         // adding a constant (which is given by the num of states of the original automaton)
         for(size_t copy = 0; copy < 3; copy++) {
-            for(size_t var = 0; var < this->var_order.size(); var++) {
-                ret.uni(this->aut_matrix[copy][var]);
+            // eps-concatenate each variable automaton in a copy
+            mata::nfa::Nfa aut_line = this->aut_matrix[copy][0];
+            for(size_t var = 1; var < this->var_order.size(); var++) {
+                aut_line = mata::nfa::concatenate(aut_line, this->aut_matrix[copy][var], true);
             }
+            ret.uni(aut_line);
         }
         return ret;
     }
@@ -73,16 +76,19 @@ namespace smt::noodler::ca {
         // basic term corresponding to the positional var
         BasicTerm bt = this->aut_matrix.get_var_order()[var];
 
+        // lambda for a particular symbol construction
         auto const_symbol = [](char copy, const BasicTerm& bt, mata::Symbol sym) -> std::set<ca::AtomicSymbol> {
             // <L,x>, <P,x,copy>, <R,copy,a>
             std::set<ca::AtomicSymbol> ats({ ca::AtomicSymbol{0, bt, 0, 0}, ca::AtomicSymbol{1, bt, copy, 0}, ca::AtomicSymbol{2, BasicTerm(BasicTermType::Variable), copy, sym} });
             return ats;
         };
 
+        // original automaton --> we need the original symbols to store them to AtomicSymbol
+        // (the original symbols are already lost in this->aut_matrix --> already replace by 
+        // AtomicSymbol completely forgetting the original symbols).
         mata::nfa::Nfa aut_orig = *this->aut_ass.at(bt);
         for (mata::nfa::State st = 0; st < aut_orig.num_of_states(); st++) {
             for(const mata::nfa::SymbolPost& spost : aut_orig.delta[st]) {
-                    
                 // compute new mata symbol storing the set of AtomicSymbols
                 auto it = symbols.find(spost.symbol);
                 mata::Symbol new_symbol;
@@ -117,6 +123,8 @@ namespace smt::noodler::ca {
 
         // union all automata in the matrix
         mata::nfa::Nfa aut_union = this->aut_matrix.union_matrix();
+        // add mata epsilon symbol to alphabet. Used for DOT export.
+        this->alph.insert(mata::nfa::EPSILON, {});
 
         // generate connecting transitions
         for(char copy = 0; copy < 2; copy++) {
@@ -125,7 +133,7 @@ namespace smt::noodler::ca {
             } 
         }
 
-        // TODO: add epsilon connection between variable automata
+        // TODO: set initial and final states
         return { aut_union, this->alph };
     }
 
