@@ -56,6 +56,14 @@ namespace smt::noodler::ca {
             return this->alph_mata_symb.at(symb);
         }
 
+        std::set<T> get_all_symbols() const {
+            std::set<T> ret;
+            for (const auto& [key,val] : this->alph_symb_mata) {
+                ret.insert(key);
+            }
+            return ret;
+        }
+
     };
 
     /**

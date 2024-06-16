@@ -137,14 +137,21 @@ protected:
     LenNode get_mismatch_formula(size_t i, size_t j, const Predicate& diseq);
 
 public:
-    ParikhImageCA(const ca::CA& ca, std::set<ca::AtomicSymbol> atomic_symbols) : ParikhImage(ca.nfa), symbol_var(), atomic_symbols(atomic_symbols) { }
+    ParikhImageCA(const ca::CA& ca, const std::set<ca::AtomicSymbol>& atomic_symbols) : ParikhImage(ca.nfa), ca(ca), symbol_var(), atomic_symbols(atomic_symbols) { }
 
     /**
      * @brief Compute Parikh image with the free variables containing values of registers. 
      * Assumes that each register is set in each symbol of the CA alphabet.
      * @return LenNode phi_parikh
      */
-    LenNode compute_parikh_image() override { return symbol_count_formula(); };
+    LenNode compute_parikh_image() override { 
+        LenNode pi = ParikhImage::compute_parikh_image();
+        LenNode sc = symbol_count_formula();
+        return LenNode(LenFormulaType::AND, {
+            pi, 
+            sc
+        });
+    };
 
     /**
      * @brief Construct formula counting number of AtomicSymbol in each set on the transitions.

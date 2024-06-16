@@ -131,7 +131,17 @@ namespace smt::noodler::ca {
 
         STRACE("str", tout << "CA LIA: finished" << std::endl; );
 
-        return LenNode(LenFormulaType::FALSE);
+        std::set<AtomicSymbol> ats;
+        for(const std::set<AtomicSymbol>& sms : tag_aut.alph.get_all_symbols()) {
+            ats.insert(sms.begin(), sms.end());
+        }
+
+        parikh::ParikhImageCA pi(tag_aut, ats);
+        LenNode pi_formula = pi.compute_parikh_image();
+
+        STRACE("str-diseq", tout << pi_formula << std::endl; );
+
+        return pi_formula;
     }
 
 }

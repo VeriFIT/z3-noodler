@@ -122,7 +122,9 @@ namespace smt::noodler::parikh {
 
         for (size_t state = 0; state < this->nfa.num_of_states(); state++) {
             this->sigma.push_back(util::mk_noodler_var_fresh("sigma"));
+        }
 
+        for (size_t state = 0; state < this->nfa.num_of_states(); state++) {
             LenNode cl1(LenFormulaType::AND, {
                 LenNode(LenFormulaType::OR, {
                     LenNode(LenFormulaType::NEQ, {this->sigma[state], 0}),
@@ -220,7 +222,7 @@ namespace smt::noodler::parikh {
             LenNode sum_len(LenFormulaType::PLUS);
             for(const BasicTerm& bt : con) {
                 ca::AtomicSymbol as = {0, bt, 0, 0}; // <L,x> symbol
-                sum_len.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at(as) }));
+                sum_len.succ.push_back(LenNode(this->symbol_var.at(as)));
             }
             return sum_len;
         };
@@ -281,7 +283,7 @@ namespace smt::noodler::parikh {
             // set of atomic symbols
             auto symb = this->ca.alph.get_symbol(std::get<1>(trans));
             for(const ca::AtomicSymbol& as : symb) {
-                sum_symb.at(as).succ.push_back(LenNode(LenFormulaType::LEAF, { var }));
+                sum_symb.at(as).succ.emplace_back(LenNode(var));
             }
         }
 
@@ -325,7 +327,7 @@ namespace smt::noodler::parikh {
                     break;
                 }
                 ca::AtomicSymbol as = {0, bt, 0, 0}; // <L,x> symbol
-                sum_len.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at(as) }));
+                sum_len.succ.push_back(LenNode(this->symbol_var.at(as)));
                 ++ind;
             }
             return sum_len;
@@ -333,11 +335,11 @@ namespace smt::noodler::parikh {
 
         LenNode left = concat_len(diseq.get_left_side(), i - 1);
         // add symbol <P, var, 0, 0> where var is i-th variable on left side of diseq
-        left.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at({1, diseq.get_left_side()[i], 1, 0}) }));
+        left.succ.push_back(LenNode(this->symbol_var.at({1, diseq.get_left_side()[i], 1, 0})));
 
         LenNode right = concat_len(diseq.get_right_side(), j-1);
         // add symbol <P, var, 1, 0> where var is j-th variable on left side of diseq
-        right.succ.push_back(LenNode(LenFormulaType::LEAF, { this->symbol_var.at({1, diseq.get_right_side()[j], 2, 0}) }));
+        right.succ.push_back(LenNode(this->symbol_var.at({1, diseq.get_right_side()[j], 2, 0})));
 
         return LenNode(LenFormulaType::EQ, {
             left,
