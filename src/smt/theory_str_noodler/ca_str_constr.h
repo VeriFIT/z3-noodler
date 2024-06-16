@@ -18,6 +18,8 @@
 #include "formula.h"
 #include "counter_automaton.h"
 #include "aut_assignment.h"
+#include "formula_preprocess.h"
+#include "parikh_image.h"
 
 namespace smt::noodler::ca {
 
@@ -105,13 +107,22 @@ namespace smt::noodler::ca {
          */
         ca::CA construct_tag_aut();
 
+        const DiseqAutMatrix& get_aut_matrix() const {
+            return this->aut_matrix;
+        }
+
     };
 
     static LenNode get_lia_for_disequations(const Formula& diseqs, const AutAssignment& autass) {
 
         CADiseqGen gen(diseqs.get_predicates()[0], autass);
         ca::CA tag_aut = gen.construct_tag_aut();
+        tag_aut.nfa.trim();
 
+        STRACE("str-diseq",
+            tout << "Variable ordering: " << std::endl;
+            tout << concat_to_string(gen.get_aut_matrix().get_var_order()) << std::endl;
+        );
         STRACE("str-diseq",
             tout << "Tag Automaton for diseq: " << diseqs.to_string() << std::endl;
             tag_aut.print_to_DOT(tout);

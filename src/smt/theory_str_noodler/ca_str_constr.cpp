@@ -4,7 +4,8 @@
 namespace smt::noodler::ca {
 
     void DiseqAutMatrix::create_aut_matrix(const Predicate& diseq, const AutAssignment& aut_ass) {
-        std::set<BasicTerm> var_set = diseq.get_vars();
+        // we want to include both variables and literals
+        std::set<BasicTerm> var_set = diseq.get_set();
             
         // create fixed linear order of variables
         for(const BasicTerm& bt : var_set) {
@@ -19,6 +20,8 @@ namespace smt::noodler::ca {
             this->aut_matrix[copy] = std::vector<mata::nfa::Nfa>(var_set.size());
             for(size_t var = 0; var < this->var_order.size(); var++) {
                 this->aut_matrix[copy][var] = *aut_ass.at(this->var_order[var]);
+                // reduce the original nfa
+                this->aut_matrix[copy][var] = mata::nfa::reduce(this->aut_matrix[copy][var]);
             }
         }
         recompute_offset();
@@ -43,6 +46,14 @@ namespace smt::noodler::ca {
             mata::nfa::Nfa aut_line = this->aut_matrix[copy][0];
             for(size_t var = 1; var < this->var_order.size(); var++) {
                 aut_line = mata::nfa::concatenate(aut_line, this->aut_matrix[copy][var], true);
+            }
+            // only the first copy contains initial states
+            if (copy != 0) {
+                aut_line.initial.clear();
+            }
+            // only the last copy contains final states
+            if (copy != 2) {
+                aut_line.final.clear();
             }
             ret.uni(aut_line);
         }

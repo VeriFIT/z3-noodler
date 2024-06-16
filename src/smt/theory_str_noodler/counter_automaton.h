@@ -96,10 +96,11 @@ namespace smt::noodler::ca {
         std::string to_string() const {
             std::string ret;
             std::string marks[3] = {"L", "P", "R"};
+            std::string var_escape = var.is_literal() ? "\\\"" + var.get_name().encode() + "\\\"" : var.to_string();
 
             std::string label_str = label == 0 ? "" : "," + std::to_string(int(label));
-            std::string symbol_str = mark == 2 ? std::to_string(symbol) : "";
-            std::string var_str = mark < 2 ? "," + var.to_string() : "";
+            std::string symbol_str = mark == 2 ? "," + std::to_string(symbol) : "";
+            std::string var_str = mark < 2 ? "," + var_escape : "";
 
             ret = std::format("<{}{}{}{}>", marks[size_t(mark)], var_str, label_str, symbol_str);
             return ret;
