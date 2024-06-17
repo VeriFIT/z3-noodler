@@ -233,6 +233,20 @@ namespace smt::noodler::parikh {
         });
     }
 
+    LenNode ParikhImageCA::get_var_length(const std::set<BasicTerm>& vars) {
+        LenNode lengths(LenFormulaType::AND);
+        // for each variable generate |x| = #<L,x>
+        for(const BasicTerm& bt : vars) {
+            ca::AtomicSymbol as = {0, bt, 0, 0}; // <L,x> symbol
+            lengths.succ.push_back(LenNode(LenFormulaType::EQ, {
+                LenNode(this->symbol_var.at(as)),
+                LenNode(bt),
+            }));
+        }
+        return lengths;
+    }
+
+
 
     LenNode ParikhImageCA::get_all_mismatch_formula(const Predicate& diseq) {
         // create formula OR( mismatch(i,j) where i is position of left of diseq and j is position of right of diseq )
@@ -250,9 +264,11 @@ namespace smt::noodler::parikh {
         LenNode parikh = compute_parikh_image();
         LenNode diseq_len = get_diseq_length(diseq);
         LenNode mismatch = get_all_mismatch_formula(diseq);
+        LenNode len = get_var_length(diseq.get_vars());
         
         return LenNode(LenFormulaType::AND, {
             parikh,
+            len,
             LenNode(LenFormulaType::OR, {
                 diseq_len,
                 mismatch,

@@ -118,6 +118,14 @@ protected:
     LenNode get_diseq_length(const Predicate& diseq);
 
     /**
+     * @brief Generate LIA formula describing lengths of variables @p vars.
+     * 
+     * @param vars Variables
+     * @return LenNode Length formula
+     */
+    LenNode get_var_length(const std::set<BasicTerm>& vars);
+
+    /**
      * @brief Get the mismatch formula for each pair (i,j) of positions in @p diseq.
      * phi := OR( mismatch(i,j) where i is position of left of diseq and j is position of right of diseq )
      * 
@@ -147,6 +155,7 @@ public:
     LenNode compute_parikh_image() override { 
         LenNode pi = ParikhImage::compute_parikh_image();
         LenNode sc = symbol_count_formula();
+
         return LenNode(LenFormulaType::AND, {
             pi, 
             sc
@@ -161,7 +170,7 @@ public:
 
     /**
      * @brief Get Length formula for a disequation. 
-     * phi := compute_parikh_image && (get_diseq_length || get_all_mismatch_formula)
+     * phi := compute_parikh_image &&  get_var_length && (get_diseq_length || get_all_mismatch_formula)
      * 
      * @param diseq Diseq
      * @return LenNode phi
