@@ -1196,6 +1196,18 @@ namespace smt::noodler {
         STRACE("str", tout << "CA-DISEQS (original): " << std::endl << this->disequations.to_string() << std::endl;);
         STRACE("str", tout << "CA-DISEQS (substituted): " << std::endl << proj_diseqs.to_string() << std::endl;);
 
+        // Formula tmp {};
+        // tmp.add_predicate(Predicate(PredicateType::Inequation, {
+        //     {proj_diseqs.get_predicates()[0].get_left_side()[0], proj_diseqs.get_predicates()[0].get_left_side()[1]},
+        //     {proj_diseqs.get_predicates()[0].get_right_side()[0], proj_diseqs.get_predicates()[0].get_right_side()[1]},
+        // }));
+
+        // auto fl = ca::get_lia_for_disequations(tmp, this->solution.aut_ass);
+        // std::cout << fl << std::endl;
+
+        // return fl;
+
+
         return ca::get_lia_for_disequations(proj_diseqs, this->solution.aut_ass);
     }
 
