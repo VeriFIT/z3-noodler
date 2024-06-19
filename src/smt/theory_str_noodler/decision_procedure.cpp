@@ -1204,13 +1204,17 @@ namespace smt::noodler {
      */
     void DecisionProcedure::init_computation() {
         Formula equations;
+
+        bool single_diseq = false;
+
         for (auto const &dis_or_eq : formula.get_predicates()) {
             if (dis_or_eq.is_equation()) {
                 equations.add_predicate(dis_or_eq);
             } else if (dis_or_eq.is_inequation()) {
                 // if we solve diesquations using CA --> we store the disequations to be solved later on
-                if(this->m_params.m_ca_constr) {
+                if(!single_diseq && this->m_params.m_ca_constr) {
                     init_ca_diseq(dis_or_eq);
+                    single_diseq = true;
                 } else {
                     for (auto const &eq_from_diseq : replace_disequality(dis_or_eq)) {
                         equations.add_predicate(eq_from_diseq);
