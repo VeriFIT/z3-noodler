@@ -110,7 +110,7 @@ namespace smt::noodler::ca {
             std::string symbol_str = mark == 2 ? "," + std::to_string(symbol) : "";
             std::string var_str = mark < 2 ? "," + var_escape : "";
 
-            ret = std::format("<{}{}{}{}>", marks[size_t(mark)], var_str, label_str, symbol_str);
+            ret = "<" + marks[size_t(mark)] + var_str + label_str + symbol_str + ">";
             return ret;
         }
     };
