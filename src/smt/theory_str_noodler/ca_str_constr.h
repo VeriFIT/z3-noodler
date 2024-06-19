@@ -128,6 +128,14 @@ namespace smt::noodler::ca {
             tout << concat_to_string(gen.get_aut_matrix().get_var_order()) << std::endl;
         );
         STRACE("str-diseq",
+            tout << "NFAs for variables: " << std::endl;
+            for(const auto& [bt, aut] : autass) {
+                tout << bt.to_string() << ":" << std::endl;
+                aut->print_to_DOT(tout);
+            }
+            tout << std::endl;
+        );
+        STRACE("str-diseq",
             tout << "Tag Automaton for diseq: " << diseqs.to_string() << std::endl;
             tag_aut.print_to_DOT(tout);
             tout << std::endl;
@@ -141,7 +149,7 @@ namespace smt::noodler::ca {
         }
 
         parikh::ParikhImageCA pi(tag_aut, ats);
-        LenNode pi_formula = pi.compute_parikh_image();
+        LenNode pi_formula = pi.get_diseq_formula(diseqs.get_predicates()[0]);
 
         STRACE("str-diseq", tout << pi_formula << std::endl; );
 

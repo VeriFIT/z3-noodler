@@ -144,6 +144,14 @@ protected:
      */
     LenNode get_mismatch_formula(size_t i, size_t j, const Predicate& diseq);
 
+    /**
+     * @brief Get formula describing that for selected symbols <R,1,sym> <R,2,sym'>
+     * on the path we have that sym != sym'.
+     * 
+     * @return LenNode Different mismatch symbol on the path
+     */
+    LenNode get_diff_symbol_formula();
+
 public:
     ParikhImageCA(const ca::CA& ca, const std::set<ca::AtomicSymbol>& atomic_symbols) : ParikhImage(ca.nfa), ca(ca), symbol_var(), atomic_symbols(atomic_symbols) { }
 
@@ -170,7 +178,7 @@ public:
 
     /**
      * @brief Get Length formula for a disequation. 
-     * phi := compute_parikh_image &&  get_var_length && (get_diseq_length || get_all_mismatch_formula)
+     * phi := compute_parikh_image &&  get_var_length && (get_diseq_length || (get_all_mismatch_formula && get_diff_symbol_formula))
      * 
      * @param diseq Diseq
      * @return LenNode phi
