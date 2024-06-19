@@ -115,6 +115,10 @@ namespace smt::noodler::ca {
 
     static LenNode get_lia_for_disequations(const Formula& diseqs, const AutAssignment& autass) {
 
+        if(diseqs.get_predicates().size() == 0) {
+            return LenNode(LenFormulaType::TRUE);
+        }
+
         CADiseqGen gen(diseqs.get_predicates()[0], autass);
         ca::CA tag_aut = gen.construct_tag_aut();
         tag_aut.nfa.trim();
