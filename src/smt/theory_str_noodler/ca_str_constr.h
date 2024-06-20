@@ -140,11 +140,12 @@ namespace smt::noodler::ca {
             tag_aut.print_to_DOT(tout);
             tout << std::endl;
         );
-
         STRACE("str", tout << "CA LIA: finished" << std::endl; );
 
+        // we include only those symbols occurring in the reduced tag automaton
         std::set<AtomicSymbol> ats;
-        for(const std::set<AtomicSymbol>& sms : tag_aut.alph.get_all_symbols()) {
+        for(const auto& trans : tag_aut.nfa.delta.transitions()) {
+            std::set<AtomicSymbol> sms = tag_aut.alph.get_symbol(trans.symbol);
             ats.insert(sms.begin(), sms.end());
         }
 

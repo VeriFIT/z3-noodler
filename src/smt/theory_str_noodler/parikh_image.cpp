@@ -198,10 +198,6 @@ namespace smt::noodler::parikh {
         LenNode phi_kirch = compute_phi_kirch(succ_trans, prev_trans);
         LenNode phi_span = compute_phi_span(succ_trans, prev_trans);
 
-        // for(const auto& [tr,bt] : this->trans) {
-        //     std::cout << std::get<0>(tr) << " -> (" << std::get<1>(tr) << ") " << std::get<2>(tr) << " : " << bt.to_string() << std::endl;
-        // }
-
         return LenNode(LenFormulaType::AND, {
             phi_init,
             phi_fin,
@@ -329,19 +325,22 @@ namespace smt::noodler::parikh {
     /**
      * @brief Get mismatch formula for particular positions @p i and @p j. 
      * For x_1 ... x_n != y_1 ... y_m create 
-     * mismatch(i,j) := #<L,x_1> + ... + #<L,x_{i-1}> + #<P,x_i,0> = #<L,y_1> + ... + #<L,y_{j-1}> + #<P,y_j,1> && #<P,x_i,0> >= 1 && #<P,y_j,1> >= 1
+     * mismatch(i,j) := #<L,x_1> + ... + #<L,x_{i-1}> + #<P,x_i,lab_left> = #<L,y_1> + ... + #<L,y_{j-1}> + #<P,y_j,lab_right> && #<P,x_i,0> >= 1 && #<P,y_j,1> >= 1
      * where #symb is LIA variable counting number of occurrences of the symbol symb during 
-     * the run. Stored in this->symbol_var and computed by symbol_count_formula.
+     * the run. Stored in this->symbol_var and computed by symbol_count_formula and 
+     * lab_left = 1 && lab_right = 2 <-> x_i > y_j (and vice versa)
      * 
-     * E.g., for x_1 x_2 x_3 != y_1 y_2 create a formula 
-     * mismatch(3,2) := #<L,x_1> + #<L,x_2> + #<P,x_3,0> = #<L,y_1> + #<P,y_2,1> && 
-     *      #<P,x_3,0> >= 1 && #<P,x_3,0> >= 1
+     * Moreover if x_i = y_j, we need to add #<P,y_j,1> to the right hand side formula.
      * 
+     * We also need to be sure that the mismatch symbols were properly selected: 
+     * rmatch_left := #<R,x_i,lab_left,a1> + ... +  #<R,x_i,lab_left,an> >= 1
+     * rmatch_right := #<R,y_j,lab_right,a1> + ... +  #<R,y_j,lab_right,an> >= 1
+     * rmatch := rmatch_left + rmatch_right
      * 
      * @param i Position on the left side of @p diseq
      * @param j Position on the right side of @p diseq
      * @param diseq Diseq
-     * @return LenNode mismatch(i,j)
+     * @return LenNode mismatch(i,j) && rmatch
      */
     LenNode ParikhImageCA::get_mismatch_formula(size_t i, size_t j, const Predicate& diseq) {
         auto concat_len = [&](const Concat& con, int max_ind) -> LenNode {
@@ -356,17 +355,56 @@ namespace smt::noodler::parikh {
                 ++ind;
             }
             return sum_len;
+        }; 
+        // for x, lab generate #<R,x,lab,a_1> + ... + #<R,x,lab,a_n> for all possible a_i
+        auto sum_r_symb = [&](const BasicTerm & bt, char label) -> LenNode {
+            LenNode sum_r(LenFormulaType::PLUS);
+            for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
+                if (ats.mark == 2 && ats.var == bt && ats.label == label) {
+                    sum_r.succ.push_back(LenNode(this->symbol_var.at(ats)));
+                }
+            }
+            return sum_r;
         };
 
+        // labels of the <P> symbols 
+        char label_left = 1, label_right = 2;
+        BasicTerm var_left = diseq.get_left_side()[i];
+        BasicTerm var_right = diseq.get_right_side()[j];
+        if(std::distance(this->ca.var_order.begin(), std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_left)) < std::distance(this->ca.var_order.begin(), std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_right))) {
+            label_left = 2;
+            label_right = 1;
+        }
+
         LenNode left = concat_len(diseq.get_left_side(), i - 1);
-        // add symbol <P, var, 1, 0> where var is i-th variable on left side of diseq
-        ca::AtomicSymbol lats = {1, diseq.get_left_side()[i], 1, 0};
+        // add symbol <P, var, label_left, 0> where var is i-th variable on left side of diseq
+        ca::AtomicSymbol lats = {1, var_left, label_left, 0};
+        if(!this->symbol_var.contains(lats)) {
+            return LenNode(LenFormulaType::FALSE);
+        }
         left.succ.push_back(LenNode(this->symbol_var.at(lats)));
 
         LenNode right = concat_len(diseq.get_right_side(), j-1);
-        // add symbol <P, var, 2, 0> where var is j-th variable on left side of diseq
-        ca::AtomicSymbol rats = {1, diseq.get_right_side()[j], 2, 0};
-        right.succ.push_back(LenNode(this->symbol_var.at(rats)));
+        // add symbol <P, var, label_right, 0> where var is j-th variable on right side of diseq
+        ca::AtomicSymbol rats2 = {1, var_right, label_right, 0};
+        if(!this->symbol_var.contains(rats2)) {
+            return LenNode(LenFormulaType::FALSE);
+        }
+        right.succ.push_back(LenNode(this->symbol_var.at(rats2)));
+        // if x == y, we add #<P,x,1> to #<P,x,2>
+        if (var_right == var_left) {
+            ca::AtomicSymbol rats1 = {1, var_right, 1, 0};
+            right.succ.push_back(LenNode(this->symbol_var.at(rats1)));
+        }
+        
+        LenNode rleft(LenFormulaType::LEQ, {
+            1,
+            sum_r_symb(var_left, label_left)
+        });
+        LenNode rright(LenFormulaType::LEQ, {
+            1,
+            sum_r_symb(var_right, label_right)
+        });
 
         // we need to assure that there is at least one selection of lats and rats.
         // we want to avoid trivial satisfiability 0 = 0
@@ -377,18 +415,20 @@ namespace smt::noodler::parikh {
             }),
             LenNode(LenFormulaType::LEQ, {
                 1,
-                LenNode(this->symbol_var.at(rats))
+                LenNode(this->symbol_var.at(rats2))
             }),
             LenNode(LenFormulaType::EQ, {
                 left,
                 right
-            })
+            }),
+            rleft,
+            rright
         });
     }
 
     /**
      * @brief Get formula describing that <R> symbols are different on the run. 
-     * diff := AND(#<R,a,1> >= 1 -> #<R,a,2> = 0 && #<R,a,2> >= 1 -> #<R,a,1> = 0 for each a)
+     * diff := AND(#<R,x,a,1> >= 1 -> #<R,y_1,a_1,2> + ... + #<R,y_n,a_m,2> = 0 for each a_i, y_j)
      * 
      * @return LenNode diff
      */
@@ -396,25 +436,26 @@ namespace smt::noodler::parikh {
         LenNode conj(LenFormulaType::AND);
         std::set<mata::Symbol> syms {};
 
+        std::map<mata::Symbol, std::vector<BasicTerm>> symb_vars {};
+        for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
+            if(ats.mark != 2) continue;
+            symb_vars[ats.symbol].push_back(ats.var);
+        }
+
         // iterate over all atomic symbols
         for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
             if (ats.mark == 2) { // symbol is of the form <R,a,l>
-                
-                if(syms.contains(ats.symbol)) {
-                    continue;
-                }
-
-                ca::AtomicSymbol counterpart = {2, BasicTerm(BasicTermType::Variable), char((ats.label + 1) % 2), ats.symbol};
-                auto iter = this->symbol_var.find(counterpart);
-                // if there is not the counterpart, we don't have to generate the formula
-                if (iter == this->symbol_var.end()) {
-                    continue;
-                }
-
-                syms.insert(ats.symbol);
-                
+                LenNode sum(LenFormulaType::PLUS);
+                for(const BasicTerm& var : symb_vars[ats.symbol]) {
+                    ca::AtomicSymbol counterpart = {2, var, (ats.label == 1 ? char(2) : char(1)), ats.symbol};
+                    auto iter = this->symbol_var.find(counterpart);
+                    // if there is not the counterpart, we don't have to generate the formula
+                    if (iter == this->symbol_var.end()) {
+                        continue;
+                    }
+                    sum.succ.push_back(LenNode(iter->second));
+                } 
                 BasicTerm atsVar = this->symbol_var.at(ats);
-                // #<R,a,1> >= 1 -> #<R,a,2> = 0
                 conj.succ.push_back(LenNode(LenFormulaType::OR, {
                     LenNode(LenFormulaType::NOT, {
                         LenNode(LenFormulaType::LEQ, {
@@ -424,20 +465,7 @@ namespace smt::noodler::parikh {
                     }),
                     LenNode(LenFormulaType::EQ, {
                         0, 
-                        LenNode(iter->second)
-                    })
-                }));
-                // #<R,a,2> >= 1 -> #<R,a,1> = 0
-                conj.succ.push_back(LenNode(LenFormulaType::OR, {
-                    LenNode(LenFormulaType::NOT, {
-                        LenNode(LenFormulaType::LEQ, {
-                            1,
-                            LenNode(iter->second)
-                        })
-                    }),
-                    LenNode(LenFormulaType::EQ, {
-                        0, 
-                        LenNode(atsVar)
+                        sum
                     })
                 }));
             }

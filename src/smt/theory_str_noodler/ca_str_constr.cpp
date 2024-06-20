@@ -89,8 +89,8 @@ namespace smt::noodler::ca {
 
         // lambda for a particular symbol construction
         auto const_symbol = [](char copy, const BasicTerm& bt, mata::Symbol sym) -> std::set<ca::AtomicSymbol> {
-            // <L,x>, <P,x,copy>, <R,copy,a>
-            std::set<ca::AtomicSymbol> ats({ ca::AtomicSymbol{0, bt, 0, 0}, ca::AtomicSymbol{1, bt, copy, 0}, ca::AtomicSymbol{2, BasicTerm(BasicTermType::Variable), copy, sym} });
+            // <L,x>, <P,x,copy>, <R,x,copy,a>
+            std::set<ca::AtomicSymbol> ats({ ca::AtomicSymbol{0, bt, 0, 0}, ca::AtomicSymbol{1, bt, copy, 0}, ca::AtomicSymbol{2, bt, copy, sym} });
             return ats;
         };
 
@@ -144,8 +144,7 @@ namespace smt::noodler::ca {
             } 
         }
 
-        // TODO: set initial and final states
-        return { aut_union, this->alph };
+        return { aut_union, this->alph, var_order };
     }
 
 

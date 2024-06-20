@@ -108,7 +108,7 @@ namespace smt::noodler::ca {
 
             std::string label_str = label == 0 ? "" : "," + std::to_string(int(label));
             std::string symbol_str = mark == 2 ? "," + std::to_string(symbol) : "";
-            std::string var_str = mark < 2 ? "," + var_escape : "";
+            std::string var_str = mark <= 2 ? "," + var_escape : "";
 
             ret = "<" + marks[size_t(mark)] + var_str + label_str + symbol_str + ">";
             return ret;
@@ -125,6 +125,8 @@ namespace smt::noodler::ca {
         mata::nfa::Nfa nfa;
         // structured alphabed with registe updates
         CounterAlphabet alph;
+        // variable ordering
+        std::vector<BasicTerm> var_order {};
 
         std::string symbol_to_string(const std::set<AtomicSymbol>& sym) const {
             std::string ret;
