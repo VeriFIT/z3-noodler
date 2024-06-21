@@ -198,6 +198,13 @@ namespace smt::noodler::parikh {
         LenNode phi_kirch = compute_phi_kirch(succ_trans, prev_trans);
         LenNode phi_span = compute_phi_span(succ_trans, prev_trans);
 
+        STRACE("str-diseq", tout << "* Parikh image transitions:  " << std::endl;
+            for(const auto& [tr, bt] : this->trans) {
+                tout << bt.to_string() << " : " << std::get<0>(tr) << " -(" << std::get<1>(tr) << ")-> " << std::get<2>(tr) << std::endl;
+            }
+            tout << std::endl;
+        );
+
         return LenNode(LenFormulaType::AND, {
             phi_init,
             phi_fin,
@@ -269,15 +276,22 @@ namespace smt::noodler::parikh {
 
     LenNode ParikhImageCA::get_diseq_formula(const Predicate& diseq) {
         LenNode parikh = compute_parikh_image();
-        STRACE("str-diseq", tout << "compute_parikh_image:  " << std::endl << parikh << std::endl;);
+
+        STRACE("str-diseq", tout << "* Parikh image symbols:  " << std::endl;
+            for(const auto& [sym, bt] : this->symbol_var) {
+                tout << bt.to_string() << " : " << sym.to_string() << std::endl;
+            }
+            tout << std::endl;
+        );
+        STRACE("str-diseq", tout << "* compute_parikh_image:  " << std::endl << parikh << std::endl << std::endl;);
         LenNode diseq_len = get_diseq_length(diseq);
-        STRACE("str-diseq", tout << "get_diseq_length:  " << std::endl << diseq_len << std::endl;);
+        STRACE("str-diseq", tout << "* get_diseq_length:  " << std::endl << diseq_len << std::endl << std::endl;);
         LenNode mismatch = get_all_mismatch_formula(diseq);
-        STRACE("str-diseq", tout << "get_mismatch_formula:  " << std::endl << mismatch << std::endl;);
+        STRACE("str-diseq", tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
         LenNode len = get_var_length(diseq.get_set());
-        STRACE("str-diseq", tout << "get_var_length:  " << std::endl << len << std::endl;);
+        STRACE("str-diseq", tout << "* get_var_length:  " << std::endl << len << std::endl << std::endl;);
         LenNode diff_symbol = get_diff_symbol_formula();
-        STRACE("str-diseq", tout << "get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl;);
+        STRACE("str-diseq", tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
 
         return LenNode(LenFormulaType::AND, {
             parikh,

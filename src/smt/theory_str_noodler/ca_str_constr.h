@@ -119,24 +119,26 @@ namespace smt::noodler::ca {
             return LenNode(LenFormulaType::TRUE);
         }
 
-        CADiseqGen gen(diseqs.get_predicates()[0], autass);
+        // disequation to be solved
+        Predicate diseq = diseqs.get_predicates()[0];
+        CADiseqGen gen(diseq, autass);
         ca::CA tag_aut = gen.construct_tag_aut();
         tag_aut.nfa.trim();
 
         STRACE("str-diseq",
-            tout << "Variable ordering: " << std::endl;
-            tout << concat_to_string(gen.get_aut_matrix().get_var_order()) << std::endl;
+            tout << "* Variable ordering: " << std::endl;
+            tout << concat_to_string(gen.get_aut_matrix().get_var_order()) << std::endl << std::endl;
         );
         STRACE("str-diseq",
-            tout << "NFAs for variables: " << std::endl;
-            for(const auto& [bt, aut] : autass) {
+            tout << "* NFAs for variables: " << std::endl;
+            for(const BasicTerm& bt : diseq.get_set()) {
                 tout << bt.to_string() << ":" << std::endl;
-                aut->print_to_DOT(tout);
+                autass.at(bt)->print_to_DOT(tout);
             }
             tout << std::endl;
         );
         STRACE("str-diseq",
-            tout << "Tag Automaton for diseq: " << diseqs.to_string() << std::endl;
+            tout << "* Tag Automaton for diseq: " << diseqs.to_string() << std::endl;
             tag_aut.print_to_DOT(tout);
             tout << std::endl;
         );
@@ -150,9 +152,9 @@ namespace smt::noodler::ca {
         }
 
         parikh::ParikhImageCA pi(tag_aut, ats);
-        LenNode pi_formula = pi.get_diseq_formula(diseqs.get_predicates()[0]);
+        LenNode pi_formula = pi.get_diseq_formula(diseq);
 
-        STRACE("str-diseq", tout << pi_formula << std::endl; );
+        STRACE("str-diseq", tout << "* Resulting formula: " << std::endl << pi_formula << std::endl << std::endl; );
 
         return pi_formula;
     }
