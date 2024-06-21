@@ -222,7 +222,9 @@ namespace smt::noodler::parikh {
             LenNode sum_len(LenFormulaType::PLUS);
             for(const BasicTerm& bt : con) {
                 ca::AtomicSymbol as = {0, bt, 0, 0}; // <L,x> symbol
-                sum_len.succ.push_back(LenNode(this->symbol_var.at(as)));
+                if(this->symbol_var.contains(as)) {
+                    sum_len.succ.push_back(LenNode(this->symbol_var.at(as)));
+                }
             }
             return sum_len;
         };
@@ -238,10 +240,15 @@ namespace smt::noodler::parikh {
         // for each variable generate |x| = #<L,x>
         for(const BasicTerm& bt : vars) {
             ca::AtomicSymbol as = {0, bt, 0, 0}; // <L,x> symbol
-            lengths.succ.push_back(LenNode(LenFormulaType::EQ, {
-                LenNode(this->symbol_var.at(as)),
-                LenNode(bt),
-            }));
+            // if the symbol is completely missing in the automaton, we say FALSE
+            if(!this->symbol_var.contains(as)) {
+                lengths.succ.push_back(LenNode(LenFormulaType::FALSE));
+            } else {
+                lengths.succ.push_back(LenNode(LenFormulaType::EQ, {
+                    LenNode(this->symbol_var.at(as)),
+                    LenNode(bt),
+                }));
+            }
         }
         return lengths;
     }
@@ -262,10 +269,15 @@ namespace smt::noodler::parikh {
 
     LenNode ParikhImageCA::get_diseq_formula(const Predicate& diseq) {
         LenNode parikh = compute_parikh_image();
+        STRACE("str-diseq", tout << "compute_parikh_image:  " << std::endl << parikh << std::endl;);
         LenNode diseq_len = get_diseq_length(diseq);
+        STRACE("str-diseq", tout << "get_diseq_length:  " << std::endl << diseq_len << std::endl;);
         LenNode mismatch = get_all_mismatch_formula(diseq);
+        STRACE("str-diseq", tout << "get_mismatch_formula:  " << std::endl << mismatch << std::endl;);
         LenNode len = get_var_length(diseq.get_set());
+        STRACE("str-diseq", tout << "get_var_length:  " << std::endl << len << std::endl;);
         LenNode diff_symbol = get_diff_symbol_formula();
+        STRACE("str-diseq", tout << "get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl;);
 
         return LenNode(LenFormulaType::AND, {
             parikh,
@@ -371,7 +383,7 @@ namespace smt::noodler::parikh {
         char label_left = 1, label_right = 2;
         BasicTerm var_left = diseq.get_left_side()[i];
         BasicTerm var_right = diseq.get_right_side()[j];
-        if(std::distance(this->ca.var_order.begin(), std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_left)) < std::distance(this->ca.var_order.begin(), std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_right))) {
+        if(std::distance(this->ca.var_order.begin(), std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_left)) > std::distance(this->ca.var_order.begin(), std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_right))) {
             label_left = 2;
             label_right = 1;
         }
@@ -439,12 +451,16 @@ namespace smt::noodler::parikh {
         std::map<mata::Symbol, std::vector<BasicTerm>> symb_vars {};
         for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
             if(ats.mark != 2) continue;
+            if(util::is_dummy_symbol(ats.symbol)) continue;
             symb_vars[ats.symbol].push_back(ats.var);
         }
 
         // iterate over all atomic symbols
         for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
             if (ats.mark == 2) { // symbol is of the form <R,a,l>
+                // the dummy symbol represents all other symbols --> we don't generate the diff 
+                // symbol formula as these symbols are not equal.
+                if(util::is_dummy_symbol(ats.symbol)) continue;
                 LenNode sum(LenFormulaType::PLUS);
                 for(const BasicTerm& var : symb_vars[ats.symbol]) {
                     ca::AtomicSymbol counterpart = {2, var, (ats.label == 1 ? char(2) : char(1)), ats.symbol};

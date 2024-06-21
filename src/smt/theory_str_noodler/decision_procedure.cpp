@@ -675,7 +675,7 @@ namespace smt::noodler {
             std::set<mata::Symbol> real_symbols_of_code_var;
             bool is_there_dummy_symbol = false;
             for (mata::Symbol s : mata::strings::get_accepted_symbols(*solution.aut_ass.at(c))) { // iterate trough chars of c
-                if (!is_dummy_symbol(s)) {
+                if (!util::is_dummy_symbol(s)) {
                     real_symbols_of_code_var.insert(s);
                 } else {
                     is_there_dummy_symbol = true;
@@ -698,7 +698,7 @@ namespace smt::noodler {
 
                 // code_version_of(c) is not equal to code point of some symbol in the alphabet that is not in real_symbols_of_code_var
                 for (mata::Symbol s : solution.aut_ass.get_alphabet()) {
-                    if (!is_dummy_symbol(s) && !real_symbols_of_code_var.contains(s)) {
+                    if (!util::is_dummy_symbol(s) && !real_symbols_of_code_var.contains(s)) {
                         char_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{code_version_of(c), s});
                     }
                 }
