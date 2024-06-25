@@ -457,11 +457,15 @@ namespace smt::noodler {
         return true;
     }
 
-    lbool theory_str_noodler::run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
-        STRACE("str", tout << "Trying nielsen" << std::endl);
-        NielsenDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
-        nproc.preprocess();
+    lbool theory_str_noodler::run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
+        STRACE("str", tout << "Trying length-based procedure" << std::endl);
+        LengthDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
         expr_ref block_len(m.mk_false(), m);
+        if (nproc.preprocess() == l_false) {
+            STRACE("str", tout << "len: unsat from preprocessing\n");
+            block_curr_len(block_len);
+            return l_false;
+        }
         nproc.init_computation();
         while (true) {
             lbool result = nproc.compute_next_solution();
@@ -470,16 +474,30 @@ namespace smt::noodler {
                 if (check_len_sat(lengths) == l_true) {
                     return l_true;
                 } else {
-                    STRACE("str", tout << "nielsen len unsat" <<  mk_pp(lengths, m) << std::endl;);
+                    STRACE("str", tout << "len: unsat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
                     block_len = m.mk_or(block_len, lengths);
+
+                    // if(nproc.precision == LenNodePrecision::UNDERAPPROX && nproc.get_formula().get_predicates().size() >= 10) {
+                    //     ctx.get_fparams().is_underapprox = true;
+                    //     block_curr_len(expr_ref(m.mk_false(), m));
+                    // } else if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
+                    //     block_curr_len(lengths);
+                    // } else {
+                    //     return l_undef;
+                    // }
+                    // return l_false;
+                    if (nproc.precision != LenNodePrecision::UNDERAPPROX) {
+                        block_curr_len(lengths);
+                        return l_false;
+                    } else {
+                        return l_undef;
+                    }
                 }
-            } else if (result == l_false) {
-                // we did not find a solution (with satisfiable length constraints)
-                // we need to block current assignment
+            } else if (result == l_false) { // never happens
                 block_curr_len(block_len);
                 return l_false;
             } else {
-                // we could not decide if there is solution, continue with noodler decision procedure
+                // we could not decide if there is solution, continue with other decision procedure
                 break;
             }
         }
@@ -557,6 +575,35 @@ namespace smt::noodler {
         }
 
         return true;
+    }
+
+    lbool theory_str_noodler::run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
+        STRACE("str", tout << "Trying nielsen" << std::endl);
+        NielsenDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
+        nproc.preprocess();
+        expr_ref block_len(m.mk_false(), m);
+        nproc.init_computation();
+        while (true) {
+            lbool result = nproc.compute_next_solution();
+            if (result == l_true) {
+                expr_ref lengths = len_node_to_z3_formula(nproc.get_lengths().first);
+                if (check_len_sat(lengths) == l_true) {
+                    return l_true;
+                } else {
+                    STRACE("str", tout << "nielsen len unsat" <<  mk_pp(lengths, m) << std::endl;);
+                    block_len = m.mk_or(block_len, lengths);
+                }
+            } else if (result == l_false) {
+                // we did not find a solution (with satisfiable length constraints)
+                // we need to block current assignment
+                block_curr_len(block_len);
+                return l_false;
+            } else {
+                // we could not decide if there is solution, continue with noodler decision procedure
+                break;
+            }
+        }
+        return l_undef;
     }
 
     lbool theory_str_noodler::run_mult_membership_heur() {

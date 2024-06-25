@@ -9,6 +9,7 @@ struct theory_str_noodler_params {
     bool m_preprocess_red = false;
     bool m_loop_protect = false;
     bool m_try_nielsen = false;
+    bool m_try_length_proc = false;
     unsigned m_underapprox_length = 5;
     bool is_underapprox = false;
 
