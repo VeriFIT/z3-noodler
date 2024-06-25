@@ -151,7 +151,7 @@ namespace smt::noodler::ca {
             ats.insert(sms.begin(), sms.end());
         }
 
-        parikh::ParikhImageCA pi(tag_aut, ats);
+        parikh::ParikhImageDiseqTag pi(tag_aut, ats);
         LenNode pi_formula = pi.get_diseq_formula(diseq);
 
         STRACE("str-diseq", tout << "* Resulting formula: " << std::endl << pi_formula << std::endl << std::endl; );

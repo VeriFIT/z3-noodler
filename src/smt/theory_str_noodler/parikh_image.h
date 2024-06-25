@@ -96,11 +96,11 @@ public:
 
 
 /**
- * @brief Parikh image computation of CA
+ * @brief Parikh image computation of Tag automaton for single disequation
  */
-class ParikhImageCA : public ParikhImage {
+class ParikhImageDiseqTag : public ParikhImage {
 
-private:
+protected:
     ca::CA ca;
     // fresh variable for each AtomicSymbol. for symb, we use #symb to denote the corresponding variable
     std::map<ca::AtomicSymbol, BasicTerm> symbol_var {}; 
@@ -142,7 +142,7 @@ protected:
      * @param diseq Diseq
      * @return LenNode mismatch(i,j)
      */
-    LenNode get_mismatch_formula(size_t i, size_t j, const Predicate& diseq);
+    LenNode get_mismatch_formula(size_t i, size_t j, const Predicate& diseq, const LenNode& add_right = 0);
 
     /**
      * @brief Get formula describing that for selected symbols <R,1,sym> <R,2,sym'>
@@ -153,7 +153,7 @@ protected:
     LenNode get_diff_symbol_formula();
 
 public:
-    ParikhImageCA(const ca::CA& ca, const std::set<ca::AtomicSymbol>& atomic_symbols) : ParikhImage(ca.nfa), ca(ca), symbol_var(), atomic_symbols(atomic_symbols) { }
+    ParikhImageDiseqTag(const ca::CA& ca, const std::set<ca::AtomicSymbol>& atomic_symbols) : ParikhImage(ca.nfa), ca(ca), symbol_var(), atomic_symbols(atomic_symbols) { }
 
     /**
      * @brief Compute Parikh image with the free variables containing values of registers. 
@@ -184,6 +184,32 @@ public:
      * @return LenNode phi
      */
     LenNode get_diseq_formula(const Predicate& diseq);
+};
+
+/**
+ * @brief Parikh image computation for tag automaton representing not contains.
+ */
+class ParikhImageNotContTag : public ParikhImageDiseqTag {
+
+private:
+    LenNode offset_var;
+
+protected:
+    /**
+     * @brief Get the mismatch formula for each pair (i,j) of positions in @p not_cont.
+     * phi := OR( mismatch(i,j,offset_var) where i is position of left of not_cont and j is position of right of not_cont ).
+     * offset_var is added to the right side.
+     * 
+     * @param not_cont Notcontains
+     * @return LenNode phi
+     */
+    LenNode get_nt_all_mismatch_formula(const Predicate& not_cont);
+
+public:
+    ParikhImageNotContTag(const ca::CA& ca, const std::set<ca::AtomicSymbol>& atomic_symbols) 
+        : ParikhImageDiseqTag(ca, atomic_symbols), offset_var(util::mk_noodler_var_fresh("offset_var")) { }
+
+    LenNode get_not_cont_formula(const Predicate& not_cont);
 };
 
 }

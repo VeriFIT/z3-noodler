@@ -222,7 +222,7 @@ namespace smt::noodler::parikh {
      * @param diseq Disequation L != R
      * @return LenNode phi
      */
-    LenNode ParikhImageCA::get_diseq_length(const Predicate& diseq) {
+    LenNode ParikhImageDiseqTag::get_diseq_length(const Predicate& diseq) {
         // e.g., for x.y get var_{r_x} + var_{r_y} where r_x is the CA register corresponding to the string variable x and 
         // var_r is int variable describing value of register r after the run.
         auto concat_len = [&](const Concat& con) -> LenNode {
@@ -242,7 +242,7 @@ namespace smt::noodler::parikh {
         });
     }
 
-    LenNode ParikhImageCA::get_var_length(const std::set<BasicTerm>& vars) {
+    LenNode ParikhImageDiseqTag::get_var_length(const std::set<BasicTerm>& vars) {
         LenNode lengths(LenFormulaType::AND);
         // for each variable generate |x| = #<L,x>
         for(const BasicTerm& bt : vars) {
@@ -262,7 +262,7 @@ namespace smt::noodler::parikh {
 
 
 
-    LenNode ParikhImageCA::get_all_mismatch_formula(const Predicate& diseq) {
+    LenNode ParikhImageDiseqTag::get_all_mismatch_formula(const Predicate& diseq) {
         // create formula OR( mismatch(i,j) where i is position of left of diseq and j is position of right of diseq )
         LenNode mismatch(LenFormulaType::OR);
         for(size_t i = 0; i < diseq.get_left_side().size(); i++) {
@@ -274,7 +274,7 @@ namespace smt::noodler::parikh {
     }
 
 
-    LenNode ParikhImageCA::get_diseq_formula(const Predicate& diseq) {
+    LenNode ParikhImageDiseqTag::get_diseq_formula(const Predicate& diseq) {
         LenNode parikh = compute_parikh_image();
 
         STRACE("str-diseq", tout << "* Parikh image symbols:  " << std::endl;
@@ -313,7 +313,7 @@ namespace smt::noodler::parikh {
      * 
      * @return LenNode AND (#symb for each AtomicSymbol symb)
      */
-    LenNode ParikhImageCA::symbol_count_formula() {
+    LenNode ParikhImageDiseqTag::symbol_count_formula() {
         this->symbol_var.clear();
         const std::map<Transition, BasicTerm>& trans_vars = this->get_trans_vars();
 
@@ -366,9 +366,10 @@ namespace smt::noodler::parikh {
      * @param i Position on the left side of @p diseq
      * @param j Position on the right side of @p diseq
      * @param diseq Diseq
+     * @param add_right term that should be added to the right side
      * @return LenNode mismatch(i,j) && rmatch
      */
-    LenNode ParikhImageCA::get_mismatch_formula(size_t i, size_t j, const Predicate& diseq) {
+    LenNode ParikhImageDiseqTag::get_mismatch_formula(size_t i, size_t j, const Predicate& diseq, const LenNode& add_right) {
         auto concat_len = [&](const Concat& con, int max_ind) -> LenNode {
             LenNode sum_len(LenFormulaType::PLUS);
             int ind = 0;
@@ -411,6 +412,8 @@ namespace smt::noodler::parikh {
         left.succ.push_back(LenNode(this->symbol_var.at(lats)));
 
         LenNode right = concat_len(diseq.get_right_side(), j-1);
+        // add the add_right parameter ( 0 by default )
+        right.succ.insert(right.succ.begin(), add_right);
         // add symbol <P, var, label_right, 0> where var is j-th variable on right side of diseq
         ca::AtomicSymbol rats2 = {1, var_right, label_right, 0};
         if(!this->symbol_var.contains(rats2)) {
@@ -458,7 +461,7 @@ namespace smt::noodler::parikh {
      * 
      * @return LenNode diff
      */
-    LenNode ParikhImageCA::get_diff_symbol_formula() {
+    LenNode ParikhImageDiseqTag::get_diff_symbol_formula() {
         LenNode conj(LenFormulaType::AND);
         std::set<mata::Symbol> syms {};
 
@@ -504,4 +507,49 @@ namespace smt::noodler::parikh {
         return conj;
     }
 
+
+    LenNode ParikhImageNotContTag::get_nt_all_mismatch_formula(const Predicate& not_cont) {
+        LenNode mismatch(LenFormulaType::OR);
+        for(size_t i = 0; i < not_cont.get_left_side().size(); i++) {
+            for (size_t j = 0; j < not_cont.get_right_side().size(); j++) {
+                mismatch.succ.push_back(get_mismatch_formula(i, j, not_cont, this->offset_var));
+            }
+        }
+        return mismatch;
+    }
+
+    LenNode ParikhImageNotContTag::get_not_cont_formula(const Predicate& not_cont) {
+        LenNode parikh = compute_parikh_image();
+
+        STRACE("str-diseq", tout << "* Parikh image symbols:  " << std::endl;
+            for(const auto& [sym, bt] : this->symbol_var) {
+                tout << bt.to_string() << " : " << sym.to_string() << std::endl;
+            }
+            tout << std::endl;
+        );
+        STRACE("str-diseq", tout << "* compute_parikh_image:  " << std::endl << parikh << std::endl << std::endl;);
+        // TODO: diseq_len should be RIGHT < OFFSET + LEFT
+        LenNode not_cont_len(LenFormulaType::FALSE);
+        LenNode mismatch = get_nt_all_mismatch_formula(not_cont);
+        STRACE("str-diseq", tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
+        LenNode len = get_var_length(not_cont.get_set());
+        STRACE("str-diseq", tout << "* get_var_length:  " << std::endl << len << std::endl << std::endl;);
+        LenNode diff_symbol = get_diff_symbol_formula();
+        STRACE("str-diseq", tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
+
+        LenNode matrix = LenNode(LenFormulaType::AND, {
+            parikh,
+            len,
+            LenNode(LenFormulaType::OR, {
+                not_cont_len,
+                LenNode(LenFormulaType::AND, {
+                    mismatch,
+                    diff_symbol
+                })
+            })
+        });
+        // generate for all OFFSET: matrix
+
+        return matrix;
+    }
 }
