@@ -164,7 +164,7 @@ namespace smt::noodler::ca {
             return { LenNode(LenFormulaType::TRUE), LenNodePrecision::PRECISE };
         }
         if(not_conts.get_predicates().size() > 1) {
-            return { LenNode(LenFormulaType::TRUE), LenNodePrecision::UNDERAPPROX };
+            return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
         }
 
         Predicate not_cont_orig = not_conts.get_predicates()[0];
