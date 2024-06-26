@@ -468,7 +468,6 @@ namespace smt::noodler::parikh {
         std::map<mata::Symbol, std::vector<BasicTerm>> symb_vars {};
         for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
             if(ats.mark != 2) continue;
-            if(util::is_dummy_symbol(ats.symbol)) continue;
             symb_vars[ats.symbol].push_back(ats.var);
         }
 
@@ -476,10 +475,14 @@ namespace smt::noodler::parikh {
         for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
             if (ats.mark == 2) { // symbol is of the form <R,a,l>
                 // the dummy symbol represents all other symbols --> we don't generate the diff 
-                // symbol formula as these symbols are not equal.
-                if(util::is_dummy_symbol(ats.symbol)) continue;
+                // symbol formula as these symbols are not equal. The only case we consider is that the symbol belongs to the same variable.
+                // In that case we generate the #<R,x,a,1> >= 1 -> #<R,x,a,2> = 0
+                Concat col = symb_vars[ats.symbol];
+                if(util::is_dummy_symbol(ats.symbol)) {
+                    col = { ats.var };
+                }
                 LenNode sum(LenFormulaType::PLUS);
-                for(const BasicTerm& var : symb_vars[ats.symbol]) {
+                for(const BasicTerm& var : col) {
                     ca::AtomicSymbol counterpart = {2, var, (ats.label == 1 ? char(2) : char(1)), ats.symbol};
                     auto iter = this->symbol_var.find(counterpart);
                     // if there is not the counterpart, we don't have to generate the formula
@@ -548,8 +551,6 @@ namespace smt::noodler::parikh {
                 })
             })
         });
-        // generate for all OFFSET: matrix
-
-        return matrix;
+        return LenNode(LenFormulaType::FORALL, {this->offset_var, matrix});
     }
 }

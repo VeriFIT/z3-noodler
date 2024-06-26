@@ -159,6 +159,68 @@ namespace smt::noodler::ca {
         return pi_formula;
     }
 
+    static std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& not_conts, const AutAssignment& autass) {
+        if(not_conts.get_predicates().size() == 0) {
+            return { LenNode(LenFormulaType::TRUE), LenNodePrecision::PRECISE };
+        }
+        if(not_conts.get_predicates().size() > 1) {
+            return { LenNode(LenFormulaType::TRUE), LenNodePrecision::UNDERAPPROX };
+        }
+
+        Predicate not_cont_orig = not_conts.get_predicates()[0];
+        // remove variables with epsilon language
+        Concat left {};
+        Concat right {};
+        std::copy_if(not_cont_orig.get_left_side().begin(), not_cont_orig.get_left_side().end(), std::back_inserter(left),
+                [&](const BasicTerm& n){ return !autass.is_epsilon(n); });
+        std::copy_if(not_cont_orig.get_right_side().begin(), not_cont_orig.get_right_side().end(), std::back_inserter(right),
+                [&](const BasicTerm& n){ return !autass.is_epsilon(n); });
+        Predicate not_cont(PredicateType::NotContains, {left, right});
+
+        if(left == right) {
+            return { LenNode(LenFormulaType::FALSE), LenNodePrecision::PRECISE };
+        }
+
+        // not contains to be solved
+        
+        CADiseqGen gen(not_cont, autass);
+        ca::CA tag_aut = gen.construct_tag_aut();
+        tag_aut.nfa.trim();
+
+        STRACE("str-diseq",
+            tout << "* Variable ordering: " << std::endl;
+            tout << concat_to_string(gen.get_aut_matrix().get_var_order()) << std::endl << std::endl;
+        );
+        STRACE("str-diseq",
+            tout << "* NFAs for variables: " << std::endl;
+            for(const BasicTerm& bt : not_cont.get_set()) {
+                tout << bt.to_string() << ":" << std::endl;
+                autass.at(bt)->print_to_DOT(tout);
+            }
+            tout << std::endl;
+        );
+        STRACE("str-diseq",
+            tout << "* Tag Automaton for not contains: " << not_cont.to_string() << std::endl;
+            tag_aut.print_to_DOT(tout);
+            tout << std::endl;
+        );
+        STRACE("str", tout << "CA LIA: finished" << std::endl; );
+
+        // we include only those symbols occurring in the reduced tag automaton
+        std::set<AtomicSymbol> ats;
+        for(const auto& trans : tag_aut.nfa.delta.transitions()) {
+            std::set<AtomicSymbol> sms = tag_aut.alph.get_symbol(trans.symbol);
+            ats.insert(sms.begin(), sms.end());
+        }
+
+        parikh::ParikhImageNotContTag pi(tag_aut, ats);
+        LenNode pi_formula = pi.get_not_cont_formula(not_cont);
+
+        STRACE("str-diseq", tout << "* Resulting formula: " << std::endl << pi_formula << std::endl << std::endl; );
+
+        return {pi_formula, LenNodePrecision::PRECISE};
+    }
+
 }
 
 #endif

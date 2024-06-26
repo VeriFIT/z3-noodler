@@ -132,9 +132,9 @@ namespace smt::noodler {
     lbool DecisionProcedure::compute_next_solution() {
 
         // if we have a not contains, we give unknown
-        if(this->not_contains.get_predicates().size() > 0) {
-            return l_undef;
-        }
+        // if(this->not_contains.get_predicates().size() > 1) {
+        //     return l_undef;
+        // }
 
         // iteratively select next state of solving that can lead to solution and
         // process one of the unprocessed nodes (or possibly find solution)
@@ -622,6 +622,9 @@ namespace smt::noodler {
         // if we solve disequations using CA --> get the LIA formula describing solutions
         if(this->m_params.m_ca_constr) {
             conjuncts.push_back(get_formula_for_ca_diseqs());
+            auto not_cont_prec = get_formula_for_not_contains();
+            conjuncts.push_back(not_cont_prec.first);
+            precision = not_cont_prec.second;
         }
 
         LenNode result(LenFormulaType::AND, conjuncts);
@@ -1195,20 +1198,34 @@ namespace smt::noodler {
 
         STRACE("str", tout << "CA-DISEQS (original): " << std::endl << this->disequations.to_string() << std::endl;);
         STRACE("str", tout << "CA-DISEQS (substituted): " << std::endl << proj_diseqs.to_string() << std::endl;);
-
-        // Formula tmp {};
-        // tmp.add_predicate(Predicate(PredicateType::Inequation, {
-        //     {proj_diseqs.get_predicates()[0].get_left_side()[0], proj_diseqs.get_predicates()[0].get_left_side()[1]},
-        //     {proj_diseqs.get_predicates()[0].get_right_side()[0], proj_diseqs.get_predicates()[0].get_right_side()[1]},
-        // }));
-
-        // auto fl = ca::get_lia_for_disequations(tmp, this->solution.aut_ass);
-        // std::cout << fl << std::endl;
-
-        // return fl;
-
-
         return ca::get_lia_for_disequations(proj_diseqs, this->solution.aut_ass);
+    }
+
+    std::pair<LenNode, LenNodePrecision> DecisionProcedure::get_formula_for_not_contains() {
+        Formula proj_not_cont {};
+
+        auto proj_concat = [&](const Concat& con) -> Concat {
+            Concat ret {};
+            for(const BasicTerm& bt : con) {
+                Concat subst = this->solution.get_substituted_vars(bt);
+                ret.insert(ret.end(), subst.begin(), subst.end());
+            }
+            return ret;
+        };
+
+        // take the original disequations (taken from input) and 
+        // propagate substitutions involved by the current substitution map of 
+        // a stable solution
+        for(const Predicate& dis : this->not_contains.get_predicates()) {
+            proj_not_cont.add_predicate(Predicate(PredicateType::NotContains, {
+                proj_concat(dis.get_left_side()),
+                proj_concat(dis.get_right_side()),
+            }));
+        }
+
+        STRACE("str", tout << "CA-DISEQS (original): " << std::endl << this->not_contains.to_string() << std::endl;);
+        STRACE("str", tout << "CA-DISEQS (substituted): " << std::endl << proj_not_cont.to_string() << std::endl;);
+        return ca::get_lia_for_not_contains(proj_not_cont, this->solution.aut_ass);
     }
 
     /**
@@ -1234,6 +1251,14 @@ namespace smt::noodler {
                 }
             } else {
                 util::throw_error("Decision procedure can handle only equations and disequations");
+            }
+        }
+        // we set all variables in not contains as length
+        if(this->m_params.m_ca_constr) {
+            for(const Predicate& nt : this->not_contains.get_predicates()) {
+                for(const BasicTerm& var : nt.get_vars()) {
+                    this->init_length_sensitive_vars.insert(var);
+                }
             }
         }
 
@@ -1279,6 +1304,11 @@ namespace smt::noodler {
         std::unordered_set<BasicTerm> conv_vars;
         for (const auto &conv : conversions) {
             conv_vars.insert(conv.string_var);
+        }
+
+        // try to replace the not contains predicates (so-far we replace it by regular constraints)
+        if(can_unify_not_contains(prep_handler) == l_true) {
+            return l_false;
         }
 
         // So-far just lightweight preprocessing
@@ -1362,11 +1392,6 @@ namespace smt::noodler {
             return l_false;
         }
 
-        // there remains some not contains --> return undef
-        if(this->not_contains.get_predicates().size() > 0) {
-            return l_undef;
-        }
-
         if(this->formula.get_predicates().size() > 0) {
             this->init_aut_ass.reduce(); // reduce all automata in the automata assignment
         }
@@ -1384,6 +1409,11 @@ namespace smt::noodler {
             }
             tout << std::endl);
         STRACE("str", tout << "Formula after preprocessing:" << std::endl << this->formula.to_string() << std::endl; );
+
+        // there remains some not contains --> return undef
+        if(this->not_contains.get_predicates().size() > 0) {
+            return l_undef;
+        }
 
         if (!this->init_aut_ass.is_sat()) {
             // some automaton in the assignment is empty => we won't find solution

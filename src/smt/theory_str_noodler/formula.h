@@ -127,6 +127,15 @@ namespace smt::noodler {
 
     //----------------------------------------------------------------------------------------------------------------------------------
 
+    /**
+     * @brief Length formula precision
+     */
+    enum struct LenNodePrecision {
+        PRECISE,
+        UNDERAPPROX,
+        OVERAPPROX,
+    };
+
     enum struct LenFormulaType {
         PLUS,
         TIMES,
@@ -140,6 +149,7 @@ namespace smt::noodler {
         OR,
         TRUE,
         FALSE,
+        FORALL, // quantifier for all
     };
 
     struct LenNode {
@@ -184,6 +194,9 @@ namespace smt::noodler {
         case LenFormulaType::OR:
             os << "(or";
             break;
+        case LenFormulaType::FORALL:
+            os << "(forall";
+            break;
         
         default:
             UNREACHABLE();
@@ -222,49 +235,51 @@ namespace smt::noodler {
         [[nodiscard]] PredicateType get_type() const { return type; }
         [[nodiscard]] bool is_equation() const { return type == PredicateType::Equation; }
         [[nodiscard]] bool is_inequation() const { return type == PredicateType::Inequation; }
+        [[nodiscard]] bool is_not_cont() const { return type == PredicateType::NotContains; }
         [[nodiscard]] bool is_eq_or_ineq() const { return is_equation() || is_inequation(); }
+        [[nodiscard]] bool is_two_sided() const { return is_equation() || is_inequation() || is_not_cont(); }
         [[nodiscard]] bool is_predicate() const { return !is_eq_or_ineq(); }
         [[nodiscard]] bool is(const PredicateType predicate_type) const { return predicate_type == this->type; }
 
         const std::vector<std::vector<BasicTerm>>& get_params() const { return this->params; }
 
         std::vector<BasicTerm>& get_left_side() {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             return params[0];
         }
 
         [[nodiscard]] const std::vector<BasicTerm>& get_left_side() const {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             return params[0];
         }
 
         std::vector<BasicTerm>& get_right_side() {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             return params[1];
         }
 
         [[nodiscard]] const std::vector<BasicTerm>& get_right_side() const {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             return params[1];
         }
 
         void set_left_side(const std::vector<BasicTerm> &new_left_side) {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             params[0] = new_left_side;
         }
 
         void set_left_side(std::vector<BasicTerm> &&new_left_side) {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             params[0] = std::move(new_left_side);
         }
 
         void set_right_side(const std::vector<BasicTerm> &new_right_side) {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             params[1] = new_right_side;
         }
 
         void set_right_side(std::vector<BasicTerm> &&new_right_side) {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             params[1] = std::move(new_right_side);
         }
 

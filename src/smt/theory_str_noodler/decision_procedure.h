@@ -24,15 +24,6 @@ namespace smt::noodler {
     };
 
     /**
-     * @brief Length formula precision
-     */
-    enum struct LenNodePrecision {
-        PRECISE,
-        UNDERAPPROX,
-        OVERAPPROX,
-    };
-
-    /**
      * @brief Abstract decision procedure. Defines interface for decision
      * procedures to be used within z3.
      */
@@ -285,6 +276,8 @@ namespace smt::noodler {
 
         // disequations that are supposed to be solved after a stable solution is found
         Formula disequations;
+        // not contains that are supposed to be solved after a stable solution is found
+        Formula not_contains_tag;
 
         // the length formula from preprocessing, get_lengths should create conjunct with it
         LenNode preprocessing_len_formula = LenNode(LenFormulaType::TRUE,{});
@@ -313,9 +306,14 @@ namespace smt::noodler {
         void init_ca_diseq(const Predicate& diseq);
 
         /**
-         * @brief Gets the formula encoding handling disequations using CA
+         * @brief Gets the formula encoding handling disequations using TAG aut
          */
         LenNode get_formula_for_ca_diseqs();
+
+        /**
+         * @brief Gets the formula encoding handling not contains using TAG aut
+         */
+        std::pair<LenNode, LenNodePrecision> get_formula_for_not_contains();
 
         /**
          * Returns the code var version of @p var used to encode to_code/from_code in get_formula_for_conversions
