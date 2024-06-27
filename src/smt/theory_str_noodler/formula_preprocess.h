@@ -383,6 +383,7 @@ namespace smt::noodler {
 
         bool contains_unsat_eqs_or_diseqs();
         bool can_unify_contain(const Concat& left, const Concat& right) const;
+        bool can_unify_not_contains();
 
         void conversions_validity(std::vector<TermConversion>& conversions);
 

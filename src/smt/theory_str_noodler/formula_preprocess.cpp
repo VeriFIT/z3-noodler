@@ -1635,4 +1635,20 @@ namespace smt::noodler {
         }
     }
 
+    /**
+     * @brief Check if it is possible to unify L and R for not(contains(L,R)).
+     * 
+     * @return true -> L and R are unifiable
+     */
+    bool FormulaPreprocessor::can_unify_not_contains() {
+        for(const auto& [id, pred] : this->formula.get_predicates()) {
+            if(!pred.is_not_cont()) continue;
+            if(can_unify_contain(pred.get_params()[0], pred.get_params()[1])) {
+                return true;
+            }
+
+        }
+        return false;
+    }
+
 } // Namespace smt::noodler.

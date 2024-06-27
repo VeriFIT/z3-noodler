@@ -130,7 +130,7 @@ namespace smt::noodler {
 
     bool Predicate::equals(const Predicate &other) const {
         if (type == other.type) {
-            if (is_eq_or_ineq()) {
+            if (is_two_sided()) {
                 return params[0] == other.params[0] && params[1] == other.params[1];
             }
             return true;

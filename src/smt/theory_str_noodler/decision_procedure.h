@@ -426,7 +426,7 @@ namespace smt::noodler {
             m_params(par) {
             
             // we extract from the input formula all not_contains predicates and add them to not_contains formula
-            this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
+            // this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
         }
         
         /**

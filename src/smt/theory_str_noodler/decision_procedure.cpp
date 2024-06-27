@@ -1307,7 +1307,7 @@ namespace smt::noodler {
         }
 
         // try to replace the not contains predicates (so-far we replace it by regular constraints)
-        if(can_unify_not_contains(prep_handler) == l_true) {
+        if(prep_handler.can_unify_not_contains()) {
             return l_false;
         }
 
@@ -1386,6 +1386,8 @@ namespace smt::noodler {
             // some automaton in the assignment is empty => we won't find solution
             return l_false;
         }
+
+        this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
 
         // try to replace the not contains predicates (so-far we replace it by regular constraints)
         if(replace_not_contains() == l_false || can_unify_not_contains(prep_handler) == l_true) {
