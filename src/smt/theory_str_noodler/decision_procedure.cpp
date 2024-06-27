@@ -1321,7 +1321,7 @@ namespace smt::noodler {
         // Refinement of languages is beneficial only for instances containing not(contains) or disequalities (it is used to reduce the number of 
         // disequations/not(contains). For a strong reduction you need to have languages as precise as possible). In the case of 
         // pure equalitities it could create bigger automata, which may be problem later during the noodlification.
-        if(this->formula.contains_pred_type(PredicateType::Inequation) || this->not_contains.get_predicates().size() > 0) {
+        if(this->formula.contains_pred_type(PredicateType::Inequation) || this->formula.contains_pred_type(PredicateType::NotContains)) {
             // Refine languages is applied in the order given by the predicates. Single iteration 
             // might not update crucial variables that could contradict the formula. 
             // Two iterations seem to be a good trade-off since the automata could explode in the fixpoint.
@@ -1387,12 +1387,13 @@ namespace smt::noodler {
             return l_false;
         }
 
-        this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
-
         // try to replace the not contains predicates (so-far we replace it by regular constraints)
-        if(replace_not_contains() == l_false || can_unify_not_contains(prep_handler) == l_true) {
+        if(prep_handler.replace_not_contains() == l_false || prep_handler.can_unify_not_contains()) {
             return l_false;
         }
+
+        // extract not contains predicate to a separate container
+        this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
 
         if(this->formula.get_predicates().size() > 0) {
             this->init_aut_ass.reduce(); // reduce all automata in the automata assignment
@@ -1526,44 +1527,44 @@ namespace smt::noodler {
         return new_eqs;
     }
 
-    /**
-     * @brief Try to replace not contains predicates. In particular, we replace predicates of the form (not_contains lit x) where 
-     * lit is a literal by a regular constraint x notin Alit' where  Alit' was obtained from A(lit) by setting all 
-     * states initial and final. 
-     */
-    lbool DecisionProcedure::replace_not_contains() {
-        Formula remain_not_contains{};
-        for(const Predicate& pred : this->not_contains.get_predicates()) {
-            Concat left = pred.get_params()[0];
-            Concat right = pred.get_params()[1];
-            if(left.size() == 1 && right.size() == 1) {
-                if(this->init_aut_ass.is_singleton(left[0]) && this->init_aut_ass.is_singleton(right[0])) {
-                    if(mata::nfa::are_equivalent(*this->init_aut_ass.at(left[0]), *this->init_aut_ass.at(right[0]))) {
-                        return l_false;
-                    }
-                }
-            }
-            if(left.size() == 1 && right.size() == 1) {
-                if(this->init_aut_ass.is_singleton(left[0]) && right[0].is_variable()) {
-                    mata::nfa::Nfa nfa_copy = *this->init_aut_ass.at(left[0]);
-                    for(unsigned i = 0; i < nfa_copy.num_of_states(); i++) {
-                        nfa_copy.initial.insert(i);
-                        nfa_copy.final.insert(i);
-                    }
+    // /**
+    //  * @brief Try to replace not contains predicates. In particular, we replace predicates of the form (not_contains lit x) where 
+    //  * lit is a literal by a regular constraint x notin Alit' where  Alit' was obtained from A(lit) by setting all 
+    //  * states initial and final. 
+    //  */
+    // lbool DecisionProcedure::replace_not_contains() {
+    //     Formula remain_not_contains{};
+    //     for(const Predicate& pred : this->not_contains.get_predicates()) {
+    //         Concat left = pred.get_params()[0];
+    //         Concat right = pred.get_params()[1];
+    //         if(left.size() == 1 && right.size() == 1) {
+    //             if(this->init_aut_ass.is_singleton(left[0]) && this->init_aut_ass.is_singleton(right[0])) {
+    //                 if(mata::nfa::are_equivalent(*this->init_aut_ass.at(left[0]), *this->init_aut_ass.at(right[0]))) {
+    //                     return l_false;
+    //                 }
+    //             }
+    //         }
+    //         if(left.size() == 1 && right.size() == 1) {
+    //             if(this->init_aut_ass.is_singleton(left[0]) && right[0].is_variable()) {
+    //                 mata::nfa::Nfa nfa_copy = *this->init_aut_ass.at(left[0]);
+    //                 for(unsigned i = 0; i < nfa_copy.num_of_states(); i++) {
+    //                     nfa_copy.initial.insert(i);
+    //                     nfa_copy.final.insert(i);
+    //                 }
 
-                    mata::nfa::Nfa complement = this->init_aut_ass.complement_aut(nfa_copy);
-                    this->init_aut_ass.restrict_lang(right[0], complement);
-                    continue;
-                }
-            }
-            if(right.size() == 1 && this->init_aut_ass.is_epsilon(right[0])) {
-                return l_false;
-            }
-            remain_not_contains.add_predicate(pred);
-        }
-        this->not_contains = remain_not_contains;
-        return l_undef;
-    }
+    //                 mata::nfa::Nfa complement = this->init_aut_ass.complement_aut(nfa_copy);
+    //                 this->init_aut_ass.restrict_lang(right[0], complement);
+    //                 continue;
+    //             }
+    //         }
+    //         if(right.size() == 1 && this->init_aut_ass.is_epsilon(right[0])) {
+    //             return l_false;
+    //         }
+    //         remain_not_contains.add_predicate(pred);
+    //     }
+    //     this->not_contains = remain_not_contains;
+    //     return l_undef;
+    // }
 
     /**
      * @brief Check if it is possible to syntactically unify not contains terms. If they are included (in the sense of vectors) the 
@@ -1572,14 +1573,14 @@ namespace smt::noodler {
      * @param prep FormulaPreprocessor
      * @return l_true -> can be unified
      */
-    lbool DecisionProcedure::can_unify_not_contains(const FormulaPreprocessor& prep) {
-        for(const Predicate& pred : this->not_contains.get_predicates()) {
-            if(prep.can_unify_contain(pred.get_params()[0], pred.get_params()[1])) {
-                return l_true;
-            }
+    // lbool DecisionProcedure::can_unify_not_contains(const FormulaPreprocessor& prep) {
+    //     for(const Predicate& pred : this->not_contains.get_predicates()) {
+    //         if(prep.can_unify_contain(pred.get_params()[0], pred.get_params()[1])) {
+    //             return l_true;
+    //         }
 
-        }
-        return l_undef;
-    }
+    //     }
+    //     return l_undef;
+    // }
 
 } // Namespace smt::noodler.

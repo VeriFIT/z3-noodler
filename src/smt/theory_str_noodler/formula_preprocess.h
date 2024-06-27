@@ -383,9 +383,21 @@ namespace smt::noodler {
 
         bool contains_unsat_eqs_or_diseqs();
         bool can_unify_contain(const Concat& left, const Concat& right) const;
+         /**
+         * @brief Check if it is possible to syntactically unify not contains terms. If they are included (in the sense of vectors) the 
+         * not(contain) is unsatisfiable.
+         * 
+         * @param prep FormulaPreprocessor
+         * @return true -> can be unified 
+         */
         bool can_unify_not_contains();
 
         void conversions_validity(std::vector<TermConversion>& conversions);
+        /**
+         * @brief Construct constraints to get rid of not_contains predicates.
+         * @return false -> unsatisfiable constaint; true if it is not evident
+         */
+        bool replace_not_contains();
 
         /**
          * @brief Replace all occurrences of find with replace. Warning: do not modify the automata assignment.
