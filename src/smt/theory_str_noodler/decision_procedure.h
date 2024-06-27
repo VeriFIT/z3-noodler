@@ -11,6 +11,7 @@
 #include "aut_assignment.h"
 #include "state_len.h"
 #include "formula_preprocess.h"
+#include "ca_str_constr.h"
 
 namespace smt::noodler {
 
@@ -21,28 +22,6 @@ namespace smt::noodler {
         PLAIN,
         UNDERAPPROX
     };
-
-    /**
-     * @brief Length formula precision
-     */
-    enum struct LenNodePrecision {
-        PRECISE,
-        UNDERAPPROX,
-        OVERAPPROX,
-    };
-
-    /**
-     * @brief Get the value of the symbol representing all symbols not ocurring in the formula (i.e. a minterm)
-     * 
-     * Dummy symbol represents all symbols not occuring in the problem. It is needed,
-     * because if we have for example disequation x != y and nothing else, we would
-     * have no symbols and incorrectly say it is unsat. Similarly, for 'x not in "aaa"
-     * and |x| = 3', we would only get symbol 'a' and say (incorrectly) unsat. This
-     * symbol however needs to have special semantics, for example to_code should
-     * interpret is as anything but used symbols.
-     */
-    inline mata::Symbol get_dummy_symbol() { static const mata::Symbol DUMMY_SYMBOL = zstring::max_char() + 1; return DUMMY_SYMBOL; }
-    inline bool is_dummy_symbol(mata::Symbol sym) { return sym == get_dummy_symbol(); }
 
     /**
      * @brief Abstract decision procedure. Defines interface for decision
@@ -295,6 +274,11 @@ namespace smt::noodler {
         // contains to/from_code/int conversions
         std::vector<TermConversion> conversions;
 
+        // disequations that are supposed to be solved after a stable solution is found
+        Formula disequations;
+        // not contains that are supposed to be solved after a stable solution is found
+        Formula not_contains_tag;
+
         // the length formula from preprocessing, get_lengths should create conjunct with it
         LenNode preprocessing_len_formula = LenNode(LenFormulaType::TRUE,{});
         // keeps the length formulas from replace_disequality(), they need to hold for solution to be satisfiable (get_lengths should create conjunct from them)
@@ -314,6 +298,22 @@ namespace smt::noodler {
          * @brief Gets the formula encoding to_code/from_code/to_int/from_int conversions
          */
         std::pair<LenNode, LenNodePrecision> get_formula_for_conversions();
+
+        /**
+         * @brief Initialize disquation for CA-based handling. Assumed to be called during 
+         * the decision procedure initialization.
+         */
+        void init_ca_diseq(const Predicate& diseq);
+
+        /**
+         * @brief Gets the formula encoding handling disequations using TAG aut
+         */
+        LenNode get_formula_for_ca_diseqs();
+
+        /**
+         * @brief Gets the formula encoding handling not contains using TAG aut
+         */
+        std::pair<LenNode, LenNodePrecision> get_formula_for_not_contains();
 
         /**
          * Returns the code var version of @p var used to encode to_code/from_code in get_formula_for_conversions
@@ -384,21 +384,6 @@ namespace smt::noodler {
          */
         Formula not_contains{};
 
-        /**
-         * @brief Construct constraints to get rid of not_contains predicates.
-         * @return l_false -> unsatisfiable constaint; l_undef if it is not evident
-         */
-        lbool replace_not_contains();
-
-        /**
-         * @brief Check if it is possible to syntactically unify not contains terms. If they are included (in the sense of vectors) the 
-         * not(contain) is unsatisfiable.
-         * 
-         * @param prep FormulaPreprocessor
-         * @return l_true -> can be unified 
-         */
-        lbool can_unify_not_contains(const FormulaPreprocessor& prep);
-
     public:
 
         /**
@@ -425,8 +410,6 @@ namespace smt::noodler {
             conversions(conversions),
             m_params(par) {
             
-            // we extract from the input formula all not_contains predicates and add them to not_contains formula
-            this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
         }
         
         /**

@@ -51,6 +51,10 @@ namespace smt::noodler {
             lbool r = m_kernel.check(erv);
             erv.pop_back();
 
+            // model_ref mod;
+            // m_kernel.get_model(mod);
+            // std::cout << *mod << std::endl;
+
             STRACE("str-lia",
                 if(r==lbool::l_false){
                     tout << "UNSAT core:" << std::endl;

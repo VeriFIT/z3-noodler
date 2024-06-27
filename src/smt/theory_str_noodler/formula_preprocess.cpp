@@ -1635,4 +1635,65 @@ namespace smt::noodler {
         }
     }
 
+    /**
+     * @brief Check if it is possible to unify L and R for not(contains(L,R)).
+     * 
+     * @return true -> L and R are unifiable
+     */
+    bool FormulaPreprocessor::can_unify_not_contains() {
+        for(const auto& [id, pred] : this->formula.get_predicates()) {
+            if(!pred.is_not_cont()) continue;
+            if(can_unify_contain(pred.get_params()[0], pred.get_params()[1])) {
+                return true;
+            }
+
+        }
+        return false;
+    }
+
+    /**
+     * @brief Try to replace not contains predicates. In particular, we replace predicates of the form (not_contains lit x) where 
+     * lit is a literal by a regular constraint x notin Alit' where  Alit' was obtained from A(lit) by setting all 
+     * states initial and final.
+     * 
+     * @return false if a not(contains) is unsatisfiable 
+     */
+    bool FormulaPreprocessor::replace_not_contains() {
+        Formula remain_not_contains{};
+        std::set<size_t> rem_ids;
+        for(const auto& [id, pred] : this->formula.get_predicates()) {
+            Concat left = pred.get_params()[0];
+            Concat right = pred.get_params()[1];
+            if(left.size() == 1 && right.size() == 1) {
+                if(this->aut_ass.is_singleton(left[0]) && this->aut_ass.is_singleton(right[0])) {
+                    if(mata::nfa::are_equivalent(*this->aut_ass.at(left[0]), *this->aut_ass.at(right[0]))) {
+                        return false;
+                    }
+                }
+            }
+            if(left.size() == 1 && right.size() == 1) {
+                if(this->aut_ass.is_singleton(left[0]) && right[0].is_variable()) {
+                    mata::nfa::Nfa nfa_copy = *this->aut_ass.at(left[0]);
+                    for(unsigned i = 0; i < nfa_copy.num_of_states(); i++) {
+                        nfa_copy.initial.insert(i);
+                        nfa_copy.final.insert(i);
+                    }
+
+                    mata::nfa::Nfa complement = this->aut_ass.complement_aut(nfa_copy);
+                    this->aut_ass.restrict_lang(right[0], complement);
+                    rem_ids.insert(id);
+                    continue;
+                }
+            }
+            if(right.size() == 1 && this->aut_ass.is_epsilon(right[0])) {
+                return false;
+            }
+        }
+        
+        for(const size_t & i : rem_ids) {
+            this->formula.remove_predicate(i);
+        }
+        return true;
+    }
+
 } // Namespace smt::noodler.

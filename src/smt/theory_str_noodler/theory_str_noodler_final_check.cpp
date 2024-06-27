@@ -58,7 +58,7 @@ namespace smt::noodler {
 
     std::set<mata::Symbol> theory_str_noodler::get_symbols_from_relevant() {
         // start with symbol representing everything not in formula
-        std::set<mata::Symbol> symbols_in_formula{get_dummy_symbol()};
+        std::set<mata::Symbol> symbols_in_formula{util::get_dummy_symbol()};
 
         for (const auto &word_equation: m_word_eq_todo_rel) {
             extract_symbols(word_equation.first, symbols_in_formula);
@@ -502,7 +502,7 @@ namespace smt::noodler {
             && !this->len_vars.contains(std::get<0>(reg_data)) // x is not length variable
         ) {
             // start with minterm representing symbols not ocurring in the regex
-            std::set<mata::Symbol> symbols_in_regex{get_dummy_symbol()};
+            std::set<mata::Symbol> symbols_in_regex{util::get_dummy_symbol()};
             extract_symbols(std::get<1>(reg_data), symbols_in_regex);
             regex::Alphabet reg_alph(symbols_in_regex);
 

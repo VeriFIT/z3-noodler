@@ -1594,7 +1594,7 @@ namespace smt::noodler {
             // The following axioms are redundant in the sense of completeness, but in the nested replace calls 
             // they can relate the contains predicate from the general replace (and thence the SAT solver can help a lot).
             literal cnt = mk_literal(m_util_s.str.mk_contains(s, a));
-            add_axiom({~cnt, mk_eq(v, t,false)});
+            add_axiom({~cnt, mk_literal(m.mk_not(m.mk_eq(s, a))), mk_eq(v, t,false)});
             add_axiom({cnt, s_emp, mk_eq(v, a,false)});
             ctx.force_phase(cnt);
 
@@ -2621,7 +2621,7 @@ namespace smt::noodler {
         }
 
         for(const auto& nc : this->m_not_contains_todo_rel) {
-            app_ref nc_app(m_util_s.str.mk_contains(nc.first, nc.second), m);
+            app_ref nc_app(m.mk_not(m_util_s.str.mk_contains(nc.first, nc.second)), m);
             refinement = refinement == nullptr ? nc_app : m.mk_and(refinement, nc_app);
         }
 

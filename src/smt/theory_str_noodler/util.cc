@@ -270,6 +270,19 @@ namespace smt::noodler::util {
             return orref;
         }
 
+        case LenFormulaType::FORALL: {
+            expr_ref varref = len_to_expr(node.succ[0], variable_map, m, m_util_s, m_util_a);
+            expr_ref bodyref = len_to_expr(node.succ[1], variable_map, m, m_util_s, m_util_a);
+
+            ptr_vector<sort> sorts;
+            svector<symbol> names;
+            app * var = to_app(varref);
+            sorts.push_back(var->get_sort());
+            names.push_back(var->get_name());
+
+            return expr_ref(m.mk_quantifier(quantifier_kind::forall_k, sorts.size(), sorts.data(), names.data(), bodyref), m);
+        }
+
         case LenFormulaType::TRUE: {
             return expr_ref(m.mk_true(), m);
         }
