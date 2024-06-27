@@ -120,7 +120,21 @@ namespace smt::noodler::ca {
         }
 
         // disequation to be solved
-        Predicate diseq = diseqs.get_predicates()[0];
+        Predicate diseq_orig = diseqs.get_predicates()[0];
+
+        Concat left {};
+        Concat right {};
+        std::copy_if(diseq_orig.get_left_side().begin(), diseq_orig.get_left_side().end(), std::back_inserter(left),
+                [&](const BasicTerm& n){ return !autass.is_epsilon(n); });
+        std::copy_if(diseq_orig.get_right_side().begin(), diseq_orig.get_right_side().end(), std::back_inserter(right),
+                [&](const BasicTerm& n){ return !autass.is_epsilon(n); });
+        Predicate diseq(PredicateType::Inequation, {left, right});
+
+        if(left == right) {
+            return LenNode(LenFormulaType::FALSE);
+        }
+
+
         CADiseqGen gen(diseq, autass);
         ca::CA tag_aut = gen.construct_tag_aut();
         tag_aut.nfa.trim();
