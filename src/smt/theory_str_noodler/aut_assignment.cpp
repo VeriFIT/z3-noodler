@@ -158,4 +158,34 @@ namespace smt::noodler {
             cur_level = next_level;
         }
     }
+
+    bool AutAssignment::is_flat(const BasicTerm& t) const {
+        bool flat = true;
+
+        mata::nfa::Nfa aut = *this->at(t);
+
+        mata::nfa::Nfa::TarjanDiscoverCallback callback {};
+        callback.scc_discover = [&](const std::vector<mata::nfa::State>& scc, const std::vector<mata::nfa::State>& tarjan_stack) -> bool {
+            (void)tarjan_stack;
+
+            for(const mata::nfa::State& st : scc) {
+                bool one_input_visited = false;
+                for (const mata::nfa::SymbolPost& sp : aut.delta[st]) {
+                    for (const mata::nfa::State& tgt : scc) {
+                        if(sp.targets.find(tgt) != sp.targets.end()) {
+                            if(one_input_visited) {
+                                flat = false;
+                                return true;
+                            }
+                            one_input_visited = true;
+                        }
+                    }
+                }
+            }
+            return false;
+        };
+
+        aut.tarjan_scc_discover(callback);
+        return flat;
+    }
 }

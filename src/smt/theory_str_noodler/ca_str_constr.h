@@ -195,6 +195,14 @@ namespace smt::noodler::ca {
             return { LenNode(LenFormulaType::FALSE), LenNodePrecision::PRECISE };
         }
 
+        LenNodePrecision precision = LenNodePrecision::PRECISE;
+        for(const BasicTerm& bt : not_cont.get_vars()) {
+            if(!autass.is_flat(bt)) {
+                precision = LenNodePrecision::OVERAPPROX;
+                break;
+            }
+        }
+
         // not contains to be solved
         
         CADiseqGen gen(not_cont, autass);
@@ -232,7 +240,7 @@ namespace smt::noodler::ca {
 
         STRACE("str-diseq", tout << "* Resulting formula: " << std::endl << pi_formula << std::endl << std::endl; );
 
-        return {pi_formula, LenNodePrecision::PRECISE};
+        return {pi_formula, precision};
     }
 
 }
