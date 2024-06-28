@@ -623,8 +623,14 @@ namespace smt::noodler {
         if(this->m_params.m_ca_constr) {
             conjuncts.push_back(get_formula_for_ca_diseqs());
             auto not_cont_prec = get_formula_for_not_contains();
-            conjuncts.push_back(not_cont_prec.first);
-            precision = not_cont_prec.second;
+            if (precision == LenNodePrecision::PRECISE || not_cont_prec.second == precision) {
+                precision = not_cont_prec.second;
+                conjuncts.push_back(not_cont_prec.first);
+            } else {
+                // if we should overwrite the precision, we instead return FALSE and say that we have underapproximation
+                conjuncts.push_back(LenNode(LenFormulaType::FALSE));
+                precision = LenNodePrecision::UNDERAPPROX;
+            }
         }
 
         LenNode result(LenFormulaType::AND, conjuncts);
@@ -1388,7 +1394,7 @@ namespace smt::noodler {
         }
 
         // try to replace the not contains predicates (so-far we replace it by regular constraints)
-        if(prep_handler.replace_not_contains() == l_false || prep_handler.can_unify_not_contains()) {
+        if(!prep_handler.replace_not_contains() || prep_handler.can_unify_not_contains()) {
             return l_false;
         }
 
