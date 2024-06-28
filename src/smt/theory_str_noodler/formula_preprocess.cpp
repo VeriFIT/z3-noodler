@@ -1659,9 +1659,9 @@ namespace smt::noodler {
      * @return false if a not(contains) is unsatisfiable 
      */
     bool FormulaPreprocessor::replace_not_contains() {
-        Formula remain_not_contains{};
         std::set<size_t> rem_ids;
         for(const auto& [id, pred] : this->formula.get_predicates()) {
+            if(!pred.is_not_cont()) continue;
             Concat left = pred.get_params()[0];
             Concat right = pred.get_params()[1];
             if(left.size() == 1 && right.size() == 1) {
