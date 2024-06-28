@@ -232,7 +232,6 @@ namespace smt::noodler {
     using VarNodeSymDiff = std::pair<std::set<VarNode>, std::set<VarNode>>;
     using Concat = std::vector<BasicTerm>;
     using SepEqsGather = std::vector<std::pair<std::map<BasicTerm, unsigned>, unsigned>>;
-    using Dependency = std::map<size_t, std::set<size_t>>;
 
     /**
      * @brief Class representing a formula with efficient handling of variable occurrences.
@@ -319,8 +318,6 @@ namespace smt::noodler {
 
         const theory_str_noodler_params& m_params;
 
-        Dependency dependency;
-
     protected:
         void update_reg_constr(const BasicTerm& var, const std::vector<BasicTerm>& upd);
         bool propagate_regular_eqs(const std::set<VarNode>& diff1, const std::set<VarNode>& diff2, Predicate& new_pred) const;
@@ -351,16 +348,13 @@ namespace smt::noodler {
             aut_ass(ass),
             len_formula(LenFormulaType::AND, { } ),
             len_variables(lv),
-            m_params(par),
-            dependency() { };
+            m_params(par) { };
 
         const FormulaVar& get_formula() const { return this->formula; };
         std::string to_string() const { return this->formula.to_string(); };
         void get_regular_sublists(std::map<Concat, unsigned>& res) const;
         void get_eps_terms(std::set<BasicTerm>& res) const;
         const AutAssignment& get_aut_assignment() const { return this->aut_ass; }
-        const Dependency& get_dependency() const { return this->dependency; }
-        Dependency get_flat_dependency() const;
         void add_to_len_formula(LenNode len_to_add) { len_formula.succ.push_back(std::move(len_to_add)); }
         const LenNode& get_len_formula() const { return this->len_formula; }
         const std::unordered_set<BasicTerm>& get_len_variables() const { return this->len_variables; }
