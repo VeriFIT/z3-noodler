@@ -11,6 +11,7 @@ struct theory_str_noodler_params {
     bool m_try_nielsen = false;
     unsigned m_underapprox_length = 5;
     bool is_underapprox = false;
+    bool m_produce_models = false;
 
     theory_str_noodler_params(params_ref const & p = params_ref()) {
         updt_params(p);

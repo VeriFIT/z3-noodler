@@ -13,6 +13,116 @@ namespace {
 
 namespace smt::noodler::regex {
 
+    void extract_symbols(expr* const ex, const seq_util& m_util_s, std::set<uint32_t>& alphabet) {
+        if (m_util_s.str.is_string(ex)) {
+            auto ex_app{ to_app(ex) };
+            SASSERT(ex_app->get_num_parameters() == 1);
+            const zstring string_literal{ zstring{ ex_app->get_parameter(0).get_zstring() } };
+            for (size_t i{ 0 }; i < string_literal.length(); ++i) {
+                alphabet.insert(string_literal[i]);
+            }
+            return;
+        }
+
+        if(util::is_variable(ex)) { // Skip variables.
+            return;
+        }
+
+        SASSERT(is_app(ex));
+        app* ex_app = to_app(ex);
+
+        if (m_util_s.re.is_to_re(ex_app)) { // Handle conversion to regex function call.
+            SASSERT(ex_app->get_num_args() == 1);
+            const auto arg{ ex_app->get_arg(0) };
+            // Assume that expression inside re.to_re() function is a string of characters.
+            if (!m_util_s.str.is_string(arg)) { // if to_re has something other than string literal
+                util::throw_error("we support only string literals in str.to_re");
+            }
+            extract_symbols(to_app(arg), m_util_s, alphabet);
+            return;
+        } else if (m_util_s.re.is_concat(ex_app) // Handle regex concatenation.
+                || m_util_s.str.is_concat(ex_app) // Handle string concatenation.
+                || m_util_s.re.is_intersection(ex_app) // Handle intersection.
+            ) {
+            for (unsigned int i = 0; i < ex_app->get_num_args(); ++i) {
+                extract_symbols(to_app(ex_app->get_arg(i)), m_util_s, alphabet);
+            }
+            return;
+        } else if (m_util_s.re.is_antimirov_union(ex_app)) { // Handle Antimirov union.
+            util::throw_error("antimirov union is unsupported");
+        } else if (m_util_s.re.is_complement(ex_app)) { // Handle complement.
+            SASSERT(ex_app->get_num_args() == 1);
+            const auto child{ ex_app->get_arg(0) };
+            SASSERT(is_app(child));
+            extract_symbols(to_app(child), m_util_s, alphabet);
+            return;
+        } else if (m_util_s.re.is_derivative(ex_app)) { // Handle derivative.
+            util::throw_error("derivative is unsupported");
+        } else if (m_util_s.re.is_diff(ex_app)) { // Handle diff.
+            util::throw_error("regex difference is unsupported");
+        } else if (m_util_s.re.is_dot_plus(ex_app)) { // Handle dot plus.
+            // Handle repeated full char ('.+') (SMT2: (re.+ re.allchar)).
+            return;
+        } else if (m_util_s.re.is_empty(ex_app)) { // Handle empty language.
+            return;
+        } else if (m_util_s.re.is_epsilon(ex_app)) { // Handle epsilon.
+            return;
+        } else if (m_util_s.re.is_full_char(ex_app)) {
+            // Handle full char (single occurrence of any string symbol, '.') (SMT2: re.allchar).
+            return;
+        } else if (m_util_s.re.is_full_seq(ex_app)) {
+            // Handle full sequence of characters (any sequence of characters, '.*') (SMT2: re.all).
+            return;
+        } else if (m_util_s.re.is_of_pred(ex_app)) { // Handle of predicate.
+            util::throw_error("of predicate is unsupported");
+        } else if (m_util_s.re.is_opt(ex_app) // Handle optional.
+                || m_util_s.re.is_plus(ex_app) // Handle positive iteration.
+                || m_util_s.re.is_star(ex_app) // Handle star iteration.
+                || m_util_s.re.is_loop(ex_app) // Handle loop.
+            ) {
+            SASSERT(ex_app->get_num_args() == 1);
+            const auto child{ ex_app->get_arg(0) };
+            SASSERT(is_app(child));
+            extract_symbols(to_app(child), m_util_s, alphabet);
+            return;
+        } else if (m_util_s.re.is_range(ex_app)) { // Handle range.
+            SASSERT(ex_app->get_num_args() == 2);
+            const auto range_begin{ ex_app->get_arg(0) };
+            const auto range_end{ ex_app->get_arg(1) };
+            SASSERT(is_app(range_begin));
+            SASSERT(is_app(range_end));
+            const auto range_begin_value{ to_app(range_begin)->get_parameter(0).get_zstring()[0] };
+            const auto range_end_value{ to_app(range_end)->get_parameter(0).get_zstring()[0] };
+
+            auto current_value{ range_begin_value };
+            while (current_value <= range_end_value) {
+                alphabet.insert(current_value);
+                ++current_value;
+            }
+        } else if (m_util_s.re.is_reverse(ex_app)) { // Handle reverse.
+            util::throw_error("reverse is unsupported");
+        } else if (m_util_s.re.is_union(ex_app)) { // Handle union (= or; A|B).
+            SASSERT(ex_app->get_num_args() == 2);
+            const auto left{ ex_app->get_arg(0) };
+            const auto right{ ex_app->get_arg(1) };
+            SASSERT(is_app(left));
+            SASSERT(is_app(right));
+            extract_symbols(to_app(left), m_util_s, alphabet);
+            extract_symbols(to_app(right), m_util_s, alphabet);
+            return;
+        } else if(util::is_variable(ex_app)) { // Handle variable.
+            util::throw_error("variable should not occur here");
+        } else {
+            // When ex is not string literal, variable, nor regex, recursively traverse the AST to find symbols.
+            // TODO: maybe we can just leave is_range, is_variable and is_string in this function and otherwise do this:
+            for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
+                SASSERT(is_app(ex_app->get_arg(i)));
+                app *arg = to_app(ex_app->get_arg(i));
+                extract_symbols(arg, m_util_s, alphabet);
+            }
+        }
+    }
+
     [[nodiscard]] Nfa conv_to_nfa(const app *expression, const seq_util& m_util_s, const ast_manager& m,
                                   const Alphabet& alphabet, bool determinize, bool make_complement) {
         Nfa nfa{};
@@ -48,7 +158,7 @@ namespace smt::noodler::regex {
         } else if (m_util_s.re.is_dot_plus(expression)) { // Handle dot plus.
             nfa.initial.insert(0);
             nfa.final.insert(1);
-            for (const auto& symbol : alphabet.get_alphabet()) {
+            for (const auto& symbol : alphabet.alphabet) {
                 nfa.delta.add(0, symbol, 1);
                 nfa.delta.add(1, symbol, 1);
             }
@@ -59,13 +169,13 @@ namespace smt::noodler::regex {
         } else if (m_util_s.re.is_full_char(expression)) { // Handle full char (single occurrence of any string symbol, '.').
             nfa.initial.insert(0);
             nfa.final.insert(1);
-            for (const auto& symbol : alphabet.get_alphabet()) {
+            for (const auto& symbol : alphabet.alphabet) {
                 nfa.delta.add(0, symbol, 1);
             }
         } else if (m_util_s.re.is_full_seq(expression)) {
             nfa.initial.insert(0);
             nfa.final.insert(0);
-            for (const auto& symbol : alphabet.get_alphabet()) {
+            for (const auto& symbol : alphabet.alphabet) {
                 nfa.delta.add(0, symbol, 0);
             }
         } else if (m_util_s.re.is_intersection(expression)) { // Handle intersection.
@@ -97,7 +207,7 @@ namespace smt::noodler::regex {
                     // ... or empty language
                     nfa = std::move(body_nfa);
                 }
-            } else if(body_nfa.is_universal(alphabet.get_mata_alphabet())) {
+            } else if(body_nfa.is_universal(alphabet.mata_alphabet)) {
                 nfa = std::move(body_nfa);
             } else {
                 body_nfa.unify_final();
@@ -248,7 +358,7 @@ namespace smt::noodler::regex {
         // Warning: is_complement assumes we do the following, so if you to change this, go check is_complement first
         if (make_complement) {
             STRACE("str-create_nfa", tout << "Complemented NFA:" << std::endl;);
-            nfa = mata::nfa::complement(nfa, alphabet.get_mata_alphabet(), { 
+            nfa = mata::nfa::complement(nfa, alphabet.mata_alphabet, { 
                 {"algorithm", "classical"}, 
                 //{"minimize", "true"} // it seems that minimizing during complement causes more TOs in benchmarks
                 });
@@ -257,7 +367,7 @@ namespace smt::noodler::regex {
         return nfa;
     }
 
-    [[nodiscard]] RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s, const ast_manager& m) {
+    [[nodiscard]] RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s) {
         if (m_util_s.re.is_to_re(expression)) { // Handle conversion of to regex function call.
             SASSERT(expression->get_num_args() == 1);
             const auto arg{ expression->get_arg(0) };
@@ -265,15 +375,15 @@ namespace smt::noodler::regex {
             if (!m_util_s.str.is_string(arg)) { // if to_re has something other than string literal
                 util::throw_error("we support only string literals in str.to_re");
             }
-            return get_regex_info(to_app(arg), m_util_s, m);
+            return get_regex_info(to_app(arg), m_util_s);
         } else if (m_util_s.re.is_concat(expression)) { // Handle regex concatenation.
             SASSERT(expression->get_num_args() > 0);
-            RegexInfo res = get_regex_info(to_app(expression->get_arg(0)), m_util_s, m);
+            RegexInfo res = get_regex_info(to_app(expression->get_arg(0)), m_util_s);
             // min_length: sum of min_lengths of concats
             // empty: one of them is undef --> undef
             // universal: if min_length > 0 --> not universal
             for (unsigned int i = 1; i < expression->get_num_args(); ++i) {
-                RegexInfo con = get_regex_info(to_app(expression->get_arg(i)), m_util_s, m);
+                RegexInfo con = get_regex_info(to_app(expression->get_arg(i)), m_util_s);
                 res.min_length += con.min_length;
                 if(res.empty == l_undef || con.empty == l_undef) {
                     res.empty = l_undef;
@@ -297,7 +407,7 @@ namespace smt::noodler::regex {
             // min_length: 0
             // empty: universal --> true; empty --> false; min_length > 0 and !empty --> false
             // universal: empty --> true< universal --> false
-            RegexInfo res = get_regex_info(to_app(child), m_util_s, m);
+            RegexInfo res = get_regex_info(to_app(child), m_util_s);
             res.min_length = 0;
             if(res.empty == l_true) {
                 res.empty = l_false;
@@ -332,9 +442,9 @@ namespace smt::noodler::regex {
             // min_length: maximum of each regex from intersection
             // empty: if one of them is empty --> true; otherwise undef
             // universal: min_length > 0 --> false; otherwise undef
-            RegexInfo res = get_regex_info(to_app(expression->get_arg(0)), m_util_s, m);
+            RegexInfo res = get_regex_info(to_app(expression->get_arg(0)), m_util_s);
             for (unsigned int i = 1; i < expression->get_num_args(); ++i) {
-                RegexInfo prod = get_regex_info(to_app(expression->get_arg(i)), m_util_s, m);
+                RegexInfo prod = get_regex_info(to_app(expression->get_arg(i)), m_util_s);
                 res.min_length = std::max(res.min_length, prod.min_length);
                 if(prod.empty == l_true) {
                     res.empty = l_true;
@@ -360,7 +470,7 @@ namespace smt::noodler::regex {
             // min_length: low == 0 --> 0; otherwise min_length * low
             // empty: low == 0 --> false; otherwise the same as the original empty
             // universal: min_length > 0 --> false; empty && low == 0 --> false
-            RegexInfo res = get_regex_info(to_app(body), m_util_s, m);
+            RegexInfo res = get_regex_info(to_app(body), m_util_s);
             if(res.empty == l_true && low == 0) {
                 return RegexInfo{.min_length = 0, .universal = l_false, .empty = l_false};
             }
@@ -377,7 +487,7 @@ namespace smt::noodler::regex {
             const auto child{ expression->get_arg(0) };
             SASSERT(is_app(child));
             // min_length: 0 (epsilon)
-            RegexInfo res = get_regex_info(to_app(child), m_util_s, m);
+            RegexInfo res = get_regex_info(to_app(child), m_util_s);
             res.min_length = 0;
             res.empty = l_false;
             return res;
@@ -410,8 +520,8 @@ namespace smt::noodler::regex {
             // min_length: minimum of min_length of both guys
             // empty: if one of them is not empty --> false; otherwise undef
             // universal: if min_length > 0 --> false; if both are universal --> true; otherwise undef
-            RegexInfo res = get_regex_info(to_app(left), m_util_s, m);
-            RegexInfo uni = get_regex_info(to_app(right), m_util_s, m);
+            RegexInfo res = get_regex_info(to_app(left), m_util_s);
+            RegexInfo uni = get_regex_info(to_app(right), m_util_s);
             res.min_length = std::min(uni.min_length, res.min_length);
             if(uni.empty == l_false || res.empty == l_false) {
                 res.empty = l_false;
@@ -435,7 +545,7 @@ namespace smt::noodler::regex {
             SASSERT(expression->get_num_args() == 1);
             const auto child{ expression->get_arg(0) };
             SASSERT(is_app(child));
-            RegexInfo res = get_regex_info(to_app(child), m_util_s, m);
+            RegexInfo res = get_regex_info(to_app(child), m_util_s);
             return RegexInfo{.min_length = 0, .universal = res.universal == l_true ? l_true : l_undef, .empty = l_false};
 
         } else if (m_util_s.re.is_plus(expression)) { // Handle positive iteration.
@@ -444,7 +554,7 @@ namespace smt::noodler::regex {
             SASSERT(is_app(child));
 
             // empty: the original guy is empty <--> true
-            RegexInfo res = get_regex_info(to_app(child), m_util_s, m);
+            RegexInfo res = get_regex_info(to_app(child), m_util_s);
             res.universal = l_undef;
             return res;
         } else if(m_util_s.str.is_string(expression)) { // Handle string literal.

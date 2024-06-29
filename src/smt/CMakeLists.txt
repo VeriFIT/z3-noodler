@@ -74,11 +74,13 @@ z3_add_component(smt
     theory_str_noodler/inclusion_graph.cc
     theory_str_noodler/decision_procedure.cpp
     theory_str_noodler/nielsen_decision_procedure.cpp
+    theory_str_noodler/memb_heuristics_procedures.cpp
     theory_str_noodler/formula.cpp
     theory_str_noodler/util.cc
     theory_str_noodler/expr_cases.cpp
     theory_str_noodler/regex.cpp
     theory_str_noodler/aut_assignment.cpp
+    theory_str_noodler/expr_solver.cpp
     theory_str_mc.cpp
     theory_str_regex.cpp
     theory_user_propagator.cpp

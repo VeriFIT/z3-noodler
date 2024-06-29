@@ -309,7 +309,11 @@ namespace smt::noodler {
     private:
         FormulaVar formula;
         unsigned fresh_var_cnt;
+
+        // same meaning as in SolvingState (see decision_procedure.h)
         AutAssignment aut_ass;
+        std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
+
         LenNode len_formula;
         std::unordered_set<BasicTerm> len_variables;
 
@@ -363,7 +367,7 @@ namespace smt::noodler {
 
         Formula get_modified_formula() const;
 
-        void remove_regular(const std::unordered_set<BasicTerm>& disallowed_vars);
+        void remove_regular(const std::unordered_set<BasicTerm>& disallowed_vars, std::vector<Predicate>& removed_equations);
         void propagate_variables();
         void propagate_eps();
         void generate_identities();
@@ -371,7 +375,7 @@ namespace smt::noodler {
         void separate_eqs();
         void remove_extension();
         void remove_trivial();
-        void skip_len_sat();
+        void skip_len_sat(std::vector<Predicate>& removed_equations);
         void underapprox_languages();
         void generate_equiv(const BasicTermEqiv& ec);
         void infer_alignment();
