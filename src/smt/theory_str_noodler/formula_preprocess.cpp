@@ -1020,7 +1020,7 @@ namespace smt::noodler {
 
             if(pr.second.get_left_side().size() == 1) {
                 BasicTerm var = pr.second.get_left_side()[0];
-                if(ineq_vars.contains(var) // we do not want to refine X from ineq_vars...
+                if(!ineq_vars.contains(var) // we do not want to refine X from ineq_vars...
                     || pr.second.get_right_side().size() == 1) // ...except for when we have only one var on the other side
                 {
                     update_reg_constr(var, pr.second.get_right_side());
@@ -1029,7 +1029,7 @@ namespace smt::noodler {
 
             if(pr.second.get_right_side().size() == 1) {
                 BasicTerm var = pr.second.get_right_side()[0];
-                if(ineq_vars.contains(var) // we do not want to refine X from ineq_vars...
+                if(!ineq_vars.contains(var) // we do not want to refine X from ineq_vars...
                    || pr.second.get_left_side().size() == 1) // ...except for when we have only one var on the other side
                 {
                     update_reg_constr(var, pr.second.get_left_side());
