@@ -232,7 +232,6 @@ namespace smt::noodler {
     using VarNodeSymDiff = std::pair<std::set<VarNode>, std::set<VarNode>>;
     using Concat = std::vector<BasicTerm>;
     using SepEqsGather = std::vector<std::pair<std::map<BasicTerm, unsigned>, unsigned>>;
-    using Dependency = std::map<size_t, std::set<size_t>>;
 
     /**
      * @brief Class representing a formula with efficient handling of variable occurrences.
@@ -309,13 +308,15 @@ namespace smt::noodler {
     private:
         FormulaVar formula;
         unsigned fresh_var_cnt;
+
+        // same meaning as in SolvingState (see decision_procedure.h)
         AutAssignment aut_ass;
+        std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
+
         LenNode len_formula;
         std::unordered_set<BasicTerm> len_variables;
 
         const theory_str_noodler_params& m_params;
-
-        Dependency dependency;
 
     protected:
         void update_reg_constr(const BasicTerm& var, const std::vector<BasicTerm>& upd);
@@ -347,23 +348,20 @@ namespace smt::noodler {
             aut_ass(ass),
             len_formula(LenFormulaType::AND, { } ),
             len_variables(lv),
-            m_params(par),
-            dependency() { };
+            m_params(par) { };
 
         const FormulaVar& get_formula() const { return this->formula; };
         std::string to_string() const { return this->formula.to_string(); };
         void get_regular_sublists(std::map<Concat, unsigned>& res) const;
         void get_eps_terms(std::set<BasicTerm>& res) const;
         const AutAssignment& get_aut_assignment() const { return this->aut_ass; }
-        const Dependency& get_dependency() const { return this->dependency; }
-        Dependency get_flat_dependency() const;
         void add_to_len_formula(LenNode len_to_add) { len_formula.succ.push_back(std::move(len_to_add)); }
         const LenNode& get_len_formula() const { return this->len_formula; }
         const std::unordered_set<BasicTerm>& get_len_variables() const { return this->len_variables; }
 
         Formula get_modified_formula() const;
 
-        void remove_regular(const std::unordered_set<BasicTerm>& disallowed_vars);
+        void remove_regular(const std::unordered_set<BasicTerm>& disallowed_vars, std::vector<Predicate>& removed_equations);
         void propagate_variables();
         void propagate_eps();
         void generate_identities();
@@ -371,7 +369,7 @@ namespace smt::noodler {
         void separate_eqs();
         void remove_extension();
         void remove_trivial();
-        void skip_len_sat();
+        void skip_len_sat(std::vector<Predicate>& removed_equations);
         void underapprox_languages();
         void generate_equiv(const BasicTermEqiv& ec);
         void infer_alignment();

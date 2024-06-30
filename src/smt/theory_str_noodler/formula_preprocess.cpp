@@ -275,8 +275,9 @@ namespace smt::noodler {
     };
 
     /**
-     * @brief Update automata assignment of @p var. If var exists in the aut assignment, we set
-     * L(var) = L(var) \cap L(upd). Otherwise we set L(var) = L(upd).
+     * @brief Update automata assignment of @p var.
+     * If var exists in the aut assignment, we set L(var) = L(var) \cap L(upd).
+     * Otherwise we set L(var) = L(upd).
      *
      * @param var Basic term to be updated
      * @param upd Concatenation of terms for updating @p var.
@@ -302,10 +303,14 @@ namespace smt::noodler {
      * X_1 ... X_n does not occurr elsewhere in the system. Formally, L = R is regular if |L| = 1 and each variable
      * from Vars(R) has a single occurrence in the system only. Regular predicates can be removed from the system
      * provided A(X) = A(X) \cap A(X_1).A(X_2)...A(X_n) where A(X) is the automaton assigned to variable X.
+     * Also, we cannot remove requations when any of the X_i is length variable (we can remove only a special case X = X_1,
+     * when the right side contains only one variable).
      * 
      * @param disallowed_vars - if any of these var occurs in equation, it cannot be removed
+     * @param[out] removed_equations - removed regular equations are added to this vector (except the equation X = X_1, where
+     *                                 X_1 is length var, that is handled trough substitution_map)
      */
-    void FormulaPreprocessor::remove_regular(const std::unordered_set<BasicTerm>& disallowed_vars) {
+    void FormulaPreprocessor::remove_regular(const std::unordered_set<BasicTerm>& disallowed_vars, std::vector<Predicate>& removed_equations) {
         std::vector<std::pair<size_t, Predicate>> regs;
         this->formula.get_side_regulars(regs);
         std::deque<std::pair<size_t, Predicate>> worklist(regs.begin(), regs.end());
@@ -337,7 +342,13 @@ namespace smt::noodler {
                 // we propagate the lengthness of right side variable to the left side
                 this->len_variables.insert(left_var);
                 // and add len constraint |X| = |Y|
-                this->add_to_len_formula(pr.second.get_formula_eq()); 
+                this->add_to_len_formula(pr.second.get_formula_eq());
+
+                // we do not add this equation to removed_equation, instead we add Y to substitution map
+                BasicTerm right_var = pr.second.get_right_side()[0];
+                substitution_map[right_var] = {left_var}; // subst_map[Y] = X (the length constraint |X| = |Y| is already there)
+            } else {
+                removed_equations.push_back(pr.second);
             }
 
             this->formula.remove_predicate(pr.first);
@@ -351,8 +362,6 @@ namespace smt::noodler {
                 Predicate reg_pred;
                 if(this->formula.is_side_regular(this->formula.get_predicate(occurrs.begin()->eq_index), reg_pred)) {
                     worklist.emplace_back(occurrs.begin()->eq_index, reg_pred);
-                    // update dependency
-                    map_set_insert(this->dependency, occurrs.begin()->eq_index, pr.first);
                 }
             }
         }
@@ -399,6 +408,7 @@ namespace smt::noodler {
 
             assert(eq.get_left_side().size() == 1 && eq.get_right_side().size() == 1);
             BasicTerm v_left = eq.get_left_side()[0]; // X
+            BasicTerm v_right = eq.get_right_side()[0]; // Y
             update_reg_constr(v_left, eq.get_right_side()); // L(X) = L(X) cap L(Y)
             this->add_to_len_formula(eq.get_formula_eq()); // add len constraint |X| = |Y|
             // propagate len variables: if Y is in len_variables, include also X
@@ -407,12 +417,9 @@ namespace smt::noodler {
             }
 
             this->formula.replace(eq.get_right_side(), eq.get_left_side()); // find Y, replace for X
-            this->formula.remove_predicate(index);
+            substitution_map[v_right] = {v_left}; // subst_map[Y] = X (the length constraint |X| = |Y| is already there)
 
-            // update dependencies (overapproximation). Each remaining predicat depends on the removed one.
-            for(const auto& pr : this->formula.get_predicates()) {
-                map_set_insert(this->dependency, pr.first, index);
-            }
+            this->formula.remove_predicate(index);
 
             STRACE("str", tout << "propagate_variables\n";);
         }
@@ -495,8 +502,11 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Generate indentities. It covers two cases (a) X1 X X2 = X1 Y X2 => X = Y
-     * (b) X1 X X2 = Z and Z = X1 Y X2 => X = Y. Where each term can be both literal and variable.
+     * @brief Generate simpler indentities.
+     * It covers two cases:
+     *  (a) X1 X X2 = X1 Y X2 => X = Y and the original equation is removed.
+     *  (b) X1 X X2 = Z and Z = X1 Y X2 => X = Y and one of the original equations is removed.
+     * Where each term can be both literal and variable.
      */
     void FormulaPreprocessor::generate_identities() {
         std::set<std::pair<size_t, Predicate>> new_preds;
@@ -656,7 +666,6 @@ namespace smt::noodler {
         }
         for(const Predicate& eq : new_eqs) {
             this->formula.add_predicate(eq);
-            // We do not add dependency
         }
     }
 
@@ -682,8 +691,9 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Transitively ropagate epsilon variables. The epsilon variables and the epsilon
-     * literal remove from the formula and set the corresponding languages appropriately.
+     * @brief Transitively propagate epsilon variables.
+     * 
+     * Remove the epsilon variables and the epsilon literal from the formula, and set the corresponding languages appropriately.
      */
     void FormulaPreprocessor::propagate_eps() {
         std::set<BasicTerm> eps_set;
@@ -737,14 +747,6 @@ namespace smt::noodler {
             this->add_to_len_formula(Predicate(PredicateType::Equation, {Concat({t}), Concat()}).get_formula_eq());
         }
         this->formula.clean_predicates();
-
-        // update dependencies (overapproximation). Each remaining predicate depends on all epsilon equations.
-        for(const auto& pr : this->formula.get_predicates()) {
-            // might result to the case {0: {0,1,...}}
-            this->dependency[pr.first].insert(eps_eq_id.begin(), eps_eq_id.end());
-        }
-
-
     }
 
     /**
@@ -979,37 +981,6 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Flatten dependencies. Compute transition closure of dependencies.
-     *
-     * @return Transitive closure of the Dependency
-     */
-    Dependency FormulaPreprocessor::get_flat_dependency() const {
-        Dependency flat = get_dependency();
-        std::set<size_t> keys;
-        for(const auto& pr : flat) {
-            keys.insert(pr.first);
-        }
-
-        bool changed = true;
-        while(changed) {
-            changed = false;
-            for(const size_t& k : keys) {
-                auto it = flat.find(k);
-                size_t sb = it->second.size();
-                for(const size_t& val : flat[k]) {
-                    it->second.insert(flat[val].begin(), flat[val].end());
-                }
-                if(sb != it->second.size()) {
-                    changed = true;
-                }
-            }
-        }
-
-        return flat;
-    }
-
-
-    /**
      * @brief Return a modified formula by the preprocessing.
      *
      * @return Result of the preprocessing.
@@ -1023,13 +994,14 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Refine languages for equations of the form X = R (|X|=1) to the L(X) = L(X) \cap L(R).
-     * Moreover, for the literal terms l from the current automata assignments, restrict its 
-     * languages to L(l) = L(l) \cap {l}. Recall that the automata assignment contains not only 
-     * variables but also literals.
+     * @brief Use each equations X = R (|X| = 1) to refine L(X) = L(X) \cap L(R).
+     * This step is mostly done so that we can reduce the number of disequations in reduce_diseqalities().
+     * However, we do not want to refine too aggresively, as it could lead to large automata (which is a
+     * problem in disequations), so we do not use all equations to refine (see comments inside, it is just
+     * experimentally decided that this works).
      */
     void FormulaPreprocessor::refine_languages() {
-        std::set<BasicTerm> ineq_vars;
+        std::set<BasicTerm> ineq_vars; // all variables X s.t. there exists disequation X != R (|X|=1)
         for(const auto& pr : this->formula.get_predicates()) {
             if(!pr.second.is_inequation())
                 continue;
@@ -1048,31 +1020,20 @@ namespace smt::noodler {
 
             if(pr.second.get_left_side().size() == 1) {
                 BasicTerm var = pr.second.get_left_side()[0];
-                if(ineq_vars.find(var) != ineq_vars.end()) {
-                    update_reg_constr(var, pr.second.get_right_side());
-                } else if(pr.second.get_right_side().size() == 1) {
+                if(!ineq_vars.contains(var) // we do not want to refine X from ineq_vars...
+                    || pr.second.get_right_side().size() == 1) // ...except for when we have only one var on the other side
+                {
                     update_reg_constr(var, pr.second.get_right_side());
                 }
             }
+
             if(pr.second.get_right_side().size() == 1) {
                 BasicTerm var = pr.second.get_right_side()[0];
-                if(ineq_vars.find(var) != ineq_vars.end()) {
-                    update_reg_constr(var, pr.second.get_left_side());
-                } else if(pr.second.get_left_side().size() == 1) {
+                if(!ineq_vars.contains(var) // we do not want to refine X from ineq_vars...
+                   || pr.second.get_left_side().size() == 1) // ...except for when we have only one var on the other side
+                {
                     update_reg_constr(var, pr.second.get_left_side());
                 }
-            }
-        }
-
-        // Check if there is a regular constraint of the form "A" in .... 
-        // In that case, we construct automaton for "A" and make a product with the 
-        // corresponding language of the Basic Term "A".
-        for(const auto& pr : this->aut_ass) {
-            if(pr.first.is_literal()) {
-                mata::nfa::Nfa word_aut = AutAssignment::create_word_nfa(pr.first.get_name());
-                mata::nfa::Nfa inters = mata::nfa::intersection(*(pr.second), word_aut);
-                inters.trim();
-                this->aut_ass[pr.first] = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(inters));
             }
         }
     }
@@ -1080,8 +1041,10 @@ namespace smt::noodler {
     /**
      * @brief Skip irrelevant word equations. Assume that the original formula is length-satisfiable. 
      * Remove L=R if single_occur(R) and L(R) = \Sigma^*.
+     * 
+     * @param[out] removed_equations - all removed equations are added to this vector
      */
-    void FormulaPreprocessor::skip_len_sat() {
+    void FormulaPreprocessor::skip_len_sat(std::vector<Predicate>& removed_equations) {
         std::set<size_t> rem_ids;
 
         auto is_sigma_star = [&](const std::set<BasicTerm>& bts) {
@@ -1102,12 +1065,18 @@ namespace smt::noodler {
                 auto left_set = pr.second.get_left_set();
                 if(left_set.size() > 0 && is_sigma_star(left_set)) {
                     rem_ids.insert(pr.first);
+                    // we add the removed equation to removed_equations, but we have to swap
+                    // sides so that the single occurring side is on the right (we are gonna
+                    // pretend it is an inclusion and from left side compute the vars of
+                    // the right side in the model generation)
+                    removed_equations.push_back(pr.second.get_switched_sides_predicate());
                 }
             }
             if(this->formula.single_occurr(pr.second.get_right_set())) {
                 auto right_set = pr.second.get_right_set();
                 if(right_set.size() > 0 && is_sigma_star(right_set)) {
                     rem_ids.insert(pr.first);
+                    removed_equations.push_back(pr.second);
                 }               
             }
         }
@@ -1468,8 +1437,13 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Underapproximates the languages. Replace co-finite languages with length constraints while 
-     * setting their languages to \Sigma^*.
+     * @brief Underapproximates the languages.
+     * For each var x with co-finite language L, we add a length constraint saying
+     * that |x| cannot have any length from compl(L), make x a length variable,
+     * and set the language of x as \Sigma*. This effectively means that we set
+     * the language of x as \Sigma* - {w | |w| = |w'| and w' \in compl(L)}.
+     * The important thing is that we set x \in \Sigma*, this can be used by
+     * other preprocessing steps.
      */
     void FormulaPreprocessor::underapprox_languages() {
         for(const Predicate& pred : this->formula.get_predicates_set()) {
@@ -1487,51 +1461,47 @@ namespace smt::noodler {
 
     /**
      * @brief Reduce the number of diseqalities.
+     * 
+     * Removes disequalities whose languages of right and left side are disjoint (such a disequality always holds).
+     * Also removes disequalities x != "literal" or "literal" != x and "literal" is removed from the language of x.
      */
     void FormulaPreprocessor::reduce_diseqalities() {
         std::set<size_t> rem_ids;
 
-        for(const auto& pr : this->formula.get_predicates()) {
+        for(const auto& pr : formula.get_predicates()) {
             if(!pr.second.is_inequation())
                 continue;
 
-            mata::nfa::Nfa aut_left = this->aut_ass.get_automaton_concat(pr.second.get_left_side());
-            mata::nfa::Nfa aut_right = this->aut_ass.get_automaton_concat(pr.second.get_right_side());
+            mata::nfa::Nfa aut_left = aut_ass.get_automaton_concat(pr.second.get_left_side());
+            mata::nfa::Nfa aut_right = aut_ass.get_automaton_concat(pr.second.get_right_side());
             if(mata::nfa::intersection(aut_left, aut_right).is_lang_empty()) { // L(left) \cap L(right) == empty
                 rem_ids.insert(pr.first);
                 continue;
             }
-            
-            if(pr.second.get_left_side().size() == 1 && pr.second.get_left_side()[0].is_variable()) {
+
+            if(pr.second.get_left_side().size() == 1 && pr.second.get_left_side()[0].is_variable() && 
+               (pr.second.get_right_side().size() == 0 || (pr.second.get_right_side().size() == 1 && pr.second.get_right_side()[0].is_literal())))
+            {
+                // x != "literal" (literal can be possibly empty)
                 BasicTerm var = pr.second.get_left_side()[0];
-                mata::nfa::Nfa other = this->aut_ass.get_automaton_concat(pr.second.get_right_side());
-                if(mata::nfa::intersection(*this->aut_ass.at(var), other).is_lang_empty()) {
-                    rem_ids.insert(pr.first);
-                    continue;
-                }
-                if(pr.second.get_right_side().size() < 1 || (pr.second.get_right_side().size() == 1 && pr.second.get_right_side()[0].is_literal())) {
-                    this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*this->aut_ass.at(var), this->aut_ass.complement_aut(other)));
-                    rem_ids.insert(pr.first);
-                    continue;
-                }
+                aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*aut_ass.at(var), aut_ass.complement_aut(aut_right)));
+                rem_ids.insert(pr.first);
+                continue;
             }
-            if(pr.second.get_right_side().size() == 1 && pr.second.get_right_side()[0].is_variable()) {
+
+            if(pr.second.get_right_side().size() == 1 && pr.second.get_right_side()[0].is_variable() &&
+               (pr.second.get_left_side().size() == 0 || (pr.second.get_left_side().size() == 1 && pr.second.get_left_side()[0].is_literal())))
+            {
+                // "literal" != x (literal can be possibly empty)
                 BasicTerm var = pr.second.get_right_side()[0];
-                mata::nfa::Nfa other = this->aut_ass.get_automaton_concat(pr.second.get_left_side());
-                if(mata::nfa::intersection(*this->aut_ass.at(var), other).is_lang_empty()) {
-                    rem_ids.insert(pr.first);
-                    continue;
-                }
-                if(pr.second.get_left_side().size() < 1 || (pr.second.get_left_side().size() == 1 && pr.second.get_left_side()[0].is_literal())) {
-                    this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*this->aut_ass.at(var), this->aut_ass.complement_aut(other)));
-                    rem_ids.insert(pr.first);
-                    continue;
-                }
+                aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*aut_ass.at(var), aut_ass.complement_aut(aut_left)));
+                rem_ids.insert(pr.first);
+                continue;
             }
         }
 
         for(const size_t & i : rem_ids) {
-            this->formula.remove_predicate(i);
+            formula.remove_predicate(i);
         }
     }
 

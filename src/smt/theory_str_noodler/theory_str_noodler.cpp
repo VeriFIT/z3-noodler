@@ -19,6 +19,7 @@ Eternal glory to Yu-Fang.
 
 #include "decision_procedure.h"
 #include "theory_str_noodler.h"
+#include "memb_heuristics_procedures.h"
 
 namespace smt::noodler {
 
@@ -749,6 +750,9 @@ namespace smt::noodler {
             // if we returned previously sat, then we should always return sat (final_check_eh should not be called again, but for some reason Z3 calls it)
             return FC_DONE;
         }
+        
+        arith_model = nullptr;
+        dec_proc = nullptr;
 
         remove_irrelevant_constr();
 
@@ -804,15 +808,28 @@ namespace smt::noodler {
         bool contains_word_disequations = !this->m_word_diseq_todo_rel.empty();
         bool contains_conversions = !this->m_conversion_todo.empty();
 
-        // As a heuristic, for the case we have exactly one constraint, which is of type 'x notin RE', we use universality
-        // checking instead of constructing the automaton for complement of RE. The complement can sometimes blow up, so
-        // universality checking should be faster.
+        // As a heuristic, for the case we have exactly one constraint, which is of type 'x (not)in RE', we use universality/emptiness
+        // checking of the regex (using some heuristics) instead of constructing the automaton of RE. The construction (especially complement)
+        // can sometimes blow up, so the check should be faster.
         if(this->m_membership_todo_rel.size() == 1 && !contains_word_equations && !contains_word_disequations && !contains_conversions && this->m_not_contains_todo_rel.size() == 0) {
-            lbool result = run_membership_heur();
-            if(result == l_true) {
-                return FC_DONE;
-            } else if(result == l_false) {
-                return FC_CONTINUE;
+            const auto& reg_data = this->m_membership_todo_rel[0];
+            // TODO: check if "xyz in RE" works correctly
+            expr_ref var = std::get<0>(reg_data);
+            if (util::is_str_variable(var, m_util_s) && !this->len_vars.contains(var)) { // the variable cannot be length one
+                STRACE("str", tout << "trying one membership heuristics\n";);
+                dec_proc = std::make_unique<MembHeuristicProcedure>(
+                    util::get_variable_basic_term(var),
+                    std::get<1>(reg_data),
+                    std::get<2>(reg_data),
+                    m_util_s, m
+                );
+                lbool result = dec_proc->compute_next_solution();
+                if(result == l_true) {
+                    return FC_DONE;
+                } else if(result == l_false) {
+                    block_curr_len(expr_ref(this->m.mk_false(), this->m)); // the variable is not legnth one, so we block fully
+                    return FC_CONTINUE;
+                }
             }
         }
 
@@ -821,6 +838,7 @@ namespace smt::noodler {
             if(result == l_true) {
                 return FC_DONE;
             } else if(result == l_false) {
+                block_curr_len(expr_ref(this->m.mk_false(), this->m)); // there should not be any length vars, so we block fully
                 return FC_CONTINUE;
             }
         }
@@ -849,6 +867,13 @@ namespace smt::noodler {
 
         // Get the initial length vars that are needed here (i.e they are in aut_assignment)
         std::unordered_set<BasicTerm> init_length_sensitive_vars{ get_init_length_vars(aut_assignment) };
+        STRACE("str",
+            tout << "Length variables:";
+            for (const auto &len_var : init_length_sensitive_vars) {
+                tout << " " << len_var;
+            }
+            tout << std::endl
+        );
 
 
         // There is only one symbol in the equation. The system is SAT iff lengths are SAT
@@ -871,7 +896,8 @@ namespace smt::noodler {
             }
         }
 
-        DecisionProcedure dec_proc = DecisionProcedure{ instance, aut_assignment, init_length_sensitive_vars, m_params, conversions };
+        // we do not put into dec_proc directly, because we might do underapproximation that saves into dec_proc
+        std::unique_ptr<DecisionProcedure> main_dec_proc = std::make_unique<DecisionProcedure>(instance, aut_assignment, init_length_sensitive_vars, m_params, conversions);
         // is formula length unsatisfiable?
         bool length_unsat = false;
 
@@ -881,7 +907,7 @@ namespace smt::noodler {
         // we want to include all variables from the formula --> e.g.
         // s.t = u where u \in ab, |s| > 100. The only length variable is s, but we need 
         // to include also length of |u| to propagate the value to |s|
-        expr_ref lengths = len_node_to_z3_formula(dec_proc.get_initial_lengths(true));
+        expr_ref lengths = len_node_to_z3_formula(main_dec_proc->get_initial_lengths(true));
         if(check_len_sat(lengths) == l_false) {
             STRACE("str", tout << "Unsat from initial lengths" << std::endl);
             // we postpone the decision. If the instance is both length unsatisfiable and 
@@ -898,10 +924,13 @@ namespace smt::noodler {
                 STRACE("str", tout << "Sat from underapproximation" << std::endl;);
                 return FC_DONE;
             }
+            STRACE("str", tout << "Underapproximation did not help\n";);
         }
 
+        dec_proc = std::move(main_dec_proc);
+
         STRACE("str", tout << "Starting preprocessing" << std::endl);
-        lbool result = dec_proc.preprocess(PreprocessType::PLAIN, this->var_eqs.get_equivalence_bt(aut_assignment));
+        lbool result = dec_proc->preprocess(PreprocessType::PLAIN, this->var_eqs.get_equivalence_bt(aut_assignment));
         if (result == l_false) {
             STRACE("str", tout << "Unsat from preprocessing" << std::endl);
             block_curr_len(expr_ref(m.mk_false(), m), false, true); // we do not store for loop protection
@@ -915,7 +944,7 @@ namespace smt::noodler {
         }
         // it is possible that the arithmetic formula becomes unsatisfiable already by adding the (underapproximating)
         // length constraints from initial assignment
-        lengths = len_node_to_z3_formula(dec_proc.get_initial_lengths());
+        lengths = len_node_to_z3_formula(dec_proc->get_initial_lengths());
         if(check_len_sat(lengths) == l_false) {
             STRACE("str", tout << "Unsat from initial lengths" << std::endl);
             block_curr_len(lengths, true, true);
@@ -923,13 +952,13 @@ namespace smt::noodler {
         }
 
         STRACE("str", tout << "Starting main decision procedure" << std::endl);
-        dec_proc.init_computation();
+        dec_proc->init_computation();
 
         expr_ref block_len(m.mk_false(), m);
         while (true) {
-            result = dec_proc.compute_next_solution();
+            result = dec_proc->compute_next_solution();
             if (result == l_true) {
-                auto [noodler_lengths, precision] = dec_proc.get_lengths();
+                auto [noodler_lengths, precision] = dec_proc->get_lengths();
                 lengths = len_node_to_z3_formula(noodler_lengths);
                 lbool is_lengths_sat = check_len_sat(lengths);
 
@@ -966,12 +995,83 @@ namespace smt::noodler {
         }
     }
 
+    zstring theory_str_noodler::model_of_string_expr(app* str_expr) {
+        // function that returns either the length of str var or model of int var from arith_model
+        std::function<rational(BasicTerm)> get_arith_model_of_var = [this](BasicTerm var) -> rational {
+            expr_ref arg(m);
+            // the following is similar to code in util::len_to_expr()
+            if(!var_name.contains(var)) {
+                // if the variable is not found, it was introduced in the preprocessing/decision procedure
+                // (either as a string or int var), i.e. we can just create a new z3 variable with the same name 
+                arg = util::mk_int_var(var.get_name().encode(), m, m_util_a);
+            } else {
+                arg = var_name.at(var); // for int vars, we just take the var
+                if (m_util_s.is_string(arg->get_sort())) {
+                    // for string vars, we want its length
+                    arg = expr_ref(m_util_s.str.mk_length(arg), m);
+                }
+            }
+            expr_ref model(m);
+            arith_model->eval_expr(arg, model);
+            bool is_int;
+            rational val(0);
+            VERIFY(m_util_a.is_numeral(model, val, is_int) && is_int);
+            return val;
+        };
+
+        zstring res;
+        if (m_util_s.str.is_string(str_expr, res)) {
+            // for string literal, we just return the string
+            return res;
+        } else if (util::is_str_variable(str_expr, m_util_s)) {
+            // for string var, we get the model from the decision procedure that returned sat
+            return dec_proc->get_model(util::get_variable_basic_term(str_expr), get_arith_model_of_var);
+        } else if (m_util_s.str.is_concat(str_expr)) {
+            // for concatenation, we just recursively get the models for arguments and then concatenate them
+            expr_ref_vector concats(m);
+            m_util_s.str.get_concat(str_expr, concats);
+            for (auto concat : concats) {
+                res = res + model_of_string_expr(to_app(concat));
+            }
+            return res;
+        } else {
+            // for complex string functions, we should be able to find vars that replace them in predicate_replace
+            if (predicate_replace.contains(str_expr)) {
+                expr* str_var = predicate_replace[to_expr(str_expr)];
+                return model_of_string_expr(to_app(str_var));
+            } else {
+                // we should not get some string complex function that is not in predicate_replace
+                UNREACHABLE();
+                return zstring();
+            }
+        }
+    }
+    
     model_value_proc *theory_str_noodler::mk_value(enode *const n, model_generator &mg) {
-        app *const tgt = n->get_expr();
-        (void) m;
-        STRACE("str", tout << "mk_value: sort is " << mk_pp(tgt->get_sort(), m) << ", "
-                           << mk_pp(tgt, m) << '\n';);
-        return alloc(expr_wrapper_proc, tgt);
+        // it seems here we only get string literals/vars, concats (whose arguments can be something more complex, but should be replacable by a var), from_int/from_code and regex literals/vars (vars probably not, only if we fix disequations with unrestricted regex vars)
+        app *tgt = n->get_expr();
+        STRACE("str", tout << "mk_value: getting model for " << mk_pp(tgt, m) << " sort is " << mk_pp(tgt->get_sort(), m) << "\n";);
+
+        if (!m_params.m_produce_models) {
+            // if producing models is not enabled, we just return the target, the model is then not valid
+            return alloc(expr_wrapper_proc, tgt);
+        }
+
+        app* res = nullptr;
+        if (m_util_s.is_re(tgt)) {
+            // if tgt is regular
+            if (util::is_variable(tgt)) {
+                util::throw_error("unrestricted regex vars unsupported"); // (should not be able to come here, as this should be handled by dec proc)
+            } else {
+                // for regex literal (regex stuff in z3 is either regex var or literal), we just return the regex
+                res = tgt;
+            }
+        } else {
+            // if tgt is string (nothing else should be able to come into mk_value)
+            res = m_util_s.str.mk_string(model_of_string_expr(tgt));
+        }
+        STRACE("str", tout << "model for " << mk_pp(tgt, m) << " is " << mk_pp(res,m) << "\n";);
+        return alloc(expr_wrapper_proc, res);
     }
 
     void theory_str_noodler::init_model(model_generator &mg) {

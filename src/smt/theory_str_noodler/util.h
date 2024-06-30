@@ -121,7 +121,7 @@ namespace smt::noodler::util {
      * FIXME same function is in theory_str_noodler, decide which to keep
      */
     static expr_ref mk_int_var_fresh(const std::string& name, ast_manager& m, arith_util& m_util_a) {
-        app* fresh_var = m.mk_fresh_const(name, m_util_a.mk_int(), false);
+        app* fresh_var = m.mk_fresh_const(name, m_util_a.mk_int(), true); // need to be skolem, because it seems they are not printed for models
         // TODO maybe we need to internalize and mark as relevant, so that arith solver can handle it (see mk_int_var in theory_str.h of z3str3)
         return expr_ref(fresh_var, m);
     }
@@ -133,7 +133,7 @@ namespace smt::noodler::util {
      * FIXME same function is in theory_str_noodler, decide which to keep
      */
     static expr_ref mk_str_var_fresh(const std::string& name, ast_manager& m, seq_util& m_util_s) {
-        app* fresh_var = m.mk_fresh_const(name, m_util_s.mk_string_sort(), false);
+        app* fresh_var = m.mk_fresh_const(name, m_util_s.mk_string_sort(), true); // need to be skolem, because it seems they are not printed for models
         return expr_ref(fresh_var, m);
     }
 
@@ -143,7 +143,7 @@ namespace smt::noodler::util {
      * @param name Name of the var
      */
     static expr_ref mk_int_var(const std::string& name, ast_manager& m, arith_util& m_util_a) {
-        app* var = m.mk_const(name, m_util_a.mk_int());
+        app* var = m.mk_skolem_const(symbol(name.c_str()), m_util_a.mk_int()); // need to be skolem, because it seems they are not printed for models
         // TODO maybe we need to internalize and mark as relevant, so that arith solver can handle it (see mk_int_var in theory_str.h of z3str3)
         return expr_ref(var, m);
     }
@@ -154,7 +154,7 @@ namespace smt::noodler::util {
      * @param name Name of the var
      */
     static expr_ref mk_str_var(const std::string& name, ast_manager& m, seq_util& m_util_s) {
-        app* var = m.mk_const(name, m_util_s.mk_string_sort());
+        app* var = m.mk_skolem_const(symbol(name.c_str()), m_util_s.mk_string_sort()); // need to be skolem, because it seems they are not printed for models
         return expr_ref(var, m);
     }
 
@@ -197,6 +197,18 @@ namespace smt::noodler::util {
      */
     expr_ref len_to_expr(const LenNode &node, const std::map<BasicTerm, expr_ref>& variable_map, ast_manager &m, seq_util& m_util_s, arith_util& m_util_a);
 
+    /**
+     * @brief Get the value of the symbol representing all symbols not ocurring in the formula (i.e. a minterm)
+     * 
+     * Dummy symbol represents all symbols not occuring in the problem. It is needed,
+     * because if we have for example disequation x != y and nothing else, we would
+     * have no symbols and incorrectly say it is unsat. Similarly, for 'x not in "aaa"
+     * and |x| = 3', we would only get symbol 'a' and say (incorrectly) unsat. This
+     * symbol however needs to have special semantics, for example to_code should
+     * interpret is as anything but used symbols.
+     */
+    inline mata::Symbol get_dummy_symbol() { static const mata::Symbol DUMMY_SYMBOL = zstring::max_char() + 1; return DUMMY_SYMBOL; }
+    inline bool is_dummy_symbol(mata::Symbol sym) { return sym == get_dummy_symbol(); }
 }
 
 #endif

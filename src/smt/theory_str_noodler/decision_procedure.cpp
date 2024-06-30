@@ -7,6 +7,7 @@
 #include "util.h"
 #include "aut_assignment.h"
 #include "decision_procedure.h"
+#include "regex.h"
 
 namespace smt::noodler {
 
@@ -676,7 +677,7 @@ namespace smt::noodler {
             std::set<mata::Symbol> real_symbols_of_code_var;
             bool is_there_dummy_symbol = false;
             for (mata::Symbol s : mata::strings::get_accepted_symbols(*solution.aut_ass.at(c))) { // iterate trough chars of c
-                if (!is_dummy_symbol(s)) {
+                if (!util::is_dummy_symbol(s)) {
                     real_symbols_of_code_var.insert(s);
                 } else {
                     is_there_dummy_symbol = true;
@@ -699,7 +700,7 @@ namespace smt::noodler {
 
                 // code_version_of(c) is not equal to code point of some symbol in the alphabet that is not in real_symbols_of_code_var
                 for (mata::Symbol s : solution.aut_ass.get_alphabet()) {
-                    if (!is_dummy_symbol(s) && !real_symbols_of_code_var.contains(s)) {
+                    if (!util::is_dummy_symbol(s) && !real_symbols_of_code_var.contains(s)) {
                         char_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{code_version_of(c), s});
                     }
                 }
@@ -1051,7 +1052,8 @@ namespace smt::noodler {
 
                 // |s_i| = l_i
                 formula_for_case.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{subst_var, length_of_subst_var});
-                // For cases where s_i does not represent numbers (except for empty string, but then int_version_of(s_i)==-2), we do not want to use it in computation
+                // For cases where s_i does not represent numbers (except for empty string, but then int_version_of(s_i)!=-1,
+                // see get_formula_for_int_subst_vars() for the reason why), we do not want to use it in computation
                 // int_version_of(s_i) != -1
                 formula_for_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{int_version_of(subst_var), -1});
                 STRACE("str-conversion-int", tout << "part of valid part for int conversion: " << formula_for_case << std::endl;);
@@ -1121,7 +1123,7 @@ namespace smt::noodler {
         LenNodePrecision res_precision = LenNodePrecision::PRECISE;
 
         // collect all variables that substitute some string_var of some conversion
-        auto [code_subst_vars, int_subst_vars] = get_vars_substituted_in_conversions();
+        std::tie(code_subst_vars, int_subst_vars) = get_vars_substituted_in_conversions();
 
         // create formula for each variable substituting some string_var in some code conversion
         result.succ.push_back(get_formula_for_code_subst_vars(code_subst_vars));
@@ -1195,6 +1197,10 @@ namespace smt::noodler {
         SolvingState init_solving_state;
         init_solving_state.length_sensitive_vars = std::move(this->init_length_sensitive_vars);
         init_solving_state.aut_ass = std::move(this->init_aut_ass);
+        for (const auto& subs : init_substitution_map) {
+            init_solving_state.aut_ass.erase(subs.first);
+        }
+        init_solving_state.substitution_map = std::move(this->init_substitution_map);
 
         if (!equations.get_predicates().empty()) {
             // TODO we probably want to completely get rid of inclusion graphs
@@ -1245,11 +1251,11 @@ namespace smt::noodler {
         prep_handler.propagate_variables();
         prep_handler.propagate_eps();
         prep_handler.infer_alignment();
-        prep_handler.remove_regular(conv_vars);
+        prep_handler.remove_regular(conv_vars, inclusions_from_preprocessing);
         // Skip_len_sat is not compatible with not(contains) and conversions as the preprocessing may skip equations with variables 
-        // inside not(contains)/conversion. (Note that if opt == PreprocessType::UNDERAPPROX, there is no not(contains)).
+        // inside not(contains)/conversion.
         if(this->not_contains.get_predicates().empty() && this->conversions.empty()) {
-            prep_handler.skip_len_sat();
+            prep_handler.skip_len_sat(inclusions_from_preprocessing);
         }
         prep_handler.generate_identities();
         prep_handler.propagate_variables();
@@ -1257,7 +1263,7 @@ namespace smt::noodler {
         prep_handler.reduce_diseqalities();
         prep_handler.remove_trivial();
         prep_handler.reduce_regular_sequence(3);
-        prep_handler.remove_regular(conv_vars);
+        prep_handler.remove_regular(conv_vars, inclusions_from_preprocessing);
 
         // the following should help with Leetcode
         /// TODO: should be simplyfied? So many preprocessing steps now
@@ -1275,18 +1281,18 @@ namespace smt::noodler {
         prep_handler.common_suffix_propagation();
         prep_handler.propagate_variables();
         prep_handler.generate_identities();
-        prep_handler.remove_regular(conv_vars);
+        prep_handler.remove_regular(conv_vars, inclusions_from_preprocessing);
         prep_handler.propagate_variables();
         // underapproximation
         if(opt == PreprocessType::UNDERAPPROX) {
             prep_handler.underapprox_languages();
-            prep_handler.skip_len_sat();
+            prep_handler.skip_len_sat(inclusions_from_preprocessing); // if opt == PreprocessType::UNDERAPPROX, there is no not(contains) nor conversion
             prep_handler.reduce_regular_sequence(3);
-            prep_handler.remove_regular(conv_vars);
-            prep_handler.skip_len_sat();
+            prep_handler.remove_regular(conv_vars, inclusions_from_preprocessing);
+            prep_handler.skip_len_sat(inclusions_from_preprocessing); // if opt == PreprocessType::UNDERAPPROX, there is no not(contains) nor conversion
         }
         prep_handler.reduce_regular_sequence(1);
-        prep_handler.remove_regular(conv_vars);
+        prep_handler.remove_regular(conv_vars, inclusions_from_preprocessing);
 
         prep_handler.conversions_validity(conversions);
 
@@ -1492,6 +1498,183 @@ namespace smt::noodler {
 
         }
         return l_undef;
+    }
+
+    void DecisionProcedure::move_inclusions_from_preprocessing_to_solution() {
+        // the inclusions from preprocessing should be of form where all vars on right side
+        // occurs only once only in this inclusion, so they should belong to chain-free fragment
+        //  => they are not on a cycle (important for model generation, we want to generate the
+        //     model of vars on the right side from the left side)
+        for (const Predicate& incl : inclusions_from_preprocessing) {
+            solution.inclusions.insert(incl);
+            solution.inclusions_not_on_cycle.insert(incl); 
+        }
+        inclusions_from_preprocessing.clear();
+    }
+    
+    void DecisionProcedure::restrict_languages_to_lengths(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+        for (auto& [var, nfa] : solution.aut_ass) {
+            if (var.is_literal() || !solution.length_sensitive_vars.contains(var)) { continue; } // literals should have the correct language + we restrict only length vars
+            rational len = get_arith_model_of_var(var);
+            mata::nfa::Nfa len_nfa = solution.aut_ass.sigma_automaton_of_length(len.get_unsigned());
+            nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, len_nfa).trim());
+        }
+    }
+
+    // assumed to be called after restrict_languages_to_lengths()
+    void DecisionProcedure::restrict_languages_of_conversion_vars(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+        for (const BasicTerm& var : code_subst_vars) {
+            if (!solution.aut_ass.contains(var)) { continue; } // we only restrict the languages of variables that are in aut_ass
+            rational to_code_value = get_arith_model_of_var(code_version_of(var));
+            if (to_code_value != -1) {
+                update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
+            } // for the case to_code_value == -1 we shoulh have (str.len var) != 1, so we do not need to restrict the language, as it should have been done in restrict_languages_to_lengths()
+        }
+
+        for (const BasicTerm& var : int_subst_vars) {
+            if (!solution.aut_ass.contains(var)) { continue; } // we only restrict the languages of variables that are in aut_ass
+
+            rational len = get_arith_model_of_var(var);
+            if (len == 0) {
+                // to_int_value(var) != -1 for len==0 (see get_formula_for_int_subst_vars())
+                // so we directly set ""
+                update_model_and_aut_ass(var, zstring());
+            } else {
+                rational to_int_value = get_arith_model_of_var(int_version_of(var));
+                if (to_int_value == -1) {
+                    // the language of var should contain only words containing some non-digit
+                    mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
+                    auto& nfa = solution.aut_ass.at(var);
+                    nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, solution.aut_ass.complement_aut(only_digits)).trim());
+                } else {
+                    zstring to_int_str(to_int_value); // zstring(rational) returns the string representation of the number in the argument
+                    SASSERT(len >= to_int_str.length());
+                    // pad to_int_str with leading zeros until we reach desired length
+                    while (len.get_unsigned() != to_int_str.length()) {
+                        to_int_str = zstring("0") + to_int_str;
+                    }
+                    update_model_and_aut_ass(var, to_int_str);
+                }
+            }
+        }
+
+    }
+    
+    void DecisionProcedure::init_model(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+        if (is_model_initialized) { return ;}
+        move_inclusions_from_preprocessing_to_solution();
+        restrict_languages_to_lengths(get_arith_model_of_var);
+        restrict_languages_of_conversion_vars(get_arith_model_of_var);
+        is_model_initialized = true;
+
+        STRACE("str-model",
+            tout << "Init model finished" << std::endl;
+            tout << "  Inclusions:" << std::endl;
+            for (const auto& incl : solution.inclusions) {
+                tout << incl << std::endl;
+            }
+
+            tout << "  Vars in aut ass" << std::endl;
+            for (const auto& autass : solution.aut_ass) {
+                tout << "      " << autass.first << std::endl;
+                if (is_trace_enabled("str-nfa")) {
+                    tout << autass.second << std::endl;
+                }
+            }
+            tout << "  Vars in subst" << std::endl;
+            for (const auto& subst : solution.substitution_map) {
+                tout << "      " << subst.first << ": ";
+                for (const auto& substituted_var : subst.second) {
+                    tout << substituted_var << " ";
+                }
+                tout << std::endl;
+            }
+        );
+    }
+
+    zstring DecisionProcedure::get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+        init_model(get_arith_model_of_var);
+
+        if (model_of_var.contains(var)) {
+            return model_of_var.at(var);
+        }
+
+        STRACE("str-model",
+            tout << "Generating model for var " << var;
+            if (solution.length_sensitive_vars.contains(var)) {
+                tout << " with length " << get_arith_model_of_var(var);
+            }
+            tout << "\n";
+        );
+
+        regex::Alphabet alph(solution.aut_ass.get_alphabet());
+
+        if (solution.substitution_map.contains(var)) {
+            zstring result;
+            for (const BasicTerm& subs_var : solution.substitution_map.at(var)) {
+                result = result + get_model(subs_var, get_arith_model_of_var);
+            }
+            return update_model_and_aut_ass(var, result);
+        } else if (solution.aut_ass.contains(var)) {
+            Predicate inclusion_with_var_on_right_side;
+            if (solution.get_inclusion_with_var_on_right_side(var, inclusion_with_var_on_right_side)) {
+                // TODO check if inclusion_with_var_on_right_side lays on a cycle (needs to be
+                // implemented solution.is_inclusion_on_cycle() is overapproximation)
+                // If it is on a cycle, then we need to use (and implement) the horrible proof (righ now the following will never finish)
+
+                // We need to compute the vars on the right side from the vars on the left
+                //  - first we get the string model of the left side
+                //  - we then do "opposite" noodlification to get the values on the right side
+
+                zstring left_side_string;
+                for (const auto& var_on_left_side : inclusion_with_var_on_right_side.get_left_side()) {
+                    if (var_on_left_side.is_literal()) {
+                        left_side_string = left_side_string + var_on_left_side.get_name();
+                    } else {
+                        left_side_string = left_side_string + get_model(var_on_left_side, get_arith_model_of_var);
+                    }
+                }
+                if (left_side_string.empty()) {
+                    for (const auto &right_side_var : inclusion_with_var_on_right_side.get_right_side()) {
+                        update_model_and_aut_ass(right_side_var, zstring());
+                    }
+                } else {
+                    std::vector<std::shared_ptr<mata::nfa::Nfa>>left_side_string_aut{std::make_shared<mata::nfa::Nfa>(solution.aut_ass.create_word_nfa(left_side_string))};
+
+                    std::vector<std::shared_ptr<mata::nfa::Nfa>> automata_on_right_side;
+                    for (const auto &right_side_var : inclusion_with_var_on_right_side.get_right_side()) {
+                        automata_on_right_side.push_back(solution.aut_ass.at(right_side_var));
+                    }
+
+                    auto noodles = mata::strings::seg_nfa::noodlify_for_equation(automata_on_right_side, 
+                                                                                left_side_string_aut,
+                                                                                true, 
+                                                                                {{"reduce", "forward"}});
+                    SASSERT(!noodles.empty());
+                    SASSERT(automata_on_right_side.size() == noodles[0].size());
+                    unsigned i = 0;
+                    for (const auto &right_side_var : inclusion_with_var_on_right_side.get_right_side()) {
+                        if (right_side_var.is_literal()) { continue; }
+                        // becase inclusion is not on cycle, all variables on the right side must be different
+                        zstring right_side_var_string = alph.get_string_from_mata_word(*(noodles[0][i].first->get_words(noodles[0][i].first->num_of_states()).begin()));
+                        update_model_and_aut_ass(right_side_var, right_side_var_string);
+                        ++i;
+                    }
+                }
+                return model_of_var.at(var);
+            } else {
+                // var is only on the left side in the inclusion graph => we can return whatever
+
+                // TODO replace following with function that returns arbitary word from Mata
+                zstring result;
+                const auto& nfa = solution.aut_ass.at(var);
+                mata::Word accepted_word = *(nfa->get_words(nfa->num_of_states()).begin());
+                return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
+            }
+        } else {
+            // TODO sometimes we get var that is not in solution, probably means that it is not relevant?
+            return zstring();
+        }
     }
 
 } // Namespace smt::noodler.

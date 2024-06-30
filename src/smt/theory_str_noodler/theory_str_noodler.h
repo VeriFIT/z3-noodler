@@ -115,6 +115,10 @@ namespace smt::noodler {
         // true if last run of final_check_eh was sat (if it is true, then final_check_eh always return sat)
         bool last_run_was_sat = false;
 
+        // Stuff for model generation
+        std::unique_ptr<AbstractDecisionProcedure> dec_proc = nullptr; // keeps the decision procedure that returned sat
+        model_ref arith_model; // keeps the arithmethic model from sat solution
+
     public:
         char const * get_name() const override { return "noodler"; }
         theory_str_noodler(context& ctx, ast_manager & m, theory_str_noodler_params const & params);
@@ -269,19 +273,15 @@ namespace smt::noodler {
          */
         void tightest_prefix(expr* s, expr* x, std::vector<literal> neg_assumptions);
 
+        /// @brief Returns the model for @p str_expr using dec_proc and arith_model
+        zstring model_of_string_expr(app* str_expr);
+
         /******************* FINAL_CHECK_EH HELPING FUNCTIONS *********************/
 
         /**
          * @brief Adds string constraints from *_todo that are relevant for SAT checking to *_todo_rel.
          */
         void remove_irrelevant_constr();
-
-        /**
-         * Extract symbols from a given expression @p ex. Append to the output parameter @p alphabet.
-         * @param[in] ex Expression to be checked for symbols.
-         * @param[out] alphabet A set of symbols with where found symbols are appended to.
-         */
-        void extract_symbols(expr * ex, std::set<uint32_t>& alphabet);
 
         /**
         Convert (dis)equation @p ex to the instance of Predicate. As a side effect updates mapping of
@@ -396,13 +396,6 @@ namespace smt::noodler {
          * @return lbool Outcome of the procedure
          */
         lbool run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
-
-        /**
-         * @brief Wrapper for running the membership query heuristics.
-         * 
-         * @return lbool Outcome of the heuristic procedure.
-         */
-        lbool run_membership_heur();
 
         /**
          * @brief Wrapper for running the mulitple membership query heuristics.

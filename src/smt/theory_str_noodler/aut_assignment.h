@@ -69,6 +69,16 @@ namespace smt::noodler {
             return nfa;
         }
 
+        mata::nfa::Nfa sigma_automaton_of_length(unsigned length) const {
+            mata::nfa::Nfa nfa(length+1, {0}, {length});
+            for (unsigned i = 0; i < length; ++i) {
+                for (const mata::Symbol& symb : this->alphabet) {
+                    nfa.delta.add(i, symb, i+1);
+                }
+            }
+            return nfa;
+        }
+
         mata::nfa::Nfa sigma_eps_automaton() const {
             mata::nfa::Nfa nfa{};
             nfa.initial = {0};

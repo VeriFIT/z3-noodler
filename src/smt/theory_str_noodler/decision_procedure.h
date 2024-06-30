@@ -4,6 +4,7 @@
 #include <memory>
 #include <deque>
 #include <algorithm>
+#include <functional>
 
 #include "smt/params/theory_str_noodler_params.h"
 #include "formula.h"
@@ -30,19 +31,6 @@ namespace smt::noodler {
         UNDERAPPROX,
         OVERAPPROX,
     };
-
-    /**
-     * @brief Get the value of the symbol representing all symbols not ocurring in the formula (i.e. a minterm)
-     * 
-     * Dummy symbol represents all symbols not occuring in the problem. It is needed,
-     * because if we have for example disequation x != y and nothing else, we would
-     * have no symbols and incorrectly say it is unsat. Similarly, for 'x not in "aaa"
-     * and |x| = 3', we would only get symbol 'a' and say (incorrectly) unsat. This
-     * symbol however needs to have special semantics, for example to_code should
-     * interpret is as anything but used symbols.
-     */
-    inline mata::Symbol get_dummy_symbol() { static const mata::Symbol DUMMY_SYMBOL = zstring::max_char() + 1; return DUMMY_SYMBOL; }
-    inline bool is_dummy_symbol(mata::Symbol sym) { return sym == get_dummy_symbol(); }
 
     /**
      * @brief Abstract decision procedure. Defines interface for decision
@@ -95,6 +83,16 @@ namespace smt::noodler {
          * over/underapproximation.
          */
         virtual std::pair<LenNode, LenNodePrecision> get_lengths() {
+            throw std::runtime_error("Unimplemented");
+        }
+
+        /**
+         * @brief Get string model for the string variable @p var
+         * 
+         * @param get_arith_model_of_var Returns either the length of a str variable or the value of the int variable in the model
+         * @return the model for @p var 
+         */
+        virtual zstring get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
             throw std::runtime_error("Unimplemented");
         }
 
@@ -221,6 +219,23 @@ namespace smt::noodler {
         }
 
         /**
+         * @brief Get any inclusion that has @p var on the right side and save it to @p found inclusion
+         * 
+         * @return was such an inclusion found?
+         */
+        bool get_inclusion_with_var_on_right_side(const BasicTerm& var, Predicate& found_inclusion) {
+            for (const Predicate &inclusion : inclusions) {
+                for (auto const &right_var : inclusion.get_right_set()) {
+                    if (right_var == var) {
+                        found_inclusion = inclusion;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /**
          * Check if the vector @p right_side_vars depends on @p left_side_vars, i.e. if some variable
          * (NOT literal) occuring in @p right_side_vars occurs also in @p left_side_vars
          */
@@ -288,10 +303,11 @@ namespace smt::noodler {
         ///  compute_next_solution() or after preprocess()
         SolvingState solution;
 
-        // initial length vars, formula and automata assignment, can be updated by preprocessing, used for initializing the decision procedure
+        // initial length vars, formula, automata assignment and substitution map, can be updated by preprocessing, used for initializing the decision procedure
         std::unordered_set<BasicTerm> init_length_sensitive_vars;
         Formula formula;
         AutAssignment init_aut_ass;
+        std::unordered_map<BasicTerm, std::vector<BasicTerm>> init_substitution_map;
         // contains to/from_code/int conversions
         std::vector<TermConversion> conversions;
 
@@ -399,6 +415,60 @@ namespace smt::noodler {
          */
         lbool can_unify_not_contains(const FormulaPreprocessor& prep);
 
+        ////////////////////////////////////////////////////////////////
+        //////////////////// FOR MODEL GENERATION //////////////////////
+        ////////////////////////////////////////////////////////////////
+
+        // inclusions that resulted from preprocessing, we use them to generate model (we can pretend that they were all already refined)
+        std::vector<Predicate> inclusions_from_preprocessing;
+
+        /// @brief Move inclusions from inclusions_from_preprocessing to solution (and clear inclusions_from_preprocessing)
+        void move_inclusions_from_preprocessing_to_solution();
+
+        /**
+         * @brief Restrict the language of length variables in solution by their lengths from model
+         * 
+         * @param get_arith_model_of_var Returns the length of a variable in the model
+         */
+        void restrict_languages_to_lengths(const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+
+        // see get_vars_substituted_in_conversions() for what these sets mean, we save them so that we can use them in model generation
+        std::set<BasicTerm> code_subst_vars;
+        std::set<BasicTerm> int_subst_vars;
+
+        /**
+         * @brief Restricts the language of conversion vars in solution by their reults in model
+         * 
+         * @param get_arith_model_of_var Returns either the length of a str variable or the value of the int variable in the model
+         */
+        void restrict_languages_of_conversion_vars(const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        
+        bool is_model_initialized = false;
+        /**
+         * @brief Initialize model from solution
+         * 
+         * @param get_arith_model_of_var Returns either the length of a str variable or the value of the int variable in the model
+         */
+        void init_model(const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+
+        // keeps already computed models
+        std::map<BasicTerm,zstring> model_of_var;
+
+        /**
+         * @brief Update the model and its language in the solution of the variable @p var to @p computed_model
+         * 
+         * @param var The variable whose lang/model should be updated
+         * @param computed_model The model computed for @p var
+         * @return the computed model 
+         */
+        zstring update_model_and_aut_ass(BasicTerm var, zstring computed_model) {
+            model_of_var[var] = computed_model;
+            if (solution.aut_ass.contains(var)) {
+                solution.aut_ass[var] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(computed_model));
+            }
+            return computed_model;
+        };
+
     public:
 
         /**
@@ -446,6 +516,8 @@ namespace smt::noodler {
         LenNode get_initial_lengths(bool all_vars = false) override;
 
         std::pair<LenNode, LenNodePrecision> get_lengths() override;
+
+        zstring get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) override;
     };
 }
 

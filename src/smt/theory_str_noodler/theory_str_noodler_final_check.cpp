@@ -1,5 +1,6 @@
 #include <mata/nfa/builder.hh>
 #include "smt/theory_str_noodler/theory_str_noodler.h"
+#include "memb_heuristics_procedures.h"
 
 namespace smt::noodler {
     Predicate theory_str_noodler::conv_eq_pred(app* const ex) {
@@ -58,25 +59,25 @@ namespace smt::noodler {
 
     std::set<mata::Symbol> theory_str_noodler::get_symbols_from_relevant() {
         // start with symbol representing everything not in formula
-        std::set<mata::Symbol> symbols_in_formula{get_dummy_symbol()};
+        std::set<mata::Symbol> symbols_in_formula{util::get_dummy_symbol()};
 
         for (const auto &word_equation: m_word_eq_todo_rel) {
-            extract_symbols(word_equation.first, symbols_in_formula);
-            extract_symbols(word_equation.second, symbols_in_formula);
+            regex::extract_symbols(word_equation.first, m_util_s, symbols_in_formula);
+            regex::extract_symbols(word_equation.second, m_util_s, symbols_in_formula);
         }
 
         for (const auto &word_disequation: m_word_diseq_todo_rel) {
-            extract_symbols(word_disequation.first, symbols_in_formula);
-            extract_symbols(word_disequation.second, symbols_in_formula);
+            regex::extract_symbols(word_disequation.first, m_util_s, symbols_in_formula);
+            regex::extract_symbols(word_disequation.second, m_util_s, symbols_in_formula);
         }
 
         for (const auto &membership: m_membership_todo_rel) {
-            extract_symbols(std::get<1>(membership), symbols_in_formula);
+            regex::extract_symbols(std::get<1>(membership), m_util_s, symbols_in_formula);
         }
         // extract from not contains
         for(const auto& not_contains : m_not_contains_todo_rel) {
-            extract_symbols(not_contains.first, symbols_in_formula);
-            extract_symbols(not_contains.second, symbols_in_formula);
+            regex::extract_symbols(not_contains.first, m_util_s, symbols_in_formula);
+            regex::extract_symbols(not_contains.second, m_util_s, symbols_in_formula);
         }
 
         return symbols_in_formula;
@@ -176,11 +177,18 @@ namespace smt::noodler {
 
     bool theory_str_noodler::solve_lang_eqs_diseqs() {
         for(const auto& item : this->m_lang_eq_or_diseq_todo_rel) {
-            // RegLan variables should not occur here, they are eliminated by z3 rewriter I think,
-            // so both sides of the (dis)equations should be terms representing reg. languages
             expr_ref left_side = std::get<0>(item);
             expr_ref right_side = std::get<1>(item);
             bool is_equation = std::get<2>(item);
+
+            if (util::is_variable(left_side) || util::is_variable(right_side)) {
+                // RegLan variables are replaced by rewriter if we have some equation "v = some regular lang",
+                // but if we get some completely unrestricted variables (for example just disequation "v != v'"),
+                // we throw error (TODO: we could possibly handle this, theoretically we could just ignore this
+                // sort of disequations, as we can always find a language that differs and equations should not
+                // have unrestricted RegLan anyway, as they are also replaced by rewriter)
+                util::throw_error("unrestricted RegLan variables in disequations are not supported");
+            }
 
             STRACE("str",
                 tout << "Checking lang (dis)eq: " << mk_pp(left_side, m) << (is_equation ? " == " : " != ") << mk_pp(right_side, m) << std::endl;
@@ -188,13 +196,13 @@ namespace smt::noodler {
 
             // get symbols from both sides
             std::set<uint32_t> alphabet;
-            extract_symbols(left_side, alphabet);
-            extract_symbols(right_side, alphabet);
+            regex::extract_symbols(left_side, m_util_s, alphabet);
+            regex::extract_symbols(right_side, m_util_s, alphabet);
             regex::Alphabet alph(alphabet);
 
             // construct NFAs for both sides
             mata::nfa::Nfa nfa1 = regex::conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
-            mata::nfa::Nfa nfa2 = regex::conv_to_nfa(to_app(right_side), m_util_s, m, alph, false );
+            mata::nfa::Nfa nfa2 = regex::conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
 
             // check if NFAs are equivalent (if we have equation) or not (if we have disequation)
             bool are_equiv = mata::nfa::are_equivalent(nfa1, nfa2);
@@ -219,14 +227,14 @@ namespace smt::noodler {
     lbool theory_str_noodler::solve_underapprox(const Formula& instance, const AutAssignment& aut_assignment,
                                                 const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
                                                 std::vector<TermConversion> conversions) {
-        DecisionProcedure dec_proc = DecisionProcedure{ instance, aut_assignment, init_length_sensitive_vars, m_params, conversions };
-        if (dec_proc.preprocess(PreprocessType::UNDERAPPROX, this->var_eqs.get_equivalence_bt(aut_assignment)) == l_false) {
+        dec_proc = std::make_unique<DecisionProcedure>(instance, aut_assignment, init_length_sensitive_vars, m_params, conversions);
+        if (dec_proc->preprocess(PreprocessType::UNDERAPPROX, this->var_eqs.get_equivalence_bt(aut_assignment)) == l_false) {
             return l_false;
         }
 
-        dec_proc.init_computation();
-        while(dec_proc.compute_next_solution() == l_true) {
-            expr_ref lengths = len_node_to_z3_formula(dec_proc.get_lengths().first);
+        dec_proc->init_computation();
+        while(dec_proc->compute_next_solution() == l_true) {
+            expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
             if(check_len_sat(lengths) == l_true) {
                 return l_true;
             }
@@ -247,7 +255,7 @@ namespace smt::noodler {
             include_ass = false;
         }
         m_int_solver.initialize(get_context(), include_ass);
-        auto ret = m_int_solver.check_sat(len_formula);
+        auto ret = m_int_solver.check_sat(len_formula, m_params.m_produce_models, arith_model);
         // construct an unsat core --> might be expensive
         // TODO: better interface of m_int_solver
         if(unsat_core != nullptr) {
@@ -303,116 +311,6 @@ namespace smt::noodler {
         STRACE("str-block", tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
     }
 
-    void theory_str_noodler::extract_symbols(expr* const ex, std::set<uint32_t>& alphabet) {
-        if (m_util_s.str.is_string(ex)) {
-            auto ex_app{ to_app(ex) };
-            SASSERT(ex_app->get_num_parameters() == 1);
-            const zstring string_literal{ zstring{ ex_app->get_parameter(0).get_zstring() } };
-            for (size_t i{ 0 }; i < string_literal.length(); ++i) {
-                alphabet.insert(string_literal[i]);
-            }
-            return;
-        }
-
-        if(util::is_variable(ex)) { // Skip variables.
-            return;
-        }
-
-        SASSERT(is_app(ex));
-        app* ex_app = to_app(ex);
-
-        if (m_util_s.re.is_to_re(ex_app)) { // Handle conversion to regex function call.
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto arg{ ex_app->get_arg(0) };
-            // Assume that expression inside re.to_re() function is a string of characters.
-            if (!m_util_s.str.is_string(arg)) { // if to_re has something other than string literal
-                util::throw_error("we support only string literals in str.to_re");
-            }
-            extract_symbols(to_app(arg), alphabet);
-            return;
-        } else if (m_util_s.re.is_concat(ex_app) // Handle regex concatenation.
-                || m_util_s.str.is_concat(ex_app) // Handle string concatenation.
-                || m_util_s.re.is_intersection(ex_app) // Handle intersection.
-            ) {
-            for (unsigned int i = 0; i < ex_app->get_num_args(); ++i) {
-                extract_symbols(to_app(ex_app->get_arg(i)), alphabet);
-            }
-            return;
-        } else if (m_util_s.re.is_antimirov_union(ex_app)) { // Handle Antimirov union.
-            util::throw_error("antimirov union is unsupported");
-        } else if (m_util_s.re.is_complement(ex_app)) { // Handle complement.
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto child{ ex_app->get_arg(0) };
-            SASSERT(is_app(child));
-            extract_symbols(to_app(child), alphabet);
-            return;
-        } else if (m_util_s.re.is_derivative(ex_app)) { // Handle derivative.
-            util::throw_error("derivative is unsupported");
-        } else if (m_util_s.re.is_diff(ex_app)) { // Handle diff.
-            util::throw_error("regex difference is unsupported");
-        } else if (m_util_s.re.is_dot_plus(ex_app)) { // Handle dot plus.
-            // Handle repeated full char ('.+') (SMT2: (re.+ re.allchar)).
-            return;
-        } else if (m_util_s.re.is_empty(ex_app)) { // Handle empty language.
-            return;
-        } else if (m_util_s.re.is_epsilon(ex_app)) { // Handle epsilon.
-            return;
-        } else if (m_util_s.re.is_full_char(ex_app)) {
-            // Handle full char (single occurrence of any string symbol, '.') (SMT2: re.allchar).
-            return;
-        } else if (m_util_s.re.is_full_seq(ex_app)) {
-            // Handle full sequence of characters (any sequence of characters, '.*') (SMT2: re.all).
-            return;
-        } else if (m_util_s.re.is_of_pred(ex_app)) { // Handle of predicate.
-            util::throw_error("of predicate is unsupported");
-        } else if (m_util_s.re.is_opt(ex_app) // Handle optional.
-                || m_util_s.re.is_plus(ex_app) // Handle positive iteration.
-                || m_util_s.re.is_star(ex_app) // Handle star iteration.
-                || m_util_s.re.is_loop(ex_app) // Handle loop.
-            ) {
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto child{ ex_app->get_arg(0) };
-            SASSERT(is_app(child));
-            extract_symbols(to_app(child), alphabet);
-            return;
-        } else if (m_util_s.re.is_range(ex_app)) { // Handle range.
-            SASSERT(ex_app->get_num_args() == 2);
-            const auto range_begin{ ex_app->get_arg(0) };
-            const auto range_end{ ex_app->get_arg(1) };
-            SASSERT(is_app(range_begin));
-            SASSERT(is_app(range_end));
-            const auto range_begin_value{ to_app(range_begin)->get_parameter(0).get_zstring()[0] };
-            const auto range_end_value{ to_app(range_end)->get_parameter(0).get_zstring()[0] };
-
-            auto current_value{ range_begin_value };
-            while (current_value <= range_end_value) {
-                alphabet.insert(current_value);
-                ++current_value;
-            }
-        } else if (m_util_s.re.is_reverse(ex_app)) { // Handle reverse.
-            util::throw_error("reverse is unsupported");
-        } else if (m_util_s.re.is_union(ex_app)) { // Handle union (= or; A|B).
-            SASSERT(ex_app->get_num_args() == 2);
-            const auto left{ ex_app->get_arg(0) };
-            const auto right{ ex_app->get_arg(1) };
-            SASSERT(is_app(left));
-            SASSERT(is_app(right));
-            extract_symbols(to_app(left), alphabet);
-            extract_symbols(to_app(right), alphabet);
-            return;
-        } else if(util::is_variable(ex_app)) { // Handle variable.
-            util::throw_error("variable should not occur here");
-        } else {
-            // When ex is not string literal, variable, nor regex, recursively traverse the AST to find symbols.
-            // TODO: maybe we can just leave is_range, is_variable and is_string in this function and otherwise do this:
-            for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
-                SASSERT(is_app(ex_app->get_arg(i)));
-                app *arg = to_app(ex_app->get_arg(i));
-                extract_symbols(arg, alphabet);
-            }
-        }
-    }
-
     bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const {
         if(!this->m_membership_todo_rel.empty() || !this->m_not_contains_todo_rel.empty() || !this->m_conversion_todo.empty() || !this->m_word_diseq_todo_rel.empty()) {
             return false;
@@ -459,14 +357,14 @@ namespace smt::noodler {
 
     lbool theory_str_noodler::run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
         STRACE("str", tout << "Trying nielsen" << std::endl);
-        NielsenDecisionProcedure nproc(instance, aut_assignment, init_length_sensitive_vars, m_params);
-        nproc.preprocess();
+        dec_proc = std::make_unique<NielsenDecisionProcedure>(instance, aut_assignment, init_length_sensitive_vars, m_params);
+        dec_proc->preprocess();
         expr_ref block_len(m.mk_false(), m);
-        nproc.init_computation();
+        dec_proc->init_computation();
         while (true) {
-            lbool result = nproc.compute_next_solution();
+            lbool result = dec_proc->compute_next_solution();
             if (result == l_true) {
-                expr_ref lengths = len_node_to_z3_formula(nproc.get_lengths().first);
+                expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
                 if (check_len_sat(lengths) == l_true) {
                     return l_true;
                 } else {
@@ -481,44 +379,6 @@ namespace smt::noodler {
             } else {
                 // we could not decide if there is solution, continue with noodler decision procedure
                 break;
-            }
-        }
-        return l_undef;
-    }
-
-    lbool theory_str_noodler::run_membership_heur() {
-        STRACE("str", tout << "Trying heuristic for the case we only have 'x (not)in RE'" << std::endl);
-        const auto& reg_data = this->m_membership_todo_rel[0];
-        // Heuristic: Get info about the regular expression. If the membership is negated and the regex is not universal for sure --> return FC_DONE.
-        // If the membership is in the positive form and the regex is not empty --> regurn FC_DONE.
-        regex::RegexInfo regInfo = regex::get_regex_info(to_app(std::get<1>(reg_data)), m_util_s, m);
-        if(!std::get<2>(reg_data) && !this->len_vars.contains(std::get<0>(reg_data)) && regInfo.universal == l_false) {
-            return l_true;
-        }
-        if(std::get<2>(reg_data) && !this->len_vars.contains(std::get<0>(reg_data)) && regInfo.empty == l_false) {
-            return l_true;
-        }
-        if(!std::get<2>(reg_data) // membership is negated
-            && !this->len_vars.contains(std::get<0>(reg_data)) // x is not length variable
-        ) {
-            // start with minterm representing symbols not ocurring in the regex
-            std::set<mata::Symbol> symbols_in_regex{get_dummy_symbol()};
-            extract_symbols(std::get<1>(reg_data), symbols_in_regex);
-            regex::Alphabet reg_alph(symbols_in_regex);
-
-            mata::nfa::Nfa nfa{ regex::conv_to_nfa(to_app(std::get<1>(reg_data)), m_util_s, m, reg_alph, false, false) };
-
-            mata::EnumAlphabet alph(symbols_in_regex.begin(), symbols_in_regex.end());
-            mata::nfa::Nfa sigma_star = mata::nfa::builder::create_sigma_star_nfa(&alph);
-
-            if(mata::nfa::are_equivalent(nfa, sigma_star)) {
-                // x should not belong in sigma*, so it is unsat
-                block_curr_len(expr_ref(this->m.mk_false(), this->m));
-                STRACE("str", tout << "Membership " << mk_pp(std::get<0>(reg_data), m) << " not in " << mk_pp(std::get<1>(reg_data), m) << " is unsat" << std::endl;);
-                return l_false;
-            } else {
-                // otherwise x should not belong in some nfa that is not sigma*, so it is sat
-                return l_true;
             }
         }
         return l_undef;
@@ -591,78 +451,8 @@ namespace smt::noodler {
             var_to_list_of_regexes_and_complement_flag[var].push_back(std::make_pair(false, reg));
         }
 
-        for (auto& [var, list_of_regexes] : var_to_list_of_regexes_and_complement_flag) {
-            // sort the regexes using get_loop_sum, where those regexes that needs to be complemented should all be at the end
-            std::sort(list_of_regexes.begin(), list_of_regexes.end(), [this](const std::pair<bool,app*>& l, const std::pair<bool,app*>& r) {
-                return ((!l.first && r.first) | (regex::get_loop_sum(l.second, m_util_s) < regex::get_loop_sum(r.second, m_util_s)));
-            });
-            STRACE("str-mult-memb-heur",
-                tout << "Sorted regexes for var " << var << std::endl;
-                unsigned i = 0;
-                for (const auto & [is_complement, reg] : list_of_regexes) {
-                    tout << i << " (should " << (is_complement ? "" : "NOT ") <<"be complemented):" << mk_pp(reg, m) << std::endl;
-                }
-            );
-
-            std::vector<app*> list_of_normal_regs;
-            std::vector<app*> list_of_compl_regs;
-            for (auto& [is_complement, reg] : list_of_regexes) {
-                if (is_complement) {
-                    list_of_compl_regs.push_back(reg);
-                } else {
-                    list_of_normal_regs.push_back(reg);
-                }
-            }
-
-            // Compute intersection L of all regexes that should not be complemented
-            mata::nfa::Nfa intersection(1, {0}, {0});
-            // initalize to universal automaton
-            for (const mata::Symbol& symb : alph.get_alphabet()) {
-                intersection.delta.add(0, symb, 0);
-            }
-
-            bool first = true;
-            for (auto& reg : list_of_normal_regs) {
-                intersection = mata::nfa::intersection(regex::conv_to_nfa(reg, m_util_s, m, alph, false, false), intersection);
-                if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
-                    && intersection.num_of_states() < regex::RED_BOUND)
-                {
-                    intersection = mata::nfa::reduce(intersection);
-                }
-                first = false;
-                if (intersection.is_lang_empty()) {
-                    STRACE("str", tout << "intersection is empty => UNSAT" << std::endl;);
-                    block_curr_len(expr_ref(this->m.mk_false(), this->m));
-                    return l_false;
-                }
-            }
-
-            // Compute union L' of all regexes that should be complemented (we are using de Morgan)
-            mata::nfa::Nfa unionn; // initialize to empty automaton
-            first = true;
-            for (auto& reg : list_of_compl_regs) {
-                unionn = mata::nfa::uni(regex::conv_to_nfa(reg, m_util_s, m, alph, false, false), unionn);
-                if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
-                    && unionn.num_of_states() < regex::RED_BOUND)
-                {
-                    unionn = mata::nfa::reduce(unionn);
-                }
-                first = false;
-            }
-            
-            STRACE("str-mult-memb-heur", tout << "computing inclusion" << std::endl;);
-
-            // We want to know if L \intersect \neg L' is empty, which is same as asking if L is subset of L'
-            if (mata::nfa::is_included(intersection, unionn)) {
-                // if inclusion holds, the intersection is empty => UNSAT
-                STRACE("str", tout << "inclusion holds => UNSAT" << std::endl;);
-                block_curr_len(expr_ref(this->m.mk_false(), this->m));
-                return l_false;
-            }
-        }
-
-        STRACE("str", tout << "inclusion holds for all vars => SAT" << std::endl;);
-        return l_true;
+        dec_proc = std::make_unique<MultMembHeuristicProcedure>(var_to_list_of_regexes_and_complement_flag, alph, m_util_s, m);
+        return dec_proc->compute_next_solution();
     }
 
     lbool theory_str_noodler::run_loop_protection() {
@@ -717,8 +507,8 @@ namespace smt::noodler {
                                 const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
                                 std::vector<TermConversion> conversions) {
 
-        DecisionProcedure dec_proc = DecisionProcedure{ instance, aut_ass, init_length_sensitive_vars, m_params, conversions };
-        expr_ref lengths = len_node_to_z3_formula(dec_proc.get_initial_lengths());
+        dec_proc = std::make_unique<DecisionProcedure>(instance, aut_ass, init_length_sensitive_vars, m_params, conversions);
+        expr_ref lengths = len_node_to_z3_formula(dec_proc->get_initial_lengths());
         if(check_len_sat(lengths) == l_false) {
             STRACE("str", tout << "Unsat from initial lengths (one symbol)" << std::endl);
             block_curr_len(lengths, true, true);
