@@ -1,19 +1,21 @@
 
 #include "ca_str_constr.h"
+#include "util.h"
+#include <unordered_map>
 
 namespace smt::noodler::ca {
 
     void DiseqAutMatrix::create_aut_matrix(const Predicate& diseq, const AutAssignment& aut_ass) {
         // we want to include both variables and literals
         std::set<BasicTerm> var_set = diseq.get_set();
-            
+
         // create fixed linear order of variables
         for(const BasicTerm& bt : var_set) {
             this->var_order.push_back(bt);
         }
-            
+
         // set offset size
-        this->offsets.resize(3*var_set.size() + 1);
+        this->var_aut_init_states_in_copy.resize(3*var_set.size() + 1);
         // three copies
         this->aut_matrix.resize(3);
         for(size_t copy = 0; copy < 3; copy++) {
@@ -24,22 +26,22 @@ namespace smt::noodler::ca {
                 this->aut_matrix[copy][var] = mata::nfa::reduce(this->aut_matrix[copy][var]);
             }
         }
-        recompute_offset();
+        recompute_var_aut_init_state_positions();
     }
 
-    void DiseqAutMatrix::recompute_offset() {
-        this->offsets[0] = 0;
+    void DiseqAutMatrix::recompute_var_aut_init_state_positions() {
+        this->var_aut_init_states_in_copy[0] = 0;
         for(size_t copy = 0; copy < 3; copy++) {
             for(size_t var = 0; var < this->var_order.size(); var++) {
                 size_t index = copy*this->var_order.size() + var;
-                this->offsets[index + 1] = this->offsets[index] + this->aut_matrix[copy][var].num_of_states();
+                this->var_aut_init_states_in_copy[index + 1] = this->var_aut_init_states_in_copy[index] + this->aut_matrix[copy][var].num_of_states();
             }
         }
     }
 
     mata::nfa::Nfa DiseqAutMatrix::union_matrix() const {
         mata::nfa::Nfa ret;
-        // assumes that the union is updates the states of the original automaton by 
+        // assumes that the union is updates the states of the original automaton by
         // adding a constant (which is given by the num of states of the original automaton)
         for(size_t copy = 0; copy < 3; copy++) {
             // eps-concatenate each variable automaton in a copy
@@ -95,7 +97,7 @@ namespace smt::noodler::ca {
         };
 
         // original automaton --> we need the original symbols to store them to AtomicSymbol
-        // (the original symbols are already lost in this->aut_matrix --> already replace by 
+        // (the original symbols are already lost in this->aut_matrix --> already replace by
         // AtomicSymbol completely forgetting the original symbols).
         mata::nfa::Nfa aut_orig = *this->aut_ass.at(bt);
         for (mata::nfa::State st = 0; st < aut_orig.num_of_states(); st++) {
@@ -112,7 +114,7 @@ namespace smt::noodler::ca {
 
                 for(const mata::nfa::State& tgt : spost.targets) {
                     aut_union.delta.add(
-                        this->aut_matrix.get_union_state(copy_start, var, st), 
+                        this->aut_matrix.get_union_state(copy_start, var, st),
                         new_symbol,
                         this->aut_matrix.get_union_state(copy_start+1, var, tgt)
                     );
@@ -129,7 +131,7 @@ namespace smt::noodler::ca {
             for(size_t var = 0; var < var_order.size(); var++) {
                 // replace each automaton in the matrix with the specific AtomicSymbol
                 replace_symbols(copy, var);
-            } 
+            }
         }
 
         // union all automata in the matrix
@@ -141,11 +143,14 @@ namespace smt::noodler::ca {
         for(char copy = 0; copy < 2; copy++) {
             for(size_t var = 0; var < var_order.size(); var++) {
                 add_connection(copy, var, aut_union);
-            } 
+            }
         }
 
         return { aut_union, this->alph, var_order };
     }
+
+    //-----------------------------------------------------------------------------------------------
+
 
     //-----------------------------------------------------------------------------------------------
 
@@ -159,7 +164,7 @@ namespace smt::noodler::ca {
         prep_handler.propagate_eps();
         prep_handler.remove_trivial();
         prep_handler.reduce_diseqalities();
-        
+
         if(prep_handler.get_modified_formula().get_predicates().size() == 0) {
             return LenNode(LenFormulaType::FALSE);
         }
@@ -203,17 +208,111 @@ namespace smt::noodler::ca {
         return pi_formula;
     }
 
-    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& not_conts, const AutAssignment& autass) {
-        if(not_conts.get_predicates().size() == 0) {
+    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& formula, const AutAssignment& var_assignment) {
+
+        if (formula.get_predicates().empty()) {
             return { LenNode(LenFormulaType::TRUE), LenNodePrecision::PRECISE };
         }
 
-        FormulaPreprocessor prep_handler{not_conts, autass, {}, {}, {}};
+        FormulaPreprocessor prep_handler{formula, var_assignment, {}, {}, {}};
         prep_handler.propagate_eps();
-        if(!prep_handler.replace_not_contains() || prep_handler.can_unify_not_contains()) {
+
+        bool is_not_contains_obviously_false = !prep_handler.replace_not_contains();
+        bool is_not_contains_syntactically_false = prep_handler.can_unify_not_contains();
+
+        if (is_not_contains_obviously_false || is_not_contains_syntactically_false) {
             return { LenNode(LenFormulaType::FALSE), LenNodePrecision::PRECISE };
+        }
+
+        if (formula.get_predicates().size() > 1) {
+            // We have more than 1 notContains, for now we pretent we don't know what to do with it
+            return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
+        }
+
+        const Predicate& not_contains = formula.get_predicates().at(0);
+
+        // #Optimize(mhecko): Add a Iterator<const BasicTerm> to Predicate - it is pointless to create a set
+        std::set<BasicTerm> vars = not_contains.get_set();
+
+        bool can_construct_lia = true;
+        for (const BasicTerm& var : vars) {
+            if (var.get_type() == BasicTermType::Literal) {
+                // var is a literal - right now we do not support that.
+                STRACE("str-not-contains", tout << "* not-contains has a literal - we do not support literals yet\n"; );
+                can_construct_lia = false;
+                break;
+            }
+
+            if (!var_assignment.is_flat(var)) {
+                STRACE("str-not-contains", tout << "* cannot reduce to LIA - one of the input vars does not have a flat langauge\n"; );
+                can_construct_lia = false;
+                break;
+
+            };
+        }
+
+        // #progress(mhecko): What needs to be implemented:
+        // - support for literals
+        // - diseq>LIA - allow introducing a constant offset into the resulting formula
+        // - Parikh image :: LIA formula that is true iff two given models of a PI encode the same word
+        // - Length diff :: LIA formula that is true iff RHS is longer than LHS
+
+        if (!can_construct_lia) {
+            return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
         }
 
         return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
     }
+
+    LenNode make_lia_rhs_longer_than_lhs(const TagDiseqGen& lia_generator, const parikh::ParikhImage& parikh_image) {
+
+        auto& first_row = lia_generator.get_aut_matrix().get_matrix_row(0);
+        size_t states_in_matrix_row = 0;
+        for (const mata::nfa::Nfa& nfa : first_row) { states_in_matrix_row += nfa.num_of_states(); }
+
+        std::unordered_map<int, std::vector<BasicTerm>> var_word_length_constributing_transitions;
+
+        for (auto& [transition, transition_var]: parikh_image.get_trans_vars()) {
+            // Figure out to which Aut(x) the transition ultimately belong:
+            // taking a (mod nuber_of_states_in_row) shifts the state numbers back into the source row
+            mata::nfa::State source_state = std::get<0>(transition) % states_in_matrix_row;
+            mata::nfa::State target_state = std::get<2>(transition) % states_in_matrix_row;
+
+            const std::vector<size_t>& var_init_states_offsets = lia_generator.get_aut_matrix().get_var_init_states_pos_in_copies();
+            size_t source_var = bin_search_leftmost(var_init_states_offsets, source_state);
+            size_t target_var = bin_search_leftmost(var_init_states_offsets, target_state);
+
+            // #Note(mhecko): Temporary, this needs to be removed before merging (?)
+            assert (source_origin_var != -1);
+            assert (target_origin_var != -1);
+
+            if (source_var != target_var) continue; // eps-transition
+
+            var_word_length_constributing_transitions[source_var].push_back(transition_var);
+        }
+
+        const Predicate& not_contains = lia_generator.get_underlying_predicate();
+
+        std::unordered_map<BasicTerm, std::pair<size_t, size_t>> var_occurence_counts;
+        for (const BasicTerm& term: not_contains.get_left_side()) {
+            auto [old_map_entry, did_emplace_happen] = var_occurence_counts.emplace(term, 1, 0);
+            if (!did_emplace_happen) {
+                old_map_entry->second.first += 1; // Increment the number of LHS occurrences (.first)
+            }
+        }
+
+        for (const BasicTerm& term: not_contains.get_right_side()) {
+            auto [old_map_entry, did_emplace_happen] = var_occurence_counts.emplace(term, 0, 1);
+            if (!did_emplace_happen) {
+                old_map_entry->second.second += 1; // Increment the number of RHS occurrences (.second)
+            }
+        }
+
+        // TODO(mhecko): emit LIA formula
+
+        return LenNode(LenFormulaType::FALSE);
+    }
 }
+
+// Questions for noodler devs:
+// - how to introduce a new variable (so that the var handle will not be conflicting with any other variables)
