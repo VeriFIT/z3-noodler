@@ -104,6 +104,10 @@ namespace smt::noodler::ca {
         const mata::nfa::Nfa& get_aut(size_t copy, size_t var) const {
             return this->aut_matrix[copy][var];
         }
+
+        size_t get_number_of_states_in_row() const {
+            return 0; // TODO
+        }
     };
 
     /**

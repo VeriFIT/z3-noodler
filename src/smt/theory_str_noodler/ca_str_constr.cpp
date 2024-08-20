@@ -1,5 +1,6 @@
 
 #include "ca_str_constr.h"
+#include "formula.h"
 #include "util.h"
 #include <unordered_map>
 
@@ -254,8 +255,6 @@ namespace smt::noodler::ca {
         // #progress(mhecko): What needs to be implemented:
         // - support for literals
         // - diseq>LIA - allow introducing a constant offset into the resulting formula
-        // - Parikh image :: LIA formula that is true iff two given models of a PI encode the same word
-        // - Length diff :: LIA formula that is true iff RHS is longer than LHS
 
         if (!can_construct_lia) {
             return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
@@ -264,13 +263,8 @@ namespace smt::noodler::ca {
         return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
     }
 
-    LenNode make_lia_rhs_longer_than_lhs(const TagDiseqGen& lia_generator, const parikh::ParikhImage& parikh_image) {
-
-        auto& first_row = lia_generator.get_aut_matrix().get_matrix_row(0);
-        size_t states_in_matrix_row = 0;
-        for (const mata::nfa::Nfa& nfa : first_row) { states_in_matrix_row += nfa.num_of_states(); }
-
-        std::unordered_map<int, std::vector<BasicTerm>> var_word_length_constributing_transitions;
+    std::unordered_map<int, std::vector<LenNode>> gather_parikh_transitions_for_vars(const TagDiseqGen& context, const parikh::ParikhImage& parikh_image, size_t states_in_matrix_row) {
+        std::unordered_map<int, std::vector<LenNode>> var_transitions_lia_vars;
 
         for (auto& [transition, transition_var]: parikh_image.get_trans_vars()) {
             // Figure out to which Aut(x) the transition ultimately belong:
@@ -278,7 +272,10 @@ namespace smt::noodler::ca {
             mata::nfa::State source_state = std::get<0>(transition) % states_in_matrix_row;
             mata::nfa::State target_state = std::get<2>(transition) % states_in_matrix_row;
 
-            const std::vector<size_t>& var_init_states_offsets = lia_generator.get_aut_matrix().get_var_init_states_pos_in_copies();
+            const std::vector<size_t>& var_init_states_offsets = context.get_aut_matrix().get_var_init_states_pos_in_copies();
+
+            // #Optimize(mhecko): Although binary search seems cool, the number of variables is likely to be small, and,
+            //                    therefore, linear search could be faster
             size_t source_var = bin_search_leftmost(var_init_states_offsets, source_state);
             size_t target_var = bin_search_leftmost(var_init_states_offsets, target_state);
 
@@ -288,8 +285,21 @@ namespace smt::noodler::ca {
 
             if (source_var != target_var) continue; // eps-transition
 
-            var_word_length_constributing_transitions[source_var].push_back(transition_var);
+            var_transitions_lia_vars[source_var].push_back(LenNode(transition_var));
         }
+
+        return var_transitions_lia_vars;
+    }
+
+    LenNode make_lia_rhs_longer_than_lhs(const TagDiseqGen& lia_generator, const parikh::ParikhImage& parikh_image) {
+        // TODO(mhecko): This needs to be changed to accept offset - we are not interested in length diff,
+        //               but rather that we have shifted the LHS out of RHS
+
+        auto& first_row = lia_generator.get_aut_matrix().get_matrix_row(0);
+        size_t states_in_matrix_row = 0;
+        for (const mata::nfa::Nfa& nfa : first_row) { states_in_matrix_row += nfa.num_of_states(); }
+
+        std::unordered_map<int, std::vector<LenNode>> var_transitions_lia_vars = gather_parikh_transitions_for_vars(lia_generator, parikh_image, states_in_matrix_row);
 
         const Predicate& not_contains = lia_generator.get_underlying_predicate();
 
@@ -308,10 +318,88 @@ namespace smt::noodler::ca {
             }
         }
 
-        // TODO(mhecko): emit LIA formula
+        std::vector<LenNode> len_diff_expr;
+        len_diff_expr.reserve(2*var_occurence_counts.size());  // Speculative
+
+        std::vector<BasicTerm> var_order = lia_generator.get_aut_matrix().get_var_order();
+        for (size_t var_idx = 0; var_idx < var_order.size(); var_idx++) {
+            const BasicTerm& var = var_order[var_idx];
+            auto var_occurrence_count_bucket = var_occurence_counts.find(var);
+
+            if (var_occurrence_count_bucket == var_occurence_counts.end()) {
+                continue; // Variable does not occurr in the predicate
+            }
+
+            std::pair<size_t, size_t> var_occurrence_info = var_occurrence_count_bucket->second;
+            int sum_coef = static_cast<int>(var_occurrence_info.first) - static_cast<int>(var_occurrence_info.second); // LHS - RHS
+
+            std::vector<LenNode>& var_transitions = var_transitions_lia_vars[var_idx];
+            LenNode transitions_sum = LenNode(LenFormulaType::PLUS, var_transitions);
+
+            len_diff_expr.push_back(LenNode(LenFormulaType::TIMES, {LenNode(sum_coef), transitions_sum}));
+        }
+
+        LenNode len_diff_node = LenNode(LenFormulaType::PLUS, len_diff_expr);
+        return LenNode(LenFormulaType::LEQ, {len_diff_node, LenNode(0)});
+    }
+
+    typedef std::pair<mata::nfa::State, mata::nfa::State> StatePair;
+
+    std::unordered_map<StatePair, std::vector<LenNode>> group_isomorphic_transitions_across_copies(const TagDiseqGen& context, const parikh::ParikhImage& parikh_image) {
+        size_t transitions_in_row = context.get_aut_matrix().get_number_of_states_in_row();
+
+        std::unordered_map<StatePair, std::vector<LenNode>> isomorphic_transitions;
+
+        for (auto& [transition, transition_var]: parikh_image.get_trans_vars()) {
+            size_t source_state = std::get<0>(transition) % transitions_in_row;
+            size_t target_state = std::get<2>(transition) % transitions_in_row;
+
+            StatePair state_pair = {source_state, target_state};
+            std::vector<LenNode>& isomorphic_transition_vars = isomorphic_transitions[state_pair];
+            isomorphic_transition_vars.push_back(transition_var);
+        }
+
+        return isomorphic_transitions;
+    }
+
+    LenNode mk_parikh_images_encode_same_word_assertion(const TagDiseqGen& context, const parikh::ParikhImage& parikh_image, const parikh::ParikhImage& other_image) {
+
+        std::unordered_map<StatePair, std::vector<LenNode>> isomorphic_transitions = group_isomorphic_transitions_across_copies(context, parikh_image);
+        std::unordered_map<StatePair, std::vector<LenNode>> other_isomorphic_transitions = group_isomorphic_transitions_across_copies(context, other_image);
+
+        assert (isomorphic_transitions.size() == other_isomorphic_transitions.size()); // Sanity
+
+        std::vector<LenNode> resulting_conjunction_atoms;
+
+        for (auto& [state_pair, transition_vars] : isomorphic_transitions) {
+            auto other_transition_vars_bucket = other_isomorphic_transitions.find(state_pair);
+
+            assert (other_transition_vars_bucket != other_isomorphic_transitions.end());
+
+            std::vector<LenNode>& other_transition_vars = other_transition_vars_bucket->second;
+
+            LenNode lhs_vars = LenNode(LenFormulaType::PLUS, transition_vars);
+            LenNode rhs_vars = LenNode(LenFormulaType::PLUS, other_transition_vars);
+            LenNode equality = LenNode(LenFormulaType::EQ, {lhs_vars, rhs_vars});
+
+            resulting_conjunction_atoms.push_back(equality);
+        }
+
+        return LenNode(LenFormulaType::AND, resulting_conjunction_atoms);
+    }
+
+    LenNode mk_notcontains_formula(const TagDiseqGen& context) {
+        // TODO(mhecko):
+        // [implemented] 1) Compute Parikh image formula PI(A) for the underlying matrix in context
+        // [implemented] 2) Compute Parikh image formula PI(B) for the underlying matrix in context - different vars
+        // [implemented] 3) Compute PI_Agree(A, B)
+        // [implemented, don't understand how yet]
+        //    Compute Phi_mismatch asserting that there is a mismatch in B
+        // [kind of done] Compute formula asserting that the word is shifted outside of LHS
 
         return LenNode(LenFormulaType::FALSE);
     }
+
 }
 
 // Questions for noodler devs:
