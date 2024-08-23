@@ -42,8 +42,9 @@ namespace smt::noodler::ca {
 
     mata::nfa::Nfa DiseqAutMatrix::union_matrix() const {
         mata::nfa::Nfa ret;
-        // assumes that the union is updates the states of the original automaton by
-        // adding a constant (which is given by the num of states of the original automaton)
+
+        // assumes that the union renumbers the states of the original automaton by
+        // adding a constant (which is given by the number of states of the original automaton)
         for(size_t copy = 0; copy < 3; copy++) {
             // eps-concatenate each variable automaton in a copy
             mata::nfa::Nfa aut_line = this->aut_matrix[copy][0];
@@ -60,6 +61,9 @@ namespace smt::noodler::ca {
             }
             ret.unite_nondet_with(aut_line);
         }
+
+        // #Correctness(mhecko): Shouldn't we reset the initial states of the result here? This way we make
+        //                       an automaton with 3 initial states, IIUC what NFA.unite_nondet_with does.
         return ret;
     }
 
@@ -82,42 +86,46 @@ namespace smt::noodler::ca {
     }
 
 
-    void TagDiseqGen::add_connection(char copy_start, size_t var, mata::nfa::Nfa& aut_union) {
+    void TagDiseqGen::add_connection(char copy_start, size_t var_idx, mata::nfa::Nfa& aut_union) {
 
-        // mapping between original symbols and new counter symbols from this->alph
-        std::map<mata::Symbol, mata::Symbol> symbols;
+        // mapping between original symbols and new counter symbols from this->alph ensuring that the created
+        // symbols are named consistently by the same mata state.
+        std::map<mata::Symbol, mata::Symbol> original_to_tag_symbols;
 
         // basic term corresponding to the positional var
-        BasicTerm bt = this->aut_matrix.get_var_order()[var];
+        BasicTerm bt = this->aut_matrix.get_var_order()[var_idx];
 
         // lambda for a particular symbol construction
-        auto const_symbol = [](char copy, const BasicTerm& bt, mata::Symbol sym) -> std::set<ca::AtomicSymbol> {
-            // <L,x>, <P,x,copy>, <R,x,copy,a>
-            std::set<ca::AtomicSymbol> ats({ ca::AtomicSymbol::create_l_symbol(bt), ca::AtomicSymbol::create_p_symbol(bt, copy), ca::AtomicSymbol::create_r_symbol(bt, copy, sym) });
-            return ats;
+        auto const_symbol = [](char copy_idx, const BasicTerm& bt, mata::Symbol sym) -> std::set<ca::AtomicSymbol> {
+            // <L,x>, <P,x,copy_idx>, <R,x,copy_idx,a>
+            std::set<ca::AtomicSymbol> atomic_symbol({ ca::AtomicSymbol::create_l_symbol(bt),
+                                                       ca::AtomicSymbol::create_p_symbol(bt, copy_idx),
+                                                       ca::AtomicSymbol::create_r_symbol(bt, copy_idx, sym) });
+            return atomic_symbol;
         };
 
-        // original automaton --> we need the original symbols to store them to AtomicSymbol
-        // (the original symbols are already lost in this->aut_matrix --> already replace by
-        // AtomicSymbol completely forgetting the original symbols).
-        mata::nfa::Nfa aut_orig = *this->aut_ass.at(bt);
-        for (mata::nfa::State st = 0; st < aut_orig.num_of_states(); st++) {
-            for(const mata::nfa::SymbolPost& spost : aut_orig.delta[st]) {
+        // We use the original automaton from this->aut_ass because the actual alphabet symbols
+        // might not be present in this->aut_matrix because they were replaced earlier by tags (<L, x>, etc.).
+        mata::nfa::Nfa original_automaton = *this->aut_ass.at(bt);
+
+        for (mata::nfa::State source_state = 0; source_state < original_automaton.num_of_states(); source_state++) {
+            for (const mata::nfa::SymbolPost& symbol_post : original_automaton.delta[source_state]) {
                 // compute new mata symbol storing the set of AtomicSymbols
-                auto it = symbols.find(spost.symbol);
+                auto original_sym_mapping_bucket = original_to_tag_symbols.find(symbol_post.symbol);
+
                 mata::Symbol new_symbol;
-                if (it != symbols.end()) {
-                    new_symbol = it->second;
+                if (original_sym_mapping_bucket != original_to_tag_symbols.end()) {
+                    new_symbol = original_sym_mapping_bucket->second;
                 } else {
-                    new_symbol = this->alph.add_symbol(const_symbol(copy_start + 1, bt, spost.symbol));
-                    symbols[spost.symbol] = new_symbol;
+                    new_symbol = this->alph.add_symbol(const_symbol(copy_start + 1, bt, symbol_post.symbol));
+                    original_to_tag_symbols[symbol_post.symbol] = new_symbol;
                 }
 
-                for(const mata::nfa::State& tgt : spost.targets) {
+                for (const mata::nfa::State& target : symbol_post.targets) {
                     aut_union.delta.add(
-                        this->aut_matrix.get_union_state(copy_start, var, st),
+                        this->aut_matrix.get_union_state(copy_start, var_idx, source_state),
                         new_symbol,
-                        this->aut_matrix.get_union_state(copy_start+1, var, tgt)
+                        this->aut_matrix.get_union_state(copy_start+1, var_idx, target)
                     );
                 }
             }
@@ -196,7 +204,7 @@ namespace smt::noodler::ca {
 
         // we include only those symbols occurring in the reduced tag automaton
         std::set<AtomicSymbol> ats;
-        for(const auto& trans : tag_aut.nfa.delta.transitions()) {
+        for (const auto& trans : tag_aut.nfa.delta.transitions()) {
             std::set<AtomicSymbol> sms = tag_aut.alph.get_symbol(trans.symbol);
             ats.insert(sms.begin(), sms.end());
         }
@@ -252,152 +260,11 @@ namespace smt::noodler::ca {
             };
         }
 
-        // #progress(mhecko): What needs to be implemented:
-        // - support for literals
-        // - diseq>LIA - allow introducing a constant offset into the resulting formula
-
         if (!can_construct_lia) {
             return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
         }
 
         return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
-    }
-
-    std::unordered_map<int, std::vector<LenNode>> gather_parikh_transitions_for_vars(const TagDiseqGen& context, const parikh::ParikhImage& parikh_image, size_t states_in_matrix_row) {
-        std::unordered_map<int, std::vector<LenNode>> var_transitions_lia_vars;
-
-        for (auto& [transition, transition_var]: parikh_image.get_trans_vars()) {
-            // Figure out to which Aut(x) the transition ultimately belong:
-            // taking a (mod nuber_of_states_in_row) shifts the state numbers back into the source row
-            mata::nfa::State source_state = std::get<0>(transition) % states_in_matrix_row;
-            mata::nfa::State target_state = std::get<2>(transition) % states_in_matrix_row;
-
-            const std::vector<size_t>& var_init_states_offsets = context.get_aut_matrix().get_var_init_states_pos_in_copies();
-
-            // #Optimize(mhecko): Although binary search seems cool, the number of variables is likely to be small, and,
-            //                    therefore, linear search could be faster
-            size_t source_var = bin_search_leftmost(var_init_states_offsets, source_state);
-            size_t target_var = bin_search_leftmost(var_init_states_offsets, target_state);
-
-            // #Note(mhecko): Temporary, this needs to be removed before merging (?)
-            assert (source_origin_var != -1);
-            assert (target_origin_var != -1);
-
-            if (source_var != target_var) continue; // eps-transition
-
-            var_transitions_lia_vars[source_var].push_back(LenNode(transition_var));
-        }
-
-        return var_transitions_lia_vars;
-    }
-
-    LenNode make_lia_rhs_longer_than_lhs(const TagDiseqGen& lia_generator, const parikh::ParikhImage& parikh_image) {
-        // TODO(mhecko): This needs to be changed to accept offset - we are not interested in length diff,
-        //               but rather that we have shifted the LHS out of RHS
-
-        auto& first_row = lia_generator.get_aut_matrix().get_matrix_row(0);
-        size_t states_in_matrix_row = 0;
-        for (const mata::nfa::Nfa& nfa : first_row) { states_in_matrix_row += nfa.num_of_states(); }
-
-        std::unordered_map<int, std::vector<LenNode>> var_transitions_lia_vars = gather_parikh_transitions_for_vars(lia_generator, parikh_image, states_in_matrix_row);
-
-        const Predicate& not_contains = lia_generator.get_underlying_predicate();
-
-        std::unordered_map<BasicTerm, std::pair<size_t, size_t>> var_occurence_counts;
-        for (const BasicTerm& term: not_contains.get_left_side()) {
-            auto [old_map_entry, did_emplace_happen] = var_occurence_counts.emplace(term, 1, 0);
-            if (!did_emplace_happen) {
-                old_map_entry->second.first += 1; // Increment the number of LHS occurrences (.first)
-            }
-        }
-
-        for (const BasicTerm& term: not_contains.get_right_side()) {
-            auto [old_map_entry, did_emplace_happen] = var_occurence_counts.emplace(term, 0, 1);
-            if (!did_emplace_happen) {
-                old_map_entry->second.second += 1; // Increment the number of RHS occurrences (.second)
-            }
-        }
-
-        std::vector<LenNode> len_diff_expr;
-        len_diff_expr.reserve(2*var_occurence_counts.size());  // Speculative
-
-        std::vector<BasicTerm> var_order = lia_generator.get_aut_matrix().get_var_order();
-        for (size_t var_idx = 0; var_idx < var_order.size(); var_idx++) {
-            const BasicTerm& var = var_order[var_idx];
-            auto var_occurrence_count_bucket = var_occurence_counts.find(var);
-
-            if (var_occurrence_count_bucket == var_occurence_counts.end()) {
-                continue; // Variable does not occurr in the predicate
-            }
-
-            std::pair<size_t, size_t> var_occurrence_info = var_occurrence_count_bucket->second;
-            int sum_coef = static_cast<int>(var_occurrence_info.first) - static_cast<int>(var_occurrence_info.second); // LHS - RHS
-
-            std::vector<LenNode>& var_transitions = var_transitions_lia_vars[var_idx];
-            LenNode transitions_sum = LenNode(LenFormulaType::PLUS, var_transitions);
-
-            len_diff_expr.push_back(LenNode(LenFormulaType::TIMES, {LenNode(sum_coef), transitions_sum}));
-        }
-
-        LenNode len_diff_node = LenNode(LenFormulaType::PLUS, len_diff_expr);
-        return LenNode(LenFormulaType::LEQ, {len_diff_node, LenNode(0)});
-    }
-
-    typedef std::pair<mata::nfa::State, mata::nfa::State> StatePair;
-
-    std::unordered_map<StatePair, std::vector<LenNode>> group_isomorphic_transitions_across_copies(const TagDiseqGen& context, const parikh::ParikhImage& parikh_image) {
-        size_t transitions_in_row = context.get_aut_matrix().get_number_of_states_in_row();
-
-        std::unordered_map<StatePair, std::vector<LenNode>> isomorphic_transitions;
-
-        for (auto& [transition, transition_var]: parikh_image.get_trans_vars()) {
-            size_t source_state = std::get<0>(transition) % transitions_in_row;
-            size_t target_state = std::get<2>(transition) % transitions_in_row;
-
-            StatePair state_pair = {source_state, target_state};
-            std::vector<LenNode>& isomorphic_transition_vars = isomorphic_transitions[state_pair];
-            isomorphic_transition_vars.push_back(transition_var);
-        }
-
-        return isomorphic_transitions;
-    }
-
-    LenNode mk_parikh_images_encode_same_word_assertion(const TagDiseqGen& context, const parikh::ParikhImage& parikh_image, const parikh::ParikhImage& other_image) {
-
-        std::unordered_map<StatePair, std::vector<LenNode>> isomorphic_transitions = group_isomorphic_transitions_across_copies(context, parikh_image);
-        std::unordered_map<StatePair, std::vector<LenNode>> other_isomorphic_transitions = group_isomorphic_transitions_across_copies(context, other_image);
-
-        assert (isomorphic_transitions.size() == other_isomorphic_transitions.size()); // Sanity
-
-        std::vector<LenNode> resulting_conjunction_atoms;
-
-        for (auto& [state_pair, transition_vars] : isomorphic_transitions) {
-            auto other_transition_vars_bucket = other_isomorphic_transitions.find(state_pair);
-
-            assert (other_transition_vars_bucket != other_isomorphic_transitions.end());
-
-            std::vector<LenNode>& other_transition_vars = other_transition_vars_bucket->second;
-
-            LenNode lhs_vars = LenNode(LenFormulaType::PLUS, transition_vars);
-            LenNode rhs_vars = LenNode(LenFormulaType::PLUS, other_transition_vars);
-            LenNode equality = LenNode(LenFormulaType::EQ, {lhs_vars, rhs_vars});
-
-            resulting_conjunction_atoms.push_back(equality);
-        }
-
-        return LenNode(LenFormulaType::AND, resulting_conjunction_atoms);
-    }
-
-    LenNode mk_notcontains_formula(const TagDiseqGen& context) {
-        // TODO(mhecko):
-        // [implemented] 1) Compute Parikh image formula PI(A) for the underlying matrix in context
-        // [implemented] 2) Compute Parikh image formula PI(B) for the underlying matrix in context - different vars
-        // [implemented] 3) Compute PI_Agree(A, B)
-        // [implemented, don't understand how yet]
-        //    Compute Phi_mismatch asserting that there is a mismatch in B
-        // [kind of done] Compute formula asserting that the word is shifted outside of LHS
-
-        return LenNode(LenFormulaType::FALSE);
     }
 
 }

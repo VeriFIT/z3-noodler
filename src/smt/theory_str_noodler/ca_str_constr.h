@@ -127,8 +127,8 @@ namespace smt::noodler::ca {
 
     protected:
         /**
-         * @brief Replace symbols in a particular variable automaton. Replace original symbols with
-         * the AtomicSymbols of the form <L,x> ...
+         * @brief Replace symbols in the variable automaton in the matrix cell given by @p copy
+         *        and @p var with symbols of the form AtomicSymbols of the form <L,x>...
          *
          * @param copy Copy identifying particular variable automaton
          * @param var Variable of the automaton

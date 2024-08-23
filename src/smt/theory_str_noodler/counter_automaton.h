@@ -20,9 +20,9 @@
 namespace smt::noodler::ca {
 
     /**
-     * @brief Structured alphabet. Performs mapping between mata symbols 
+     * @brief Structured alphabet. Performs mapping between mata symbols
      * and particular symbols T.
-     * 
+     *
      * @tparam T Symbol type
      */
     template <typename T>
@@ -38,16 +38,19 @@ namespace smt::noodler::ca {
         StructAlphabet() : alph_symb_mata(), alph_mata_symb() { }
 
         mata::Symbol add_symbol(const T& symb) {
+            // Speculate: if the given @p symb is not in the map, then this will be its handle
             mata::Symbol new_symbol = this->alph_symb_mata.size();
-            auto iter = this->alph_symb_mata.find(symb);
-            if (iter != this->alph_symb_mata.end()) {
-                return iter->second;
-            } else {
-                this->alph_symb_mata[symb] = new_symbol;
+
+            // Use .emplace to avoid doing another lookup to store the value if is not present in the map
+            const auto& [map_bucket, did_emplace_insert_new] = this->alph_symb_mata.emplace(symb, new_symbol);
+
+            if (did_emplace_insert_new) {
+                // Create the reverse mapping
                 this->alph_mata_symb[new_symbol] = symb;
-                return new_symbol;
             }
-        };
+
+            return map_bucket->second;  // The bucket's value (.second) is correct regardless of previous existence
+        }
 
         void insert(const mata::Symbol mata_symb, const T& symb) {
             this->alph_symb_mata[symb] = mata_symb;
@@ -79,31 +82,39 @@ namespace smt::noodler::ca {
      * <R,x,i,symb> captures i-th mismatch symbol (i=label)
      */
     struct AtomicSymbol {
-        char mark; // 0 = L; 1 = P; 2 = R
-        BasicTerm var; // variable from string constraint
-        char label; // 0 = missing value
+        enum class TagType : uint8_t {
+            LENGTH         = 0, // <L, x>
+            MISMATCH_POS   = 1, // <P, var, mismatch_idx>
+            REGISTER_STORE = 2, // <R, var, mismatch_idx, alphabet_symbol>
+            COPY_PREVIOUS  = 3, // <C, var, mismatch_idx>
+        };
+
+
+        TagType      type;
+        BasicTerm    var;    // variable from string constraint
+        char         label;  // 0 = missing value
         mata::Symbol symbol; // symbol (used for the R-case)
 
-        bool operator<(const AtomicSymbol& as) const {
-            auto cmp = mark <=> as.mark ;
-            if(cmp < 0) {
+        bool operator<(const AtomicSymbol& other_symbol) const {
+            auto cmp = type <=> other_symbol.type ;
+            if (cmp < 0) {
                 return true;
             } else if (cmp > 0) {
                 return false;
             } else {
-                cmp = label <=> as.label;
-                if(cmp < 0) {
+                cmp = label <=> other_symbol.label;
+                if (cmp < 0) {
                     return true;
                 } else if (cmp > 0) {
                     return false;
                 } else {
-                    cmp = symbol <=> as.symbol;
-                    if(cmp < 0) {
+                    cmp = symbol <=> other_symbol.symbol;
+                    if (cmp < 0) {
                         return true;
                     } else if (cmp > 0) {
                         return false;
                     } else {
-                        return var < as.var;
+                        return var < other_symbol.var;
                     }
                 }
             }
@@ -116,39 +127,39 @@ namespace smt::noodler::ca {
             std::string var_escape = var.is_literal() ? "\\\"" + var.get_name().encode() + "\\\"" : var.to_string();
 
             std::string label_str = label == 0 ? "" : "," + std::to_string(int(label));
-            std::string symbol_str = mark == 2 ? "," + std::to_string(symbol) : "";
-            std::string var_str = mark <= 2 ? "," + var_escape : "";
+            std::string symbol_str = type == TagType::REGISTER_STORE ? "," + std::to_string(symbol) : "";
+            std::string var_str = type <= TagType::REGISTER_STORE ? "," + var_escape : "";
 
-            ret = "<" + marks[size_t(mark)] + var_str + label_str + symbol_str + ">";
+            ret = "<" + marks[size_t(type)] + var_str + label_str + symbol_str + ">";
             return ret;
         }
 
         static AtomicSymbol create_l_symbol(const BasicTerm& var) {
-            return AtomicSymbol{0, var, 0, 0};
+            return AtomicSymbol{TagType::LENGTH, var, 0, 0};
         }
 
         static AtomicSymbol create_p_symbol(const BasicTerm& var, char label) {
-            return AtomicSymbol{1, var, label, 0};
+            return AtomicSymbol{TagType::MISMATCH_POS, var, label, 0};
         }
 
         static AtomicSymbol create_r_symbol(const BasicTerm& var, char label, mata::Symbol symbol) {
-            return AtomicSymbol{2, var, label, symbol};
+            return AtomicSymbol{TagType::REGISTER_STORE, var, label, symbol};
         }
 
     private:
         // private constructor; the AtomicSymbol should be constructed using functions create*
-        AtomicSymbol(char mrk, const BasicTerm& vr, char lbl, mata::Symbol symb ) : mark(mrk), var(vr), label(lbl), symbol(symb) {}
+        AtomicSymbol(TagType mrk, const BasicTerm& vr, char lbl, mata::Symbol symb ) : type(mrk), var(vr), label(lbl), symbol(symb) {}
     };
 
     using CounterAlphabet = StructAlphabet<std::set<AtomicSymbol>>;
 
     /**
-     * @brief Counter Automaton
+     * @brief Tag automaton: an automaton with special symbols consisting of sets of tags present on its transition edges.
      */
     struct TagAut {
         // underlying nfa
         mata::nfa::Nfa nfa;
-        // structured alphabed with register updates
+        // Structured alphabet providing bi-directional between sets of tags and their corresponding Mata handles that are actually used by mata
         CounterAlphabet alph;
         // variable ordering
         std::vector<BasicTerm> var_order {};
@@ -190,7 +201,7 @@ namespace smt::noodler::ca {
         }
     };
 
-    
+
 }
 
 
