@@ -93,6 +93,8 @@ public:
         return this->trans;
     }
 
+    void print_transition_var_labeling(std::ostream& output_stream) const;
+
     virtual ~ParikhImage() { }
 };
 
@@ -103,6 +105,8 @@ public:
 class ParikhImageDiseqTag : public ParikhImage {
 
 protected:
+    size_t number_of_states_in_row;
+
     ca::TagAut ca;
 
     // Maps every tag (e.g. <L, x>) to a corresponding #<L, x> variable representing
@@ -158,7 +162,12 @@ protected:
     LenNode get_diff_symbol_formula();
 
 public:
-    ParikhImageDiseqTag(const ca::TagAut& ca, const std::set<ca::AtomicSymbol>& atomic_symbols) : ParikhImage(ca.nfa), ca(ca), tag_occurence_count_vars(), atomic_symbols(atomic_symbols) { }
+    ParikhImageDiseqTag(const ca::TagAut& ca, const std::set<ca::AtomicSymbol>& atomic_symbols, size_t number_of_states_in_row) :
+        ParikhImage(ca.nfa),
+        number_of_states_in_row(number_of_states_in_row),
+        ca(ca),
+        tag_occurence_count_vars(),
+        atomic_symbols(atomic_symbols) { }
 
     /**
      * @brief Compute Parikh image with the free variables containing values of registers.
@@ -199,7 +208,6 @@ typedef std::pair<mata::nfa::State, mata::nfa::State> StatePair;
 class ParikhImageNotContTag : public ParikhImageDiseqTag {
 
 private:
-    size_t num_of_states_in_row;
     LenNode offset_var;
 
 protected:
@@ -214,8 +222,8 @@ protected:
     LenNode get_nt_all_mismatch_formula(const Predicate& not_cont);
 
 public:
-    ParikhImageNotContTag(const ca::TagAut& ca, const std::set<ca::AtomicSymbol>& atomic_symbols)
-        : ParikhImageDiseqTag(ca, atomic_symbols), offset_var(util::mk_noodler_var_fresh("offset_var")) { }
+    ParikhImageNotContTag(const ca::TagAut& ca, const std::set<ca::AtomicSymbol>& atomic_symbols, size_t number_of_states_in_copy)
+        : ParikhImageDiseqTag(ca, atomic_symbols, number_of_states_in_copy), offset_var(util::mk_noodler_var_fresh("offset_var")) { }
 
     /**
      * Create a formula asserting that |LHS| - |RHS| < offset_var.
@@ -224,6 +232,8 @@ public:
      * in the overall notContains LIA formula, and that they in fact represent |x|.
      */
     LenNode mk_rhs_longer_than_lhs_formula(const Predicate& notContains);
+
+    mata::nfa::State map_copy_state_into_its_origin(const mata::nfa::State state) const;
 
     /**
      * Given a @p parikh_image of the underlying tag automaton, group transitions that were
@@ -235,13 +245,13 @@ public:
      * Internally abuses the fact that there the state `p` and `p+K` for some fixed K is a copy
      * of the same state from the eps-concatenation.
      */
-    std::unordered_map<StatePair, std::vector<LenNode>> group_isomorphic_transitions_across_copies(const parikh::ParikhImage& parikh_image) const;
+    std::unordered_map<StatePair, std::vector<LenNode>> group_isomorphic_transitions_across_copies(const std::map<Transition, BasicTerm>& parikh_image) const;
 
     /**
      * Create a formula asserting that @p parikh_image and @p other_parikh_image
      * encode the same run in the underlying eps-concatenation.
      */
-    LenNode mk_parikh_images_encode_same_word_formula(const parikh::ParikhImage& parikh_image, const parikh::ParikhImage& other_image) const;
+    LenNode mk_parikh_images_encode_same_word_formula(const std::map<Transition, BasicTerm>& parikh_image, const std::map<Transition, BasicTerm>& other_image) const;
 
     LenNode get_not_cont_formula(const Predicate& not_cont);
 };

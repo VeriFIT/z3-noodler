@@ -18,6 +18,7 @@ if (Catch2_FOUND)
             theory_str_noodler.cc
             formula-preprocess.cpp
             decision-procedure.cpp
+            parikh.cc
             util.cc
     )
 

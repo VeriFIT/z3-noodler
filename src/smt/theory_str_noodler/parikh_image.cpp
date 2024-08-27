@@ -214,6 +214,16 @@ namespace smt::noodler::parikh {
         });
     }
 
+
+    void ParikhImage::print_transition_var_labeling(std::ostream& output_stream) const {
+        for (const auto& [transition, transition_var] : this->trans) {
+            output_stream << "(" << std::get<0>(transition) << ", "
+                          << std::get<1>(transition) << ", "
+                          << std::get<2>(transition) << ") <-> "
+                          << transition_var << std::endl;
+        }
+    }
+
     /**
      * @brief Get the formula describing |L| != |R| where L != R is @p diseq.
      * For x_1 ... x_n != y_1 ... x_m create
@@ -278,7 +288,7 @@ namespace smt::noodler::parikh {
         LenNode parikh = compute_parikh_image();
 
         STRACE("str-diseq", tout << "* Parikh image symbols:  " << std::endl;
-            for(const auto& [sym, bt] : this->symbol_var) {
+            for(const auto& [sym, bt] : this->tag_occurence_count_vars) {
                 tout << bt.to_string() << " : " << sym.to_string() << std::endl;
             }
             tout << std::endl;
@@ -510,7 +520,6 @@ namespace smt::noodler::parikh {
         return conj;
     }
 
-
     LenNode ParikhImageNotContTag::get_nt_all_mismatch_formula(const Predicate& not_cont) {
         LenNode mismatch(LenFormulaType::OR);
         for(size_t i = 0; i < not_cont.get_left_side().size(); i++) {
@@ -551,12 +560,16 @@ namespace smt::noodler::parikh {
         return LenNode(LenFormulaType::LEQ, {len_diff_node, LenNode(this->offset_var)});
     }
 
-    std::unordered_map<StatePair, std::vector<LenNode>> ParikhImageNotContTag::group_isomorphic_transitions_across_copies(const parikh::ParikhImage& parikh_image) const {
+    mata::nfa::State ParikhImageNotContTag::map_copy_state_into_its_origin(const mata::nfa::State state) const {
+        return state % this->number_of_states_in_row;
+    }
+
+    std::unordered_map<StatePair, std::vector<LenNode>> ParikhImageNotContTag::group_isomorphic_transitions_across_copies(const std::map<Transition, BasicTerm>& parikh_image) const {
         std::unordered_map<StatePair, std::vector<LenNode>> isomorphic_transitions;
 
-        for (auto& [transition, transition_var]: parikh_image.get_trans_vars()) {
-            size_t source_state = std::get<0>(transition) % num_of_states_in_row;
-            size_t target_state = std::get<2>(transition) % num_of_states_in_row;
+        for (auto& [transition, transition_var]: parikh_image) {
+            size_t source_state = this->map_copy_state_into_its_origin(std::get<0>(transition));
+            size_t target_state = this->map_copy_state_into_its_origin(std::get<2>(transition));
 
             StatePair state_pair = {source_state, target_state};
             std::vector<LenNode>& isomorphic_transition_vars = isomorphic_transitions[state_pair];
@@ -566,8 +579,7 @@ namespace smt::noodler::parikh {
         return isomorphic_transitions;
     }
 
-    LenNode ParikhImageNotContTag::mk_parikh_images_encode_same_word_formula(const parikh::ParikhImage& parikh_image, const parikh::ParikhImage& other_image) const {
-
+    LenNode ParikhImageNotContTag::mk_parikh_images_encode_same_word_formula(const std::map<Transition, BasicTerm>& parikh_image, const std::map<Transition, BasicTerm>& other_image) const {
         std::unordered_map<StatePair, std::vector<LenNode>> isomorphic_transitions = group_isomorphic_transitions_across_copies(parikh_image);
         std::unordered_map<StatePair, std::vector<LenNode>> other_isomorphic_transitions = group_isomorphic_transitions_across_copies(other_image);
 
@@ -593,40 +605,44 @@ namespace smt::noodler::parikh {
     }
 
     LenNode ParikhImageNotContTag::get_not_cont_formula(const Predicate& not_contains) {
-        LenNode parikh = compute_parikh_image();
+        LenNode top_level_parikh = compute_parikh_image();
+        LenNode second_level_parikh = ParikhImage::compute_parikh_image(); // We don't want to recompute length vars |x|, |y|, etc.
 
         STRACE("str-diseq", tout << "* Parikh image symbols:  " << std::endl;
-            for(const auto& [sym, bt] : this->symbol_var) {
+            for(const auto& [sym, bt] : this->tag_occurence_count_vars) {
                 tout << bt.to_string() << " : " << sym.to_string() << std::endl;
             }
             tout << std::endl;
         );
-        STRACE("str-diseq", tout << "* compute_parikh_image:  " << std::endl << parikh << std::endl << std::endl;);
+        STRACE("str-diseq", tout << "* compute_parikh_image:  " << std::endl << top_level_parikh << std::endl << std::endl;);
 
-        // TODO: diseq_len should be RIGHT < OFFSET + LEFT
-        LenNode not_cont_len = mk_rhs_longer_than_lhs_formula(not_contains);
-        STRACE("str-diseq", tout << "* rhs+offset is longer than lhs:  :  " << std::endl << mismatch << std::endl << std::endl;);
+        LenNode rhs_with_offset_longer_than_lhs = mk_rhs_longer_than_lhs_formula(not_contains);
+        STRACE("str-diseq", tout << "* rhs+offset is longer than lhs:  :  " << std::endl << rhs_with_offset_longer_than_lhs << std::endl << std::endl;);
 
         LenNode mismatch = get_nt_all_mismatch_formula(not_contains);
         STRACE("str-diseq", tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
 
         LenNode var_lengths_from_tag_count_formula = get_var_length(not_contains.get_set());
-        STRACE("str-diseq", tout << "* get_var_length:  " << std::endl << len << std::endl << std::endl;);
+        STRACE("str-diseq", tout << "* get_var_length:  " << std::endl << var_lengths_from_tag_count_formula << std::endl << std::endl;);
 
         LenNode diff_symbol = get_diff_symbol_formula();
         STRACE("str-diseq", tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
 
-        LenNode matrix = LenNode(LenFormulaType::AND, {
-            parikh,
+        LenNode formula = LenNode(LenFormulaType::AND, {
+            top_level_parikh,
             var_lengths_from_tag_count_formula,
-            LenNode(LenFormulaType::OR, {
-                not_cont_len,
-                LenNode(LenFormulaType::AND, {
-                    mismatch,
-                    diff_symbol
+            LenNode(LenFormulaType::FORALL, {
+                this->offset_var,
+                LenNode(LenFormulaType::OR, {
+                    rhs_with_offset_longer_than_lhs,
+                    LenNode(LenFormulaType::AND, {
+                        mismatch,
+                        diff_symbol
+                    })
                 })
-            })
+            }),
         });
-        return LenNode(LenFormulaType::FORALL, {this->offset_var, matrix});
+
+        return LenNode(LenFormulaType::FORALL, {this->offset_var, formula});
     }
 }

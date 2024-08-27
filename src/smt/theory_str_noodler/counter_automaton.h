@@ -164,6 +164,8 @@ namespace smt::noodler::ca {
         // variable ordering
         std::vector<BasicTerm> var_order {};
 
+        size_t num_of_states_in_row;
+
         std::string symbol_to_string(const std::set<AtomicSymbol>& sym) const {
             std::string ret;
             for(const AtomicSymbol& as : sym) {
@@ -199,6 +201,16 @@ namespace smt::noodler::ca {
 
             output << "}" << std::endl;
         }
+
+        std::set<ca::AtomicSymbol> gather_used_symbols() {
+            std::set<AtomicSymbol> atomic_symbols;
+            for (const auto& trans : this->nfa.delta.transitions()) {
+                std::set<AtomicSymbol> sms = this->alph.get_symbol(trans.symbol);
+                atomic_symbols.insert(sms.begin(), sms.end());
+            }
+            return atomic_symbols;
+        }
+
     };
 
 

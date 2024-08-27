@@ -2,6 +2,8 @@
 #include "ca_str_constr.h"
 #include "formula.h"
 #include "util.h"
+#include <mata/nfa/delta.hh>
+#include <mata/nfa/strings.hh>
 #include <unordered_map>
 
 namespace smt::noodler::ca {
@@ -17,6 +19,7 @@ namespace smt::noodler::ca {
 
         // set offset size
         this->var_aut_init_states_in_copy.resize(3*var_set.size() + 1);
+
         // three copies
         this->aut_matrix.resize(3);
         for(size_t copy = 0; copy < 3; copy++) {
@@ -27,6 +30,13 @@ namespace smt::noodler::ca {
                 this->aut_matrix[copy][var] = mata::nfa::reduce(this->aut_matrix[copy][var]);
             }
         }
+
+        // Recompute the number of states that a row has
+        number_of_states_in_row = 0;
+        for (size_t var_id = 0; var_id < this->var_order.size(); var_id++) {
+            number_of_states_in_row += this->aut_matrix[0][var_id].num_of_states();
+        }
+
         recompute_var_aut_init_state_positions();
     }
 
@@ -41,30 +51,51 @@ namespace smt::noodler::ca {
     }
 
     mata::nfa::Nfa DiseqAutMatrix::union_matrix() const {
-        mata::nfa::Nfa ret;
+        const size_t copy_count = 3;
+        mata::nfa::Nfa result_nfa;
 
-        // assumes that the union renumbers the states of the original automaton by
-        // adding a constant (which is given by the number of states of the original automaton)
-        for(size_t copy = 0; copy < 3; copy++) {
-            // eps-concatenate each variable automaton in a copy
-            mata::nfa::Nfa aut_line = this->aut_matrix[copy][0];
-            for(size_t var = 1; var < this->var_order.size(); var++) {
-                aut_line = mata::nfa::concatenate(aut_line, this->aut_matrix[copy][var], true);
-            }
-            // only the first copy contains initial states
-            if (copy != 0) {
-                aut_line.initial.clear();
-            }
-            // only the last copy contains final states
-            if (copy != 2) {
-                aut_line.final.clear();
-            }
-            ret.unite_nondet_with(aut_line);
+        // #Note(mhecko): Relying on unite_nondet_with is problematic - the procedure can do all kinds of
+        //                optilizations, yet we have very clear perception of how the result should look like.
+
+        size_t copy_states_cnt = 0;
+        const size_t template_copy = 0;
+        for (size_t var_id = 0; var_id < this->var_order.size(); var_id++) {
+            copy_states_cnt += this->aut_matrix[template_copy][var_id].num_of_states();
         }
 
-        // #Correctness(mhecko): Shouldn't we reset the initial states of the result here? This way we make
-        //                       an automaton with 3 initial states, IIUC what NFA.unite_nondet_with does.
-        return ret;
+        result_nfa.delta.allocate(copy_states_cnt*copy_count + 1);
+
+        mata::nfa::Nfa row_template = this->aut_matrix[template_copy][0]; // First row of the matrix
+        for (size_t var = 1; var < this->var_order.size(); var++) {
+            row_template = mata::nfa::concatenate(row_template, this->aut_matrix[template_copy][var], true);
+        }
+
+        for (size_t copy = 0; copy < copy_count; copy++) {
+            size_t copy_state_offset = copy*copy_states_cnt;
+
+            for (mata::strings::State template_source_state = 0; template_source_state < copy_states_cnt; template_source_state++) {
+                mata::nfa::State copy_source_state = template_source_state + copy_state_offset;
+
+                for (const mata::nfa::SymbolPost& symbol_post : row_template.delta.state_post(template_source_state)) {
+                    for (auto it = symbol_post.cbegin(); it != symbol_post.cend(); it++) {
+                        mata::nfa::State copy_target_state = (*it) + copy_state_offset;
+                        result_nfa.delta.add(copy_source_state, symbol_post.symbol, copy_target_state);
+                    }
+                }
+            }
+        }
+
+        result_nfa.initial.clear();
+        result_nfa.initial = row_template.initial; // The offset of 0th copy is 0, no need to add offset
+
+        result_nfa.final.clear();
+        size_t last_row_offset = (copy_count - 1) * copy_states_cnt;
+        for (mata::nfa::State final_state : row_template.final) {
+            mata::nfa::State result_final_state = last_row_offset + final_state;
+            result_nfa.final.insert(result_final_state);
+        }
+
+        return result_nfa;
     }
 
     //-----------------------------------------------------------------------------------------------
@@ -136,8 +167,8 @@ namespace smt::noodler::ca {
 
         std::vector<BasicTerm> var_order = this->aut_matrix.get_var_order();
         // update symbols for each inner automaton
-        for(char copy = 0; copy < 3; copy++) {
-            for(size_t var = 0; var < var_order.size(); var++) {
+        for (char copy = 0; copy < 3; copy++) {
+            for (size_t var = 0; var < var_order.size(); var++) {
                 // replace each automaton in the matrix with the specific AtomicSymbol
                 replace_symbols(copy, var);
             }
@@ -149,8 +180,8 @@ namespace smt::noodler::ca {
         this->alph.insert(mata::nfa::EPSILON, {});
 
         // generate connecting transitions
-        for(char copy = 0; copy < 2; copy++) {
-            for(size_t var = 0; var < var_order.size(); var++) {
+        for (char copy = 0; copy < 2; copy++) {
+            for (size_t var = 0; var < var_order.size(); var++) {
                 add_connection(copy, var, aut_union);
             }
         }
@@ -164,7 +195,6 @@ namespace smt::noodler::ca {
     //-----------------------------------------------------------------------------------------------
 
     LenNode get_lia_for_disequations(const Formula& diseqs, const AutAssignment& autass) {
-
         if(diseqs.get_predicates().size() == 0) {
             return LenNode(LenFormulaType::TRUE);
         }
@@ -182,11 +212,11 @@ namespace smt::noodler::ca {
         TagDiseqGen gen(diseq, prep_handler.get_aut_assignment());
         ca::TagAut tag_aut = gen.construct_tag_aut();
         tag_aut.nfa.trim();
-
         STRACE("str-diseq",
             tout << "* Variable ordering: " << std::endl;
             tout << concat_to_string(gen.get_aut_matrix().get_var_order()) << std::endl << std::endl;
         );
+
         STRACE("str-diseq",
             tout << "* NFAs for variables: " << std::endl;
             for(const BasicTerm& bt : diseq.get_set()) {
@@ -209,7 +239,7 @@ namespace smt::noodler::ca {
             ats.insert(sms.begin(), sms.end());
         }
 
-        parikh::ParikhImageDiseqTag pi(tag_aut, ats);
+        parikh::ParikhImageDiseqTag pi(tag_aut, ats, 0);
         LenNode pi_formula = pi.get_diseq_formula(diseq);
 
         STRACE("str-diseq", tout << "* Resulting formula: " << std::endl << pi_formula << std::endl << std::endl; );

@@ -39,6 +39,8 @@ namespace smt::noodler::ca {
         // starting state of each automaton
         std::vector<size_t> var_aut_init_states_in_copy {};
 
+        size_t number_of_states_in_row;
+
     protected:
         void create_aut_matrix(const Predicate& diseq, const AutAssignment& aut_ass);
 
@@ -106,7 +108,7 @@ namespace smt::noodler::ca {
         }
 
         size_t get_number_of_states_in_row() const {
-            return 0; // TODO
+            return number_of_states_in_row;
         }
     };
 
