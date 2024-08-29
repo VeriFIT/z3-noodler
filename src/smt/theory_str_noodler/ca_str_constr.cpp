@@ -295,10 +295,33 @@ namespace smt::noodler::ca {
         }
 
         if (!can_construct_lia) {
-            return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
+            return { LenNode(LenFormulaType::FALSE), LenNodePrecision::PRECISE };
         }
 
-        return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
+        AutAssignment actual_var_assignment = prep_handler.get_aut_assignment();
+        ca::TagDiseqGen tag_automaton_generator(not_contains, actual_var_assignment);
+        ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
+        std::set<AtomicSymbol> atomic_symbols = tag_automaton.gather_used_symbols();
+
+        STRACE("str-not-contains",
+            tout << "* tag automaton: \n";
+            tag_automaton.print_to_dot(tout);
+            tout << std::endl;
+        );
+
+        size_t num_of_states_in_row = tag_automaton_generator.get_aut_matrix().get_number_of_states_in_row();
+        parikh::ParikhImageNotContTag not_contains_generator(tag_automaton,
+                                                             atomic_symbols,
+                                                             num_of_states_in_row);
+
+        LenNode not_contains_formula = not_contains_generator.get_not_cont_formula(not_contains);
+
+        STRACE("str-not-contains",
+            tout << "* generated formula: \n";
+            tout << not_contains_formula << std::endl;
+        );
+
+        return { not_contains_formula, LenNodePrecision::PRECISE };
     }
 
 }

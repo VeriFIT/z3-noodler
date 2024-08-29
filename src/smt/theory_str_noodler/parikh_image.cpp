@@ -514,9 +514,18 @@ namespace smt::noodler::parikh {
         resulting_conjunction.succ.reserve(symbol_to_register_sample_vars.size());
 
         for (auto& [symbol, transitions_sampling_symbol] : symbol_to_register_sample_vars) {
+            if (util::is_dummy_symbol(symbol)) {
+                // Dummy symbols stand for any symbol not present in the formula and two samples of these symbols are considered as different
+                continue;
+            }
+
             LenNode total_sum(LenFormulaType::PLUS, transitions_sampling_symbol);
             LenNode total_sum_bound(LenFormulaType::LEQ, {total_sum, 1}); // I.e., there cannot be more than two 'a's sampled - the samples would be equal
             resulting_conjunction.succ.push_back(total_sum_bound);
+        }
+
+        if (resulting_conjunction.succ.empty()) {
+            return LenNode(LenFormulaType::TRUE);
         }
 
         return resulting_conjunction;
@@ -721,7 +730,9 @@ namespace smt::noodler::parikh {
             }),
         });
 
-        return LenNode(LenFormulaType::FORALL, {this->offset_var, formula});
+        STRACE("str-diseq", tout << "* resulting_formula:  " << std::endl << formula << std::endl << std::endl;);
+
+        return formula;
     }
 
     LenNode ParikhImageNotContTag::get_offset_var() const {
