@@ -213,6 +213,10 @@ namespace smt::noodler::ca {
         ca::TagAut tag_aut = gen.construct_tag_aut();
         tag_aut.nfa.trim();
         STRACE("str-diseq",
+            tout << "* Disequation: " << diseq << std::endl;
+        );
+
+        STRACE("str-diseq",
             tout << "* Variable ordering: " << std::endl;
             tout << concat_to_string(gen.get_aut_matrix().get_var_order()) << std::endl << std::endl;
         );
