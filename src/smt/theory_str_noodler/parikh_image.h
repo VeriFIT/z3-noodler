@@ -198,6 +198,15 @@ public:
      * @return LenNode phi
      */
     LenNode get_diseq_formula(const Predicate& diseq);
+
+    std::map<mata::Symbol, std::vector<LenNode>> group_sampling_transition_vars_by_symbol() const;
+
+    LenNode express_string_length_preceding_supposed_missmatch(std::vector<BasicTerm> predicate_side, size_t supposed_missmatch_pos) const;
+    LenNode count_register_stores_for_var_and_side(BasicTerm& var, char predicate_side_label) const;
+    LenNode ensure_symbol_uniqueness_using_total_sum(std::map<mata::Symbol, std::vector<LenNode>>& symbol_to_register_sample_vars) const;
+    LenNode ensure_symbol_uniqueness_using_implication(std::map<mata::Symbol, std::vector<LenNode>>& symbol_to_register_sample_vars) const;
+
+
 };
 
 typedef std::pair<mata::nfa::State, mata::nfa::State> StatePair;
@@ -254,6 +263,7 @@ public:
     LenNode mk_parikh_images_encode_same_word_formula(const std::map<Transition, BasicTerm>& parikh_image, const std::map<Transition, BasicTerm>& other_image) const;
 
     LenNode get_not_cont_formula(const Predicate& not_cont);
+    LenNode get_offset_var() const;
 };
 
 }

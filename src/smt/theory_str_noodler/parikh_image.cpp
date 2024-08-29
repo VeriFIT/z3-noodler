@@ -358,6 +358,43 @@ namespace smt::noodler::parikh {
         return phi_cnt;
     }
 
+    LenNode ParikhImageDiseqTag::express_string_length_preceding_supposed_missmatch(std::vector<BasicTerm> predicate_side, size_t supposed_missmatch_pos) const {
+        if (supposed_missmatch_pos == 0) {
+            return LenNode(0);  // The mismatch position will be computed only based on <P, ..> tags
+        }
+
+        LenNode sum_len(LenFormulaType::PLUS);
+
+        size_t last_term_pos_to_include = supposed_missmatch_pos - 1;
+        int current_term_idx = 0;
+        for (const BasicTerm& side_term : predicate_side) {
+            if (current_term_idx > last_term_pos_to_include) {
+                break;
+            }
+
+            ca::AtomicSymbol as = ca::AtomicSymbol::create_l_symbol(side_term); // <L,x> symbol
+            sum_len.succ.push_back(LenNode(this->tag_occurence_count_vars.at(as)));
+            ++current_term_idx;
+        }
+
+        return sum_len;
+    }
+
+    LenNode ParikhImageDiseqTag::count_register_stores_for_var_and_side(BasicTerm& var, char predicate_side_label) const {
+        LenNode register_store_count (LenFormulaType::PLUS);
+        for (const ca::AtomicSymbol& atomic_symbol : this->atomic_symbols) {
+            bool is_register_store = (atomic_symbol.type == ca::AtomicSymbol::TagType::REGISTER_STORE);
+            bool matches_var  = (atomic_symbol.var == var);
+            bool matches_side = (atomic_symbol.label == predicate_side_label);
+
+            if (is_register_store && matches_var && matches_side) {
+                const BasicTerm& symbol_count_var = this->tag_occurence_count_vars.at(atomic_symbol);
+                register_store_count.succ.push_back(LenNode(symbol_count_var));
+            }
+        }
+        return register_store_count;
+    }
+
     /**
      * @brief Get mismatch formula for particular positions @p i and @p j.
      * For x_1 ... x_n != y_1 ... y_m create
@@ -379,121 +416,129 @@ namespace smt::noodler::parikh {
      * @param add_right term that should be added to the right side
      * @return LenNode mismatch(i,j) && rmatch
      */
-    LenNode ParikhImageDiseqTag::get_mismatch_formula(size_t i, size_t j, const Predicate& diseq, const LenNode& add_right) {
-        auto concat_len = [&](const Concat& con, int max_ind) -> LenNode {
-            LenNode sum_len(LenFormulaType::PLUS);
-            int ind = 0;
-            for(const BasicTerm& bt : con) {
-                if (ind > max_ind) {
-                    break;
-                }
-                ca::AtomicSymbol as = ca::AtomicSymbol::create_l_symbol(bt); // <L,x> symbol
-                sum_len.succ.push_back(LenNode(this->tag_occurence_count_vars.at(as)));
-                ++ind;
-            }
-            return sum_len;
-        };
-        // for x, lab generate #<R,x,lab,a_1> + ... + #<R,x,lab,a_n> for all possible a_i
-        auto sum_r_symb = [&](const BasicTerm & bt, char label) -> LenNode {
-            LenNode sum_r(LenFormulaType::PLUS);
-            for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
-                if (ats.type == ca::AtomicSymbol::TagType::REGISTER_STORE && ats.var == bt && ats.label == label) {
-                    sum_r.succ.push_back(LenNode(this->tag_occurence_count_vars.at(ats)));
-                }
-            }
-            return sum_r;
-        };
-
+    LenNode ParikhImageDiseqTag::get_mismatch_formula(size_t left_mismatch_pos, size_t right_mismatch_pos, const Predicate& diseq, const LenNode& rhs_offset) {
         // labels of the <P> symbols
         char label_left = 1, label_right = 2;
-        BasicTerm var_left = diseq.get_left_side()[i];
-        BasicTerm var_right = diseq.get_right_side()[j];
-        if(std::distance(this->ca.var_order.begin(), std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_left)) > std::distance(this->ca.var_order.begin(), std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_right))) {
-            label_left = 2;
+        BasicTerm var_left  = diseq.get_left_side()[left_mismatch_pos];
+        BasicTerm var_right = diseq.get_right_side()[right_mismatch_pos];
+
+        auto left_var_order_pos  = std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_left);
+        auto right_var_order_pos = std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_right);
+
+        // The order of observed mismatch samples given by the guess of variables might be opposite due to the structure of the automaton
+        bool will_rhs_be_sampled_before_lhs = std::distance(this->ca.var_order.begin(), left_var_order_pos) > std::distance(this->ca.var_order.begin(), right_var_order_pos);
+
+        if (will_rhs_be_sampled_before_lhs) {
+            label_left  = 2;
             label_right = 1;
         }
 
-        LenNode left = concat_len(diseq.get_left_side(), i - 1);
+        LenNode lhs_mismatch_pos = express_string_length_preceding_supposed_missmatch(diseq.get_left_side(), left_mismatch_pos);
         // add symbol <P, var, label_left, 0> where var is i-th variable on left side of diseq
-        ca::AtomicSymbol lats = ca::AtomicSymbol::create_p_symbol(var_left, label_left);
-        if(!this->tag_occurence_count_vars.contains(lats)) {
-            return LenNode(LenFormulaType::FALSE);
+        ca::AtomicSymbol first_mismatch_pos_sym = ca::AtomicSymbol::create_p_symbol(var_left, label_left);
+        auto first_mismatch_sym_var_it = this->tag_occurence_count_vars.find(first_mismatch_pos_sym);
+        if (first_mismatch_sym_var_it == this->tag_occurence_count_vars.end()) {
+            return LenNode(LenFormulaType::FALSE);  // The mismatch guess is not possible
         }
-        left.succ.push_back(LenNode(this->tag_occurence_count_vars.at(lats)));
+        lhs_mismatch_pos.succ.push_back(LenNode(first_mismatch_sym_var_it->second));
 
-        LenNode right = concat_len(diseq.get_right_side(), j-1);
-        // add the add_right parameter ( 0 by default )
-        right.succ.insert(right.succ.begin(), add_right);
+        LenNode rhs_mismatch_pos = express_string_length_preceding_supposed_missmatch(diseq.get_right_side(), right_mismatch_pos);
+        rhs_mismatch_pos.succ.insert(rhs_mismatch_pos.succ.begin(), rhs_offset);  // add the offset parameter (0 by default)
         // add symbol <P, var, label_right, 0> where var is j-th variable on right side of diseq
-        ca::AtomicSymbol rats2 = ca::AtomicSymbol::create_p_symbol(var_right, label_right);
-        if(!this->tag_occurence_count_vars.contains(rats2)) {
+        ca::AtomicSymbol second_mismatch_pos_sym = ca::AtomicSymbol::create_p_symbol(var_right, label_right);
+        auto second_mismatch_sym_var_it = this->tag_occurence_count_vars.find(first_mismatch_pos_sym);
+        if (second_mismatch_sym_var_it == this->tag_occurence_count_vars.end()) {
             return LenNode(LenFormulaType::FALSE);
         }
-        right.succ.push_back(LenNode(this->tag_occurence_count_vars.at(rats2)));
-        // if x == y, we add #<P,x,1> to #<P,x,2>
+        rhs_mismatch_pos.succ.push_back(LenNode(second_mismatch_sym_var_it->second));
+
+        LenNode lhs_register_stores_cnt = count_register_stores_for_var_and_side(var_left, label_left);
+        LenNode lhs_has_register_store(LenFormulaType::LEQ, { 1, lhs_register_stores_cnt });
+
+        LenNode rhs_register_stores_cnt = count_register_stores_for_var_and_side(var_right, label_right);
+        LenNode rhs_has_register_store(LenFormulaType::LEQ, { 1, rhs_register_stores_cnt });
+
+        LenNode mismatch_position_is_same(LenFormulaType::EQ, { lhs_mismatch_pos, rhs_mismatch_pos});
+
+        // If left_var == right_var, we don't know which sample will be seen first - create a disjunction for both branches
         if (var_right == var_left) {
-            ca::AtomicSymbol rats1 = ca::AtomicSymbol::create_p_symbol(var_right, 1);
-            right.succ.push_back(LenNode(this->tag_occurence_count_vars.at(rats1)));
+            // Right now we have:
+            // lhs_mismatch_pos = <L, x> + ... <L, z> + <P, var, 1>
+            // rhs_mismatch_pos = <L, x> + ... <L, z> + <P, var, 2>
+
+            LenNode mismatch_position_case_split(LenFormulaType::OR);
+
+            // (lhs < rhs) lhs sees mismatch sooner than rhs
+            {
+                LenNode rhs_sees_mismatch_later = rhs_mismatch_pos;
+                rhs_sees_mismatch_later.succ.push_back(LenNode(first_mismatch_sym_var_it->second));  // <L, x> + ... <L, z> + <P, var, 2> + <P, var, 1>
+
+                LenNode branch(LenFormulaType::EQ, {lhs_mismatch_pos, rhs_sees_mismatch_later});
+                mismatch_position_case_split.succ.push_back(branch);
+            }
+
+            // (lhs > rhs) rhs sees mismatch sooner than lhs
+            {
+                LenNode lhs_sees_mismatch_later = lhs_mismatch_pos;
+                lhs_sees_mismatch_later.succ.push_back(LenNode(second_mismatch_sym_var_it->second)); // <L, x> + ... <L, z> + <P, var, 1> + <P, var, 2>
+
+                LenNode rhs_sees_mismatch_sooner = rhs_mismatch_pos;
+                rhs_mismatch_pos.succ[rhs_mismatch_pos.succ.size()-1] = LenNode(first_mismatch_sym_var_it->second); // Replace the trailing <P, var, 2> with <P, var, 1>
+
+                LenNode branch(LenFormulaType::EQ, {lhs_sees_mismatch_later, rhs_sees_mismatch_sooner});
+                mismatch_position_case_split.succ.push_back(branch);
+            }
+
+            return LenNode(LenFormulaType::AND, {
+                mismatch_position_case_split,
+                lhs_has_register_store,
+                rhs_has_register_store
+            });
         }
 
-        LenNode rleft(LenFormulaType::LEQ, {
-            1,
-            sum_r_symb(var_left, label_left)
-        });
-        LenNode rright(LenFormulaType::LEQ, {
-            1,
-            sum_r_symb(var_right, label_right)
+        // #Note(mhecko): These two top-level conjuncts should be redundant - the automaton structure should force
+        //                seeing at least one <P, x, 1> and <P, x, 2> symbols. Therefore, it should not be
+        //                necessary to prevent from trivial solutions 0=0.
+        // LenNode some_lhs_mismatch_seen(LenFormulaType::LEQ, { 1, LenNode(first_mismatch_sym_var_it->second) });
+        // LenNode some_rhs_mismatch_seen(LenFormulaType::LEQ, { 1, LenNode(second_mismatch_sym_var_it->second) });
+        return LenNode(LenFormulaType::AND, {
+            mismatch_position_is_same,
+            lhs_has_register_store,
+            rhs_has_register_store
         });
 
-        // we need to assure that there is at least one selection of lats and rats.
-        // we want to avoid trivial satisfiability 0 = 0
-        return LenNode(LenFormulaType::AND, {
-            LenNode(LenFormulaType::LEQ, {
-                1,
-                LenNode(this->tag_occurence_count_vars.at(lats))
-            }),
-            LenNode(LenFormulaType::LEQ, {
-                1,
-                LenNode(this->tag_occurence_count_vars.at(rats2))
-            }),
-            LenNode(LenFormulaType::EQ, {
-                left,
-                right
-            }),
-            rleft,
-            rright
-        });
     }
 
-    /**
-     * @brief Get formula describing that <R> symbols are different on the run.
-     * diff := AND(#<R,x,a,1> >= 1 -> #<R,y_1,a_1,2> + ... + #<R,y_n,a_m,2> = 0 for each a_i, y_j)
-     *
-     * @return LenNode diff
-     */
-    LenNode ParikhImageDiseqTag::get_diff_symbol_formula() {
-        LenNode conj(LenFormulaType::AND);
-        std::set<mata::Symbol> syms {};
+    LenNode ParikhImageDiseqTag::ensure_symbol_uniqueness_using_total_sum(std::map<mata::Symbol, std::vector<LenNode>>& symbol_to_register_sample_vars) const {
+        LenNode resulting_conjunction(LenFormulaType::AND);
+        resulting_conjunction.succ.reserve(symbol_to_register_sample_vars.size());
 
-        std::map<mata::Symbol, std::vector<BasicTerm>> symb_vars {};
-        for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
-            if (ats.type != ca::AtomicSymbol::TagType::REGISTER_STORE) continue;
-            symb_vars[ats.symbol].push_back(ats.var);
+        for (auto& [symbol, transitions_sampling_symbol] : symbol_to_register_sample_vars) {
+            LenNode total_sum(LenFormulaType::PLUS, transitions_sampling_symbol);
+            LenNode total_sum_bound(LenFormulaType::LEQ, {total_sum, 1}); // I.e., there cannot be more than two 'a's sampled - the samples would be equal
+            resulting_conjunction.succ.push_back(total_sum_bound);
         }
 
-        // iterate over all atomic symbols
-        for(const ca::AtomicSymbol& ats : this->atomic_symbols) {
+        return resulting_conjunction;
+    }
+
+    LenNode ParikhImageDiseqTag::ensure_symbol_uniqueness_using_implication(std::map<mata::Symbol, std::vector<LenNode>>& symbol_to_register_sample_vars) const {
+        LenNode resulting_conjunction(LenFormulaType::AND);
+        for (const ca::AtomicSymbol& ats : this->atomic_symbols) {
             if (ats.type == ca::AtomicSymbol::TagType::REGISTER_STORE) { // symbol is of the form <R,a,l>
                 // the dummy symbol represents all other symbols --> we don't generate the diff
                 // symbol formula as these symbols are not equal. The only case we consider is that the symbol belongs to the same variable.
                 // In that case we generate the #<R,x,a,1> >= 1 -> #<R,x,a,2> = 0
-                Concat col = symb_vars[ats.symbol];
-                if(util::is_dummy_symbol(ats.symbol)) {
-                    col = { ats.var };
+                std::vector<LenNode> register_store_vars_writing_same_symbol = symbol_to_register_sample_vars[ats.symbol];
+                if (util::is_dummy_symbol(ats.symbol)) {
+                    register_store_vars_writing_same_symbol = { ats.var };
                 }
+
                 LenNode sum(LenFormulaType::PLUS);
-                for(const BasicTerm& var : col) {
-                    ca::AtomicSymbol counterpart = ca::AtomicSymbol::create_r_symbol(var, (ats.label == 1 ? char(2) : char(1)), ats.symbol);
+                for (const LenNode& var_node : register_store_vars_writing_same_symbol) {
+                    // Check whether the same alphabet symbol, e.g., 'a' can be sampled also on the other side
+                    ca::AtomicSymbol counterpart = ca::AtomicSymbol::create_r_symbol(var_node.atom_val, (ats.label == 1 ? char(2) : char(1)), ats.symbol);
+
                     auto iter = this->tag_occurence_count_vars.find(counterpart);
                     // if there is not the counterpart, we don't have to generate the formula
                     if (iter == this->tag_occurence_count_vars.end()) {
@@ -501,8 +546,9 @@ namespace smt::noodler::parikh {
                     }
                     sum.succ.push_back(LenNode(iter->second));
                 }
+
                 BasicTerm atsVar = this->tag_occurence_count_vars.at(ats);
-                conj.succ.push_back(LenNode(LenFormulaType::OR, {
+                resulting_conjunction.succ.push_back(LenNode(LenFormulaType::OR, {
                     LenNode(LenFormulaType::NOT, {
                         LenNode(LenFormulaType::LEQ, {
                             1,
@@ -517,7 +563,39 @@ namespace smt::noodler::parikh {
             }
         }
 
-        return conj;
+        return resulting_conjunction;
+    }
+
+    std::map<mata::Symbol, std::vector<LenNode>> ParikhImageDiseqTag::group_sampling_transition_vars_by_symbol() const {
+        std::map<mata::Symbol, std::vector<LenNode>> sampling_transition_vars_by_symbol {};
+
+        std::map<Transition, BasicTerm> transition_vars = this->get_trans_vars();
+
+        for (const auto& [transition, transition_var] : transition_vars) {
+            mata::Symbol transition_symbol = std::get<1>(transition);
+
+            const std::set<ca::AtomicSymbol>& transition_label = this->ca.alph.get_symbol(transition_symbol);
+
+            for (const ca::AtomicSymbol& symbol_labeling_transition: transition_label) {
+                if (symbol_labeling_transition.type != ca::AtomicSymbol::TagType::REGISTER_STORE) continue;
+
+                sampling_transition_vars_by_symbol[symbol_labeling_transition.symbol].push_back(transition_var);
+            }
+        }
+
+        return sampling_transition_vars_by_symbol;
+    };
+
+    /**
+     * @brief Get formula describing that <R> symbols are different on the run.
+     * diff := AND(#<R,x,a,1> >= 1 -> #<R,y_1,a_1,2> + ... + #<R,y_n,a_m,2> = 0 for each a_i, y_j)
+     *
+     * @return LenNode diff
+     */
+    LenNode ParikhImageDiseqTag::get_diff_symbol_formula() {
+        std::map<mata::Symbol, std::vector<LenNode>> sampling_transition_vars_by_symbol = this->group_sampling_transition_vars_by_symbol();
+        LenNode resulting_formula = ensure_symbol_uniqueness_using_total_sum(sampling_transition_vars_by_symbol);
+        return resulting_formula;
     }
 
     LenNode ParikhImageNotContTag::get_nt_all_mismatch_formula(const Predicate& not_cont) {
@@ -557,7 +635,7 @@ namespace smt::noodler::parikh {
         }
 
         LenNode len_diff_node = LenNode(LenFormulaType::PLUS, len_diff_expr);
-        return LenNode(LenFormulaType::LEQ, {len_diff_node, LenNode(this->offset_var)});
+        return LenNode(LenFormulaType::LT, {len_diff_node, LenNode(this->offset_var)});
     }
 
     mata::nfa::State ParikhImageNotContTag::map_copy_state_into_its_origin(const mata::nfa::State state) const {
@@ -644,5 +722,9 @@ namespace smt::noodler::parikh {
         });
 
         return LenNode(LenFormulaType::FORALL, {this->offset_var, formula});
+    }
+
+    LenNode ParikhImageNotContTag::get_offset_var() const {
+        return this->offset_var;
     }
 }
