@@ -983,7 +983,12 @@ namespace smt::noodler {
             }
         }
         sat_length_formula = length_formula;
-        add_axiom(length_formula);
+        // for ca_constr, we don't add the length axiom. It seems that z3 has problems with 
+        // length formulae with universal quantification in model generation.
+        // TODO: this must be resolved for suceessful model generation for ca_constr
+        if(!this->m_params.m_ca_constr) {
+            add_axiom(length_formula);
+        }
     }
 
     expr_ref theory_str_noodler::len_node_to_z3_formula(const LenNode &node) {
