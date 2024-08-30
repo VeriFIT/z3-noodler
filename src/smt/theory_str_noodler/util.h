@@ -35,7 +35,7 @@ namespace smt::noodler::util {
 
     /**
      * @brief Get the value of the symbol representing all symbols not ocurring in the formula (i.e. a minterm)
-     * 
+     *
      * Dummy symbol represents all symbols not occuring in the problem. It is needed,
      * because if we have for example disequation x != y and nothing else, we would
      * have no symbols and incorrectly say it is unsat. Similarly, for 'x not in "aaa"
@@ -50,7 +50,7 @@ namespace smt::noodler::util {
      * Throws error and select which class to throw based on debug (if we are
      * debugging, we do not want z3 to catch our error, if we are not debugging
      * we want z3 to catch it and return unknown).
-     * 
+     *
      * @param errMsg Error message
      */
     void throw_error(std::string errMsg);
@@ -118,9 +118,9 @@ namespace smt::noodler::util {
 
     /**
      * @brief Create a fresh noodler (BasicTerm) variable with a given @p name followed by a unique suffix.
-     * 
+     *
      * The suffix contains a number which is incremented for each use of this function for a given @p name
-     * 
+     *
      * @param name Infix of the name (rest is added to get a unique name)
      */
     inline BasicTerm mk_noodler_var_fresh(const std::string& name) {
@@ -132,7 +132,7 @@ namespace smt::noodler::util {
 
     /**
      * @brief Check whether the expression @p val is of the form ( @p num_res ) + (len @p s ).
-     * 
+     *
      * @param val Expression to be checked
      * @param s String term with length
      * @param m ast manager
@@ -145,10 +145,12 @@ namespace smt::noodler::util {
 
     /**
      * @brief Assuming that concatenation of automata in @p automata accepts @p word, returns in @p words splitted @p word, where @p word[i] is accepted by @p automata[i]
-     * 
+     *
      * @return boolean indicating whether we can split the @p word to @p automata (true if we can)
      */
     bool split_word_to_automata(const zstring& word, const std::vector<std::shared_ptr<mata::nfa::Nfa>>& automata, std::vector<zstring>& words);
 }
+
+size_t bin_search_leftmost(const std::vector<mata::nfa::State>& haystack, mata::nfa::State needle);
 
 #endif

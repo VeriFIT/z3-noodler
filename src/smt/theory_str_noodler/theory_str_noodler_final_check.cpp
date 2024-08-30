@@ -286,6 +286,10 @@ namespace smt::noodler {
 
                 if(m.is_false(block_len)) {
                     block_curr_len(block_len, false, true);
+                // if there are no length vars comming from the initial formula (or from axiom saturation), 
+                // we can block the string assignment only 
+                } else if(init_length_sensitive_vars.size() == 0) {
+                    block_curr_len(expr_ref(m.mk_false(), m));
                 } else {
                     block_curr_len(block_len);
                 }
@@ -1107,16 +1111,20 @@ namespace smt::noodler {
         }
 
         case LenFormulaType::FORALL: {
-            expr_ref varref = len_node_to_z3_formula(node.succ[0]);
+            // add qunatifier variable to the map (if not present)
+            std::string quantif_var_name = node.succ[0].atom_val.get_name().encode();
+            if(!this->quantif_vars.contains(quantif_var_name)) {
+                this->quantif_vars[quantif_var_name] = this->quantif_vars.size();
+            }
+            // occurrences of the quantifier variable are created as z3 variable, not skolem constant
             expr_ref bodyref = len_node_to_z3_formula(node.succ[1]);
 
             ptr_vector<sort> sorts;
             svector<symbol> names;
-            app * var = to_app(varref);
-            sorts.push_back(var->get_sort());
-            names.push_back(var->get_name());
+            sorts.push_back(m_util_a.mk_int());
+            names.push_back(symbol(quantif_var_name.c_str()));
 
-            expr_ref forall(m.mk_quantifier(quantifier_kind::forall_k, sorts.size(), sorts.data(), names.data(), bodyref), m);
+            expr_ref forall(m.mk_quantifier(quantifier_kind::forall_k, sorts.size(), sorts.data(), names.data(), bodyref, 1), m);
             return forall;
         }
 

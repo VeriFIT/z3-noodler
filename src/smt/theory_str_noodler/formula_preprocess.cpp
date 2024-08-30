@@ -1687,8 +1687,12 @@ namespace smt::noodler {
      */
     bool FormulaPreprocessor::can_unify_contain(const Concat& left, const Concat& right) const {
         auto check = [](const Concat& c1, const Concat& c2) -> bool {
-            for(auto it = c1.begin(); it != c1.end(); it++) {
-                if(std::equal(it, it+c2.size(), c2.begin(), c2.end())) {
+            for(size_t i = 0; i < c1.size(); i++) {
+                auto c1_end = c1.begin() + i + c2.size();
+                if (i + c2.size() >= c1.size()) {
+                    c1_end = c1.end();
+                }
+                if(std::equal(c1.begin() + i, c1_end, c2.begin(), c2.end())) {
                     return true;
                 }
             }

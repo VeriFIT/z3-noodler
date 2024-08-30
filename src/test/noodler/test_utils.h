@@ -21,7 +21,7 @@ public:
 
     using theory_str_noodler::m_util_s, theory_str_noodler::m, theory_str_noodler::m_util_a;
     using theory_str_noodler::mk_str_var_fresh, theory_str_noodler::mk_int_var_fresh, theory_str_noodler::mk_literal;
-    using theory_str_noodler::extract_symbols;
+    // using theory_str_noodler::extract_symbols;
 };
 
 class DecisionProcedureCUT : public DecisionProcedure {

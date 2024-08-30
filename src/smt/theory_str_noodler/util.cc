@@ -146,8 +146,8 @@ namespace smt::noodler::util {
 
         if(!m_util_s.str.is_length(len, str) || str->hash() != s->hash()) {
             return false;
-        } 
-        
+        }
+
         return true;
     }
 
@@ -183,7 +183,7 @@ namespace smt::noodler::util {
             words.pop_back();
             is_backtracked = true;
         };
-        
+
         while (current_automaton != NUM_OF_AUTOMATA || index_in_word != LENGTH_OF_WORD) {
             STRACE("str-split-word-to-automata", tout << "Current automaton and index in word: " << current_automaton << " " << index_in_word << "\n";);
 
@@ -219,7 +219,7 @@ namespace smt::noodler::util {
                 backtrack();
                 continue;
             }
-            
+
             // we move by one in word and compute the new set of states
             mata::Symbol current_symbol = word[index_in_word];
             mata::nfa::StateSet new_current_states; // we save here post over current symbol from the set of current states
@@ -257,4 +257,30 @@ namespace smt::noodler::util {
 
         return true;
     }
+}
+
+template <typename T>
+size_t rec_bin_search_leftmost(const std::vector<T>& haystack, T needle, size_t start_idx, size_t end_idx) {
+
+    if (start_idx == end_idx) {
+        if (haystack.at(start_idx) >= needle) return start_idx;
+        return -1;
+    }
+
+    size_t midpoint = start_idx + (end_idx - start_idx) / 2;
+    if (needle < midpoint) {
+        return rec_bin_search_leftmost(haystack, needle, start_idx, midpoint);
+    }
+
+    size_t match = rec_bin_search_leftmost(haystack, needle, midpoint+1, end_idx);
+    if (match == -1) {
+        // We have not found the the in [midpoint+1 ... end_idx], therefore, the leftmost smaller is midpoint
+        return midpoint;
+    }
+    return match;
+}
+
+template <typename T>
+size_t bin_search_leftmost(const std::vector<T>& haystack, T needle) {
+    return rec_bin_search_leftmost(haystack, needle, 0, haystack.size());
 }

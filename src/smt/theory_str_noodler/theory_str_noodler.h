@@ -94,6 +94,9 @@ namespace smt::noodler {
         using expr_pair = std::pair<expr_ref, expr_ref>;
         using expr_pair_flag = std::tuple<expr_ref, expr_ref, bool>;
 
+        // mapping of quantifier quards (quantified variables) to z3 vars. z3 represents variables using indices. 
+        std::map<std::string, unsigned> quantif_vars {};
+
         // constraints that are (possibly) to be processed in final_check_eh (added either in relevant_eh or ?assign_eh?)
         // they also need to be popped and pushed in pop_scope_eh and push_scope_eh)
         scoped_vector<expr_pair> m_word_eq_todo; // pair contains left and right side of the word equality
@@ -215,6 +218,12 @@ namespace smt::noodler {
          * @param name Name of the var
          */
         expr_ref mk_int_var(const std::string& name) {
+            // quantified int variables we need to create as z3 variables. If they are created as skolem const, the quantification is 
+            // ignored (because everything there is a constant).
+            auto it = this->quantif_vars.find(name);
+            if(it != this->quantif_vars.end()) {
+                return expr_ref(m.mk_var(it->second, m_util_a.mk_int()), m);
+            }
             app* var = m.mk_skolem_const(symbol(name.c_str()), m_util_a.mk_int()); // need to be skolem, because it seems they are not printed for models
             return expr_ref(var, m);
         }
