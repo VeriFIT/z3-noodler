@@ -150,6 +150,7 @@ namespace smt::noodler {
         OR,
         TRUE,
         FALSE,
+        EXISTS, // existential quantifier
         FORALL, // quantifier for all
     };
 
@@ -201,7 +202,10 @@ namespace smt::noodler {
         case LenFormulaType::FORALL:
             os << "(forall";
             break;
-        
+        case LenFormulaType::EXISTS:
+            os << "(exists";
+            break;
+
         default:
             UNREACHABLE();
         }
@@ -446,9 +450,9 @@ namespace smt::noodler {
         }
 
         /**
-         * @brief Count number of variables and sum of lengths of all literals 
+         * @brief Count number of variables and sum of lengths of all literals
          * (represented by literal "" in the map).
-         * 
+         *
          * @param side Side of the term
          * @return std::map<BasicTerm, unsigned> Number of variables / sum of lits lengths
          */
@@ -456,7 +460,7 @@ namespace smt::noodler {
 
         /**
          * @brief Split literals into literals consisting of a single symbol.
-         * 
+         *
          * @return Predicate Modified predicate where each literal is a symbol.
          */
         Predicate split_literals() const;
@@ -536,10 +540,10 @@ namespace smt::noodler {
         }
 
         /**
-         * @brief Extract and remove predicate of the type @p type from the formula. 
+         * @brief Extract and remove predicate of the type @p type from the formula.
          * The predicates of the type @p type are stored in the output @p extracted
          * It removes the extracted predicates from the current formula.
-         * 
+         *
          * @param type Predicate type
          * @param[out] extracted Where to store extracted predicates
          */
@@ -553,11 +557,11 @@ namespace smt::noodler {
                 }
             }
             this->predicates = new_predicates;
-        } 
+        }
 
         /**
          * @brief Does the Formula contain a predicate of a type @p type ?
-         * 
+         *
          * @param type Type of the predicate.
          * @return true <-> Formula contains predicate of type @p type.
          */
@@ -586,7 +590,7 @@ namespace smt::noodler {
 
         /**
          * @brief Check whether a formula is quadratic.
-         * 
+         *
          * @return true <-> quadratic
          */
         bool is_quadratic() const {
@@ -614,7 +618,7 @@ namespace smt::noodler {
 
         /**
          * @brief Check whether all predicates match the given type.
-         * 
+         *
          * @param tp Predicate type
          * @return true <-> All predicates are of type @p tp
          */
@@ -629,7 +633,7 @@ namespace smt::noodler {
 
         /**
          * @brief Replace in all predicates
-         * 
+         *
          * @param find What to find
          * @param replace What to replace
          * @return Formula Modified formula according to the replace
@@ -646,7 +650,7 @@ namespace smt::noodler {
 
         /**
          * @brief Split literals into literals consisting of a single symbol.
-         * 
+         *
          * @return Formula Modified formula where each literal is a symbol.
          */
         Formula split_literals() const {
@@ -693,7 +697,7 @@ namespace smt::noodler {
             return "to_int";
         case ConversionType::FROM_INT:
             return "from_int";
-        
+
         default:
             UNREACHABLE();
             return "";

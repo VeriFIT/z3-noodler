@@ -693,7 +693,13 @@ namespace smt::noodler::parikh {
 
     LenNode ParikhImageNotContTag::get_not_cont_formula(const Predicate& not_contains) {
         LenNode top_level_parikh = compute_parikh_image();
-        LenNode second_level_parikh = ParikhImage::compute_parikh_image(); // We don't want to recompute length vars |x|, |y|, etc.
+        std::map<Transition, BasicTerm> top_level_parikh_vars = this->get_trans_vars();
+
+        // #Optimize(mhecko): We should just rename the variables found in the formula instead
+        //                    of recomputing it from scratch.
+
+        LenNode second_level_parikh = compute_parikh_image(); // We don't want to recompute length vars |x|, |y|, etc.
+        std::map<Transition, BasicTerm> second_level_parikh_vars = this->get_trans_vars();
 
         STRACE("str-diseq", tout << "* Parikh image symbols:  " << std::endl;
             for(const auto& [sym, bt] : this->tag_occurence_count_vars) {
@@ -715,18 +721,34 @@ namespace smt::noodler::parikh {
         LenNode diff_symbol = get_diff_symbol_formula();
         STRACE("str-diseq", tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
 
+        LenNode parikh_images_agree = mk_parikh_images_encode_same_word_formula(top_level_parikh_vars, second_level_parikh_vars);
+
+        LenNode parikh_contains_conflic_for_offset(
+            LenFormulaType::OR, {
+            rhs_with_offset_longer_than_lhs,
+            LenNode(LenFormulaType::AND, {
+                mismatch,
+                diff_symbol
+            })});
+
+
+        LenNode exist_alternative_parikh_with_conflict(
+            LenFormulaType::AND, {
+                parikh_images_agree,
+                parikh_contains_conflic_for_offset
+            }
+        );
+        for (auto& [transition, transition_var] : second_level_parikh_vars) {
+            exist_alternative_parikh_with_conflict = LenNode(LenFormulaType::EXISTS,
+                                                     {transition_var, exist_alternative_parikh_with_conflict});
+        }
+
         LenNode formula = LenNode(LenFormulaType::AND, {
             top_level_parikh,
             var_lengths_from_tag_count_formula,
             LenNode(LenFormulaType::FORALL, {
                 this->offset_var,
-                LenNode(LenFormulaType::OR, {
-                    rhs_with_offset_longer_than_lhs,
-                    LenNode(LenFormulaType::AND, {
-                        mismatch,
-                        diff_symbol
-                    })
-                })
+                exist_alternative_parikh_with_conflict
             }),
         });
 

@@ -208,6 +208,11 @@ namespace smt::noodler::ca {
             return LenNode(LenFormulaType::FALSE);
         }
 
+        if (autass.empty()) {
+            STRACE("str-diseq", tout << "Aut assignment is empty, cannot build formula.\n");
+            assert(!autass.empty());
+        }
+
         Predicate diseq = prep_handler.get_modified_formula().get_predicates()[0];
         TagDiseqGen gen(diseq, prep_handler.get_aut_assignment());
         ca::TagAut tag_aut = gen.construct_tag_aut();

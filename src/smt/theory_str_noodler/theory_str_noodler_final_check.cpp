@@ -5,13 +5,13 @@
 namespace smt::noodler {
     /**
      * @brief Checks satisfiability of constraints in _todo member variables (e.g. m_word_eq_todo, m_membership_todo,...)
-     * 
+     *
      * It follows these steps:
      *   1) Remove constraints that are not relevant for the solution, adding all relevant constraints to *_todo_rel, ending with
      *        - language equations and diseqations (m_lang_eq_or_diseq_todo_rel)
      *        - word equations and diseqations (m_word_eq_todo_rel and m_word_diseq_todo_rel)
      *        - membership constraints (m_membership_todo_rel)
-     *        - not contains constraints (m_not_contains_todo, currently cannot be handled and we return unknown) 
+     *        - not contains constraints (m_not_contains_todo, currently cannot be handled and we return unknown)
      *   2) Check if all language eqations and disequations are true (the sides are given as regexes)
      *   3) Create the formula instance and automata assignment from word (dis)eqautions and membership constraints
      *   4) Check if it is satisfiable which consists of
@@ -73,11 +73,11 @@ namespace smt::noodler {
         /***************************** SOLVE WORD (DIS)EQUATIONS + REGULAR MEMBERSHIPS ******************************/
 
         // cache for storing already solved instances. For each instance we store the length formula obtained from the decision procedure.
-        // if we get an instance that we have already solved, we use this stored length formula (if we run the procedure 
+        // if we get an instance that we have already solved, we use this stored length formula (if we run the procedure
         // we get the same formula up to alpha reduction).
         if(m_params.m_loop_protect) {
             lbool result = run_loop_protection();
-            if(result == l_true && !m_params.m_produce_models) { // if we want to produce model, we need the exact solution in dec_proc, so we need to run procedure again 
+            if(result == l_true && !m_params.m_produce_models) { // if we want to produce model, we need the exact solution in dec_proc, so we need to run procedure again
                 last_run_was_sat = true;
                 return FC_DONE;
             } else if (result == l_false) {
@@ -195,12 +195,12 @@ namespace smt::noodler {
         // --> before we apply the preprocessing, we need to be sure that it is indeed true.
         // length constraints from initial assignment
         // we want to include all variables from the formula --> e.g.
-        // s.t = u where u \in ab, |s| > 100. The only length variable is s, but we need 
+        // s.t = u where u \in ab, |s| > 100. The only length variable is s, but we need
         // to include also length of |u| to propagate the value to |s|
         expr_ref lengths = len_node_to_z3_formula(main_dec_proc->get_initial_lengths(true));
         if(check_len_sat(lengths) == l_false) {
             STRACE("str", tout << "Unsat from initial lengths" << std::endl);
-            // we postpone the decision. If the instance is both length unsatisfiable and 
+            // we postpone the decision. If the instance is both length unsatisfiable and
             // unsatisfiable from preprocessing, we want to kill it after preprocessing as it
             //  generates stronger theory lemma (negation of the string part).
             length_unsat = true;
@@ -261,7 +261,7 @@ namespace smt::noodler {
                 auto [noodler_lengths, precision] = dec_proc->get_lengths();
                 lengths = len_node_to_z3_formula(noodler_lengths);
                 lbool is_lengths_sat = check_len_sat(lengths);
-                
+
                 if (is_lengths_sat == l_true) {
                     STRACE("str", tout << "len sat " << mk_pp(lengths, m) << std::endl;);
                     sat_handling(lengths);
@@ -286,8 +286,8 @@ namespace smt::noodler {
 
                 if(m.is_false(block_len)) {
                     block_curr_len(block_len, false, true);
-                // if there are no length vars comming from the initial formula (or from axiom saturation), 
-                // we can block the string assignment only 
+                // if there are no length vars comming from the initial formula (or from axiom saturation),
+                // we can block the string assignment only
                 } else if(init_length_sensitive_vars.size() == 0) {
                     block_curr_len(expr_ref(m.mk_false(), m));
                 } else {
@@ -320,7 +320,7 @@ namespace smt::noodler {
                      << " with assignment " << ctx.find_assignment(eq.get())
                      << " and its reverse is " << (ctx.is_relevant(eq_rev.get()) ? "" : "not ") << "relevant" << std::endl;
             );
-            
+
             // check if equation or its reverse are relevant (we check reverse to be safe) and...
             if((ctx.is_relevant(eq.get()) || ctx.is_relevant(eq_rev.get())) &&
                // ...neither equation nor its reverse are saved as relevant yet
@@ -340,7 +340,7 @@ namespace smt::noodler {
                      << " with assignment " << ctx.find_assignment(dis.get())
                      << " and its reverse is " << (ctx.is_relevant(dis_rev.get()) ? "" : "not ") << "relevant" << std::endl;
             );
-            
+
             // check if disequation or its reverse are relevant (we check reverse to be safe) and...
             if((ctx.is_relevant(dis.get()) || ctx.is_relevant(dis_rev.get())) &&
                // ...neither disequation nor its reverse are saved as relevant yet
@@ -358,7 +358,7 @@ namespace smt::noodler {
                 memb_app = m.mk_not(memb_app);
 
             }
-            
+
             STRACE("str",
                 tout << "  " << mk_pp(memb_app.get(), m) << " is " << (ctx.is_relevant(memb_app.get()) ? "" : "not ") << "relevant"
                      << " with assignment " << ctx.find_assignment(memb_app.get())
@@ -387,7 +387,7 @@ namespace smt::noodler {
                      << std::endl;
             );
 
-            if((ctx.is_relevant(con_expr.get()) || ctx.is_relevant(not_con_expr.get())) && 
+            if((ctx.is_relevant(con_expr.get()) || ctx.is_relevant(not_con_expr.get())) &&
                 !this->m_not_contains_todo_rel.contains(not_con_pair)) {
                 this->m_not_contains_todo_rel.push_back(not_con_pair);
             }
@@ -565,7 +565,7 @@ namespace smt::noodler {
     std::vector<TermConversion> theory_str_noodler::get_conversions_as_basicterms(AutAssignment& ass, const std::set<mata::Symbol>& noodler_alphabet) {
         mata::EnumAlphabet mata_alphabet(noodler_alphabet.begin(), noodler_alphabet.end());
         auto nfa_sigma_star = std::make_shared<mata::nfa::Nfa>(mata::nfa::builder::create_sigma_star_nfa(&mata_alphabet));
-        
+
         std::vector<TermConversion> conversions;
         for (const auto& transf : m_conversion_todo) {
             ass.insert({transf.string_var, nfa_sigma_star});
@@ -702,7 +702,7 @@ namespace smt::noodler {
             app_ref nc_app(m.mk_not(m_util_s.str.mk_contains(nc.first, nc.second)), m);
             refinement = refinement == nullptr ? nc_app : m.mk_and(refinement, nc_app);
         }
-        
+
         if(m_params.m_loop_protect && add_axiomatized) {
             this->axiomatized_instances.push_back({expr_ref(refinement, this->m), stored_instance{ .lengths = len_formula, .initial_length = init_lengths}});
         }
@@ -730,17 +730,17 @@ namespace smt::noodler {
             return false;
         }
         /**
-         * Check each variable occurring within the instance. The instance is suitable for underapproximation if 
-         * 1) predicates are (dis)equations only and 2) language of the variable is a) sigma star (approximated by 
-         * the first condition) b) co-finite (complement is a finite language), or c) singleton meaning that the 
-         * variable is string literal. 
+         * Check each variable occurring within the instance. The instance is suitable for underapproximation if
+         * 1) predicates are (dis)equations only and 2) language of the variable is a) sigma star (approximated by
+         * the first condition) b) co-finite (complement is a finite language), or c) singleton meaning that the
+         * variable is string literal.
          */
         for(const Predicate& pred : instance.get_predicates()) {
             if(!pred.is_eq_or_ineq()) {
                 return false;
             }
             for(const BasicTerm& var : pred.get_vars()) {
-                
+
                 if(aut_ass.at(var)->num_of_states() <= 1) {
                     continue;
                 }
@@ -796,7 +796,7 @@ namespace smt::noodler {
             return l_false;
         }
         nproc.init_computation();
-        
+
         lbool result = nproc.compute_next_solution();
         if (result == l_true) {
             auto [formula, precision] = nproc.get_lengths();
@@ -819,7 +819,7 @@ namespace smt::noodler {
                     return l_undef;
                 }
             }
-        } 
+        }
         // we could not decide if there is solution, continue with other decision procedure
         return l_undef;
     }
@@ -1003,14 +1003,14 @@ namespace smt::noodler {
                 expr_ref var_expr(m);
                 if(it == var_name.end()) {
                     // if the variable is not found, it was introduced in the preprocessing/decision procedure
-                    // (either as a string or int var), i.e. we can just create a new z3 variable with the same name 
+                    // (either as a string or int var), i.e. we can just create a new z3 variable with the same name
                     var_expr = mk_int_var(node.atom_val.get_name().encode());
                 } else {
                     if (m_util_s.is_string(it->second.get()->get_sort())) {
                         // for string variables we want its length
                         var_expr = expr_ref(m_util_s.str.mk_length(it->second), m);
                     } else {
-                        // we assume here that all other variables are int, so they map into the predicate they represent 
+                        // we assume here that all other variables are int, so they map into the predicate they represent
                         var_expr = it->second;
                     }
                 }
@@ -1122,6 +1122,24 @@ namespace smt::noodler {
 
             expr_ref forall(m.mk_quantifier(quantifier_kind::forall_k, sorts.size(), sorts.data(), names.data(), bodyref, 1), m);
             return forall;
+        }
+
+        case LenFormulaType::EXISTS: {
+            // add existentially  quantified variable to the map (if not present)
+            std::string quantif_var_name = node.succ[0].atom_val.get_name().encode();
+            if(!this->quantif_vars.contains(quantif_var_name)) {
+                this->quantif_vars[quantif_var_name] = this->quantif_vars.size();
+            }
+            // occurrences of the quantifier variable are created as z3 variable, not skolem constant
+            expr_ref bodyref = len_node_to_z3_formula(node.succ[1]);
+
+            ptr_vector<sort> sorts;
+            svector<symbol> names;
+            sorts.push_back(m_util_a.mk_int());
+            names.push_back(symbol(quantif_var_name.c_str()));
+
+            expr_ref exists(m.mk_quantifier(quantifier_kind::exists_k, sorts.size(), sorts.data(), names.data(), bodyref, 1), m);
+            return exists;
         }
 
         case LenFormulaType::TRUE: {
