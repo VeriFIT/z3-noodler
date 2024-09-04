@@ -166,6 +166,8 @@ namespace smt::noodler {
     };
 
     static std::ostream& operator<<(std::ostream& os, const LenNode& node) {
+        auto children_iterator = node.succ.begin(); // Some nodes, e.g., quantifiers would like to consume successor nodes
+
         switch (node.type)
         {
         case LenFormulaType::TRUE:
@@ -199,23 +201,39 @@ namespace smt::noodler {
         case LenFormulaType::OR:
             os << "(or";
             break;
-        case LenFormulaType::FORALL:
-            os << "(forall";
-            break;
-        case LenFormulaType::EXISTS:
-            os << "(exists";
-            break;
+        case LenFormulaType::FORALL: {
+            const auto& quantified_var = *children_iterator;
+            children_iterator++;
 
+            os << "(forall (( " << quantified_var << " Int))";
+            break;
+        }
+        case LenFormulaType::EXISTS: {
+            const auto& quantified_var = *children_iterator;
+            children_iterator++;
+            os << "(exists (( " << quantified_var << " Int))";
+            break;
+        }
         default:
             UNREACHABLE();
         }
 
-        for (const auto &succ_node : node.succ) {
-            os << " " << succ_node;
+        for (; children_iterator != node.succ.end(); children_iterator++) {
+            const auto& child = *children_iterator;
+            os << " " << child;
         }
         os << ")";
         return os;
     }
+    /**
+     * Recursively collect all free variables in the given formula.
+     */
+    std::set<BasicTerm> collect_free_vars(const LenNode& formula);
+
+    /**
+     * Write the given formula as SMT2 to the given @p out_stream, including preable.
+     */
+    void write_len_formula_as_smt2(const LenNode& formula, std::ostream& out_stream);
 
     //----------------------------------------------------------------------------------------------------------------------------------
 

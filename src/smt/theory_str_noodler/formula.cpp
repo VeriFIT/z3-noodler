@@ -2,6 +2,84 @@
 #include "formula.h"
 
 namespace smt::noodler {
+    void collect_free_vars_rec(const LenNode& root, std::set<BasicTerm>& free_vars, std::set<BasicTerm>& quantified_vars) {
+        switch (root.type) {
+            case LenFormulaType::TRUE:
+            case LenFormulaType::FALSE:
+                return;
+            case LenFormulaType::LEAF: {
+                if (root.atom_val.is_variable()) {
+                    const BasicTerm& var = root.atom_val;
+                    if (!quantified_vars.contains(var)) {
+                        free_vars.insert(var);
+                    } 
+                }
+                return;
+            }
+            case LenFormulaType::NOT:
+                collect_free_vars_rec(root.succ.at(0), free_vars, quantified_vars);
+                return;
+            case LenFormulaType::LEQ:
+            case LenFormulaType::LT:
+            case LenFormulaType::EQ:
+            case LenFormulaType::NEQ:
+                collect_free_vars_rec(root.succ.at(0), free_vars, quantified_vars);
+                collect_free_vars_rec(root.succ.at(1), free_vars, quantified_vars);
+                return;
+            case LenFormulaType::PLUS: {
+            case LenFormulaType::MINUS:
+            case LenFormulaType::TIMES:
+            case LenFormulaType::AND:
+            case LenFormulaType::OR:
+                for (const auto& child : root.succ) {
+                    collect_free_vars_rec(child, free_vars, quantified_vars);
+                }
+                return;
+            }
+            case LenFormulaType::FORALL:
+            case LenFormulaType::EXISTS: {
+                auto children_iterator = root.succ.begin();
+                const LenNode& quantified_var_node = *children_iterator;
+                const BasicTerm quantified_var = quantified_var_node.atom_val;
+                children_iterator++;
+
+                auto [target_bucket, did_emplace_happen] = quantified_vars.emplace(quantified_var);
+                assert (did_emplace_happen);  // We want all quantified vars to be unique, at least for now
+
+                for (; children_iterator != root.succ.end(); children_iterator++) {
+                    collect_free_vars_rec(*children_iterator, free_vars, quantified_vars);
+                }
+
+                quantified_vars.erase(quantified_var);
+                
+                return;
+            }
+            default:
+                UNREACHABLE();
+        }
+    }
+    
+    std::set<BasicTerm> collect_free_vars(const LenNode& len_node) {
+        std::set<BasicTerm> free_vars;
+        std::set<BasicTerm> quantified_vars;
+
+        collect_free_vars_rec(len_node, free_vars, quantified_vars);   
+
+        return free_vars;
+    }
+
+    void write_len_formula_as_smt2(const LenNode& formula, std::ostream& out_stream) {
+        out_stream << "(set-logic LIA)" << std::endl;
+
+        std::set<BasicTerm> free_vars = collect_free_vars(formula);
+
+        for (const BasicTerm& free_var : free_vars) {
+            out_stream << "(declare-fun " << free_var << "() Int)" << std::endl;
+        }
+
+        out_stream << formula;
+    }
+    
     std::set<BasicTerm> Predicate::get_vars() const {
         std::set<BasicTerm> vars;
         for (const auto& side: params) {
