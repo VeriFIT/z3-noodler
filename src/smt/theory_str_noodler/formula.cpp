@@ -26,11 +26,11 @@ namespace smt::noodler {
                 collect_free_vars_rec(root.succ.at(0), free_vars, quantified_vars);
                 collect_free_vars_rec(root.succ.at(1), free_vars, quantified_vars);
                 return;
-            case LenFormulaType::PLUS: {
+            case LenFormulaType::PLUS: 
             case LenFormulaType::MINUS:
             case LenFormulaType::TIMES:
             case LenFormulaType::AND:
-            case LenFormulaType::OR:
+            case LenFormulaType::OR: {
                 for (const auto& child : root.succ) {
                     collect_free_vars_rec(child, free_vars, quantified_vars);
                 }
@@ -76,8 +76,11 @@ namespace smt::noodler {
         for (const BasicTerm& free_var : free_vars) {
             out_stream << "(declare-fun " << free_var << "() Int)" << std::endl;
         }
-
+        out_stream << "(assert " << std::endl;
         out_stream << formula;
+        out_stream << ")" << std::endl;
+        out_stream << "(check-sat)" << std::endl;
+        out_stream << "(exit)" << std::endl;
     }
     
     std::set<BasicTerm> Predicate::get_vars() const {
