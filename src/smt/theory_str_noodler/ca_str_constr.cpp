@@ -321,7 +321,7 @@ namespace smt::noodler::ca {
 
         LenNode not_contains_formula = not_contains_generator.get_not_cont_formula(not_contains);
 
-        write_len_formula_as_smt2(not_contains_formula, std::cout);
+        // write_len_formula_as_smt2(not_contains_formula, std::cout);
 
         STRACE("str-not-contains",
             tout << "* generated formula: \n";

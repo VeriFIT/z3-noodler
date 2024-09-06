@@ -78,6 +78,15 @@ bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_ut
 
 bool is_len_num_leq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& len_arg, rational& num);
 
+/**
+ * @brief Check if the formula @p e contains a quantifier.
+ * 
+ * @param e Z3 formula
+ * @param m AST manager
+ * @return true <--> @p e has a quantifier
+ */
+bool has_quantifier(expr* e, ast_manager& m);
+
 
 }
 #endif

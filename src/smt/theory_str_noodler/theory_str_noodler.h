@@ -33,6 +33,7 @@ Eternal glory to Yu-Fang.
 #include "inclusion_graph.h"
 #include "decision_procedure.h"
 #include "expr_solver.h"
+#include "quant_lia_solver.h"
 #include "util.h"
 #include "expr_cases.h"
 #include "regex.h"
@@ -41,6 +42,14 @@ Eternal glory to Yu-Fang.
 #include "counter_automaton.h"
 #include "length_decision_procedure.h"
 #include "unary_decision_procedure.h"
+
+/**
+ * NOTE: way how to print z3 formula in smt2 format (including the declaration)
+ * ast_pp_util utl(m);
+ * utl.collect(formula);
+ * utl.display_decls(std::cout);
+ * utl.display_assert(std::cout, formula);
+ */
 
 namespace smt::noodler {
 

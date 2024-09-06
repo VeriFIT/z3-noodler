@@ -649,7 +649,16 @@ namespace smt::noodler {
             return l_true;
         }
 
-        int_expr_solver m_int_solver(get_manager(), get_context().get_fparams());
+        // if the length formula has quantifiers --> use quant_lia_solver
+        // TODO: the quant_lia_solver does not support UNSAT cores
+        if(expr_cases::has_quantifier(len_formula, m)) {
+            m_rewrite(len_formula);
+            quant_lia_solver m_quant_int_solver(get_manager());
+            m_quant_int_solver.initialize(get_context());
+            return m_quant_int_solver.check_sat(len_formula);
+        }
+
+        int_expr_solver m_int_solver(get_manager(), get_fparams());
         // do we solve only regular constraints (and we do not want to produce models)? If yes, skip other temporary length constraints (they are not necessary)
         bool include_ass = true;
         if(this->m_word_diseq_todo_rel.size() == 0 && this->m_word_eq_todo_rel.size() == 0 && this->m_not_contains_todo.size() == 0 && this->m_conversion_todo.size() == 0 && !m_params.m_produce_models) {
@@ -987,7 +996,10 @@ namespace smt::noodler {
             }
         }
         sat_length_formula = length_formula;
-        add_axiom(length_formula);
+        // It seems thare is problem if the length_formula has quantifiers. In that case we skip adding axioms.
+        if(!expr_cases::has_quantifier(length_formula, m)) {
+            add_axiom(length_formula);
+        }
     }
 
     expr_ref theory_str_noodler::len_node_to_z3_formula(const LenNode &node) {
