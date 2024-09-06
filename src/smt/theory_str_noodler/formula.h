@@ -167,6 +167,7 @@ namespace smt::noodler {
 
     static std::ostream& operator<<(std::ostream& os, const LenNode& node) {
         auto children_iterator = node.succ.begin(); // Some nodes, e.g., quantifiers would like to consume successor nodes
+        bool was_opening_parenthesis_emitted = true;
 
         switch (node.type)
         {
@@ -185,9 +186,13 @@ namespace smt::noodler {
         case LenFormulaType::EQ:
             return os << "(= " << node.succ.at(0) << " " << node.succ.at(1) << ")";
         case LenFormulaType::NEQ:
-            return os << "(!= " << node.succ.at(0) << " " << node.succ.at(1) << ")";
+            return os << "(not (= " << node.succ.at(0) << " " << node.succ.at(1) << "))";
         case LenFormulaType::PLUS:
-            os << "(+";
+            if (node.succ.size() > 1) {
+                os << "(+";
+            } else {
+                was_opening_parenthesis_emitted = false;
+            }
             break;
         case LenFormulaType::MINUS:
             os << "(-";
@@ -196,10 +201,18 @@ namespace smt::noodler {
             os << "(*";
             break;
         case LenFormulaType::AND:
-            os << "(and";
+            if (node.succ.size() > 1) {
+                os << "(and";
+            } else {
+                was_opening_parenthesis_emitted = false;
+            }
             break;
         case LenFormulaType::OR:
-            os << "(or";
+            if (node.succ.size() > 1) {
+                os << "(or";
+            } else {
+                was_opening_parenthesis_emitted = false;
+            }
             break;
         case LenFormulaType::FORALL: {
             const auto& quantified_var = *children_iterator;
@@ -222,7 +235,10 @@ namespace smt::noodler {
             const auto& child = *children_iterator;
             os << " " << child;
         }
-        os << ")";
+
+        if (was_opening_parenthesis_emitted) {
+            os << ")";
+        }
         return os;
     }
     /**
