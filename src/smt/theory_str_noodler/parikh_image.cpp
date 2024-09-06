@@ -734,6 +734,7 @@ namespace smt::noodler::parikh {
 
         LenNode exist_alternative_parikh_with_conflict(
             LenFormulaType::AND, {
+                second_level_parikh,
                 parikh_images_agree,
                 parikh_contains_conflic_for_offset
             }
