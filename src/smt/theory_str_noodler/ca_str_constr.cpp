@@ -3,6 +3,7 @@
 #include "formula.h"
 #include "util.h"
 #include <mata/nfa/delta.hh>
+#include <mata/nfa/nfa.hh>
 #include <mata/nfa/strings.hh>
 #include <unordered_map>
 
@@ -26,8 +27,6 @@ namespace smt::noodler::ca {
             this->aut_matrix[copy] = std::vector<mata::nfa::Nfa>(var_set.size());
             for(size_t var = 0; var < this->var_order.size(); var++) {
                 this->aut_matrix[copy][var] = *aut_ass.at(this->var_order[var]);
-                // reduce the original nfa
-                this->aut_matrix[copy][var] = mata::nfa::reduce(this->aut_matrix[copy][var]);
             }
         }
 
@@ -137,7 +136,7 @@ namespace smt::noodler::ca {
 
         // We use the original automaton from this->aut_ass because the actual alphabet symbols
         // might not be present in this->aut_matrix because they were replaced earlier by tags (<L, x>, etc.).
-        mata::nfa::Nfa original_automaton = *this->aut_ass.at(bt);
+        mata::nfa::Nfa& original_automaton = *this->aut_ass.at(bt);
 
         for (mata::nfa::State source_state = 0; source_state < original_automaton.num_of_states(); source_state++) {
             for (const mata::nfa::SymbolPost& symbol_post : original_automaton.delta[source_state]) {
@@ -176,6 +175,7 @@ namespace smt::noodler::ca {
 
         // union all automata in the matrix
         mata::nfa::Nfa aut_union = this->aut_matrix.union_matrix();
+
         // add mata epsilon symbol to alphabet. Used for DOT export.
         this->alph.insert(mata::nfa::EPSILON, {});
 
@@ -304,7 +304,16 @@ namespace smt::noodler::ca {
         }
 
         AutAssignment actual_var_assignment = prep_handler.get_aut_assignment();
+
+        // Preprocess the assignment: reduce the automata and make them deterministic
+        for (auto it = actual_var_assignment.begin(); it != actual_var_assignment.end(); it++) {
+            mata::nfa::Nfa reduced_nfa = mata::nfa::reduce(*it->second);
+            mata::nfa::Nfa reduced_dfa = mata::nfa::determinize(reduced_nfa);
+            it->second = std::make_shared<mata::nfa::Nfa>(reduced_dfa);
+        }
+
         ca::TagDiseqGen tag_automaton_generator(not_contains, actual_var_assignment);
+
         ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
         std::set<AtomicSymbol> atomic_symbols = tag_automaton.gather_used_symbols();
 
