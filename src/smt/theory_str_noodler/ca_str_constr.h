@@ -77,7 +77,7 @@ namespace smt::noodler::ca {
             return get_var_aut_init_state_pos(copy, var) + state;
         }
 
-        std::vector<size_t> get_var_init_states_pos_in_copies() const {
+        std::vector<size_t>& get_var_init_states_pos_in_copies() {
             return this->var_aut_init_states_in_copy;
         }
 
