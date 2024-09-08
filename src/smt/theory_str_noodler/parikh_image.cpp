@@ -1,5 +1,6 @@
 
 #include "parikh_image.h"
+#include "formula.h"
 
 namespace smt::noodler::parikh {
 
@@ -644,7 +645,9 @@ namespace smt::noodler::parikh {
         }
 
         LenNode len_diff_node = LenNode(LenFormulaType::PLUS, len_diff_expr);
-        return LenNode(LenFormulaType::LT, {len_diff_node, LenNode(this->offset_var)});
+        LenNode rhs_longer_than_lhs =  LenNode(LenFormulaType::LT, {len_diff_node, LenNode(this->offset_var)});
+
+        return rhs_longer_than_lhs;
     }
 
     mata::nfa::State ParikhImageNotContTag::map_copy_state_into_its_origin(const mata::nfa::State state) const {
@@ -723,20 +726,21 @@ namespace smt::noodler::parikh {
 
         LenNode parikh_images_agree = mk_parikh_images_encode_same_word_formula(top_level_parikh_vars, second_level_parikh_vars);
 
-        LenNode parikh_contains_conflic_for_offset(
+        LenNode parikh_contains_conflict_for_offset(
             LenFormulaType::OR, {
             rhs_with_offset_longer_than_lhs,
             LenNode(LenFormulaType::AND, {
                 mismatch,
                 diff_symbol
-            })});
+            })}
+        );
 
-
+        LenNode log_true(LenFormulaType::TRUE, {});
         LenNode exist_alternative_parikh_with_conflict(
             LenFormulaType::AND, {
                 second_level_parikh,
                 parikh_images_agree,
-                parikh_contains_conflic_for_offset
+                parikh_contains_conflict_for_offset
             }
         );
         for (auto& [transition, transition_var] : second_level_parikh_vars) {
@@ -749,11 +753,21 @@ namespace smt::noodler::parikh {
             var_lengths_from_tag_count_formula,
             LenNode(LenFormulaType::FORALL, {
                 this->offset_var,
-                exist_alternative_parikh_with_conflict
+                LenNode( // K >= 0 -> conflict must exists
+                    LenFormulaType::OR,
+                    {
+                        LenNode(LenFormulaType::LT, {LenNode(this->offset_var), 0}),
+                        exist_alternative_parikh_with_conflict
+                    }
+                )
             }),
         });
 
         STRACE("str-diseq", tout << "* resulting_formula:  " << std::endl << formula << std::endl << std::endl;);
+
+        std::ofstream output_file("/tmp/nc-lia.smt2");
+        write_len_formula_as_smt2(formula, output_file);
+        output_file.close();
 
         return formula;
     }
