@@ -164,6 +164,9 @@ namespace smt::noodler::ca {
         // variable ordering
         std::vector<BasicTerm> var_order {};
 
+        // Debugging: color states in the tag automaton according to the variable it originates in
+        std::unordered_map<mata::nfa::State, uint64_t> node_color_map;
+
         size_t num_of_states_in_row;
 
         std::string symbol_to_string(const std::set<AtomicSymbol>& sym) const {
@@ -176,19 +179,52 @@ namespace smt::noodler::ca {
 
         // taken and modified from Mata
         void print_to_dot(std::ostream &output) const {
+            const char* color_table[] = {
+                "gray", // DEFAULT
+                "red",
+                "green",
+                "blue",
+                "yellow",
+                "purple",
+            };
+
+            const size_t state_cnt = nfa.delta.num_of_states();
+
+            // Collect all used states so we do not create notes for needless states
+            // #Optimize(mhecko): maybe bit_set could be faster
+            std::unordered_set<mata::nfa::State> used_states;
+            for (mata::nfa::State source_state = 0; source_state < state_cnt; ++source_state) {
+                for (const mata::nfa::SymbolPost &move: nfa.delta[source_state]) {
+                    for (mata::nfa::State target_state: move.targets) {
+                        used_states.insert(source_state);
+                        used_states.insert(target_state);
+                    }
+                }
+            }
+
             output << "digraph finiteAutomaton {" << std::endl
                         << "node [shape=circle];" << std::endl;
 
-            for (mata::nfa::State final_state: nfa.final) {
-                output << final_state << " [shape=doublecircle];" << std::endl;
+            for (mata::nfa::State state = 0; state < state_cnt; state++) {
+                if (!used_states.contains(state)) continue;
+
+                bool is_final = nfa.final.contains(state);
+                auto color_val_it = this->node_color_map.find(state);
+                int64_t color_idx = (color_val_it == this->node_color_map.end()) ? 0 : color_val_it->second;
+                color_idx = color_idx >= sizeof(color_table) ? 0 : color_idx; // Reset if overflow
+
+                const char* shape = is_final ? "doublecircle" : "circle";
+                const char* color = color_table[color_idx];
+
+                output << "node_" << state << "[style=filled, fillcolor=" << color << ", shape=" << shape << ", label=" << state << "];\n";
             }
 
-            const size_t delta_size = nfa.delta.num_of_states();
-            for (mata::nfa::State source = 0; source != delta_size; ++source) {
+
+            for (mata::nfa::State source = 0; source != state_cnt; ++source) {
                 for (const mata::nfa::SymbolPost &move: nfa.delta[source]) {
-                    output << source << " -> {";
+                    output << "node_" << source << " -> {";
                     for (mata::nfa::State target: move.targets) {
-                        output << target << " ";
+                        output << "node_" << target << " ";
                     }
                     output << "} [label=\"" << symbol_to_string(alph.get_symbol(move.symbol)) << "\"];" << std::endl;
                 }
@@ -196,7 +232,7 @@ namespace smt::noodler::ca {
 
             output << "node [shape=none, label=\"\"];" << std::endl;
             for (mata::nfa::State init_state: nfa.initial) {
-                output << "i" << init_state << " -> " << init_state << ";" << std::endl;
+                output << "i" << init_state << " -> " << "node_" << init_state << ";" << std::endl;
             }
 
             output << "}" << std::endl;

@@ -186,7 +186,24 @@ namespace smt::noodler::ca {
             }
         }
 
-        return { aut_union, this->alph, var_order };
+        TagAut result = { aut_union, this->alph, var_order };
+
+        {  // DEBUG -- color states
+            size_t states_in_row = this->aut_matrix.get_number_of_states_in_row();
+            std::vector<size_t>& init_states_offsets = this->aut_matrix.get_var_init_states_pos_in_copies();
+            for (size_t var_idx = 0; var_idx < var_order.size(); var_idx++) {
+                size_t first_state = init_states_offsets[var_idx];
+                size_t last_state  = (var_idx + 1 == init_states_offsets.size()) ? states_in_row - 1 : init_states_offsets[var_idx+1];
+
+                for (; first_state < last_state; first_state++) {
+                    for (int copy_idx = 0; copy_idx < 3; copy_idx++) {
+                        result.node_color_map[first_state + copy_idx*states_in_row] = var_idx;
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 
     //-----------------------------------------------------------------------------------------------
