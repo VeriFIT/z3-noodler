@@ -359,9 +359,9 @@ namespace smt::noodler::parikh {
         return phi_cnt;
     }
 
-    LenNode ParikhImageDiseqTag::express_string_length_preceding_supposed_missmatch(std::vector<BasicTerm> predicate_side, size_t supposed_missmatch_pos) const {
-        if (supposed_missmatch_pos == 0) {
-            return LenNode(0);  // The mismatch position will be computed only based on <P, ..> tags
+    LenNode ParikhImageDiseqTag::express_string_length_preceding_supposed_mismatch(const std::vector<BasicTerm>& predicate_side, size_t supposed_mismatch_pos) const {
+        if (supposed_mismatch_pos == 0) {
+            return LenNode(LenFormulaType::PLUS, {LenNode(0)});  // The mismatch position will be computed only based on <P, ..> tags
         }
 
         LenNode sum_len(LenFormulaType::PLUS);
