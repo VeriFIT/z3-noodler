@@ -327,6 +327,10 @@ namespace smt::noodler::ca {
             mata::nfa::Nfa reduced_nfa = mata::nfa::reduce(*it->second);
             mata::nfa::Nfa reduced_dfa = mata::nfa::determinize(reduced_nfa);
             it->second = std::make_shared<mata::nfa::Nfa>(reduced_dfa);
+            STRACE("str-not-contains", {
+                tout << "* (var assignment) NFA assigned to " << it->first << ":\n";
+                it->second->print_to_dot(tout);
+            });
         }
 
         ca::TagDiseqGen tag_automaton_generator(not_contains, actual_var_assignment);
@@ -346,8 +350,6 @@ namespace smt::noodler::ca {
                                                              num_of_states_in_row);
 
         LenNode not_contains_formula = not_contains_generator.get_not_cont_formula(not_contains);
-
-        // write_len_formula_as_smt2(not_contains_formula, std::cout);
 
         STRACE("str-not-contains",
             tout << "* generated formula: \n";
