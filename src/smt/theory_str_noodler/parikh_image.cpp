@@ -1,6 +1,7 @@
 
 #include "parikh_image.h"
 #include "formula.h"
+#include <cstdlib>
 
 namespace smt::noodler::parikh {
 
@@ -773,9 +774,16 @@ namespace smt::noodler::parikh {
 
         STRACE("str-not-contains", tout << "* resulting_formula:  " << std::endl << formula << std::endl << std::endl;);
 
-        std::ofstream output_file("/tmp/nc-lia.smt2");
-        write_len_formula_as_smt2(formula, output_file);
-        output_file.close();
+        { // Debug
+            const char* out_file_path = std::getenv("NOODLER_NC_WRITE_LIA_INTO");
+            if (out_file_path != nullptr) {
+                std::ofstream output_file(out_file_path);
+                if (output_file.is_open()) {
+                    write_len_formula_as_smt2(formula, output_file);
+                    output_file.close();
+                }
+            }
+        }
 
         return formula;
     }
