@@ -366,7 +366,7 @@ namespace smt::noodler::parikh {
 
         LenNode sum_len(LenFormulaType::PLUS);
 
-        size_t last_term_pos_to_include = supposed_missmatch_pos - 1;
+        size_t last_term_pos_to_include = supposed_mismatch_pos - 1;
         int current_term_idx = 0;
         for (const BasicTerm& side_term : predicate_side) {
             if (current_term_idx > last_term_pos_to_include) {
@@ -394,6 +394,26 @@ namespace smt::noodler::parikh {
             }
         }
         return register_store_count;
+    }
+
+
+    std::pair<LenNode, size_t> ParikhImageDiseqTag::express_mismatch_position(const std::vector<BasicTerm>& predicate_side, size_t mismatch_pos, size_t sample_order_label, const LenNode* offset_var) const {
+        const BasicTerm& var = predicate_side[mismatch_pos];
+        LenNode mismatch_pos_formula = express_string_length_preceding_supposed_mismatch(predicate_side, mismatch_pos);
+        // add symbol <P, var, label_left, 0> where var is i-th variable on left side of diseq
+        ca::AtomicSymbol mismatch_pos_sym = ca::AtomicSymbol::create_p_symbol(var, sample_order_label);
+        auto mismatch_sym_var_it = this->tag_occurence_count_vars.find(mismatch_pos_sym);
+        if (mismatch_sym_var_it == this->tag_occurence_count_vars.end()) {
+            return std::make_pair(LenNode(LenFormulaType::FALSE), 0);  // The mismatch guess is not possible
+        }
+        size_t mismatch_term_pos = mismatch_pos_formula.succ.size();
+        mismatch_pos_formula.succ.push_back(LenNode(mismatch_sym_var_it->second));
+
+        if (offset_var != nullptr) {
+            mismatch_pos_formula.succ.push_back(*offset_var);
+        }
+
+        return std::make_pair(mismatch_pos_formula, mismatch_term_pos);
     }
 
     /**
@@ -434,32 +454,17 @@ namespace smt::noodler::parikh {
             label_right = 1;
         }
 
-        LenNode lhs_mismatch_pos = express_string_length_preceding_supposed_missmatch(diseq.get_left_side(), left_mismatch_pos);
-        // add symbol <P, var, label_left, 0> where var is i-th variable on left side of diseq
-        ca::AtomicSymbol first_mismatch_pos_sym = ca::AtomicSymbol::create_p_symbol(var_left, label_left);
-        auto first_mismatch_sym_var_it = this->tag_occurence_count_vars.find(first_mismatch_pos_sym);
-        if (first_mismatch_sym_var_it == this->tag_occurence_count_vars.end()) {
-            return LenNode(LenFormulaType::FALSE);  // The mismatch guess is not possible
-        }
-        lhs_mismatch_pos.succ.push_back(LenNode(first_mismatch_sym_var_it->second));
+        auto [lhs_mismatch_pos_expr, lhs_mismatch_in_var_node_idx] = express_mismatch_position(diseq.get_left_side(), left_mismatch_pos, label_left);
+        if (lhs_mismatch_pos_expr.type == LenFormulaType::FALSE) return lhs_mismatch_pos_expr;
 
-        LenNode rhs_mismatch_pos = express_string_length_preceding_supposed_missmatch(diseq.get_right_side(), right_mismatch_pos);
-        rhs_mismatch_pos.succ.insert(rhs_mismatch_pos.succ.begin(), rhs_offset);  // add the offset parameter (0 by default)
-        // add symbol <P, var, label_right, 0> where var is j-th variable on right side of diseq
-        ca::AtomicSymbol second_mismatch_pos_sym = ca::AtomicSymbol::create_p_symbol(var_right, label_right);
-        auto second_mismatch_sym_var_it = this->tag_occurence_count_vars.find(first_mismatch_pos_sym);
-        if (second_mismatch_sym_var_it == this->tag_occurence_count_vars.end()) {
-            return LenNode(LenFormulaType::FALSE);
-        }
-        rhs_mismatch_pos.succ.push_back(LenNode(second_mismatch_sym_var_it->second));
+        auto [rhs_mismatch_pos_expr, rhs_mismatch_in_var_node_idx] = express_mismatch_position(diseq.get_right_side(), right_mismatch_pos, label_right, &rhs_offset);
+        if (rhs_mismatch_pos_expr.type == LenFormulaType::FALSE) return rhs_mismatch_pos_expr;
 
         LenNode lhs_register_stores_cnt = count_register_stores_for_var_and_side(var_left, label_left);
         LenNode lhs_has_register_store(LenFormulaType::LEQ, { 1, lhs_register_stores_cnt });
 
         LenNode rhs_register_stores_cnt = count_register_stores_for_var_and_side(var_right, label_right);
         LenNode rhs_has_register_store(LenFormulaType::LEQ, { 1, rhs_register_stores_cnt });
-
-        LenNode mismatch_position_is_same(LenFormulaType::EQ, { lhs_mismatch_pos, rhs_mismatch_pos});
 
         // If left_var == right_var, we don't know which sample will be seen first - create a disjunction for both branches
         if (var_right == var_left) {
@@ -471,20 +476,20 @@ namespace smt::noodler::parikh {
 
             // (lhs < rhs) lhs sees mismatch sooner than rhs
             {
-                LenNode rhs_sees_mismatch_later = rhs_mismatch_pos;
-                rhs_sees_mismatch_later.succ.push_back(LenNode(first_mismatch_sym_var_it->second));  // <L, x> + ... <L, z> + <P, var, 2> + <P, var, 1>
+                LenNode rhs_sees_mismatch_later = rhs_mismatch_pos_expr;
+                rhs_sees_mismatch_later.succ.push_back(lhs_mismatch_pos_expr.succ[lhs_mismatch_in_var_node_idx]);  // <L, x> + ... <L, z> + <P, var, 2> + <P, var, 1>
 
-                LenNode branch(LenFormulaType::EQ, {lhs_mismatch_pos, rhs_sees_mismatch_later});
+                LenNode branch(LenFormulaType::EQ, {lhs_mismatch_pos_expr, rhs_sees_mismatch_later});
                 mismatch_position_case_split.succ.push_back(branch);
             }
 
             // (lhs > rhs) rhs sees mismatch sooner than lhs
             {
-                LenNode lhs_sees_mismatch_later = lhs_mismatch_pos;
-                lhs_sees_mismatch_later.succ.push_back(LenNode(second_mismatch_sym_var_it->second)); // <L, x> + ... <L, z> + <P, var, 1> + <P, var, 2>
+                LenNode lhs_sees_mismatch_later = lhs_mismatch_pos_expr;
+                lhs_sees_mismatch_later.succ.push_back(rhs_mismatch_pos_expr.succ[rhs_mismatch_in_var_node_idx]); // <L, x> + ... <L, z> + <P, var, 1> + <P, var, 2>
 
-                LenNode rhs_sees_mismatch_sooner = rhs_mismatch_pos;
-                rhs_mismatch_pos.succ[rhs_mismatch_pos.succ.size()-1] = LenNode(first_mismatch_sym_var_it->second); // Replace the trailing <P, var, 2> with <P, var, 1>
+                LenNode rhs_sees_mismatch_sooner = rhs_mismatch_pos_expr;
+                rhs_mismatch_pos_expr.succ[rhs_mismatch_in_var_node_idx] = lhs_mismatch_pos_expr.succ[lhs_mismatch_in_var_node_idx]; // Replace the trailing <P, var, 2> with <P, var, 1>
 
                 LenNode branch(LenFormulaType::EQ, {lhs_sees_mismatch_later, rhs_sees_mismatch_sooner});
                 mismatch_position_case_split.succ.push_back(branch);
@@ -502,6 +507,9 @@ namespace smt::noodler::parikh {
         //                necessary to prevent from trivial solutions 0=0.
         // LenNode some_lhs_mismatch_seen(LenFormulaType::LEQ, { 1, LenNode(first_mismatch_sym_var_it->second) });
         // LenNode some_rhs_mismatch_seen(LenFormulaType::LEQ, { 1, LenNode(second_mismatch_sym_var_it->second) });
+
+        LenNode mismatch_position_is_same(LenFormulaType::EQ, { lhs_mismatch_pos_expr, rhs_mismatch_pos_expr});
+
         return LenNode(LenFormulaType::AND, {
             mismatch_position_is_same,
             lhs_has_register_store,

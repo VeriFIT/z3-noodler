@@ -201,7 +201,8 @@ public:
 
     std::map<mata::Symbol, std::vector<LenNode>> group_sampling_transition_vars_by_symbol() const;
 
-    LenNode express_string_length_preceding_supposed_missmatch(std::vector<BasicTerm> predicate_side, size_t supposed_missmatch_pos) const;
+    LenNode express_string_length_preceding_supposed_mismatch(const std::vector<BasicTerm>& predicate_side, size_t supposed_mismatch_pos) const;
+    std::pair<LenNode, size_t> express_mismatch_position(const std::vector<BasicTerm>& predicate_side, size_t mismatch_pos, size_t sample_order_label, const LenNode* offset_var = nullptr) const;
     LenNode count_register_stores_for_var_and_side(BasicTerm& var, char predicate_side_label) const;
     LenNode ensure_symbol_uniqueness_using_total_sum(std::map<mata::Symbol, std::vector<LenNode>>& symbol_to_register_sample_vars) const;
     LenNode ensure_symbol_uniqueness_using_implication(std::map<mata::Symbol, std::vector<LenNode>>& symbol_to_register_sample_vars) const;
