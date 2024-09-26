@@ -210,7 +210,7 @@ namespace smt::noodler::ca {
 
                 bool is_final = nfa.final.contains(state);
                 auto color_val_it = this->node_color_map.find(state);
-                int64_t color_idx = (color_val_it == this->node_color_map.end()) ? 0 : color_val_it->second;
+                uint64_t color_idx = (color_val_it == this->node_color_map.end()) ? 0 : color_val_it->second;
                 color_idx = color_idx >= sizeof(color_table) ? 0 : color_idx; // Reset if overflow
 
                 const char* shape = is_final ? "doublecircle" : "circle";
