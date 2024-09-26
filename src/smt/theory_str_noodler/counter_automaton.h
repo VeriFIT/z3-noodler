@@ -177,8 +177,11 @@ namespace smt::noodler::ca {
             return ret;
         }
 
+        // For some reason we cannot pull parikh_image.h, remake the Transition alias
+        typedef std::tuple<mata::nfa::State, mata::Symbol, mata::nfa::State> TransitionTuple;
+
         // taken and modified from Mata
-        void print_to_dot(std::ostream &output) const {
+        void print_to_dot(std::ostream &output, const std::map<TransitionTuple, BasicTerm>& transition_vars = {}) const {
             const char* color_table[] = {
                 "gray", // DEFAULT
                 "red",
@@ -222,11 +225,19 @@ namespace smt::noodler::ca {
 
             for (mata::nfa::State source = 0; source != state_cnt; ++source) {
                 for (const mata::nfa::SymbolPost &move: nfa.delta[source]) {
-                    output << "node_" << source << " -> {";
                     for (mata::nfa::State target: move.targets) {
-                        output << "node_" << target << " ";
+                        TransitionTuple transition = std::make_tuple(source, move.symbol, target);
+                        auto var_labeling_transition_it = transition_vars.find(transition);
+
+                        output << "node_" << source << " -> "
+                               << "node_" << target << " "
+                               << " [label=\"" << symbol_to_string(alph.get_symbol(move.symbol));
+
+                        if (var_labeling_transition_it != transition_vars.end()) {
+                            output << " (" << var_labeling_transition_it->second << ")";
+                        }
+                        output << "\"];\n";
                     }
-                    output << "} [label=\"" << symbol_to_string(alph.get_symbol(move.symbol)) << "\"];" << std::endl;
                 }
             }
 
