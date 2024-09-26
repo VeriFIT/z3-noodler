@@ -619,10 +619,10 @@ namespace smt::noodler {
         conjuncts.push_back(conv_form_with_precision.first);
         precision = conv_form_with_precision.second;
 
-
         // get the LIA formula describing solutions for special predicates
         conjuncts.push_back(get_formula_for_ca_diseqs());
         auto not_cont_prec = get_formula_for_not_contains();
+
         if (not_cont_prec.second == LenNodePrecision::PRECISE || not_cont_prec.second == precision) {
             conjuncts.push_back(not_cont_prec.first);
         } else {
@@ -1131,12 +1131,17 @@ namespace smt::noodler {
         std::tie(code_subst_vars, int_subst_vars) = get_vars_substituted_in_conversions();
 
         // create formula for each variable substituting some string_var in some code conversion
-        result.succ.push_back(get_formula_for_code_subst_vars(code_subst_vars));
+        LenNode code_subst_formula = get_formula_for_code_subst_vars(code_subst_vars);
+        if (!code_subst_formula.succ.empty()) {
+            result.succ.push_back(code_subst_formula);
+        }
 
         // create formula for each variable substituting some string_var in some int conversion
         std::map<BasicTerm,std::vector<unsigned>> int_subst_vars_to_possible_valid_lengths;
         auto int_conv_formula_with_precision = get_formula_for_int_subst_vars(int_subst_vars, code_subst_vars, int_subst_vars_to_possible_valid_lengths);
-        result.succ.push_back(int_conv_formula_with_precision.first);
+        if (!int_conv_formula_with_precision.first.succ.empty()) {
+            result.succ.push_back(int_conv_formula_with_precision.first);
+        }
         if (int_conv_formula_with_precision.second != LenNodePrecision::PRECISE) {
             res_precision = int_conv_formula_with_precision.second;
         }
@@ -1163,6 +1168,10 @@ namespace smt::noodler {
                 default:
                     UNREACHABLE();
             }
+        }
+
+        if (result.succ.empty()) {
+            result = LenNode(LenFormulaType::TRUE);
         }
 
         STRACE("str-conversion",
