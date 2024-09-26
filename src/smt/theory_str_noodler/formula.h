@@ -175,8 +175,17 @@ namespace smt::noodler {
             return (os << "true");
         case LenFormulaType::FALSE:
             return (os << "false");
-        case LenFormulaType::LEAF:
+        case LenFormulaType::LEAF: {
+            zstring name = node.atom_val.get_name();
+            // Make sure that we print negative numbers in a valid SMT2 format
+            if (node.atom_val.is(BasicTermType::Length)) {
+                if (name[0] == '-') {
+                    os << "(- " << name.encode().substr(1) << ")";
+                    return os;
+                }
+            }
             return (os << node.atom_val.get_name());
+        }
         case LenFormulaType::NOT:
             return os << "(not" << node.succ.at(0) << ")";
         case LenFormulaType::LEQ:
