@@ -86,12 +86,11 @@ namespace smt::noodler::regex {
         }
 
         /// @brief Return zstring corresponding the the word @p word, where dummy symbol is replaced with some valid symbol not in the alphabet.
-        zstring get_string_from_mata_word(const mata::Word& word) const {
+        zstring get_string_from_mata_word(mata::Word word) const {
             zstring res;
             mata::Symbol unused_symbol = get_unused_symbol();
-            mata::Word new_word{ word };
-            std::replace(new_word.begin(), new_word.end(), util::get_dummy_symbol(), unused_symbol);
-            return zstring(new_word.size(), new_word.data());
+            std::replace(word.begin(), word.end(), util::get_dummy_symbol(), unused_symbol);
+            return zstring(word.size(), word.data());
         }
     };
 

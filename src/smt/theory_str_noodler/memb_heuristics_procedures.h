@@ -22,8 +22,7 @@ namespace smt::noodler {
         const seq_util& m_util_s;
         const ast_manager& m;
 
-        std::unique_ptr<regex::Alphabet> alph;
-        std::unique_ptr<mata::nfa::Nfa> reg_nfa = nullptr;
+        std::optional<zstring> model;
     public:
         MembHeuristicProcedure(BasicTerm var, expr_ref regex, bool is_regex_positive, const seq_util& m_util_s, const ast_manager& m)
             : var(var), regex(regex), is_regex_positive(is_regex_positive), m_util_s(m_util_s), m(m) {}
@@ -44,8 +43,7 @@ namespace smt::noodler {
         const seq_util& m_util_s;
         const ast_manager& m;
 
-        std::map<BasicTerm, mata::nfa::Nfa> intersections;
-        std::map<BasicTerm, mata::nfa::Nfa> unions;
+        std::map<BasicTerm, zstring> models;
     public:
         MultMembHeuristicProcedure(std::map<BasicTerm, std::vector<std::pair<bool,app*>>> var_to_list_of_regexes_and_complement_flag, regex::Alphabet alph, const seq_util& m_util_s, const ast_manager& m)
             : var_to_list_of_regexes_and_complement_flag(var_to_list_of_regexes_and_complement_flag), alph(alph), m_util_s(m_util_s), m(m) {}
