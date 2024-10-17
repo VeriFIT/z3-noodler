@@ -2127,8 +2127,17 @@ namespace smt::noodler {
      * of the term and puts them in m_conversion_todo.
      */
     void theory_str_noodler::handle_conversion(expr *conversion) {
-        expr *arg = nullptr;
+        if (conv_to_clauses.contains(conversion)) { // if we already axiomatized this conversion before, we axiomatize it with the same stuff
+            m_conversion_todo.push_back(conv_to_term.at(conversion)); // add to todo
+            for (const auto& clause : conv_to_clauses.at(conversion)) {
+                add_axiom(clause);
+            }
+            return;
+        }
 
+        std::vector<std::vector<literal>> clauses;
+
+        expr *arg = nullptr;
         ConversionType type;
         std::string name_of_type;
         if (m_util_s.str.is_to_code(conversion, arg)) {
@@ -2178,7 +2187,7 @@ namespace smt::noodler {
                 // argument does not have a replacing variable (probably concatenation)
                 // we need to create one
                 z3_var_for_arg = mk_str_var_fresh(name_of_type + "_argument");
-                add_axiom({mk_literal(m.mk_eq(arg, z3_var_for_arg))});
+                clauses.push_back({mk_literal(m.mk_eq(arg, z3_var_for_arg))});
                 this->predicate_replace.insert(arg, z3_var_for_arg);
             }
             var_for_arg = util::get_variable_basic_term(z3_var_for_arg);
@@ -2192,7 +2201,7 @@ namespace smt::noodler {
         BasicTerm var_for_conversion(BasicTermType::Variable);
         if (tranforming_from) {
             expr_ref z3_var_for_conversion = mk_str_var_fresh(name_of_type + "_result");
-            add_axiom({mk_literal(m.mk_eq(z3_var_for_conversion, conversion))});
+            clauses.push_back({mk_literal(m.mk_eq(z3_var_for_conversion, conversion))});
             this->predicate_replace.insert(conversion, z3_var_for_conversion);
             len_vars.insert(z3_var_for_conversion); // dunno if this is needed
             var_for_conversion = util::get_variable_basic_term(z3_var_for_conversion);
@@ -2205,7 +2214,7 @@ namespace smt::noodler {
                                                 m_util_s.re.mk_epsilon(conversion->get_sort()),
                                                 m_util_s.re.mk_full_char(nullptr)
                                             );
-                add_axiom({mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, sigma_eps))});
+                clauses.push_back({mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, sigma_eps))});
             }
 
             if (type == ConversionType::FROM_INT) {
@@ -2216,18 +2225,18 @@ namespace smt::noodler {
                                                 m_util_s.re.mk_star(m_util_s.re.mk_range(m_util_s.str.mk_string("0"), m_util_s.str.mk_string("9")))
                                             ); // if argument > 0, the result will be of form [1-9]+[0-9]*
                 app *epsilon = m_util_s.re.mk_epsilon(conversion->get_sort()); // if argument < 0, the result is empty string
-                add_axiom({mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, m_util_s.re.mk_union(m_util_s.re.mk_union(zero, nums_without_zero), epsilon)))});
+                clauses.push_back({mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, m_util_s.re.mk_union(m_util_s.re.mk_union(zero, nums_without_zero), epsilon)))});
 
                 // |from_int(x)| = 0 <-> x <= -1
-                add_axiom({ mk_literal(m.mk_eq( m_util_s.str.mk_length(conversion), m_util_a.mk_int(0))), ~mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(-1))) });
-                add_axiom({ ~mk_literal(m.mk_eq( m_util_s.str.mk_length(conversion), m_util_a.mk_int(0))), mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(-1))) });
+                clauses.push_back({ mk_literal(m.mk_eq( m_util_s.str.mk_length(conversion), m_util_a.mk_int(0))), ~mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(-1))) });
+                clauses.push_back({ ~mk_literal(m.mk_eq( m_util_s.str.mk_length(conversion), m_util_a.mk_int(0))), mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(-1))) });
 
                 // As the result of from_int belongs to infinite language, it is very likely that we will have to underapproximate in the decision procedure.
                 // The underapproximation maximum length of words used from this infinite language is given by m_params.m_underapprox_length, we therefore add
                 //      argument < 10^m_underapprox_length => result \in .{0,m_underapprox_length}
                 // This will force for the case that "argument < 10^m_underapprox_length", that we will not have to do any underapproximation and hopefully,
                 // the case "argument >= 10^m_underapprox_length" will not happen .
-                add_axiom({
+                clauses.push_back({
                     ~mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(rational(10).expt(m_params.m_underapprox_length)-1))), // I rather use <= instead of <, LIA solver can have problems with that
                     mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(m_params.m_underapprox_length))))
                 });
@@ -2241,37 +2250,39 @@ namespace smt::noodler {
             // To help LIA solver, we give some bounds on the results of to_* functions
             if (type == ConversionType::TO_CODE) {
                 // the result of str.to_code must be between -1 and zstring::max_char
-                add_axiom({mk_literal(m_util_a.mk_le(m_util_a.mk_int(-1), conversion))});
-                add_axiom({mk_literal(m_util_a.mk_le(conversion, m_util_a.mk_int(zstring::max_char())))});
+                clauses.push_back({mk_literal(m_util_a.mk_le(m_util_a.mk_int(-1), conversion))});
+                clauses.push_back({mk_literal(m_util_a.mk_le(conversion, m_util_a.mk_int(zstring::max_char())))});
             }
 
             if (type == ConversionType::TO_INT) {
                 // the result of str.to_int cannot be any negative number other than -1
-                add_axiom({mk_literal(m_util_a.mk_le(m_util_a.mk_int(-1), conversion))});
+                clauses.push_back({mk_literal(m_util_a.mk_le(m_util_a.mk_int(-1), conversion))});
 
 
                 expr *e1 = nullptr, *e2 = nullptr, *e3 = nullptr;
                 rational r1;
                 if (m_util_s.str.is_at(arg)) {
                     // argument is str.at(...) => result must be less than 10
-                    add_axiom({mk_literal(m_util_a.mk_le(conversion, m_util_a.mk_int(10)))});
+                    clauses.push_back({mk_literal(m_util_a.mk_le(conversion, m_util_a.mk_int(10)))});
                 } else if (m_util_s.str.is_extract(arg, e1, e2, e3) && m_util_a.is_numeral(e3, r1)) {
                     // argument is str.substr(?, ?, numeral) => result must be less than 10^numeral
                     rational ten_to_r1(1);
                     for (rational i(0); i < r1; ++i) {
                         ten_to_r1 = ten_to_r1 * 10;
                     }
-                    add_axiom({mk_literal(m_util_a.mk_le(conversion, m_util_a.mk_int(ten_to_r1)))});
+                    clauses.push_back({mk_literal(m_util_a.mk_le(conversion, m_util_a.mk_int(ten_to_r1)))});
                 }
             }
         }
 
-        // Add to todo
-        if (tranforming_from) {
-            m_conversion_todo.push_back({type, var_for_conversion, var_for_arg});
-        } else {
-            m_conversion_todo.push_back({type, var_for_arg, var_for_conversion});
+        TermConversion result = tranforming_from ? TermConversion{type, var_for_conversion, var_for_arg} : TermConversion{type, var_for_arg, var_for_conversion};
+        m_conversion_todo.push_back(result); // add to todo
+        conv_to_term.insert({conversion, result});
+
+        for (const auto& clause : clauses) {
+            add_axiom(clause);
         }
+        conv_to_clauses[conversion] = clauses;
     }
 
     void theory_str_noodler::set_conflict(const literal_vector& lv) {

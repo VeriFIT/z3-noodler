@@ -104,6 +104,9 @@ namespace smt::noodler {
         using expr_pair = std::pair<expr_ref, expr_ref>;
         using expr_pair_flag = std::tuple<expr_ref, expr_ref, bool>;
 
+        std::map<expr*, TermConversion> conv_to_term;
+        std::map<expr*, std::vector<std::vector<literal>>> conv_to_clauses;
+
         // constraints that are (possibly) to be processed in final_check_eh (added either in relevant_eh or ?assign_eh?)
         // they also need to be popped and pushed in pop_scope_eh and push_scope_eh)
         scoped_vector<expr_pair> m_word_eq_todo; // pair contains left and right side of the word equality
