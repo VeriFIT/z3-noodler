@@ -260,6 +260,11 @@ namespace smt::noodler {
      */
     void write_len_formula_as_smt2(const LenNode& formula, std::ostream& out_stream);
 
+    /**
+     * Apply the given substitution. Variables are assumed to be named uniquely in the formula.
+     */
+    LenNode substitute_free_vars_for_concrete_values(const LenNode& formula, const std::map<BasicTerm, int64_t> values);
+
     //----------------------------------------------------------------------------------------------------------------------------------
 
     class Predicate {

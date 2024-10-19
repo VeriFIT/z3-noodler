@@ -12,7 +12,7 @@ namespace smt::noodler {
                     const BasicTerm& var = root.atom_val;
                     if (!quantified_vars.contains(var)) {
                         free_vars.insert(var);
-                    } 
+                    }
                 }
                 return;
             }
@@ -26,7 +26,7 @@ namespace smt::noodler {
                 collect_free_vars_rec(root.succ.at(0), free_vars, quantified_vars);
                 collect_free_vars_rec(root.succ.at(1), free_vars, quantified_vars);
                 return;
-            case LenFormulaType::PLUS: 
+            case LenFormulaType::PLUS:
             case LenFormulaType::MINUS:
             case LenFormulaType::TIMES:
             case LenFormulaType::AND:
@@ -51,19 +51,74 @@ namespace smt::noodler {
                 }
 
                 quantified_vars.erase(quantified_var);
-                
+
                 return;
             }
             default:
                 UNREACHABLE();
         }
     }
-    
+
+    LenNode substitute_free_vars_for_int_values_rec(const LenNode& node, const std::map<BasicTerm, int64_t>& substitution) {
+        switch (node.type) {
+            case LenFormulaType::TRUE:
+            case LenFormulaType::FALSE:
+                return node;
+            case LenFormulaType::LEAF: {
+                if (node.atom_val.is_variable()) {
+                    BasicTerm needle_var(BasicTermType::Variable, node.atom_val.get_name());
+                    auto value_to_substitute_it = substitution.find(needle_var);
+                    if (value_to_substitute_it == substitution.end()) {
+                        return node;
+                    }
+
+                    return LenNode(value_to_substitute_it->second);
+                }
+                return node;
+            }
+            case LenFormulaType::NOT:
+                return substitute_free_vars_for_int_values_rec(node.succ.at(0), substitution);
+            case LenFormulaType::LEQ:
+            case LenFormulaType::LT:
+            case LenFormulaType::EQ:
+            case LenFormulaType::NEQ:
+            case LenFormulaType::MINUS:
+            case LenFormulaType::TIMES:
+            case LenFormulaType::AND:
+            case LenFormulaType::OR:
+            case LenFormulaType::PLUS: {
+                std::vector<LenNode> modified_children;
+                modified_children.reserve(node.succ.size());
+
+                for (auto& child : node.succ) {
+                    LenNode new_child = substitute_free_vars_for_int_values_rec(child, substitution);
+                    modified_children.push_back(new_child);
+                }
+
+                return LenNode(node.type, modified_children);
+            }
+            case LenFormulaType::FORALL:
+            case LenFormulaType::EXISTS: {
+                // node.succ[0] contains variables bound by this quantifier
+                LenNode new_child = substitute_free_vars_for_int_values_rec(node.succ.at(1), substitution);
+                return LenNode(node.type, {node.succ.at(0), new_child});
+            }
+            default:
+                UNREACHABLE();
+        }
+
+        return LenNode(0);
+    }
+
+    LenNode substitute_free_vars_for_concrete_values(const LenNode& formula, const std::map<BasicTerm, int64_t> substitution) {
+        return substitute_free_vars_for_int_values_rec(formula, substitution);
+    }
+
     std::set<BasicTerm> collect_free_vars(const LenNode& len_node) {
         std::set<BasicTerm> free_vars;
         std::set<BasicTerm> quantified_vars;
 
-        collect_free_vars_rec(len_node, free_vars, quantified_vars);   
+        collect_free_vars_rec(len_node, free_vars, quantified_vars);
 
         return free_vars;
     }
@@ -82,7 +137,7 @@ namespace smt::noodler {
         out_stream << "(check-sat)" << std::endl;
         out_stream << "(exit)" << std::endl;
     }
-    
+
     std::set<BasicTerm> Predicate::get_vars() const {
         std::set<BasicTerm> vars;
         for (const auto& side: params) {
