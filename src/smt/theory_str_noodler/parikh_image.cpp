@@ -703,6 +703,30 @@ namespace smt::noodler::parikh {
         return LenNode(LenFormulaType::AND, resulting_conjunction_atoms);
     }
 
+    LenNode ParikhImageNotContTag::existentially_quantify_all_parikh_vars(LenNode& formula) {
+        for (auto& [transition, transition_var] : this->get_trans_vars()) {
+            formula = LenNode(LenFormulaType::EXISTS,
+                              {transition_var, formula});
+        }
+
+        for (auto& var : this->get_gamma_init()) {
+            formula = LenNode(LenFormulaType::EXISTS,
+                              {var, formula});
+        }
+
+        for (auto& var : this->get_gamma_fin()) {
+            formula = LenNode(LenFormulaType::EXISTS,
+                              {var, formula});
+        }
+
+        for (auto& var : this->get_sigma()) {
+            formula = LenNode(LenFormulaType::EXISTS,
+                              {var, formula});
+        }
+
+        return formula;
+    }
+
     LenNode ParikhImageNotContTag::get_not_cont_formula(const Predicate& not_contains) {
         LenNode top_level_parikh = compute_parikh_image();
         std::map<Transition, BasicTerm> top_level_parikh_vars = this->get_trans_vars();
@@ -752,10 +776,7 @@ namespace smt::noodler::parikh {
                 parikh_contains_conflict_for_offset
             }
         );
-        for (auto& [transition, transition_var] : second_level_parikh_vars) {
-            exist_alternative_parikh_with_conflict = LenNode(LenFormulaType::EXISTS,
-                                                     {transition_var, exist_alternative_parikh_with_conflict});
-        }
+        exist_alternative_parikh_with_conflict = existentially_quantify_all_parikh_vars(exist_alternative_parikh_with_conflict);
 
         LenNode formula = LenNode(LenFormulaType::AND, {
             top_level_parikh,

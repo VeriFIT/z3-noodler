@@ -93,6 +93,18 @@ public:
         return this->trans;
     }
 
+    const std::vector<BasicTerm>& get_gamma_init() const {
+        return this->gamma_init;
+    }
+
+    const std::vector<BasicTerm>& get_gamma_fin() const {
+        return this->gamma_fin;
+    };
+
+    const std::vector<BasicTerm>& get_sigma() const {
+        return this->sigma;
+    };
+
     void print_transition_var_labeling(std::ostream& output_stream) const;
 
     virtual ~ParikhImage() { }
@@ -265,6 +277,7 @@ public:
 
     LenNode get_not_cont_formula(const Predicate& not_cont);
     LenNode get_offset_var() const;
+    LenNode existentially_quantify_all_parikh_vars(LenNode& formula);
 };
 
 }

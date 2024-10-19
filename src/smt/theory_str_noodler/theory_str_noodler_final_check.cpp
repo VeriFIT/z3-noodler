@@ -1,4 +1,5 @@
 #include <mata/nfa/builder.hh>
+#include "formula.h"
 #include "smt/theory_str_noodler/theory_str_noodler.h"
 #include "memb_heuristics_procedures.h"
 
@@ -260,6 +261,34 @@ namespace smt::noodler {
             if (result == l_true) {
                 auto [noodler_lengths, precision] = dec_proc->get_lengths();
                 lengths = len_node_to_z3_formula(noodler_lengths);
+
+                // noodler_lengths = substitute_free_vars_for_concrete_values(noodler_lengths, model);
+               
+                std::ofstream out_file("./my-conversion.smt2");
+                write_len_formula_as_smt2(noodler_lengths, out_file);
+                out_file.close();
+
+                LenNode formula(LenFormulaType::EXISTS,
+                    {
+                        BasicTerm(BasicTermType::Variable, "x"),
+                        LenNode(LenFormulaType::EXISTS,
+                            {
+                                BasicTerm(BasicTermType::Variable, "y"),
+                                LenNode(LenFormulaType::LEQ, {BasicTerm(BasicTermType::Variable, "x"), BasicTerm(BasicTermType::Variable, "y")})
+                            })
+                    }
+                );
+
+                auto converted_formula = len_node_to_z3_formula(formula);
+                std::ofstream out_file2("./z3-expr-conversion.smt2");
+                ast_pp_util utl(m);
+                utl.collect(converted_formula);
+                utl.display_decls(out_file2);
+                utl.display_expr(out_file2, converted_formula);
+                out_file2.close();
+
+                exit(0);
+
                 lbool is_lengths_sat = check_len_sat(lengths);
 
                 if (is_lengths_sat == l_true) {
@@ -1042,6 +1071,11 @@ namespace smt::noodler {
         case LenFormulaType::MINUS: {
             if (node.succ.size() == 0)
                 return expr_ref(m_util_a.mk_int(0), m);
+            if (node.succ.size() == 1) {  // Unary minus (- x)
+                expr_ref child_expr = len_node_to_z3_formula(node.succ[0]);
+                child_expr = m_util_a.mk_uminus(child_expr);
+                return child_expr;
+            }
             expr_ref minus = len_node_to_z3_formula(node.succ[0]);
             for(size_t i = 1; i < node.succ.size(); i++) {
                 minus = m_util_a.mk_sub(minus, len_node_to_z3_formula(node.succ[i]));
@@ -1063,6 +1097,7 @@ namespace smt::noodler {
             assert(node.succ.size() == 2);
             expr_ref left = len_node_to_z3_formula(node.succ[0]);
             expr_ref right = len_node_to_z3_formula(node.succ[1]);
+
             expr_ref eq(m_util_a.mk_eq(left, right), m);
             return eq;
         }
