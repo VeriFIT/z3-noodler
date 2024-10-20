@@ -219,3 +219,113 @@ TEST_CASE("NotContains::ensure_symbol_unqueness_using_total_sum simple", "[noodl
 
     REQUIRE(var_set_found);
 }
+
+LenNode dsl_exists(const BasicTerm& var, const LenNode& subformula) {
+    return LenNode(LenFormulaType::EXISTS, {var, subformula});
+}
+
+void assert_eq_correct(expr* z3_atom, unsigned var_idx, int rhs) {
+    REQUIRE(z3_atom->get_kind() == AST_APP);
+    REQUIRE(to_app(z3_atom)->get_name().str() == "=");
+
+    auto z3_lhs = to_app(z3_atom)->get_arg(0);
+    REQUIRE(z3_lhs->get_kind() == AST_VAR);
+    REQUIRE(to_var(z3_lhs)->get_idx() == var_idx);
+
+    auto z3_rhs = to_app(z3_atom)->get_arg(1);
+    REQUIRE(z3_rhs->get_kind() == AST_APP);
+    REQUIRE(to_app(z3_rhs)->get_name().str() == "Int");
+    REQUIRE(to_app(z3_rhs)->get_parameter(0).get_kind() == parameter::PARAM_RATIONAL);
+    REQUIRE(to_app(z3_rhs)->get_parameter(0).get_rational().get_int32() == rhs);
+}
+
+
+TEST_CASE("LenFormula : variables are numbered correctly", "[noodler]") {
+    // Test whether quantified formulae do not change semantics when translated to z3
+
+    /*
+     *
+     *              \exists x                  \exists x
+     *                  |                          |
+     *              \exists y                  \exists y
+     *                  |                          |
+     *                 LOR                        LOR
+     *                /   \                     /     \
+     *               /     \         ==>       /       \
+     *             AND      \                 AND       \
+     *            /   \    EXISTS z         /    \       EXISTS z
+     *           x=1  y=2     |           (1)=1  (0)=2      |
+     *                       AND                           AND
+     *                       / \                          /   \
+     *                     y=3 z=4                      (1)=3 (0)=4
+     */
+
+    BasicTerm var_x (BasicTermType::Variable, "x");
+    BasicTerm var_y (BasicTermType::Variable, "y");
+    BasicTerm var_z (BasicTermType::Variable, "z");
+
+    LenNode left_conjunction(LenFormulaType::AND, {
+        LenNode(LenFormulaType::EQ, {var_x, 1}),
+        LenNode(LenFormulaType::EQ, {var_y, 2})
+    });
+    LenNode right_conjunction(LenFormulaType::AND, {
+        LenNode(LenFormulaType::EQ, {var_y, 3}),
+        LenNode(LenFormulaType::EQ, {var_z, 4})
+    });
+    LenNode right_lor_branch = dsl_exists(var_z, right_conjunction);
+    LenNode disjunction = LenNode(LenFormulaType::OR, {left_conjunction, right_lor_branch});
+
+    LenNode root = dsl_exists(var_x, LenNode(LenFormulaType::NOT, {dsl_exists(var_y, disjunction)}));
+
+    // Make a blank context
+    ast_manager manager;
+    reg_decl_plugins(manager);
+
+    arith_util arith_util_i(manager);
+    seq_util seq_util_i(manager);
+    std::map<std::string, unsigned> quantified_vars;
+    std::map<BasicTerm, expr_ref> known_exprs;
+
+    LenFormulaContext ctx {
+        .manager = manager,
+        .arith_utilities = arith_util_i,
+        .seq_utilities = seq_util_i,
+        .quantified_vars = quantified_vars,
+        .known_z3_exprs = known_exprs,
+    };
+
+    expr_ref z3_formula = len_node_to_z3_formula(ctx, root);
+
+    REQUIRE(z3_formula.get()->get_kind() == AST_QUANTIFIER);  // Exists x
+    auto quantifier = to_quantifier(z3_formula.get());
+
+    auto application = quantifier->get_expr();
+    REQUIRE(application->get_kind() == AST_APP);
+
+    auto exists_y_quantif = to_app(application)->get_arg(0); // Exists y
+    REQUIRE(exists_y_quantif->get_kind() == AST_QUANTIFIER);
+
+    auto z3_disjunction = to_quantifier(exists_y_quantif)->get_expr();
+    REQUIRE(z3_disjunction->get_kind() == AST_APP);
+    REQUIRE(to_app(z3_disjunction)->get_name().str() == "or");
+
+    {
+        auto z3_left_conjunction = to_app(z3_disjunction)->get_arg(0);
+        REQUIRE(z3_left_conjunction->get_kind() == AST_APP);
+        REQUIRE(to_app(z3_left_conjunction)->get_name().str() == "and");
+        assert_eq_correct(to_app(z3_left_conjunction)->get_arg(0), 1, 1); // x=1  => (1)=1
+        assert_eq_correct(to_app(z3_left_conjunction)->get_arg(1), 0, 2); // y=2  => (0)=2
+    }
+
+    {
+        auto z3_exists_z = to_app(z3_disjunction)->get_arg(1);
+        REQUIRE(z3_exists_z->get_kind() == AST_QUANTIFIER);
+
+        auto z3_right_conjunction = to_quantifier(z3_exists_z)->get_expr();
+        REQUIRE(z3_right_conjunction->get_kind() == AST_APP);
+        REQUIRE(to_app(z3_right_conjunction)->get_name().str() == "and");
+
+        assert_eq_correct(to_app(z3_right_conjunction)->get_arg(0), 1, 3); // y=3  => (1)=3
+        assert_eq_correct(to_app(z3_right_conjunction)->get_arg(1), 0, 4); // z=4  => (0)=4
+    }
+}

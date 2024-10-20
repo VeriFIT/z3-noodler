@@ -1,5 +1,10 @@
+#include "ast/ast.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/seq_decl_plugin.h"
 
 #include "formula.h"
+#include "util.h"
+
 
 namespace smt::noodler {
     void collect_free_vars_rec(const LenNode& root, std::set<BasicTerm>& free_vars, std::set<BasicTerm>& quantified_vars) {
@@ -332,5 +337,210 @@ namespace smt::noodler {
         }
 
         throw std::runtime_error("Unhandled basic term type passed as 'this' to to_string().");
+    }
+
+    expr_ref construct_z3_expr_for_len_node_quantifier(LenFormulaContext& ctx, const LenNode& node, enum quantifier_kind quantif_kind) {
+        // add existentially  quantified variable to the map (if not present)
+        std::string quantif_var_name = node.succ[0].atom_val.get_name().encode();
+
+        int this_quantifier_depth = ctx.current_quantif_depth;
+        ctx.current_quantif_depth += 1;
+
+        auto [dest_bucket_it, did_emplace_happen] = ctx.quantified_vars.emplace(quantif_var_name, this_quantifier_depth);
+
+        std::cout << "Crossing quantifier for " << quantif_var_name << " in depth "
+                  << this_quantifier_depth << std::endl;
+        // occurrences of the quantifier variable are created as z3 variable, not skolem constant
+        expr_ref bodyref = len_node_to_z3_formula(ctx, node.succ[1]);
+
+        ctx.current_quantif_depth -= 1; // Reset it back
+
+        // @Optimize(mhecko): Is this iterator invalidated at this point? Probably.
+        auto this_quantif_bucket_it = ctx.quantified_vars.find(quantif_var_name);
+        ctx.quantified_vars.erase(this_quantif_bucket_it);
+
+        ptr_vector<sort> sorts;
+        svector<symbol> names;
+        sorts.push_back(ctx.arith_utilities.mk_int());
+        names.push_back(symbol(dest_bucket_it->second));
+
+        expr_ref z3_quantif(ctx.manager.mk_quantifier(quantif_kind, sorts.size(), sorts.data(), names.data(), bodyref, 1), ctx.manager);
+        return z3_quantif;
+    }
+
+    expr_ref constr_z3_expr_for_leaf(LenFormulaContext& ctx, const LenNode& node) {
+        if (node.atom_val.get_type() == BasicTermType::Length) {
+            return expr_ref(ctx.arith_utilities.mk_int(rational(node.atom_val.get_name().encode().c_str())), ctx.manager);
+        }
+
+        if (node.atom_val.get_type() == BasicTermType::Literal) {
+            // for literal, get its exact length
+            return expr_ref(ctx.arith_utilities.mk_int(node.atom_val.get_name().length()), ctx.manager);
+        }
+
+        //
+        // Leaf contains a variable
+        //
+
+        // Check whether we already have a z3 expr for this variable. Expressions for quantified variables
+        // cannot be cached as they variable.id is dynamic.
+        auto known_expr_it = ctx.known_z3_exprs.find(node.atom_val);
+        if (known_expr_it != ctx.known_z3_exprs.end()) {  // We have a know/cached z3_expr
+            expr_ref expr = known_expr_it->second;
+
+            if (ctx.seq_utilities.is_string(expr.get()->get_sort())) {
+                // for string variables we want its length
+                return expr_ref(ctx.seq_utilities.str.mk_length(expr), ctx.manager);
+            }
+
+            // we assume here that all other variables are int, so they map into the predicate they represent
+            return expr;
+        }
+
+        std::string var_name = node.atom_val.get_name().encode();
+        auto it = ctx.quantified_vars.find(var_name);
+        bool is_quantified = (it != ctx.quantified_vars.end());
+
+        if (is_quantified) {
+            int quantifier_node_height = it->second;
+            int de_brujin_index = ctx.current_quantif_depth - (quantifier_node_height + 1);
+
+            std::cout << "Making variable for " << var_name << " with de-brujin index " << de_brujin_index << std::endl;
+
+            return expr_ref(ctx.manager.mk_var(de_brujin_index, ctx.arith_utilities.mk_int()), ctx.manager);
+        }
+
+        // Not quantified - needs to be skolem, because it seems they are not printed for models
+        app* var = ctx.manager.mk_skolem_const(symbol(var_name.c_str()), ctx.arith_utilities.mk_int());
+        return expr_ref(var, ctx.manager);
+    }
+
+    expr_ref len_node_to_z3_formula(LenFormulaContext &ctx, const LenNode &node) {
+        arith_util&  m_util_a = ctx.arith_utilities;
+        seq_util&    m_util_s = ctx.seq_utilities;
+        ast_manager& manager  = ctx.manager;
+
+        switch(node.type) {
+        case LenFormulaType::LEAF: {
+            return constr_z3_expr_for_leaf(ctx, node);
+        }
+
+        case LenFormulaType::PLUS: {
+            if (node.succ.size() == 0)
+                return expr_ref(m_util_a.mk_int(0), manager);
+            expr_ref plus = len_node_to_z3_formula(ctx, node.succ[0]);
+            for(size_t i = 1; i < node.succ.size(); i++) {
+                plus = m_util_a.mk_add(plus, len_node_to_z3_formula(ctx, node.succ[i]));
+            }
+            return plus;
+        }
+
+        case LenFormulaType::MINUS: {
+            if (node.succ.size() == 0)
+                return expr_ref(m_util_a.mk_int(0), manager);
+            if (node.succ.size() == 1) {  // Unary minus (- x)
+                expr_ref child_expr = len_node_to_z3_formula(ctx, node.succ[0]);
+                child_expr = m_util_a.mk_uminus(child_expr);
+                return child_expr;
+            }
+            expr_ref minus = len_node_to_z3_formula(ctx, node.succ[0]);
+            for(size_t i = 1; i < node.succ.size(); i++) {
+                minus = m_util_a.mk_sub(minus, len_node_to_z3_formula(ctx, node.succ[i]));
+            }
+            return minus;
+        }
+
+        case LenFormulaType::TIMES: {
+            if (node.succ.size() == 0)
+                return expr_ref(m_util_a.mk_int(1), manager);
+            expr_ref times = len_node_to_z3_formula(ctx, node.succ[0]);
+            for(size_t i = 1; i < node.succ.size(); i++) {
+                times = m_util_a.mk_mul(times, len_node_to_z3_formula(ctx, node.succ[i]));
+            }
+            return times;
+        }
+
+        case LenFormulaType::EQ: {
+            assert(node.succ.size() == 2);
+            expr_ref left = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref right = len_node_to_z3_formula(ctx, node.succ[1]);
+
+            expr_ref eq(m_util_a.mk_eq(left, right), manager);
+            return eq;
+        }
+
+        case LenFormulaType::NEQ: {
+            assert(node.succ.size() == 2);
+            expr_ref left = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref right = len_node_to_z3_formula(ctx, node.succ[1]);
+            expr_ref neq(manager.mk_not(m_util_a.mk_eq(left, right)), manager);
+            return neq;
+        }
+
+        case LenFormulaType::LEQ: {
+            assert(node.succ.size() == 2);
+            expr_ref left = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref right = len_node_to_z3_formula(ctx, node.succ[1]);
+            expr_ref leq(m_util_a.mk_le(left, right), manager);
+            return leq;
+        }
+
+        case LenFormulaType::LT: {
+            assert(node.succ.size() == 2);
+            expr_ref left = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref right = len_node_to_z3_formula(ctx, node.succ[1]);
+            // LIA solver fails if we use "L < R" for some reason (it cannot be internalized in smt::theory_lra::imp::internalize_atom, as it expects only <= or >=); we use "!(R <= L)" instead
+            expr_ref lt(manager.mk_not(m_util_a.mk_le(right, left)), manager);
+            return lt;
+        }
+
+        case LenFormulaType::NOT: {
+            assert(node.succ.size() == 1);
+            expr_ref no(manager.mk_not(len_node_to_z3_formula(ctx, node.succ[0])), manager);
+            return no;
+        }
+
+        case LenFormulaType::AND: {
+            if(node.succ.size() == 0)
+                return expr_ref(manager.mk_true(), manager);
+            expr_ref andref = len_node_to_z3_formula(ctx, node.succ[0]);
+            for(size_t i = 1; i < node.succ.size(); i++) {
+                andref = manager.mk_and(andref, len_node_to_z3_formula(ctx, node.succ[i]));
+            }
+            return andref;
+        }
+
+        case LenFormulaType::OR: {
+            if(node.succ.size() == 0)
+                return expr_ref(manager.mk_false(), manager);
+            expr_ref orref = len_node_to_z3_formula(ctx, node.succ[0]);
+            for(size_t i = 1; i < node.succ.size(); i++) {
+                orref = manager.mk_or(orref, len_node_to_z3_formula(ctx, node.succ[i]));
+            }
+            return orref;
+        }
+
+        case LenFormulaType::FORALL: {
+            expr_ref forall = construct_z3_expr_for_len_node_quantifier(ctx, node, quantifier_kind::forall_k);
+            return forall;
+        }
+
+        case LenFormulaType::EXISTS: {
+            expr_ref exists = construct_z3_expr_for_len_node_quantifier(ctx, node, quantifier_kind::exists_k);
+            return exists;
+        }
+
+        case LenFormulaType::TRUE: {
+            return expr_ref(manager.mk_true(), manager);
+        }
+
+        case LenFormulaType::FALSE: {
+            return expr_ref(manager.mk_false(), manager);
+        }
+
+        default:
+            util::throw_error("Unexpected length formula type");
+            return {{}, manager};
+        }
     }
 } // Namespace smt::noodler.

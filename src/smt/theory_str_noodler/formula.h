@@ -26,6 +26,9 @@
 #include <iostream>
 
 #include "util/zstring.h"
+#include "ast/ast.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/seq_decl_plugin.h"
 
 namespace smt::noodler {
     enum struct PredicateType {
@@ -751,6 +754,30 @@ namespace smt::noodler {
             return "";
         }
     }
+
+    // ***** Convert noodler len nodes to z3 expressions
+    /**
+     * Context (other formulae) in which a formula is to be used.
+     */
+    struct LenFormulaContext {
+        ast_manager& manager;
+        arith_util&  arith_utilities;
+        seq_util  &  seq_utilities;
+
+        /**
+         * Maps quantified variable names to the quantifier-depth of the corresponding quantifier.
+         *
+         * Necessary to correctly compute de Brujin sequences for the indices, which facilitate
+         * the binding between a quantifier and a new variable.
+         */
+        std::map<std::string, unsigned>& quantified_vars;
+        std::map<BasicTerm, expr_ref>&   known_z3_exprs;
+
+        int current_quantif_depth = 0;  // To compute de Brujin numbers for quantified variables
+    };
+    expr_ref len_node_to_z3_formula(LenFormulaContext &ctx, const LenNode &node);
+    expr_ref construct_z3_expr_for_len_node_quantifier(LenFormulaContext& ctx, const LenNode& node, enum quantifier_kind quantif_kind);
+
 
 } // Namespace smt::noodler.
 
