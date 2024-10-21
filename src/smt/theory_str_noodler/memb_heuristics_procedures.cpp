@@ -1,3 +1,5 @@
+#include <mata/nfa/algorithms.hh>
+
 #include "memb_heuristics_procedures.h"
 
 namespace smt::noodler {
@@ -24,20 +26,26 @@ namespace smt::noodler {
                 // create alphabet (start with minterm representing symbols not ocurring in the regex)
                 std::set<mata::Symbol> symbols_in_regex{util::get_dummy_symbol()};
                 regex::extract_symbols(regex, m_util_s, symbols_in_regex);
-                alph = std::make_unique<regex::Alphabet>(symbols_in_regex);
+                regex::Alphabet alph(symbols_in_regex);
 
-                mata::nfa::Nfa nfa{ regex::conv_to_nfa(to_app(regex), m_util_s, m, *alph, false, false) };
+                mata::nfa::Nfa nfa{ regex::conv_to_nfa(to_app(regex), m_util_s, m, alph, false, false) };
 
-                mata::nfa::Nfa sigma_star = mata::nfa::builder::create_sigma_star_nfa(&(alph->mata_alphabet));
-
-                if(mata::nfa::are_equivalent(nfa, sigma_star)) {
-                    // x should not belong in sigma*, so it is unsat
-                    // STRACE("str", tout << "Membership " << mk_pp(std::get<0>(reg_data), m) << " not in " << mk_pp(std::get<1>(reg_data), m) << " is unsat" << std::endl;);
-                    return l_false;
+                if (produce_model) {
+                    mata::nfa::Run model_run;
+                    if(mata::nfa::algorithms::is_universal_antichains(nfa, alph.mata_alphabet, &model_run)) {
+                        // x does not belong to universal automaton -> it must be unsat
+                        return l_false;
+                    } else {
+                        // otherwise x does not belong to something nonuniversal -> it is sat, counterexample is a model
+                        model = alph.get_string_from_mata_word(std::move(model_run.word));
+                        return l_true;
+                    }
                 } else {
-                    // otherwise x should not belong in some nfa that is not sigma*, so it is sat
-                    reg_nfa = std::make_unique<mata::nfa::Nfa>(nfa);
-                    return l_true;
+                    if(mata::nfa::algorithms::is_universal_antichains(nfa, alph.mata_alphabet, nullptr)) {
+                        return l_false;
+                    } else {
+                        return l_true;
+                    }
                 }
             }
         }
@@ -47,32 +55,33 @@ namespace smt::noodler {
     zstring MembHeuristicProcedure::get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
         SASSERT(var == this->var);
 
-        if (!reg_nfa) {
-            if (is_regex_positive) {
-                try {
-                    return regex::get_model_from_regex(to_app(regex), m_util_s);
-                } catch (const regex::regex_model_fail& exc) {
-                    // fall trough, we need to create nfa
-                }
-            }
-
-            // TODO try handling also complement of regex directly
-            
-            // create alphabet (start with minterm representing symbols not ocurring in the regex)
-            std::set<mata::Symbol> symbols_in_regex{util::get_dummy_symbol()};
-            regex::extract_symbols(regex, m_util_s, symbols_in_regex);
-            alph = std::make_unique<regex::Alphabet>(symbols_in_regex);
-
-            reg_nfa = std::make_unique<mata::nfa::Nfa>(regex::conv_to_nfa(to_app(regex), m_util_s, m, *alph, false, false));
+        if (model.has_value()) {
+            return model.value();
         }
-        
+
+        if (is_regex_positive) {
+            try {
+                return regex::get_model_from_regex(to_app(regex), m_util_s);
+            } catch (const regex::regex_model_fail& exc) {
+                // fall trough, we need to create nfa
+            }
+        }
+        // TODO try handling also complement of regex directly
+
+        // create alphabet (start with minterm representing symbols not ocurring in the regex)
+        std::set<mata::Symbol> symbols_in_regex{util::get_dummy_symbol()};
+        regex::extract_symbols(regex, m_util_s, symbols_in_regex);
+        regex::Alphabet alph(symbols_in_regex);
+
+        mata::nfa::Nfa reg_nfa = regex::conv_to_nfa(to_app(regex), m_util_s, m, alph, false, false);
+
         mata::Word word;
         if (is_regex_positive) {
-            word = reg_nfa->get_word().value();
+            word = reg_nfa.get_word().value();
         } else {
-            word = reg_nfa->get_word_from_complement(&alph->mata_alphabet).value();
+            word = reg_nfa.get_word_from_complement(&alph.mata_alphabet).value();
         }
-        return alph->get_string_from_mata_word(word);
+        return alph.get_string_from_mata_word(word);
     }
 
     lbool MultMembHeuristicProcedure::compute_next_solution() {
@@ -127,22 +136,32 @@ namespace smt::noodler {
                 first = false;
             }
             
-            STRACE("str-mult-memb-heur", tout << "computing inclusion" << std::endl;);
+            STRACE("str-mult-memb-heur",
+                tout << "computing inclusion";
+                if (is_trace_enabled("str-nfa")) {
+                    tout << " of automaton\n" << intersection << "within automaton\n" << unionn;
+                } else {
+                    tout << "\n";
+                }
+            );
 
             // We want to know if L \intersect \neg L' is empty, which is same as asking if L is subset of L'
-            if (mata::nfa::is_included(intersection, unionn)) {
-                // if inclusion holds, the intersection is empty => UNSAT
-                STRACE("str-mult-memb-heur", tout << "inclusion holds => UNSAT" << std::endl;);
-                return l_false;
-            }
-
-            
-            if (!list_of_normal_regs.empty()) {
-                intersections[var] = intersection;
-            }
-
-            if (!list_of_compl_regs.empty()) {
-                unions[var] = unionn;
+            if (produce_model) {
+                mata::nfa::Run model_run;
+                if (mata::nfa::algorithms::is_included_antichains(intersection, unionn, nullptr, &model_run)) {
+                    // if inclusion holds, the intersection is empty => UNSAT
+                    STRACE("str-mult-memb-heur", tout << "inclusion holds => UNSAT" << std::endl;);
+                    return l_false;
+                } else {
+                    // otherwise, the counterexample for why inclusion does not hold is a model
+                    models[var] = alph.get_string_from_mata_word(std::move(model_run.word));
+                }
+            } else {
+                if (mata::nfa::algorithms::is_included_antichains(intersection, unionn, nullptr, nullptr)) {
+                    // if inclusion holds, the intersection is empty => UNSAT
+                    STRACE("str-mult-memb-heur", tout << "inclusion holds => UNSAT" << std::endl;);
+                    return l_false;
+                }
             }
         }
 
@@ -152,17 +171,6 @@ namespace smt::noodler {
     
     zstring MultMembHeuristicProcedure::get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
         STRACE("str-mult-memb-heur", tout << "getting model for " << var << std::endl;);
-        SASSERT(unions.contains(var) || intersections.contains(var));
-        mata::Word word;
-        if (unions.contains(var)) {
-            if (intersections.contains(var)) {
-                word = mata::nfa::get_word_from_lang_difference(intersections.at(var), unions.at(var)).value();
-            } else {
-                word = unions.at(var).get_word_from_complement(&alph.mata_alphabet).value();
-            }
-        } else {
-            word = intersections.at(var).get_word().value();
-        }
-        return alph.get_string_from_mata_word(word);
+        return models.at(var);
     }
 }

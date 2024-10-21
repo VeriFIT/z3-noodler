@@ -109,7 +109,7 @@ namespace smt::noodler {
                     noodler_var,
                     std::get<1>(reg_data),
                     std::get<2>(reg_data),
-                    m_util_s, m
+                    m_util_s, m, m_params.m_produce_models
                 );
                 this->statistics.at("single-memb-heur").num_start++;
                 lbool result = dec_proc->compute_next_solution();
@@ -916,7 +916,7 @@ namespace smt::noodler {
             var_to_list_of_regexes_and_complement_flag[var].push_back(std::make_pair(false, reg));
         }
 
-        dec_proc = std::make_shared<MultMembHeuristicProcedure>(var_to_list_of_regexes_and_complement_flag, alph, m_util_s, m);
+        dec_proc = std::make_shared<MultMembHeuristicProcedure>(var_to_list_of_regexes_and_complement_flag, alph, m_util_s, m, m_params.m_produce_models);
         this->statistics.at("multi-memb-heur").num_start++;
         lbool result = dec_proc->compute_next_solution();
         
