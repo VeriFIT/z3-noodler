@@ -4,6 +4,14 @@
 #include "memb_heuristics_procedures.h"
 
 namespace smt::noodler {
+
+    void write_z3_expr_into_stream(ast_manager& manager, std::ostream& stream, expr_ref formula) {
+        ast_pp_util utl(manager);
+        utl.collect(formula);
+        utl.display_decls(stream);
+        utl.display_expr(stream, formula);
+    }
+
     /**
      * @brief Checks satisfiability of constraints in _todo member variables (e.g. m_word_eq_todo, m_membership_todo,...)
      *
@@ -260,34 +268,22 @@ namespace smt::noodler {
             result = dec_proc->compute_next_solution();
             if (result == l_true) {
                 auto [noodler_lengths, precision] = dec_proc->get_lengths();
-                lengths = len_node_to_z3_formula(noodler_lengths);
 
-                // noodler_lengths = substitute_free_vars_for_concrete_values(noodler_lengths, model);
-               
-                std::ofstream out_file("./my-conversion.smt2");
-                write_len_formula_as_smt2(noodler_lengths, out_file);
-                out_file.close();
+                LenFormulaContext context = {
+                    .manager = this->m,
+                    .arith_utilities = this->m_util_a,
+                    .seq_utilities = this->m_util_s,
+                    .quantified_vars = this->quantif_vars,
+                    .known_z3_exprs = this->var_name
+                };
 
-                LenNode formula(LenFormulaType::EXISTS,
-                    {
-                        BasicTerm(BasicTermType::Variable, "x"),
-                        LenNode(LenFormulaType::EXISTS,
-                            {
-                                BasicTerm(BasicTermType::Variable, "y"),
-                                LenNode(LenFormulaType::LEQ, {BasicTerm(BasicTermType::Variable, "x"), BasicTerm(BasicTermType::Variable, "y")})
-                            })
-                    }
-                );
+                lengths = convert_len_node_to_z3_formula(context, noodler_lengths);
 
-                auto converted_formula = len_node_to_z3_formula(formula);
-                std::ofstream out_file2("./z3-expr-conversion.smt2");
-                ast_pp_util utl(m);
-                utl.collect(converted_formula);
-                utl.display_decls(out_file2);
-                utl.display_expr(out_file2, converted_formula);
-                out_file2.close();
-
-                exit(0);
+                if (0) {
+                    std::ofstream out_file("./not-contains-lia.smt2");
+                    write_z3_expr_into_stream(this->m, out_file, lengths);
+                    out_file.close();
+                }
 
                 lbool is_lengths_sat = check_len_sat(lengths);
 

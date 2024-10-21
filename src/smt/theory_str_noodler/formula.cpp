@@ -348,10 +348,8 @@ namespace smt::noodler {
 
         auto [dest_bucket_it, did_emplace_happen] = ctx.quantified_vars.emplace(quantif_var_name, this_quantifier_depth);
 
-        std::cout << "Crossing quantifier for " << quantif_var_name << " in depth "
-                  << this_quantifier_depth << std::endl;
         // occurrences of the quantifier variable are created as z3 variable, not skolem constant
-        expr_ref bodyref = len_node_to_z3_formula(ctx, node.succ[1]);
+        expr_ref bodyref = convert_len_node_to_z3_formula(ctx, node.succ[1]);
 
         ctx.current_quantif_depth -= 1; // Reset it back
 
@@ -405,8 +403,6 @@ namespace smt::noodler {
             int quantifier_node_height = it->second;
             int de_brujin_index = ctx.current_quantif_depth - (quantifier_node_height + 1);
 
-            std::cout << "Making variable for " << var_name << " with de-brujin index " << de_brujin_index << std::endl;
-
             return expr_ref(ctx.manager.mk_var(de_brujin_index, ctx.arith_utilities.mk_int()), ctx.manager);
         }
 
@@ -415,7 +411,7 @@ namespace smt::noodler {
         return expr_ref(var, ctx.manager);
     }
 
-    expr_ref len_node_to_z3_formula(LenFormulaContext &ctx, const LenNode &node) {
+    expr_ref convert_len_node_to_z3_formula(LenFormulaContext &ctx, const LenNode &node) {
         arith_util&  m_util_a = ctx.arith_utilities;
         seq_util&    m_util_s = ctx.seq_utilities;
         ast_manager& manager  = ctx.manager;
@@ -428,9 +424,9 @@ namespace smt::noodler {
         case LenFormulaType::PLUS: {
             if (node.succ.size() == 0)
                 return expr_ref(m_util_a.mk_int(0), manager);
-            expr_ref plus = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref plus = convert_len_node_to_z3_formula(ctx, node.succ[0]);
             for(size_t i = 1; i < node.succ.size(); i++) {
-                plus = m_util_a.mk_add(plus, len_node_to_z3_formula(ctx, node.succ[i]));
+                plus = m_util_a.mk_add(plus, convert_len_node_to_z3_formula(ctx, node.succ[i]));
             }
             return plus;
         }
@@ -439,13 +435,13 @@ namespace smt::noodler {
             if (node.succ.size() == 0)
                 return expr_ref(m_util_a.mk_int(0), manager);
             if (node.succ.size() == 1) {  // Unary minus (- x)
-                expr_ref child_expr = len_node_to_z3_formula(ctx, node.succ[0]);
+                expr_ref child_expr = convert_len_node_to_z3_formula(ctx, node.succ[0]);
                 child_expr = m_util_a.mk_uminus(child_expr);
                 return child_expr;
             }
-            expr_ref minus = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref minus = convert_len_node_to_z3_formula(ctx, node.succ[0]);
             for(size_t i = 1; i < node.succ.size(); i++) {
-                minus = m_util_a.mk_sub(minus, len_node_to_z3_formula(ctx, node.succ[i]));
+                minus = m_util_a.mk_sub(minus, convert_len_node_to_z3_formula(ctx, node.succ[i]));
             }
             return minus;
         }
@@ -453,17 +449,17 @@ namespace smt::noodler {
         case LenFormulaType::TIMES: {
             if (node.succ.size() == 0)
                 return expr_ref(m_util_a.mk_int(1), manager);
-            expr_ref times = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref times = convert_len_node_to_z3_formula(ctx, node.succ[0]);
             for(size_t i = 1; i < node.succ.size(); i++) {
-                times = m_util_a.mk_mul(times, len_node_to_z3_formula(ctx, node.succ[i]));
+                times = m_util_a.mk_mul(times, convert_len_node_to_z3_formula(ctx, node.succ[i]));
             }
             return times;
         }
 
         case LenFormulaType::EQ: {
             assert(node.succ.size() == 2);
-            expr_ref left = len_node_to_z3_formula(ctx, node.succ[0]);
-            expr_ref right = len_node_to_z3_formula(ctx, node.succ[1]);
+            expr_ref left = convert_len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref right = convert_len_node_to_z3_formula(ctx, node.succ[1]);
 
             expr_ref eq(m_util_a.mk_eq(left, right), manager);
             return eq;
@@ -471,24 +467,24 @@ namespace smt::noodler {
 
         case LenFormulaType::NEQ: {
             assert(node.succ.size() == 2);
-            expr_ref left = len_node_to_z3_formula(ctx, node.succ[0]);
-            expr_ref right = len_node_to_z3_formula(ctx, node.succ[1]);
+            expr_ref left = convert_len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref right = convert_len_node_to_z3_formula(ctx, node.succ[1]);
             expr_ref neq(manager.mk_not(m_util_a.mk_eq(left, right)), manager);
             return neq;
         }
 
         case LenFormulaType::LEQ: {
             assert(node.succ.size() == 2);
-            expr_ref left = len_node_to_z3_formula(ctx, node.succ[0]);
-            expr_ref right = len_node_to_z3_formula(ctx, node.succ[1]);
+            expr_ref left = convert_len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref right = convert_len_node_to_z3_formula(ctx, node.succ[1]);
             expr_ref leq(m_util_a.mk_le(left, right), manager);
             return leq;
         }
 
         case LenFormulaType::LT: {
             assert(node.succ.size() == 2);
-            expr_ref left = len_node_to_z3_formula(ctx, node.succ[0]);
-            expr_ref right = len_node_to_z3_formula(ctx, node.succ[1]);
+            expr_ref left = convert_len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref right = convert_len_node_to_z3_formula(ctx, node.succ[1]);
             // LIA solver fails if we use "L < R" for some reason (it cannot be internalized in smt::theory_lra::imp::internalize_atom, as it expects only <= or >=); we use "!(R <= L)" instead
             expr_ref lt(manager.mk_not(m_util_a.mk_le(right, left)), manager);
             return lt;
@@ -496,16 +492,16 @@ namespace smt::noodler {
 
         case LenFormulaType::NOT: {
             assert(node.succ.size() == 1);
-            expr_ref no(manager.mk_not(len_node_to_z3_formula(ctx, node.succ[0])), manager);
+            expr_ref no(manager.mk_not(convert_len_node_to_z3_formula(ctx, node.succ[0])), manager);
             return no;
         }
 
         case LenFormulaType::AND: {
             if(node.succ.size() == 0)
                 return expr_ref(manager.mk_true(), manager);
-            expr_ref andref = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref andref = convert_len_node_to_z3_formula(ctx, node.succ[0]);
             for(size_t i = 1; i < node.succ.size(); i++) {
-                andref = manager.mk_and(andref, len_node_to_z3_formula(ctx, node.succ[i]));
+                andref = manager.mk_and(andref, convert_len_node_to_z3_formula(ctx, node.succ[i]));
             }
             return andref;
         }
@@ -513,9 +509,9 @@ namespace smt::noodler {
         case LenFormulaType::OR: {
             if(node.succ.size() == 0)
                 return expr_ref(manager.mk_false(), manager);
-            expr_ref orref = len_node_to_z3_formula(ctx, node.succ[0]);
+            expr_ref orref = convert_len_node_to_z3_formula(ctx, node.succ[0]);
             for(size_t i = 1; i < node.succ.size(); i++) {
-                orref = manager.mk_or(orref, len_node_to_z3_formula(ctx, node.succ[i]));
+                orref = manager.mk_or(orref, convert_len_node_to_z3_formula(ctx, node.succ[i]));
             }
             return orref;
         }

@@ -294,7 +294,7 @@ TEST_CASE("LenFormula : variables are numbered correctly", "[noodler]") {
         .known_z3_exprs = known_exprs,
     };
 
-    expr_ref z3_formula = len_node_to_z3_formula(ctx, root);
+    expr_ref z3_formula = convert_len_node_to_z3_formula(ctx, root);
 
     REQUIRE(z3_formula.get()->get_kind() == AST_QUANTIFIER);  // Exists x
     auto quantifier = to_quantifier(z3_formula.get());

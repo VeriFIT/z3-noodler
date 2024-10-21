@@ -775,7 +775,7 @@ namespace smt::noodler {
 
         int current_quantif_depth = 0;  // To compute de Brujin numbers for quantified variables
     };
-    expr_ref len_node_to_z3_formula(LenFormulaContext &ctx, const LenNode &node);
+    expr_ref convert_len_node_to_z3_formula(LenFormulaContext &ctx, const LenNode &node);
     expr_ref construct_z3_expr_for_len_node_quantifier(LenFormulaContext& ctx, const LenNode& node, enum quantifier_kind quantif_kind);
 
 
