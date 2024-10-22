@@ -205,7 +205,29 @@ namespace smt::noodler::ca {
         }
 
         // union all automata in the matrix
-        auto union_result = this->aut_matrix.union_matrix();
+        AutMatrixUnionResult union_result = this->aut_matrix.union_matrix();
+
+        // Trim the automaton
+        {
+            std::unordered_map<mata::nfa::State, mata::nfa::State> state_renaming; // Original state -> New state
+            union_result.nfa.trim(&state_renaming);  // Automaton is modified in-place
+            std::vector<size_t> updated_state_origin_info;
+            updated_state_origin_info.resize(union_result.nfa.num_of_states());
+
+            size_t original_nfa_size = union_result.nfa_states_to_vars.size();
+
+            for (mata::nfa::State original_state = 0; original_state < original_nfa_size; original_state++) {
+                auto rename_entry_it = state_renaming.find(original_state);
+                if (rename_entry_it == state_renaming.end()) {
+                    continue; // State has been removed
+                }
+
+                mata::nfa::State new_state = rename_entry_it->second;
+                updated_state_origin_info[new_state] = union_result.nfa_states_to_vars[original_state];
+            }
+
+            union_result.nfa_states_to_vars = updated_state_origin_info;
+        }
 
         // add mata epsilon symbol to alphabet. Used for DOT export.
         this->alph.insert(mata::nfa::EPSILON, {});
