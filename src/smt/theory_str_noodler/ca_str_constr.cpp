@@ -52,7 +52,6 @@ namespace smt::noodler::ca {
 
     AutMatrixUnionResult DiseqAutMatrix::union_matrix() const {
         const size_t copy_count = 3;
-        mata::nfa::Nfa result_nfa;
 
         // #Note(mhecko): Relying on unite_nondet_with is problematic - the procedure can do all kinds of
         //                optilizations, yet we have very clear perception of how the result should look like.
@@ -62,8 +61,6 @@ namespace smt::noodler::ca {
         for (size_t var_id = 0; var_id < this->var_order.size(); var_id++) {
             copy_states_cnt += this->aut_matrix[copy_to_use_as_a_template][var_id].num_of_states();
         }
-
-        result_nfa.delta.allocate(copy_states_cnt*copy_count);
 
         mata::nfa::Nfa row_template = this->aut_matrix[copy_to_use_as_a_template][0]; // First row of the matrix
 
@@ -86,6 +83,10 @@ namespace smt::noodler::ca {
 
             template_states_processed = row_template.num_of_states();
         }
+
+        mata::nfa::Nfa result_nfa = row_template;
+
+        result_nfa.delta.allocate(copy_states_cnt*copy_count);
 
         // State origin info for the first copy/row is ready. Propagate the origin info to the remaining copies.
         for (size_t copy_idx = 1; copy_idx < copy_count; copy_idx++) {
@@ -110,7 +111,6 @@ namespace smt::noodler::ca {
             }
         }
 
-        result_nfa.initial.clear();
         result_nfa.initial = row_template.initial; // The offset of 0th copy is 0, no need to add offset
 
         result_nfa.final.clear();
@@ -216,9 +216,20 @@ namespace smt::noodler::ca {
         // union all automata in the matrix
         AutMatrixUnionResult union_result = this->aut_matrix.union_matrix();
 
+        // add mata epsilon symbol to alphabet. Used for DOT export.
+        this->alph.insert(mata::nfa::EPSILON, {});
+
+        // generate connecting transitions
+        for (char copy = 0; copy < 2; copy++) {
+            for (size_t var = 0; var < var_order.size(); var++) {
+                add_connection(copy, var, union_result.nfa);
+            }
+        }
+
         // Trim the automaton
         {
             std::unordered_map<mata::nfa::State, mata::nfa::State> state_renaming; // Original state -> New state
+
             union_result.nfa.trim(&state_renaming);  // Automaton is modified in-place
             std::vector<size_t> updated_state_origin_info;
             updated_state_origin_info.resize(union_result.nfa.num_of_states());
@@ -238,17 +249,13 @@ namespace smt::noodler::ca {
             union_result.nfa_states_to_vars = updated_state_origin_info;
         }
 
-        // add mata epsilon symbol to alphabet. Used for DOT export.
-        this->alph.insert(mata::nfa::EPSILON, {});
-
-        // generate connecting transitions
-        for (char copy = 0; copy < 2; copy++) {
-            for (size_t var = 0; var < var_order.size(); var++) {
-                add_connection(copy, var, union_result.nfa);
-            }
-        }
-
-        TagAut result = { union_result.nfa, this->alph, var_order, union_result.nfa_states_to_vars };
+        TagAut result = {
+            union_result.nfa,
+            this->alph,
+            var_order,
+            union_result.nfa_states_to_vars,
+            union_result.where_is_state_copied_from
+        };
 
         return result;
     }

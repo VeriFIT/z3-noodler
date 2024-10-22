@@ -660,7 +660,7 @@ namespace smt::noodler::parikh {
     }
 
     mata::nfa::State ParikhImageNotContTag::map_copy_state_into_its_origin(const mata::nfa::State state) const {
-        return state % this->number_of_states_in_row;
+        return ca.where_is_state_copied_from[state];
     }
 
     std::unordered_map<StatePair, std::vector<LenNode>> ParikhImageNotContTag::group_isomorphic_transitions_across_copies(const std::map<Transition, BasicTerm>& parikh_image) const {

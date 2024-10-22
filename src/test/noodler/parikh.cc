@@ -48,7 +48,7 @@ TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula simple", "[noo
 
     ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
 
-    REQUIRE(tag_automaton.nfa.num_of_states() == 12);  // 4 states * 3 copies
+    REQUIRE(tag_automaton.nfa.num_of_states() == 6);  // 4 states * 3 copies, but half are needless and removed during trimming
 
     std::set<ca::AtomicSymbol> used_symbols = tag_automaton.gather_used_symbols();
 
@@ -66,11 +66,11 @@ TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula simple", "[noo
     // We rely on the fact that we know the precise structure of the automaton
     size_t states_in_row = 4;
     std::vector<std::pair<State, State>> abstract_transitions = {
-        {0 + 0*states_in_row, 1 + 0*states_in_row},
-        {0 + 0*states_in_row, 1 + 1*states_in_row},
-        {0 + 1*states_in_row, 1 + 1*states_in_row},
-        {0 + 1*states_in_row, 1 + 2*states_in_row},
-        {0 + 2*states_in_row, 1 + 2*states_in_row},
+        {0 + 0*states_in_row, 1 + 0*states_in_row},  // (Copy=0, q0) --> (Copy=0, q1)  (non-sampling)
+        {0 + 0*states_in_row, 1 + 1*states_in_row},  // (Copy=0, q0) --> (Copy=1, q1)  (sampling)
+        // TRIMMED: {0 + 1*states_in_row, 1 + 1*states_in_row},  // (Copy=1, q0) --> (Copy=1, q1)  (non-sampling)
+        // TRIMMED: {0 + 1*states_in_row, 1 + 2*states_in_row},  // (Copy=1, q0) --> (Copy=2, q1)  (sampling)
+        // TRIMMED: {0 + 2*states_in_row, 1 + 2*states_in_row},  // (Copy=2, q0) --> (Copy=2, q1)  (sampling)
     };
 
     std::set<BasicTerm> parikh_vars       = lookup_abstract_transition_vars(abstract_transitions, parikh_image);
@@ -116,7 +116,7 @@ TEST_CASE("NotContains::mk_rhs_longer_than_lhs_formula simple", "[noodler]") {
     ca::TagAut      tag_automaton = tag_automaton_generator.construct_tag_aut();
 
     size_t states_in_row = 8;  // "abc" is 4-state automaton, we concatenate two of these
-    REQUIRE(tag_automaton.nfa.num_of_states() == 3*states_in_row);
+    REQUIRE(tag_automaton.nfa.num_of_states() == 18);
 
     std::set<ca::AtomicSymbol> used_symbols = tag_automaton.gather_used_symbols();
 
@@ -168,7 +168,7 @@ TEST_CASE("NotContains::ensure_symbol_unqueness_using_total_sum simple", "[noodl
     ca::TagAut      tag_automaton = tag_automaton_generator.construct_tag_aut();
 
     size_t states_in_row = 7;
-    REQUIRE(tag_automaton.nfa.num_of_states() == 3*states_in_row);
+    REQUIRE(tag_automaton.nfa.num_of_states() == 15);
 
     std::set<ca::AtomicSymbol> used_symbols = tag_automaton.gather_used_symbols();
 
@@ -178,12 +178,12 @@ TEST_CASE("NotContains::ensure_symbol_unqueness_using_total_sum simple", "[noodl
     std::vector<std::pair<State, State>> transitions_over_a = { // Only sampling transitions
         // Transitions from aut('x')
         {0 + 0*states_in_row, 1 + 1*states_in_row},
-        {0 + 1*states_in_row, 1 + 2*states_in_row},
+        // TRIMMED: {0 + 1*states_in_row, 1 + 2*states_in_row},
         // Transitions from aut('y') - first 'a'
         {4 + 0*states_in_row, 5 + 1*states_in_row},
         {4 + 1*states_in_row, 5 + 2*states_in_row},
         // Transitions from aut('y') - second 'a'
-        {5 + 0*states_in_row, 6 + 1*states_in_row},
+        // TRIMMED: {5 + 0*states_in_row, 6 + 1*states_in_row},
         {5 + 1*states_in_row, 6 + 2*states_in_row},
     };
 
