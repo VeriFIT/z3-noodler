@@ -27,7 +27,8 @@ namespace smt::noodler::ca {
 
     struct AutMatrixUnionResult { // In case we need export more structural properties
         mata::nfa::Nfa      nfa;
-        std::vector<size_t> nfa_states_to_vars; // Where does a state originate?
+        std::vector<size_t> nfa_states_to_vars; // What variable does the state belong to?
+        std::vector<size_t> where_is_state_copied_from; // During matrix creation, states are copied - maps states to their origin in their template.
     };
 
     /**

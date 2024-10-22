@@ -253,7 +253,7 @@ void populate_automaton_with_flat(mata::nfa::Nfa& nfa, unsigned symbol) {
     nfa.delta.add(transition);
 }
 
-TEST_CASE("AutMatrix : states are labeled correctly with variabels") {
+TEST_CASE("AutMatrix : state metadata are computed") {
     //
     // NotContains(XYZ, ZYX)
     //
@@ -284,8 +284,11 @@ TEST_CASE("AutMatrix : states are labeled correctly with variabels") {
     REQUIRE(result.nfa.num_of_states() == expected_result_nfa_state_cnt);
     REQUIRE(result.nfa_states_to_vars.size() == expected_result_nfa_state_cnt);
 
-    std::vector<size_t> expected_state_origin {0, 1, 2, 0, 1, 2, 0, 1, 2};
-    REQUIRE(result.nfa_states_to_vars == expected_state_origin);
+    std::vector<size_t> expected_state_vars {0, 1, 2, 0, 1, 2, 0, 1, 2};
+    REQUIRE(result.nfa_states_to_vars == expected_state_vars);
+
+    std::vector<size_t> expected_state_copy_origin {0, 1, 2, 0, 1, 2, 0, 1, 2};
+    REQUIRE(result.where_is_state_copied_from == expected_state_vars);
 }
 
 TEST_CASE("LenFormula : variables are numbered correctly", "[noodler]") {

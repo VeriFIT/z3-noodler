@@ -120,9 +120,18 @@ namespace smt::noodler::ca {
             result_nfa.final.insert(result_final_state);
         }
 
+        // Construct info about where was a state copied from, so we can group "isomorphic" transitions later
+        std::vector<size_t> where_is_state_copied_from(result_nfa.num_of_states());
+        for (size_t copy_idx = 0; copy_idx < copy_count; copy_idx++) {
+            for (mata::nfa::State template_state = 0; template_state < row_template.num_of_states(); template_state++) {
+                where_is_state_copied_from[template_state + copy_idx*copy_count] = template_state;
+            }
+        }
+
         AutMatrixUnionResult result = {
             .nfa = result_nfa,
-            .nfa_states_to_vars = state_origin_info
+            .nfa_states_to_vars = state_origin_info,
+            .where_is_state_copied_from = where_is_state_copied_from,
         };
 
         return result;
