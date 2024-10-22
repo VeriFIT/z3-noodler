@@ -49,30 +49,53 @@ namespace smt::noodler::ca {
         }
     }
 
-    mata::nfa::Nfa DiseqAutMatrix::union_matrix() const {
+    AutMatrixUnionResult DiseqAutMatrix::union_matrix() const {
         const size_t copy_count = 3;
         mata::nfa::Nfa result_nfa;
 
         // #Note(mhecko): Relying on unite_nondet_with is problematic - the procedure can do all kinds of
         //                optilizations, yet we have very clear perception of how the result should look like.
+        const size_t copy_to_use_as_a_template = 0;
 
         size_t copy_states_cnt = 0;
-        const size_t template_copy = 0;
         for (size_t var_id = 0; var_id < this->var_order.size(); var_id++) {
-            copy_states_cnt += this->aut_matrix[template_copy][var_id].num_of_states();
+            copy_states_cnt += this->aut_matrix[copy_to_use_as_a_template][var_id].num_of_states();
         }
 
         result_nfa.delta.allocate(copy_states_cnt*copy_count + 1);
 
-        mata::nfa::Nfa row_template = this->aut_matrix[template_copy][0]; // First row of the matrix
-        for (size_t var = 1; var < this->var_order.size(); var++) {
-            row_template = mata::nfa::concatenate(row_template, this->aut_matrix[template_copy][var], true);
+        mata::nfa::Nfa row_template = this->aut_matrix[copy_to_use_as_a_template][0]; // First row of the matrix
+
+        std::vector<size_t> state_origin_info;
+        state_origin_info.reserve(copy_states_cnt*copy_count + 1);
+        size_t template_states_processed = 0;
+        { // Populate var origin for the first automaton in a template
+            for (mata::nfa::State state = 0; state < this->aut_matrix[copy_to_use_as_a_template][0].num_of_states(); state++) {
+                state_origin_info[state] = 0;
+            }
+            template_states_processed += this->aut_matrix[copy_to_use_as_a_template][0].num_of_states();
         }
 
+        for (size_t var = 1; var < this->var_order.size(); var++) {
+            row_template = mata::nfa::concatenate(row_template, this->aut_matrix[copy_to_use_as_a_template][var], true);
+
+            for (mata::nfa::State state = template_states_processed; state < row_template.num_of_states(); state++) {
+                state_origin_info[state] = var;
+            }
+        }
+
+        // State origin info for the first copy/row is ready. Propagate the origin info to the remaining copies.
+        for (size_t copy_idx = 1; copy_idx < copy_count; copy_idx++) {
+            for (mata::nfa::State state = 0; state < copy_states_cnt; state++) {
+                state_origin_info[copy_idx*copy_states_cnt + state] = state_origin_info[state];
+            }
+        }
+
+        // Use the template to add links into the union
         for (size_t copy = 0; copy < copy_count; copy++) {
             size_t copy_state_offset = copy*copy_states_cnt;
 
-            for (mata::strings::State template_source_state = 0; template_source_state < copy_states_cnt; template_source_state++) {
+            for (mata::nfa::State template_source_state = 0; template_source_state < copy_states_cnt; template_source_state++) {
                 mata::nfa::State copy_source_state = template_source_state + copy_state_offset;
 
                 for (const mata::nfa::SymbolPost& symbol_post : row_template.delta.state_post(template_source_state)) {
@@ -94,7 +117,12 @@ namespace smt::noodler::ca {
             result_nfa.final.insert(result_final_state);
         }
 
-        return result_nfa;
+        AutMatrixUnionResult result = {
+            .nfa = result_nfa,
+            .nfa_states_to_vars = state_origin_info
+        };
+
+        return result;
     }
 
     //-----------------------------------------------------------------------------------------------
@@ -174,7 +202,7 @@ namespace smt::noodler::ca {
         }
 
         // union all automata in the matrix
-        mata::nfa::Nfa aut_union = this->aut_matrix.union_matrix();
+        auto union_result = this->aut_matrix.union_matrix();
 
         // add mata epsilon symbol to alphabet. Used for DOT export.
         this->alph.insert(mata::nfa::EPSILON, {});
@@ -182,26 +210,11 @@ namespace smt::noodler::ca {
         // generate connecting transitions
         for (char copy = 0; copy < 2; copy++) {
             for (size_t var = 0; var < var_order.size(); var++) {
-                add_connection(copy, var, aut_union);
+                add_connection(copy, var, union_result.nfa);
             }
         }
 
-        TagAut result = { aut_union, this->alph, var_order };
-
-        {  // DEBUG -- color states
-            size_t states_in_row = this->aut_matrix.get_number_of_states_in_row();
-            std::vector<size_t>& init_states_offsets = this->aut_matrix.get_var_init_states_pos_in_copies();
-            for (size_t var_idx = 0; var_idx < var_order.size(); var_idx++) {
-                size_t first_state = init_states_offsets[var_idx];
-                size_t last_state  = (var_idx + 1 == init_states_offsets.size()) ? states_in_row - 1 : init_states_offsets[var_idx+1];
-
-                for (; first_state < last_state; first_state++) {
-                    for (int copy_idx = 0; copy_idx < 3; copy_idx++) {
-                        result.node_color_map[first_state + copy_idx*states_in_row] = var_idx;
-                    }
-                }
-            }
-        }
+        TagAut result = { union_result.nfa, this->alph, var_order, union_result.nfa_states_to_vars };
 
         return result;
     }

@@ -25,6 +25,11 @@ namespace smt::noodler::ca {
 
     using AutMatrix = std::vector<std::vector<mata::nfa::Nfa>>;
 
+    struct AutMatrixUnionResult { // In case we need export more structural properties
+        mata::nfa::Nfa      nfa;
+        std::vector<size_t> nfa_states_to_vars; // Where does a state originate?
+    };
+
     /**
      * @brief Class representing copies of automata for each variable.
      * X axis = variables
@@ -86,7 +91,7 @@ namespace smt::noodler::ca {
          *
          * @return mata::nfa::Nfa Big NFA
          */
-        mata::nfa::Nfa union_matrix() const;
+        AutMatrixUnionResult union_matrix() const;
 
         const std::vector<BasicTerm>& get_var_order() const {
             return this->var_order;
@@ -118,9 +123,9 @@ namespace smt::noodler::ca {
     class TagDiseqGen {
 
     private:
-        DiseqAutMatrix aut_matrix;
-        AutAssignment aut_ass;
-        Predicate diseq;
+        DiseqAutMatrix      aut_matrix;
+        AutAssignment       aut_ass;
+        Predicate           diseq;
         ca::CounterAlphabet alph {};
 
     public:

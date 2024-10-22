@@ -164,6 +164,9 @@ namespace smt::noodler::ca {
         // variable ordering
         std::vector<BasicTerm> var_order {};
 
+        // Maps states of the underlying NFA to the variable (index in var_order) from which the states originate 
+        std::vector<size_t> state_to_variable_mapping;
+
         // Debugging: color states in the tag automaton according to the variable it originates in
         std::unordered_map<mata::nfa::State, uint64_t> node_color_map;
 
