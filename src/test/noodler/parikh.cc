@@ -3,6 +3,7 @@
 
 using namespace smt::noodler;
 using namespace smt::noodler::parikh;
+using namespace smt::noodler::ca;
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -47,7 +48,7 @@ TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula simple", "[noo
 
     ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
 
-    REQUIRE(tag_automaton.nfa.num_of_states() == (12 + 1));  // Assume no trimming takes place
+    REQUIRE(tag_automaton.nfa.num_of_states() == 12);  // 4 states * 3 copies
 
     std::set<ca::AtomicSymbol> used_symbols = tag_automaton.gather_used_symbols();
 
@@ -115,7 +116,7 @@ TEST_CASE("NotContains::mk_rhs_longer_than_lhs_formula simple", "[noodler]") {
     ca::TagAut      tag_automaton = tag_automaton_generator.construct_tag_aut();
 
     size_t states_in_row = 8;  // "abc" is 4-state automaton, we concatenate two of these
-    REQUIRE(tag_automaton.nfa.num_of_states() == (3*states_in_row + 1));  // Assume no trimming takes place
+    REQUIRE(tag_automaton.nfa.num_of_states() == 3*states_in_row);
 
     std::set<ca::AtomicSymbol> used_symbols = tag_automaton.gather_used_symbols();
 
@@ -167,7 +168,7 @@ TEST_CASE("NotContains::ensure_symbol_unqueness_using_total_sum simple", "[noodl
     ca::TagAut      tag_automaton = tag_automaton_generator.construct_tag_aut();
 
     size_t states_in_row = 7;
-    REQUIRE(tag_automaton.nfa.num_of_states() == (3*states_in_row + 1));  // Assume no trimming takes place
+    REQUIRE(tag_automaton.nfa.num_of_states() == 3*states_in_row);
 
     std::set<ca::AtomicSymbol> used_symbols = tag_automaton.gather_used_symbols();
 
@@ -239,6 +240,53 @@ void assert_eq_correct(expr* z3_atom, unsigned var_idx, int rhs) {
     REQUIRE(to_app(z3_rhs)->get_parameter(0).get_rational().get_int32() == rhs);
 }
 
+void populate_automaton_with_flat(mata::nfa::Nfa& nfa, unsigned symbol) {
+    nfa.add_state(0);
+
+    nfa.initial.clear();
+    nfa.initial.insert(0);
+
+    nfa.final.clear();
+    nfa.final.insert(0);
+
+    mata::nfa::Transition transition(0, symbol, 0);
+    nfa.delta.add(transition);
+}
+
+TEST_CASE("AutMatrix : states are labeled correctly with variabels") {
+    //
+    // NotContains(XYZ, ZYX)
+    //
+
+    BasicTerm var_x(BasicTermType::Variable, "X");
+    BasicTerm var_y(BasicTermType::Variable, "Y");
+    BasicTerm var_z(BasicTermType::Variable, "Z");
+
+    mata::nfa::Nfa lang_x;
+    populate_automaton_with_flat(lang_x, 0);
+    mata::nfa::Nfa lang_y = lang_x;
+    mata::nfa::Nfa lang_z = lang_x;
+
+    std::vector<BasicTerm> lhs {var_x, var_y, var_z};
+    std::vector<BasicTerm> rhs {var_z, var_y, var_x};
+    Predicate predicate(PredicateType::NotContains, {lhs, rhs});
+
+    AutAssignment assignment;
+    assignment[var_x] = std::make_shared<mata::nfa::Nfa>(lang_x);
+    assignment[var_y] = std::make_shared<mata::nfa::Nfa>(lang_y);
+    assignment[var_z] = std::make_shared<mata::nfa::Nfa>(lang_z);
+
+    DiseqAutMatrix aut_matrix (predicate, assignment);
+    AutMatrixUnionResult result = aut_matrix.union_matrix();
+
+    // Every variable automaton has only 1 state - the result should be a 3 states x 3 states matrix
+    size_t expected_result_nfa_state_cnt = 3*3;
+    REQUIRE(result.nfa.num_of_states() == expected_result_nfa_state_cnt);
+    REQUIRE(result.nfa_states_to_vars.size() == expected_result_nfa_state_cnt);
+
+    std::vector<size_t> expected_state_origin {0, 1, 2, 0, 1, 2, 0, 1, 2};
+    REQUIRE(result.nfa_states_to_vars == expected_state_origin);
+}
 
 TEST_CASE("LenFormula : variables are numbered correctly", "[noodler]") {
     // Test whether quantified formulae do not change semantics when translated to z3

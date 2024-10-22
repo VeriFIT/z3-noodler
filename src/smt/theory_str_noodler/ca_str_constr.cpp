@@ -19,6 +19,7 @@ namespace smt::noodler::ca {
         }
 
         // set offset size
+        // #Note(mhecko): What is this `+ 1` here?
         this->var_aut_init_states_in_copy.resize(3*var_set.size() + 1);
 
         // three copies
@@ -62,12 +63,12 @@ namespace smt::noodler::ca {
             copy_states_cnt += this->aut_matrix[copy_to_use_as_a_template][var_id].num_of_states();
         }
 
-        result_nfa.delta.allocate(copy_states_cnt*copy_count + 1);
+        result_nfa.delta.allocate(copy_states_cnt*copy_count);
 
         mata::nfa::Nfa row_template = this->aut_matrix[copy_to_use_as_a_template][0]; // First row of the matrix
 
         std::vector<size_t> state_origin_info;
-        state_origin_info.reserve(copy_states_cnt*copy_count + 1);
+        state_origin_info.resize(copy_states_cnt*copy_count);
         size_t template_states_processed = 0;
         { // Populate var origin for the first automaton in a template
             for (mata::nfa::State state = 0; state < this->aut_matrix[copy_to_use_as_a_template][0].num_of_states(); state++) {
@@ -82,6 +83,8 @@ namespace smt::noodler::ca {
             for (mata::nfa::State state = template_states_processed; state < row_template.num_of_states(); state++) {
                 state_origin_info[state] = var;
             }
+
+            template_states_processed = row_template.num_of_states();
         }
 
         // State origin info for the first copy/row is ready. Propagate the origin info to the remaining copies.
