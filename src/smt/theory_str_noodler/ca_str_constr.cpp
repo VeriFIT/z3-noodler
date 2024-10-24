@@ -64,12 +64,12 @@ namespace smt::noodler::ca {
 
         mata::nfa::Nfa row_template = this->aut_matrix[copy_to_use_as_a_template][0]; // First row of the matrix
 
-        std::vector<size_t> state_origin_info;
-        state_origin_info.resize(copy_states_cnt*copy_count);
+        std::vector<size_t> state_var_info;
+        state_var_info.resize(copy_states_cnt*copy_count);
         size_t template_states_processed = 0;
         { // Populate var origin for the first automaton in a template
             for (mata::nfa::State state = 0; state < this->aut_matrix[copy_to_use_as_a_template][0].num_of_states(); state++) {
-                state_origin_info[state] = 0;
+                state_var_info[state] = 0;
             }
             template_states_processed += this->aut_matrix[copy_to_use_as_a_template][0].num_of_states();
         }
@@ -78,7 +78,7 @@ namespace smt::noodler::ca {
             row_template = mata::nfa::concatenate(row_template, this->aut_matrix[copy_to_use_as_a_template][var], true);
 
             for (mata::nfa::State state = template_states_processed; state < row_template.num_of_states(); state++) {
-                state_origin_info[state] = var;
+                state_var_info[state] = var;
             }
 
             template_states_processed = row_template.num_of_states();
@@ -91,7 +91,7 @@ namespace smt::noodler::ca {
         // State origin info for the first copy/row is ready. Propagate the origin info to the remaining copies.
         for (size_t copy_idx = 1; copy_idx < copy_count; copy_idx++) {
             for (mata::nfa::State state = 0; state < copy_states_cnt; state++) {
-                state_origin_info[copy_idx*copy_states_cnt + state] = state_origin_info[state];
+                state_var_info[copy_idx*copy_states_cnt + state] = state_var_info[state];
             }
         }
 
@@ -122,16 +122,25 @@ namespace smt::noodler::ca {
 
         // Construct info about where was a state copied from, so we can group "isomorphic" transitions later
         std::vector<size_t> where_is_state_copied_from(result_nfa.num_of_states());
+        std::vector<size_t> state_levels(result_nfa.num_of_states());
         for (size_t copy_idx = 0; copy_idx < copy_count; copy_idx++) {
-            for (mata::nfa::State template_state = 0; template_state < row_template.num_of_states(); template_state++) {
-                where_is_state_copied_from[template_state + copy_idx*copy_count] = template_state;
+            const size_t template_state_cnt = row_template.num_of_states();
+            for (mata::nfa::State template_state = 0; template_state < template_state_cnt; template_state++) {
+                mata::nfa::State union_state = template_state + copy_idx*template_state_cnt;
+                where_is_state_copied_from[union_state] = template_state;
+                state_levels[union_state] = copy_idx;
             }
         }
 
+        TagAutStateMetadata metadata {
+            .var_info = state_var_info,
+            .levels   = state_levels,
+            .where_is_state_copied_from = where_is_state_copied_from,
+        };
+
         AutMatrixUnionResult result = {
             .nfa = result_nfa,
-            .nfa_states_to_vars = state_origin_info,
-            .where_is_state_copied_from = where_is_state_copied_from,
+            .metadata = metadata,
         };
 
         return result;
@@ -214,7 +223,7 @@ namespace smt::noodler::ca {
         }
 
         // union all automata in the matrix
-        AutMatrixUnionResult union_result = this->aut_matrix.union_matrix();
+        AutMatrixUnionResult nfa_with_metadata = this->aut_matrix.union_matrix();
 
         // add mata epsilon symbol to alphabet. Used for DOT export.
         this->alph.insert(mata::nfa::EPSILON, {});
@@ -222,19 +231,24 @@ namespace smt::noodler::ca {
         // generate connecting transitions
         for (char copy = 0; copy < 2; copy++) {
             for (size_t var = 0; var < var_order.size(); var++) {
-                add_connection(copy, var, union_result.nfa);
+                add_connection(copy, var, nfa_with_metadata.nfa);
             }
         }
 
         // Trim the automaton
         {
+            size_t original_nfa_size = nfa_with_metadata.nfa.num_of_states();
+
             std::unordered_map<mata::nfa::State, mata::nfa::State> state_renaming; // Original state -> New state
 
-            union_result.nfa.trim(&state_renaming);  // Automaton is modified in-place
-            std::vector<size_t> updated_state_origin_info;
-            updated_state_origin_info.resize(union_result.nfa.num_of_states());
+            nfa_with_metadata.nfa.trim(&state_renaming);  // Automaton is modified in-place
 
-            size_t original_nfa_size = union_result.nfa_states_to_vars.size();
+            size_t new_nfa_size = nfa_with_metadata.nfa.num_of_states();
+
+            TagAutStateMetadata new_metadata;
+            new_metadata.levels.resize(new_nfa_size);
+            new_metadata.var_info.resize(new_nfa_size);
+            new_metadata.where_is_state_copied_from.resize(new_nfa_size);
 
             for (mata::nfa::State original_state = 0; original_state < original_nfa_size; original_state++) {
                 auto rename_entry_it = state_renaming.find(original_state);
@@ -243,18 +257,20 @@ namespace smt::noodler::ca {
                 }
 
                 mata::nfa::State new_state = rename_entry_it->second;
-                updated_state_origin_info[new_state] = union_result.nfa_states_to_vars[original_state];
+
+                new_metadata.levels[new_state]   = nfa_with_metadata.metadata.levels[original_state];
+                new_metadata.var_info[new_state] = nfa_with_metadata.metadata.var_info[original_state];
+                new_metadata.where_is_state_copied_from[new_state] = nfa_with_metadata.metadata.where_is_state_copied_from[original_state];
             }
 
-            union_result.nfa_states_to_vars = updated_state_origin_info;
+            nfa_with_metadata.metadata = std::move(new_metadata);
         }
 
         TagAut result = {
-            union_result.nfa,
+            nfa_with_metadata.nfa,
             this->alph,
             var_order,
-            union_result.nfa_states_to_vars,
-            union_result.where_is_state_copied_from
+            nfa_with_metadata.metadata
         };
 
         return result;

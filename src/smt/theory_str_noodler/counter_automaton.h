@@ -154,6 +154,23 @@ namespace smt::noodler::ca {
     using CounterAlphabet = StructAlphabet<std::set<AtomicSymbol>>;
 
     /**
+     * Metadata about states of a tag automaton, allowing better debugging enabling testing.
+     */
+    struct TagAutStateMetadata {
+        std::vector<size_t> var_info;  // What variable does the state belong to
+        std::vector<size_t> levels;    // In what copy does the state reside
+
+        /**
+         * Maps states to integers so that two states with the same value are copies of the same state.
+         *
+         * Underlying nfa is created by copying one NFA multiple times. This
+         * field tells if two states are the same because they are a copy of the
+         * same state.
+         */
+        std::vector<size_t> where_is_state_copied_from;
+    };
+
+    /**
      * @brief Tag automaton: an automaton with special symbols consisting of sets of tags present on its transition edges.
      */
     struct TagAut {
@@ -164,17 +181,7 @@ namespace smt::noodler::ca {
         // variable ordering
         std::vector<BasicTerm> var_order {};
 
-        // Maps states of the underlying NFA to the variable (index in var_order) from which the states originate
-        std::vector<size_t> state_to_variable_mapping;
-
-        /**
-         * Maps states to integers so that two states with the same value are copies of the same state.
-         *
-         * Underlying nfa is created by copying one NFA multiple times. This
-         * field tells if two states are the same because they are a copy of the
-         * same state.
-         */
-        std::vector<size_t> where_is_state_copied_from;
+        TagAutStateMetadata metadata;
 
         // Debugging: color states in the tag automaton according to the variable it originates in
         std::unordered_map<mata::nfa::State, uint64_t> node_color_map;

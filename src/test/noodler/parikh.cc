@@ -9,14 +9,33 @@ using namespace smt::noodler::ca;
 
 using mata::nfa::State;
 
-std::set<BasicTerm> lookup_abstract_transition_vars(std::vector<std::pair<State, State>> abstract_transitions, std::map<Transition, BasicTerm> parikh_image) {
+struct ParikhImageContext {
+    const TagAut& automaton;
+    const std::map<Transition, BasicTerm>& transition_labeling;
+};
+
+std::set<BasicTerm> lookup_abstract_transition_vars(ParikhImageContext& context, const std::vector<std::pair<State, State>>& abstract_transitions, bool must_cross_levels = false) {
     std::set<BasicTerm> collected_vars;
 
     for (std::pair<State, State> abstract_transition : abstract_transitions) {
+        // Abstract transitions reffer to states in the template (first row) that was copied multiple times to create tag aut
         auto [source_state, target_state] = abstract_transition;
+        for (auto& [transition, var] : context.transition_labeling) {
+            bool is_matching = true;
 
-        for (auto& [transition, var] : parikh_image) {
-            if (std::get<0>(transition) == source_state && std::get<2>(transition) == target_state) {
+            mata::nfa::State transition_source_state_in_copy = context.automaton.metadata.where_is_state_copied_from[std::get<0>(transition)];
+            mata::nfa::State transition_target_state_in_copy = context.automaton.metadata.where_is_state_copied_from[std::get<2>(transition)];
+
+            is_matching &= (transition_source_state_in_copy == source_state);
+            is_matching &= (transition_target_state_in_copy == target_state);
+
+            if (must_cross_levels) {
+                size_t source_level = context.automaton.metadata.levels[std::get<0>(transition)];
+                size_t target_level = context.automaton.metadata.levels[std::get<2>(transition)];
+                is_matching &= (source_level != target_level);
+            }
+
+            if (is_matching) {
                 collected_vars.insert(var);
             }
         }
@@ -73,8 +92,11 @@ TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula simple", "[noo
         // TRIMMED: {0 + 2*states_in_row, 1 + 2*states_in_row},  // (Copy=2, q0) --> (Copy=2, q1)  (sampling)
     };
 
-    std::set<BasicTerm> parikh_vars       = lookup_abstract_transition_vars(abstract_transitions, parikh_image);
-    std::set<BasicTerm> other_parikh_vars = lookup_abstract_transition_vars(abstract_transitions, other_image);
+    ParikhImageContext parikh_image_context { .automaton = tag_automaton, .transition_labeling = parikh_image, };
+    ParikhImageContext other_image_context { .automaton = tag_automaton, .transition_labeling = other_image, };
+
+    std::set<BasicTerm> parikh_vars       = lookup_abstract_transition_vars(parikh_image_context, abstract_transitions);
+    std::set<BasicTerm> other_parikh_vars = lookup_abstract_transition_vars(other_image_context, abstract_transitions);
 
     REQUIRE(assertion.type == LenFormulaType::AND);
 
@@ -176,15 +198,9 @@ TEST_CASE("NotContains::ensure_symbol_unqueness_using_total_sum simple", "[noodl
     ParikhImageNotContTag not_contains_generator(tag_automaton, used_symbols, actual_number_of_states_in_row);
 
     std::vector<std::pair<State, State>> transitions_over_a = { // Only sampling transitions
-        // Transitions from aut('x')
-        {0 + 0*states_in_row, 1 + 1*states_in_row},
-        // TRIMMED: {0 + 1*states_in_row, 1 + 2*states_in_row},
-        // Transitions from aut('y') - first 'a'
-        {4 + 0*states_in_row, 5 + 1*states_in_row},
-        {4 + 1*states_in_row, 5 + 2*states_in_row},
-        // Transitions from aut('y') - second 'a'
-        // TRIMMED: {5 + 0*states_in_row, 6 + 1*states_in_row},
-        {5 + 1*states_in_row, 6 + 2*states_in_row},
+        {0, 1},  // aut(X) - first  'a'
+        {4, 5},  // aut(Y) - first ' a'
+        {5, 6},  // aut(Y) - second 'a'
     };
 
     not_contains_generator.compute_parikh_image();
@@ -192,11 +208,13 @@ TEST_CASE("NotContains::ensure_symbol_unqueness_using_total_sum simple", "[noodl
 
     not_contains_generator.symbol_count_formula();
     std::map<mata::Symbol, std::vector<LenNode>> transition_vars_by_symbol = not_contains_generator.group_sampling_transition_vars_by_symbol();
+
     LenNode assertion = not_contains_generator.ensure_symbol_uniqueness_using_total_sum(transition_vars_by_symbol);
 
     REQUIRE(assertion.type == LenFormulaType::AND);
 
-    std::set<BasicTerm> transition_vars = lookup_abstract_transition_vars(transitions_over_a, parikh_image);
+    ParikhImageContext context { .automaton = tag_automaton, .transition_labeling = parikh_image };
+    std::set<BasicTerm> transition_vars = lookup_abstract_transition_vars(context, transitions_over_a, true); // NOTE: must_cross_levels = true
 
     bool var_set_found = false;
     for (LenNode conjunct : assertion.succ) {
@@ -282,13 +300,13 @@ TEST_CASE("AutMatrix : state metadata are computed") {
     // Every variable automaton has only 1 state - the result should be a 3 states x 3 states matrix
     size_t expected_result_nfa_state_cnt = 3*3;
     REQUIRE(result.nfa.num_of_states() == expected_result_nfa_state_cnt);
-    REQUIRE(result.nfa_states_to_vars.size() == expected_result_nfa_state_cnt);
+    REQUIRE(result.metadata.var_info.size() == expected_result_nfa_state_cnt);
 
     std::vector<size_t> expected_state_vars {0, 1, 2, 0, 1, 2, 0, 1, 2};
-    REQUIRE(result.nfa_states_to_vars == expected_state_vars);
+    REQUIRE(result.metadata.var_info == expected_state_vars);
 
     std::vector<size_t> expected_state_copy_origin {0, 1, 2, 0, 1, 2, 0, 1, 2};
-    REQUIRE(result.where_is_state_copied_from == expected_state_vars);
+    REQUIRE(result.metadata.where_is_state_copied_from == expected_state_vars);
 }
 
 TEST_CASE("LenFormula : variables are numbered correctly", "[noodler]") {
