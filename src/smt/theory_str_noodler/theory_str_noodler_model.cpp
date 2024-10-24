@@ -53,30 +53,41 @@ namespace smt::noodler {
         }
     };
 
-    /// @brief Class for model generation of string variables that are length and are not in decision procedure dec_proc (so their value does not matter, only their length)
+    /// @brief Class for model generation of string variables that are not in decision procedure dec_proc (so their value does not matter, only constraint is their length)
     class theory_str_noodler::str_var_value_proc : public model_value_proc {
-        // the variable whose model we want to generate
-        expr* str_var;
-        // the enode value of '(str.len str_var)'
-        enode* str_var_length_enode;
+        expr* str_var; // the variable whose model we want to generate
+        enode* str_var_length_enode; // the enode value of '(str.len str_var)'
+        bool length_relevant = false; // do we actually need the length of str_var?
         seq_util& m_util_s;
         arith_util& m_util_a;
     public:
-        str_var_value_proc(expr* str_var, context& ctx, seq_util& m_util_s, arith_util& m_util_a) : str_var(str_var), str_var_length_enode(ctx.get_enode(m_util_s.str.mk_length(str_var))), m_util_s(m_util_s), m_util_a(m_util_a) {}
+        str_var_value_proc(expr* str_var, context& ctx, seq_util& m_util_s, arith_util& m_util_a) : str_var(str_var), m_util_s(m_util_s), m_util_a(m_util_a) {
+            if (ctx.e_internalized(m_util_s.str.mk_length(str_var))) {
+                str_var_length_enode = ctx.get_enode(m_util_s.str.mk_length(str_var));
+                length_relevant = ctx.is_relevant(str_var_length_enode);
+            }
+        }
 
         void get_dependencies(buffer<model_value_dependency> & result) override {
-            // we just need the length of str_var
-            result.push_back(model_value_dependency(str_var_length_enode));
+            // we just need the length of str_var (if the length is relevant)
+            if (length_relevant) {
+                result.push_back(model_value_dependency(str_var_length_enode));
+            }
         }
     
         app * mk_value(model_generator & m, expr_ref_vector const & values) override {
-            // values[0] contain the length of str_var, so we return some string of this length
-            bool is_int;
-            rational val(0);
-            SASSERT(values.size() == 1);
-            VERIFY(m_util_a.is_numeral(values[0], val, is_int) && is_int);
-            std::vector<unsigned> res(val.get_unsigned(), 'a'); // we can return anything, so we will just fill it with 'a'
-            return m_util_s.str.mk_string(zstring(res.size(), res.data()));
+            if (!length_relevant) {
+                // because the length is not relevant, we can return anything, so we return empty string
+                return m_util_s.str.mk_string(zstring());
+            } else {
+                // values[0] contain the length of str_var, so we return some string of this length
+                bool is_int;
+                rational val(0);
+                SASSERT(values.size() == 1);
+                VERIFY(m_util_a.is_numeral(values[0], val, is_int) && is_int);
+                std::vector<unsigned> res(val.get_unsigned(), 'a'); // we can return anything, so we will just fill it with 'a'
+                return m_util_s.str.mk_string(zstring(res.size(), res.data()));
+            }
         }
     };
 
@@ -127,13 +138,8 @@ namespace smt::noodler {
             // for relevant (string) var, we get the model from the decision procedure that returned sat
             return alloc(noodler_var_value_proc, var, *this);
         } else {
-            // for non-relevant, we cannot get them from the decision procedure, but because they are not relevant, we can return anything (restricted by length, if it is length var)
-            if (len_vars.contains(str_var)) {
-                return alloc(str_var_value_proc, str_var, ctx, m_util_s, m_util_a);
-            } else {
-                // we return empty string for non-relevant non-length vars, their value does not matter
-                return alloc(expr_wrapper_proc, m_util_s.str.mk_string(zstring()));
-            }
+            // for non-relevant, we cannot get them from the decision procedure, but because they are not relevant, we can return anything (restricted by length)
+            return alloc(str_var_value_proc, str_var, ctx, m_util_s, m_util_a);
         }
     }
 
