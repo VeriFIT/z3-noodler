@@ -111,7 +111,7 @@ namespace smt::noodler::util {
      */
     BasicTerm get_variable_basic_term(expr* variable);
 
-    void get_len_exprs(app* ex, const seq_util& m_util_s, const ast_manager& m, obj_hashtable<app>& res);
+    void get_len_exprs(expr* ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res);
 
     /**
      * @brief Create a fresh noodler (BasicTerm) variable with a given @p name followed by a unique suffix.

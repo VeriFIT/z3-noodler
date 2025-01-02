@@ -101,6 +101,7 @@ describe('high-level', () => {
     resetParams();
     expect(getParam('pp.decimal')).toStrictEqual('false');
     expect(getParam('timeout')).toStrictEqual('4294967295');
+    setParam('model', true);
   });
 
   it('proves x = y implies g(x) = g(y)', async () => {

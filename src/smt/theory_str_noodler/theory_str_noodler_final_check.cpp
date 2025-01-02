@@ -106,6 +106,11 @@ namespace smt::noodler {
         bool contains_conversions = !this->m_conversion_todo.empty();
         bool contains_eqs_and_diseqs_only = this->m_not_contains_todo_rel.empty() && this->m_conversion_todo.empty();
 
+        // nothing is trivially SAT
+        if(contains_eqs_and_diseqs_only && this->m_word_eq_todo_rel.empty() && this->m_word_diseq_todo_rel.empty() && this->m_membership_todo_rel.empty() && this->m_lang_eq_or_diseq_todo_rel.empty() ) {
+            return FC_DONE;
+        }
+
         // As a heuristic, for the case we have exactly one constraint, which is of type 'x (not)in RE', we use universality/emptiness
         // checking of the regex (using some heuristics) instead of constructing the automaton of RE. The construction (especially complement)
         // can sometimes blow up, so the check should be faster.

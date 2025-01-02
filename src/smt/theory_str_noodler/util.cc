@@ -118,16 +118,27 @@ namespace smt::noodler::util {
         return BasicTerm{ BasicTermType::Variable, variable_app->get_decl()->get_name().str() };
     }
 
-    void get_len_exprs(app* const ex, const seq_util& m_util_s, const ast_manager& m, obj_hashtable<app>& res) {
-        if(m_util_s.str.is_length(ex)) {
-            res.insert(ex);
+    void get_len_exprs(expr* const ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res) {
+
+        if(is_quantifier(ex)) {
+            quantifier* qf = to_quantifier(ex);
+            get_len_exprs(qf->get_expr(), m_util_s, m, res);
+            return;
+        }
+        // quantified variable
+        if(is_var(ex)) {
             return;
         }
 
-        for(unsigned i = 0; i < ex->get_num_args(); i++) {
-            SASSERT(is_app(ex->get_arg(i)));
-            app *arg = to_app(ex->get_arg(i));
-            get_len_exprs(arg, m_util_s, m, res);
+        if(m_util_s.str.is_length(ex)) {
+            res.insert(to_app(ex));
+            return;
+        }
+
+        SASSERT(is_app(ex));
+        app *ex_app = to_app(ex);
+        for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
+            get_len_exprs(ex_app->get_arg(i), m_util_s, m, res);
         }
     }
 
