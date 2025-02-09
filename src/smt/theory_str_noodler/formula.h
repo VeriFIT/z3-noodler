@@ -24,6 +24,7 @@
 #include <map>
 #include <unordered_set>
 #include <iostream>
+#include <mata/nft/nft.hh>
 
 #include "util/zstring.h"
 #include "ast/ast.h"
@@ -35,6 +36,9 @@ namespace smt::noodler {
         Equation,
         Inequation,
         NotContains,
+        ReplaceAll, // params[0] = replace_all params[1] params[2] params[3]
+        ReplaceREAll, // params[0] = replace_re_all params[1] params[2] params[3] (params[2] is a basic term representing matching RE)
+        Transducer, 
     };
 
     [[nodiscard]] static std::string to_string(PredicateType predicate_type) {
@@ -45,6 +49,12 @@ namespace smt::noodler {
                 return "Inequation";
             case PredicateType::NotContains:
                 return "Notcontains";
+            case PredicateType::ReplaceAll:
+                return "ReplaceAll";
+            case PredicateType::ReplaceREAll:
+                return "ReplaceREAll";
+            case PredicateType::Transducer:
+                return "Transducer";
         }
 
         throw std::runtime_error("Unhandled predicate type passed to to_string().");
@@ -290,7 +300,7 @@ namespace smt::noodler {
         };
 
         Predicate() : type(PredicateType::Equation) {}
-        explicit Predicate(const PredicateType type): type(type) {
+        explicit Predicate(const PredicateType type): type(type), params(), transducer() {
             if (is_equation() || is_inequation()) {
                 params.resize(2);
                 params.emplace_back();
@@ -300,15 +310,26 @@ namespace smt::noodler {
 
         explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par):
             type(type),
-            params(par)
+            params(par),
+            transducer()
             { }
+
+        explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par, std::shared_ptr<mata::nft::Nft> trans) : 
+            type(type),
+            params(par),
+            transducer(trans) {
+            assert(type == PredicateType::Transducer);
+        }
 
         [[nodiscard]] PredicateType get_type() const { return type; }
         [[nodiscard]] bool is_equation() const { return type == PredicateType::Equation; }
         [[nodiscard]] bool is_inequation() const { return type == PredicateType::Inequation; }
         [[nodiscard]] bool is_not_cont() const { return type == PredicateType::NotContains; }
         [[nodiscard]] bool is_eq_or_ineq() const { return is_equation() || is_inequation(); }
-        [[nodiscard]] bool is_two_sided() const { return is_equation() || is_inequation() || is_not_cont(); }
+        [[nodiscard]] bool is_transducer() const { return is(PredicateType::Transducer); }
+        [[nodiscard]] bool is_replace_all() const { return is(PredicateType::ReplaceAll); }
+        [[nodiscard]] bool is_replace_re_all() const { return is(PredicateType::ReplaceREAll); }
+        [[nodiscard]] bool is_two_sided() const { return is_equation() || is_inequation() || is_not_cont() || is_transducer(); }
         [[nodiscard]] bool is_predicate() const { return !is_eq_or_ineq(); }
         [[nodiscard]] bool is(const PredicateType predicate_type) const { return predicate_type == this->type; }
 
@@ -413,6 +434,7 @@ namespace smt::noodler {
                 return LenNode(LenFormulaType::PLUS, ops);
             };
 
+            assert(is_eq_or_ineq());
             LenNode left = plus_chain(this->params[0]);
             LenNode right = plus_chain(this->params[1]);
             LenNode eq = LenNode(LenFormulaType::EQ, {left, right});
@@ -536,13 +558,11 @@ namespace smt::noodler {
             size_t operator()(const Predicate& predicate) const {
                 size_t res{};
                 size_t row_hash = std::hash<PredicateType>()(predicate.type);
-                for (const auto& term: predicate.get_left_side()) {
-                    size_t col_hash = BasicTerm::HashFunction()(term) << 1;
-                    res ^= col_hash;
-                }
-                for (const auto& term: predicate.get_right_side()) {
-                    size_t col_hash = BasicTerm::HashFunction()(term) << 1;
-                    res ^= col_hash;
+                for(const auto& pr : predicate.get_params()) {
+                    for(const BasicTerm& term : pr) {
+                        size_t col_hash = BasicTerm::HashFunction()(term) << 1;
+                        res ^= col_hash;
+                    }
                 }
                 return row_hash ^ res;
             }
@@ -553,6 +573,7 @@ namespace smt::noodler {
     private:
         PredicateType type;
         std::vector<std::vector<BasicTerm>> params;
+        std::shared_ptr<mata::nft::Nft> transducer; // transducer for the case of PredicateType::Transducer
 
         // TODO: Add additional attributes such as cost, etc.
     }; // Class Predicate.

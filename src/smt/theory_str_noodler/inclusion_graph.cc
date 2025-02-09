@@ -29,6 +29,7 @@ namespace {
             case PredicateType::NotContains: {
                 util::throw_error("Decision procedure can handle only equations and disequations");
             }
+            // TODO: handle transducers
             case PredicateType::Equation:
             case PredicateType::Inequation: {
                 std::string left_side{};
