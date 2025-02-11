@@ -36,8 +36,6 @@ namespace smt::noodler {
         Equation,
         Inequation,
         NotContains,
-        ReplaceAll, // params[0] = replace_all params[1] params[2] params[3]
-        ReplaceREAll, // params[0] = replace_re_all params[1] params[2] params[3] (params[2] is a basic term representing matching RE)
         Transducer, 
     };
 
@@ -49,10 +47,6 @@ namespace smt::noodler {
                 return "Inequation";
             case PredicateType::NotContains:
                 return "Notcontains";
-            case PredicateType::ReplaceAll:
-                return "ReplaceAll";
-            case PredicateType::ReplaceREAll:
-                return "ReplaceREAll";
             case PredicateType::Transducer:
                 return "Transducer";
         }
@@ -318,6 +312,7 @@ namespace smt::noodler {
             type(type),
             params(par),
             transducer(trans) {
+            // TODO: add check that we use only two-tape transducers
             assert(type == PredicateType::Transducer);
         }
 
@@ -327,8 +322,6 @@ namespace smt::noodler {
         [[nodiscard]] bool is_not_cont() const { return type == PredicateType::NotContains; }
         [[nodiscard]] bool is_eq_or_ineq() const { return is_equation() || is_inequation(); }
         [[nodiscard]] bool is_transducer() const { return is(PredicateType::Transducer); }
-        [[nodiscard]] bool is_replace_all() const { return is(PredicateType::ReplaceAll); }
-        [[nodiscard]] bool is_replace_re_all() const { return is(PredicateType::ReplaceREAll); }
         [[nodiscard]] bool is_two_sided() const { return is_equation() || is_inequation() || is_not_cont() || is_transducer(); }
         [[nodiscard]] bool is_predicate() const { return !is_eq_or_ineq(); }
         [[nodiscard]] bool is(const PredicateType predicate_type) const { return predicate_type == this->type; }
@@ -385,7 +378,7 @@ namespace smt::noodler {
         }
 
         std::set<BasicTerm> get_left_set() const {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             std::set<BasicTerm> ret;
             for(const BasicTerm& t : this->params[0])
                 ret.insert(t);
@@ -393,7 +386,7 @@ namespace smt::noodler {
         }
 
         std::set<BasicTerm> get_right_set() const {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             std::set<BasicTerm> ret;
             for(const BasicTerm& t : this->params[1])
                 ret.insert(t);
@@ -451,7 +444,12 @@ namespace smt::noodler {
         [[nodiscard]] const std::vector<BasicTerm>& get_side(EquationSideType side) const;
 
         [[nodiscard]] Predicate get_switched_sides_predicate() const {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
+            // for transducers we need to invert tapes, i.e., T(x,y) iff T^{-1}(y,x)
+            if(is_transducer()) {
+                auto nft_inverse = std::make_shared<mata::nft::Nft>(mata::nft::invert_levels(*transducer));
+                return Predicate{ PredicateType::Transducer, { get_right_side(), get_left_side() }, nft_inverse };
+            }
             return Predicate{ type, { get_right_side(), get_left_side() } };
         }
 

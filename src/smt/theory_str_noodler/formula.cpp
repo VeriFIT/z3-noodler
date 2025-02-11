@@ -190,7 +190,7 @@ namespace smt::noodler {
     }
 
     std::set<BasicTerm> Predicate::get_side_vars(const Predicate::EquationSideType side) const {
-        assert(is_eq_or_ineq());
+        assert(is_two_sided());
         std::set<BasicTerm> vars;
         std::vector<BasicTerm> side_terms;
         switch (side) {
@@ -221,7 +221,7 @@ namespace smt::noodler {
     }
 
     bool Predicate::mult_occurr_var_side(const Predicate::EquationSideType side) const {
-        assert(is_eq_or_ineq());
+        assert(is_two_sided());
         const auto terms_begin{ get_side(side).cbegin() };
         const auto terms_end{ get_side(side).cend() };
         for (auto term_iter{ terms_begin }; term_iter < terms_end; ++term_iter) {
@@ -275,38 +275,26 @@ namespace smt::noodler {
 
         switch (type) {
             case PredicateType::Equation: {
-                std::string result{ "Equation:" };
+                std::string result{ "Equation: " };
                 result += join(get_left_side(), " ") + " = " + join(get_right_side(), " ");
                 return result;
             }
 
             case PredicateType::Inequation: {
-                std::string result{ "Inequation:" };
+                std::string result{ "Inequation: " };
                 result += join(get_left_side(), " ") + " != " + join(get_right_side(), " ");
                 return result;
             }
 
             case PredicateType::NotContains: {
-                std::string result{ "Notcontains " };
+                std::string result{ "Notcontains: " };
                 result += join(params[0], " ") + " , " + join(params[1], " ");
                 return result;
             }
 
             case PredicateType::Transducer: {
-                std::string result{ "Transducer " };
+                std::string result{ "Transducer: " };
                 result += join(params[0], " ") + " , " + join(params[1], " ");
-                return result;
-            }
-
-            case PredicateType::ReplaceAll: {
-                std::string result{ "ReplaceAll " };
-                result += join(params[0], " ") + " = replace_all( " + join(params[1], " ") + ", " + join(params[2], " ") + ", " + join(params[3], " ") + ")";
-                return result;
-            }
-
-            case PredicateType::ReplaceREAll: {
-                std::string result{ "ReplaceREAll " };
-                result += join(params[0], " ") + " = replace_re_all( " + join(params[1], " ") + ", " + join(params[2], " ") + ", " + join(params[3], " ") + ")";
                 return result;
             }
         }
@@ -325,7 +313,7 @@ namespace smt::noodler {
     }
 
     const std::vector<BasicTerm> &Predicate::get_side(const Predicate::EquationSideType side) const {
-        assert(is_eq_or_ineq());
+        assert(is_two_sided());
         switch (side) {
             case EquationSideType::Left:
                 return params[0];
@@ -340,7 +328,7 @@ namespace smt::noodler {
     }
 
     std::vector<BasicTerm> &Predicate::get_side(const Predicate::EquationSideType side) {
-        assert(is_eq_or_ineq());
+        assert(is_two_sided());
         switch (side) {
             case EquationSideType::Left:
                 return params[0];
