@@ -196,7 +196,7 @@ namespace smt::noodler {
          */
         Predicate add_inclusion(const std::vector<BasicTerm> &left_side, const std::vector<BasicTerm> &right_side, bool is_on_cycle = true) {
             Predicate new_inclusion{PredicateType::Equation, std::vector<std::vector<BasicTerm>> {left_side, right_side}};
-            add_inclusion(new_inclusion);
+            add_inclusion(new_inclusion, is_on_cycle);
             return new_inclusion;
         }
 
