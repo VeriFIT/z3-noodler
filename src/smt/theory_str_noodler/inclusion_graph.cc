@@ -23,26 +23,34 @@ namespace {
      * @return String representation of @p node.
      */
     std::string conv_node_to_string(const std::shared_ptr<GraphNode>& node) {
+        // joining BasicTerm in the given vector with str
+        auto join = [&](const std::vector<BasicTerm>& vec, const std::string& str) -> std::string {
+            if(vec.empty()) return "";
+            std::string ret = vec[0].to_string();
+            for(size_t i = 1; i < vec.size(); i++) {
+                ret += str + vec[i].to_string();
+            }
+            return ret;
+        };
+
         auto& predicate{ node->get_predicate() };
         std::string result{};
         switch (predicate.get_type()) {
             case PredicateType::NotContains: {
                 util::throw_error("Decision procedure can handle only equations and disequations");
             }
-            // TODO: handle transducers
+ 
+            case PredicateType::Transducer: {
+                std::string left_side = join(predicate.get_left_side(), " ");
+                std::string right_side = join(predicate.get_right_side(), " ");
+                result = "T(" + left_side + ", " + right_side + ")";
+                break;
+            }
+
             case PredicateType::Equation:
             case PredicateType::Inequation: {
-                std::string left_side{};
-                for (auto& item : predicate.get_left_side()) {
-                    if (!left_side.empty()) { left_side += " "; }
-                    left_side += item.to_string();
-                }
-
-                std::string right_side{};
-                for (auto& item : predicate.get_right_side()) {
-                    if (!right_side.empty()) { right_side += " "; }
-                    right_side += item.to_string();
-                }
+                std::string left_side = join(predicate.get_left_side(), " ");
+                std::string right_side = join(predicate.get_right_side(), " ");
                 result = left_side;
                 if (predicate.get_type() == PredicateType::Inequation) {
                     result += " !";
@@ -159,7 +167,7 @@ Graph smt::noodler::Graph::create_simplified_splitting_graph(const Formula& form
     // Add all nodes which are not already present in direct and switched form.
     for (const auto& predicate: formula.get_predicates()) {
         // we skip trivial equations of the form x = x
-        if(predicate.get_left_side() == predicate.get_right_side()) {
+        if(!predicate.is_transducer() && predicate.get_left_side() == predicate.get_right_side()) {
             continue;
         }
         graph.add_node(predicate);
@@ -184,7 +192,7 @@ Graph smt::noodler::Graph::create_simplified_splitting_graph(const Formula& form
             } else if (source_left_side == target_right_side) {
                 // Have same var and sides are equal.
 
-                if (source_right_side == target_left_side) { // In the same equation.
+                if (source_predicate == target_predicate.get_switched_sides_predicate()) { // In the same reversed predicate.
                     if (!source_predicate.mult_occurr_var_side(Predicate::EquationSideType::Left)) {
                         // Does not have multiple occurrences of one var. Hence, cannot have an edge.
                         continue;

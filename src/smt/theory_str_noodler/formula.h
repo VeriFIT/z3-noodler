@@ -312,8 +312,8 @@ namespace smt::noodler {
             type(type),
             params(par),
             transducer(trans) {
-            // TODO: add check that we use only two-tape transducers
             assert(type == PredicateType::Transducer);
+            assert(trans->num_of_levels == 2);
         }
 
         [[nodiscard]] PredicateType get_type() const { return type; }
@@ -566,7 +566,15 @@ namespace smt::noodler {
             }
         };
 
-        // TODO: Additional operations.
+        /**
+         * @brief Get the transducer shared pointer (for the transducer predicates only).
+         * 
+         * @return std::shared_ptr<mata::nft::Nft> Transducer
+         */
+        const std::shared_ptr<mata::nft::Nft>& get_transducer() const {
+            assert(is_transducer());
+            return transducer;
+        }
 
     private:
         PredicateType type;
@@ -597,9 +605,18 @@ namespace smt::noodler {
         if (lhs.get_params() < rhs.get_params()) {
             return true;
         }
+        // For transducer predicates we compare pointers (assuming linear memory model)
+        if (lhs.is_transducer()) {
+            // if we have the same object stored on two different places
+            if (lhs.get_transducer()->is_identical(*rhs.get_transducer())) {
+                return false;
+            }
+            // compare pointers
+            return lhs.get_transducer() < rhs.get_transducer();
+        }
         return false;
     }
-    static bool operator>(const Predicate& lhs, const Predicate& rhs) { return !(lhs < rhs); }
+    static bool operator>(const Predicate& lhs, const Predicate& rhs) { return !(lhs < rhs) && lhs != rhs; }
 
     //----------------------------------------------------------------------------------------------------------------------------------
 

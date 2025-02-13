@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mata/nfa/nfa.hh>
+#include <mata/nft/nft.hh>
 
 #include "smt/theory_str_noodler/inclusion_graph.h"
 
@@ -359,4 +360,94 @@ TEST_CASE("print_to_dot()") {
     std::stringstream stream;
     graph.print_to_dot(stream);
     CHECK(!stream.str().empty());
+}
+
+TEST_CASE("Inclusion graph with transducers", "[noodler]") {
+    Graph graph;
+    Formula formula;
+
+    BasicTerm u{ BasicTermType::Variable, "u" };
+    BasicTerm v{ BasicTermType::Variable, "v" };
+    BasicTerm x{ BasicTermType::Variable, "x" };
+    BasicTerm y{ BasicTermType::Variable, "y" };
+    BasicTerm z{ BasicTermType::Variable, "z" };
+
+    mata::nft::Nft nft1{2};
+    nft1.initial = {0};
+    nft1.final = {1};
+    nft1.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
+
+    mata::nft::Nft nft2{2};
+    nft2.initial = {0};
+    nft2.final = {1};
+    nft2.insert_word_by_parts(0, { {'c'}, {'d'} } , 1);
+
+
+    SECTION("T(x,y) && S(zz,yu)") {
+        Predicate p1{ PredicateType::Transducer, { { x }, { y } }, std::make_shared<mata::nft::Nft>(nft1) };
+        Predicate p2{ PredicateType::Transducer, { { z, z }, { y, u } }, std::make_shared<mata::nft::Nft>(nft2) };
+
+        Formula formula;
+        formula.add_predicate(p1);
+        formula.add_predicate(p2);
+        graph = Graph::create_inclusion_graph(formula);
+
+        CHECK(graph.get_nodes().size() == 2);
+        CHECK(graph.get_num_of_edges() == 1);
+        CHECK(!graph.is_cyclic());
+    }
+
+    SECTION("x=y && T(zz,yu)") {
+        Predicate p1{ PredicateType::Equation, { { x }, { y } } };
+        Predicate p2{ PredicateType::Transducer, { { z, z }, { y, u } }, std::make_shared<mata::nft::Nft>(nft2) };
+
+        Formula formula;
+        formula.add_predicate(p1);
+        formula.add_predicate(p2);
+        graph = Graph::create_inclusion_graph(formula);
+
+        CHECK(graph.get_nodes().size() == 2);
+        CHECK(graph.get_num_of_edges() == 1);
+        CHECK(!graph.is_cyclic());
+    }
+
+    SECTION("T(x,x)") {
+        Predicate p1{ PredicateType::Transducer, { { x }, { x } }, std::make_shared<mata::nft::Nft>(nft2) };
+
+        Formula formula;
+        formula.add_predicate(p1);
+        graph = Graph::create_inclusion_graph(formula);
+
+        CHECK(graph.get_nodes().size() == 2);
+        CHECK(graph.get_num_of_edges() == 2);
+        CHECK(graph.is_cyclic());
+    }
+
+    SECTION("T(x,y) && x=y") {
+        Predicate p1{ PredicateType::Transducer, { { x }, { y } }, std::make_shared<mata::nft::Nft>(nft2) };
+        Predicate p2{ PredicateType::Equation, { { x }, { y } } };
+
+        Formula formula;
+        formula.add_predicate(p1);
+        formula.add_predicate(p2);
+        graph = Graph::create_inclusion_graph(formula);
+
+        CHECK(graph.get_nodes().size() == 4);
+        CHECK(graph.get_num_of_edges() == 8);
+        CHECK(graph.is_cyclic());
+    }
+
+    SECTION("T(x,y) && x=z") {
+        Predicate p1{ PredicateType::Transducer, { { x }, { y } }, std::make_shared<mata::nft::Nft>(nft2) };
+        Predicate p2{ PredicateType::Equation, { { x }, { z } } };
+
+        Formula formula;
+        formula.add_predicate(p1);
+        formula.add_predicate(p2);
+        graph = Graph::create_inclusion_graph(formula);
+
+        CHECK(graph.get_nodes().size() == 2);
+        CHECK(graph.get_num_of_edges() == 1);
+        CHECK(!graph.is_cyclic());
+    }
 }

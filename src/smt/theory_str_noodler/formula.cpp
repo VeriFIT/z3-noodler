@@ -304,6 +304,13 @@ namespace smt::noodler {
 
     bool Predicate::equals(const Predicate &other) const {
         if (type == other.type) {
+            if(is_transducer()) {
+                if(!(params[0] == other.params[0] && params[1] == other.params[1])) {
+                    return false;
+                }
+                // check if transducers are identical (cheaper than equivalence check, which might be too strong for this purpose)
+                return transducer->is_identical(*other.transducer);
+            }
             if (is_two_sided()) {
                 return params[0] == other.params[0] && params[1] == other.params[1];
             }
