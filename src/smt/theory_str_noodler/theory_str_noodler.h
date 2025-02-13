@@ -95,6 +95,8 @@ namespace smt::noodler {
 
         // mapping predicates and function to variables that they substitute to
         obj_map<expr, expr*> predicate_replace;
+        // mapping replace_all and replace_re_all to fresh variables
+        std::vector<expr_ref> trans_terms;
 
         // TODO what are these?
         std::vector<app_ref> axiomatized_len_axioms;
@@ -334,6 +336,7 @@ namespace smt::noodler {
         void handle_conversion(expr *e);
         void handle_lex_leq(expr *e);
         void handle_lex_lt(expr *e);
+        void handle_replace_all(expr *e);
 
         // methods for assigning boolean values to predicates
         void assign_not_contains(expr *e);

@@ -155,10 +155,15 @@ namespace smt::noodler {
         // Gather relevant word (dis)equations to noodler formula
         Formula instance = get_word_formula_from_relevant();
         STRACE("str",
+            tout << std::endl;
             for(const auto& f : instance.get_predicates()) {
                 tout << f.to_string() << std::endl;
             }
         );
+        // decison procedure for transducer constraints is not implemented yet
+        if(instance.contains_pred_type(PredicateType::Transducer)) {
+            util::throw_error("transducer constraints are not supported");
+        }
 
         // Gather symbols from relevant (dis)equations and from regular expressions of relevant memberships
         std::set<mata::Symbol> symbols_in_formula = get_symbols_from_relevant();
@@ -478,14 +483,21 @@ namespace smt::noodler {
 
     Formula theory_str_noodler::get_word_formula_from_relevant() {
         Formula instance;
+        std::vector<Predicate> transducer_pred {};
 
         for (const auto &we: this->m_word_eq_todo_rel) {
             Predicate inst = this->conv_eq_pred(ctx.mk_eq_atom(we.first, we.second));
+            // gather transducer constraints occurring in the concatenation
+            util::gather_transducer_constraints(to_app(we.first), m, this->m_util_s, this->predicate_replace, this->var_name, transducer_pred);
+            util::gather_transducer_constraints(to_app(we.second), m, this->m_util_s, this->predicate_replace, this->var_name, transducer_pred);
             instance.add_predicate(inst);
         }
 
         for (const auto& wd : this->m_word_diseq_todo_rel) {
             Predicate inst = this->conv_eq_pred(m.mk_not(ctx.mk_eq_atom(wd.first, wd.second)));
+            // gather transducer constraints occurring in the concatenation
+            util::gather_transducer_constraints(to_app(wd.first), m, this->m_util_s, this->predicate_replace, this->var_name, transducer_pred);
+            util::gather_transducer_constraints(to_app(wd.second), m, this->m_util_s, this->predicate_replace, this->var_name, transducer_pred);
             instance.add_predicate(inst);
         }
 
@@ -494,8 +506,16 @@ namespace smt::noodler {
             std::vector<BasicTerm> left, right;
             util::collect_terms(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, left);
             util::collect_terms(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, right);
+            // gather transducer constraints occurring in the concatenation
+            util::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, transducer_pred);
+            util::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, transducer_pred);
             Predicate inst(PredicateType::NotContains, std::vector<Concat>{left, right});
             instance.add_predicate(inst);
+        }
+
+        // add all transducer predicates
+        for(const auto& p : transducer_pred) {
+            instance.add_predicate(p);
         }
 
         return instance;
