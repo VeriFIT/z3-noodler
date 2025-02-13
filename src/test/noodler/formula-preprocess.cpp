@@ -5,6 +5,7 @@
 #include <smt/theory_str_noodler/formula_preprocess.h>
 #include <smt/theory_str_noodler/theory_str_noodler.h>
 #include <mata/parser/re2parser.hh>
+#include <mata/nft/nft.hh>
 
 using namespace smt::noodler;
 
@@ -273,33 +274,62 @@ TEST_CASE( "Propagate variables", "[noodler]" ) {
         {b, regex_to_nfa("b")},
     });
 
+    mata::nft::Nft nft{2};
+    nft.initial = {0};
+    nft.final = {1};
+    nft.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
+
     Predicate eq1(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4}), std::vector<BasicTerm>({b, x1, x2}) })  );
     Predicate ieq1(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1, x1}), std::vector<BasicTerm>({x3, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x2}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) })  );
-    Formula conj;
-    conj.add_predicate(eq1);
-    conj.add_predicate(ieq1);
-    conj.add_predicate(eq2);
-    conj.add_predicate(eq3);
-    FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+    Predicate tr1(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), std::make_shared<mata::nft::Nft>(nft) );
+    Predicate tr2(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x1}) }), std::make_shared<mata::nft::Nft>(nft) );
 
-    prep.propagate_variables();
-    prep.clean_varmap();
-    INFO(prep.to_string());
+    SECTION("(In)equations") {
+        Formula conj;
+        conj.add_predicate(eq1);
+        conj.add_predicate(ieq1);
+        conj.add_predicate(eq2);
+        conj.add_predicate(eq3);
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
 
-    Formula res_conj;
-    res_conj.add_predicate(Predicate(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x1, x4}), std::vector<BasicTerm>({b, x1, x1}) })));
-    res_conj.add_predicate(Predicate(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1, x1}), std::vector<BasicTerm>({x1, x1}) })));
-    FormulaPreprocessor prep_res(res_conj, aut_ass, {}, {}, {});
+        prep.propagate_variables();
+        prep.clean_varmap();
+        INFO(prep.to_string());
 
-    AutAssignment ret = prep.get_aut_assignment();
-    CHECK(mata::nfa::are_equivalent(*ret.at(x1), regex_to_nfa("")));
-    CHECK(mata::nfa::are_equivalent(*ret.at(x2), regex_to_nfa("(a|b)*")));
-    CHECK(mata::nfa::are_equivalent(*ret.at(x3), regex_to_nfa("(b|c)*")));
-    CHECK(prep.get_formula().get_varmap() == prep_res.get_formula().get_varmap());
-    CHECK(prep.get_formula().get_predicates_set() == prep_res.get_formula().get_predicates_set());
-    CHECK(prep.get_dependency() == Dependency({{0, {2,3}}, {1, {2,3}}, {3, {2}}}));
+        Formula res_conj;
+        res_conj.add_predicate(Predicate(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x1, x4}), std::vector<BasicTerm>({b, x1, x1}) })));
+        res_conj.add_predicate(Predicate(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1, x1}), std::vector<BasicTerm>({x1, x1}) })));
+        FormulaPreprocessor prep_res(res_conj, aut_ass, {}, {}, {});
+
+        AutAssignment ret = prep.get_aut_assignment();
+        CHECK(mata::nfa::are_equivalent(*ret.at(x1), regex_to_nfa("")));
+        CHECK(mata::nfa::are_equivalent(*ret.at(x2), regex_to_nfa("(a|b)*")));
+        CHECK(mata::nfa::are_equivalent(*ret.at(x3), regex_to_nfa("(b|c)*")));
+        CHECK(prep.get_formula().get_varmap() == prep_res.get_formula().get_varmap());
+        CHECK(prep.get_formula().get_predicates_set() == prep_res.get_formula().get_predicates_set());
+        CHECK(prep.get_dependency() == Dependency({{0, {2,3}}, {1, {2,3}}, {3, {2}}}));
+    }
+
+    SECTION("Transducers") {
+        Formula conj;
+        conj.add_predicate(tr1);
+        conj.add_predicate(eq3);
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+
+        prep.propagate_variables();
+        prep.clean_varmap();
+        INFO(prep.to_string());
+
+        Formula res_conj;
+        res_conj.add_predicate(tr2);
+        FormulaPreprocessor prep_res(res_conj, aut_ass, {}, {}, {});
+
+        CHECK(prep.get_formula().get_varmap() == prep_res.get_formula().get_varmap());
+        CHECK(prep.get_modified_formula() == res_conj);
+    }
+    
 }
 
 TEST_CASE( "Remove duplicates", "[noodler]" ) {
@@ -323,24 +353,33 @@ TEST_CASE( "Remove duplicates", "[noodler]" ) {
         {a, regex_to_nfa("a")},
         {b, regex_to_nfa("b")},
     });
+    mata::nft::Nft nft{2};
+    nft.initial = {0};
+    nft.final = {1};
+    nft.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
 
     Predicate eq1(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4}), std::vector<BasicTerm>({b, x1, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4}), std::vector<BasicTerm>({b, x1, x2}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) })  );
     Predicate ieq1(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) })  );
     Predicate ieq2(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) })  );
+    Predicate tr1(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), std::make_shared<mata::nft::Nft>(nft) );
+    Predicate tr2(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), std::make_shared<mata::nft::Nft>(nft)  );
     Formula conj;
     conj.add_predicate(eq1);
     conj.add_predicate(eq3);
     conj.add_predicate(ieq1);
+    conj.add_predicate(tr1);
     conj.add_predicate(eq2);
     conj.add_predicate(ieq2);
+    conj.add_predicate(tr2);
     FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
 
     Formula res_conj;
     res_conj.add_predicate(eq1);
     res_conj.add_predicate(eq3);
     res_conj.add_predicate(ieq1);
+    res_conj.add_predicate(tr1);
     FormulaPreprocessor prep_res(res_conj, aut_ass, {}, {}, {});
 
     INFO(prep.to_string());
@@ -374,6 +413,8 @@ TEST_CASE( "Sublists", "[noodler]" ) {
 
     Predicate eq1(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4, b}), std::vector<BasicTerm>({x1, x1, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({b, x3, x4, b}), std::vector<BasicTerm>({x2, x1, x2}) })  );
+    // transducer itself is not important for this case
+    Predicate tr2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({b, x3, x4, b}), std::vector<BasicTerm>({x2, x1, x2}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, x1, x2}) })  );
     Predicate eq4(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, a, b}) })  );
 
@@ -381,6 +422,16 @@ TEST_CASE( "Sublists", "[noodler]" ) {
         Formula conj;
         conj.add_predicate(eq1);
         conj.add_predicate(eq2);
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        std::map<Concat, unsigned> res;
+        prep.get_regular_sublists(res);
+        CHECK(res == std::map<Concat, unsigned>({ {std::vector<BasicTerm>({x3, x4, b}), 2}  }));
+    }
+
+    SECTION("sub1 with transducers") {
+        Formula conj;
+        conj.add_predicate(eq1);
+        conj.add_predicate(tr2);
         FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
         std::map<Concat, unsigned> res;
         prep.get_regular_sublists(res);
@@ -430,11 +481,16 @@ TEST_CASE( "Reduce regular", "[noodler]" ) {
         {b, regex_to_nfa("b")},
     });
 
+    mata::nft::Nft nft{2, {0}, {1}};
+    nft.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
+
     Predicate eq1(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4, b}), std::vector<BasicTerm>({x1, x1, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x2, x1, x2}), std::vector<BasicTerm>({b, x3, x4, b}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, x1, x2}) })  );
     Predicate eq4(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, a, b}) })  );
+    Predicate tr4(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, a, b}) }), std::make_shared<mata::nft::Nft>(nft)  );
 
+    
     SECTION("basic") {
         Formula conj;
         conj.add_predicate(eq1);
@@ -491,6 +547,24 @@ TEST_CASE( "Reduce regular", "[noodler]" ) {
         CHECK(prep.get_dependency().empty());
         CHECK(prep.get_flat_dependency().empty());
     }
+
+    SECTION("transducers") {
+        Formula conj;
+        conj.add_predicate(tr4);
+        FormulaPreprocessor prep(conj, aut_ass, {x2}, {}, {});
+        prep.reduce_regular_sequence(1);
+        AutAssignment ret = prep.get_aut_assignment();
+
+        tmp0 = BasicTerm{BasicTermType::Variable, "regular_seq!n5"};
+        tmp1 = BasicTerm{BasicTermType::Variable, "regular_seq!n6"};
+        CHECK(mata::nfa::are_equivalent(*ret.at(tmp0), regex_to_nfa("b*ab")));
+        CHECK(mata::nfa::are_equivalent(*ret.at(tmp1), regex_to_nfa("(a|b)*a*")));
+        CHECK(prep.get_formula().get_predicates_set() == std::set<Predicate>({
+            Predicate(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({tmp0}), std::vector<BasicTerm>({x4, a, b}) })),
+            Predicate(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({tmp1}), std::vector<BasicTerm>({tmp0}) }), std::make_shared<mata::nft::Nft>(nft) ),
+            Predicate(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({tmp1 }), std::vector<BasicTerm>({x5, x1, x2, x3}) })  )
+        }));
+    }
 }
 
 TEST_CASE( "Propagate eps", "[noodler]" ) {
@@ -515,11 +589,15 @@ TEST_CASE( "Propagate eps", "[noodler]" ) {
         {eps, regex_to_nfa("")},
     });
 
+    mata::nft::Nft nft{2, {0}, {1}};
+    nft.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
+
     Predicate eq1(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({eps}), std::vector<BasicTerm>({x1, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x2, x1, x2}), std::vector<BasicTerm>({x3, x4}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x3, b, x4}), std::vector<BasicTerm>({x5, x1}) })  );
     Predicate eq4(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({b, x1}), std::vector<BasicTerm>({eps}) })  );
     Predicate ieq1(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({eps}) })  );
+    Predicate tr4(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1}), std::vector<BasicTerm>({x2}) }), std::make_shared<mata::nft::Nft>(nft)  );
 
     SECTION("basic") {
         Formula conj;
@@ -552,6 +630,20 @@ TEST_CASE( "Propagate eps", "[noodler]" ) {
             Predicate(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({b}), std::vector<BasicTerm>() })  )
         }));
         CHECK(prep.get_dependency() == Dependency({{0, {0}}}));
+    }
+
+    SECTION("transducer constraint") {
+        Formula conj;
+        conj.add_predicate(eq1);
+        conj.add_predicate(tr4);
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        prep.propagate_eps();
+        AutAssignment ret = prep.get_aut_assignment();
+        CHECK(mata::nfa::are_equivalent(*ret.at(x1), regex_to_nfa("")));
+        CHECK(mata::nfa::are_equivalent(*ret.at(x2), regex_to_nfa("")));
+        CHECK(prep.get_formula().get_predicates_set() == std::set<Predicate>({
+            Predicate(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5}), std::vector<BasicTerm>() }), std::make_shared<mata::nft::Nft>(nft) ),
+        }));
     }
 }
 

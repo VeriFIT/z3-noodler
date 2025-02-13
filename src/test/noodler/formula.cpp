@@ -67,5 +67,22 @@ TEST_CASE( "Transducer predicate", "[noodler]" ) {
         CHECK(st_un.size() == 2);
     }
 
-   
+    SECTION("Replace") {
+        mata::nft::Nft nft_other{2};
+        nft_other.initial = {0};
+        nft_other.final = {1};
+        nft_other.insert_word_by_parts(0, { {'c'}, {'d'} } , 1);
+
+        
+        Predicate p1 { PredicateType::Transducer, { { x }, { y } }, std::make_shared<mata::nft::Nft>(nft) };
+        Predicate pres { PredicateType::Transducer, { { x }, { x } }, std::make_shared<mata::nft::Nft>(nft) };
+
+        Formula f{};
+        f.add_predicate(p1);
+        f.replace({x}, {y});
+
+        Formula fres {};
+        fres.add_predicate(pres);
+        CHECK(f == fres);
+    }
 }

@@ -187,7 +187,7 @@ namespace smt::noodler {
     void FormulaVar::remove_predicate(size_t index) {
         std::set<BasicTerm> items = this->predicates[index].get_set();
 
-        const auto& filter = [&index](const VarNode& n) { return n.eq_index == index; };
+        const auto& filter = [&index](const VarNode& n) { return n.pred_index == index; };
         for(const BasicTerm& v : items) {
             std::set<VarNode>& occurr = this->varmap[v];
             remove_if(occurr, filter);
@@ -367,10 +367,10 @@ namespace smt::noodler {
             std::set<VarNode> occurrs = this->formula.get_var_occurr(left_var);
             if(occurrs.size() == 1) {
                 Predicate reg_pred;
-                if(this->formula.is_side_regular(this->formula.get_predicate(occurrs.begin()->eq_index), reg_pred)) {
-                    worklist.emplace_back(occurrs.begin()->eq_index, reg_pred);
+                if(this->formula.is_side_regular(this->formula.get_predicate(occurrs.begin()->pred_index), reg_pred)) {
+                    worklist.emplace_back(occurrs.begin()->pred_index, reg_pred);
                     // update dependency
-                    map_set_insert(this->dependency, occurrs.begin()->eq_index, pr.first);
+                    map_set_insert(this->dependency, occurrs.begin()->pred_index, pr.first);
                 }
             }
         }
@@ -625,7 +625,7 @@ namespace smt::noodler {
             // Get all occurrences of t
             std::set<VarNode> occurrs = this->formula.get_var_occurr(t);
             // Get predicate of a first equation containing t; and side containing t
-            Predicate act_pred = this->formula.get_predicate(occurrs.begin()->eq_index);
+            Predicate act_pred = this->formula.get_predicate(occurrs.begin()->pred_index);
             Concat side = occurrs.begin()->position > 0 ? act_pred.get_right_side() : act_pred.get_left_side();
 
             int start = std::abs(occurrs.begin()->position) - 1;
@@ -635,7 +635,7 @@ namespace smt::noodler {
                 for(const VarNode& vn : occurrs) {
                     vns.insert({
                         side[i],
-                        vn.eq_index,
+                        vn.pred_index,
                         FormulaVar::increment_side_index(vn.position, i-start)
                     });
                 }
@@ -728,7 +728,7 @@ namespace smt::noodler {
         for(const BasicTerm& t : eps_set) {
             std::set<VarNode> nds = get_formula().get_var_occurr(t);
             std::transform(nds.begin(), nds.end(), std::back_inserter(worklist),
-                [](const VarNode& n){ return n.eq_index ; });
+                [](const VarNode& n){ return n.pred_index ; });
         }
 
         while(!worklist.empty()) {
@@ -757,7 +757,7 @@ namespace smt::noodler {
                 eps_set.insert(t);
                 std::set<VarNode> nds = get_formula().get_var_occurr(t);
                 std::transform(nds.begin(), nds.end(), std::back_inserter(worklist),
-                    [](const VarNode& n){ return n.eq_index ; });
+                    [](const VarNode& n){ return n.pred_index ; });
             }
         }
 

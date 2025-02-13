@@ -499,6 +499,7 @@ namespace smt::noodler {
                 modif = modif || r;
             }
             res = Predicate(this->type, new_params);
+            res.transducer = this->transducer;
             return modif;
         }
 

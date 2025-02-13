@@ -196,33 +196,33 @@ namespace smt::noodler {
      */
     struct VarNode {
         BasicTerm term;
-        size_t eq_index;
+        size_t pred_index;
         int position;
 
-        VarNode(BasicTerm term, const size_t eq_index, const int position): term{ std::move(term) }, eq_index{ eq_index }, position{ position } {}
+        VarNode(BasicTerm term, const size_t eq_index, const int position): term{ std::move(term) }, pred_index{ eq_index }, position{ position } {}
         VarNode(const VarNode& other) = default;
         VarNode(VarNode &&) = default;
 
         VarNode& operator=(const VarNode&) = default;
 
         bool operator==(const VarNode& other) const {
-            return term == other.term && eq_index == other.eq_index && position == other.position;
+            return term == other.term && pred_index == other.pred_index && position == other.position;
         }
 
         std::string to_string() const {
             std::string ret;
-            ret += "( " + term.to_string() + ";" + std::to_string(eq_index) + ";" + std::to_string(position) + ")";
+            ret += "( " + term.to_string() + ";" + std::to_string(pred_index) + ";" + std::to_string(position) + ")";
             return ret;
         };
     };
 
     inline bool operator<(const VarNode& lhs, const VarNode& rhs) {
         if(lhs.position == rhs.position) {
-            if(lhs.eq_index == rhs.eq_index) {
+            if(lhs.pred_index == rhs.pred_index) {
                 if(lhs.term == rhs.term) return false;
                 return lhs.term < rhs.term;
             }
-            return lhs.eq_index < rhs.eq_index;
+            return lhs.pred_index < rhs.pred_index;
         }
         return lhs.position < rhs.position;
     }
