@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include <vector>
 #include <mata/nft/nft.hh>
+#include <mata/nft/strings.hh>
 
 #include "smt/params/smt_params.h"
 #include "ast/arith_decl_plugin.h"
@@ -100,10 +101,11 @@ namespace smt::noodler::util {
      * @param m_util_s Seq util for AST.
      * @param pred_replace Replacement of predicate and functions
      * @param var_name Mapping of BasicTerm variables to z3 variables
+     * @param mata_alph Mata alphabet containing symbols from the current instance
      * @param[out] transducer_preds Newly created transducer constraints
      */
     void gather_transducer_constraints(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, 
-        std::map<BasicTerm, expr_ref>& var_name, std::vector<Predicate>& transducer_preds);
+        std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds);
 
     /**
      * Collect basic terms (vars, literals) from a concatenation @p ex. Append the basic terms to the output parameter
@@ -161,6 +163,14 @@ namespace smt::noodler::util {
      * @return boolean indicating whether we can split the @p word to @p automata (true if we can)
      */
     bool split_word_to_automata(const zstring& word, const std::vector<std::shared_ptr<mata::nfa::Nfa>>& automata, std::vector<zstring>& words);
+
+    /**
+     * @brief Convert zstring to mata::Word
+     * 
+     * @param word zstring
+     * @return mata::Word 
+     */
+    mata::Word get_mata_word_zstring(const zstring& word);
 }
 
 size_t bin_search_leftmost(const std::vector<mata::nfa::State>& haystack, mata::nfa::State needle);

@@ -156,7 +156,7 @@ namespace smt::noodler {
 
     void theory_str_noodler::string_theory_propagation(expr *expr, bool init, bool neg, bool var_lengths) {
         STRACE("str", tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
-        STRACE("str", tout << mk_pp(expr, get_manager()) << std::endl;);
+        // STRACE("str", tout << mk_pp(expr, get_manager()) << std::endl;);
 
         context &ctx = get_context();
 
@@ -1520,10 +1520,9 @@ namespace smt::noodler {
         VERIFY(m_util_s.str.is_replace_all(e, s, i, l));
 
         expr_ref v = mk_str_var_fresh("replace_all");
-        // we need to store v into a storage. Since this->predicate_replace 
-        // stores only pointers, the value v would cease to exist after end of 
-        // handle_replace_all
-        this->trans_terms.push_back(v);
+        // create equation for propagating length constraints
+        // tmp = replace_all(...) => |tmp| = |replace_all(...)|
+        add_axiom({mk_eq(v, e, false)});
         this->predicate_replace.insert(e, v.get());  
     }
 

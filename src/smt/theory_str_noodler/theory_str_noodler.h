@@ -95,8 +95,6 @@ namespace smt::noodler {
 
         // mapping predicates and function to variables that they substitute to
         obj_map<expr, expr*> predicate_replace;
-        // mapping replace_all and replace_re_all to fresh variables
-        std::vector<expr_ref> trans_terms;
 
         // TODO what are these?
         std::vector<app_ref> axiomatized_len_axioms;
@@ -400,10 +398,27 @@ namespace smt::noodler {
         @return Instance of predicate
         */
         Predicate conv_eq_pred(app* expr);
+
+        /**
+         * @brief Check if the given equation is a temporary equations that was added 
+         * among axioms during axiomatization in handle_replace_all. These equalities
+         * are there due to length axioms inferring and proper handling of variable 
+         * substitution. We want to discard them as they make the instances artificially harder: 
+         * x = replace_all(...) || x = y --> we might get in final_check x = y && tmp = replace_all(...)
+         * in final_check we include only those transducer constraints that are present in remaining 
+         * constraints (ignoring tmp = replace_all(...)).
+         * 
+         * @param ex Equation
+         * @return true <-> is temporary transducer constraint
+         */
+        bool is_tmp_transducer_eq(app* const ex);
+
         /**
          * @brief Creates noodler formula containing relevant word equations and disequations
+         * 
+         * @param alph Set of symbols of the current instance (for transducer constraints)
          */
-        Formula get_word_formula_from_relevant();
+        Formula get_word_formula_from_relevant(const std::set<mata::Symbol>& alph);
         /**
          * @brief Get all symbols used in relevant word (dis)equations and memberships
          */
