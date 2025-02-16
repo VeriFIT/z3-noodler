@@ -156,6 +156,22 @@ namespace smt::noodler::regex {
      * @throws regex_model_fail if the model cannot be found (either regex represents empty language, or it contains intersection/complement/string variables, which this function currently cannot handle)
      */
     zstring get_model_from_regex(const app *regex, const seq_util& m_util_s);
+
+    /**
+     * @brief Gather transducer constraint (replace_all, replace_re_all) from a concatenation. Recursively applies also on 
+     * nested calls of replace_all, replace_re_all.
+     * 
+     * @param ex Concatenation of string terms.
+     * @param m AST manager
+     * @param m_util_s Seq util for AST.
+     * @param pred_replace Replacement of predicate and functions
+     * @param var_name Mapping of BasicTerm variables to z3 variables
+     * @param mata_alph Mata alphabet containing symbols from the current instance
+     * @param[out] transducer_preds Newly created transducer constraints
+     */
+    void gather_transducer_constraints(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, 
+        std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds);
+
 }
 
 #endif

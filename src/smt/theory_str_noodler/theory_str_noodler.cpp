@@ -403,7 +403,7 @@ namespace smt::noodler {
         } else if(m_util_s.str.is_replace_re(n)) { // str.replace_re
             handle_replace_re(n);
         } else if(m_util_s.str.is_replace_re_all(n)) { // str.replace_re_all
-            util::throw_error("str.replace_re_all is not supported");
+            handle_replace_re_all(n);
         } else if (m_util_s.str.is_is_digit(n)) { // str.is_digit
             handle_is_digit(n);
         } else if (
@@ -1518,6 +1518,30 @@ namespace smt::noodler {
         ast_manager &m = get_manager();
         expr *s = nullptr, *i = nullptr, *l = nullptr;
         VERIFY(m_util_s.str.is_replace_all(e, s, i, l));
+
+        expr_ref v = mk_str_var_fresh("replace_all");
+        // create equation for propagating length constraints
+        // tmp = replace_all(...) => |tmp| = |replace_all(...)|
+        add_axiom({mk_eq(v, e, false)});
+        this->predicate_replace.insert(e, v.get());  
+    }
+
+    /**
+     * @brief Handle replace_re_all. Just store the instance. It is solved using transducer 
+     * constraints in the final_check.
+     * 
+     * @param e replace_re_all
+     */
+    void theory_str_noodler::handle_replace_re_all(expr *e) {
+        STRACE("str", tout << "handle-replace-re-all: " << mk_pp(e, m) << '\n';);
+        if (axiomatized_persist_terms.contains(e))
+            return;
+
+        axiomatized_persist_terms.insert(e);
+
+        ast_manager &m = get_manager();
+        expr *s = nullptr, *i = nullptr, *l = nullptr;
+        VERIFY(m_util_s.str.is_replace_re_all(e, s, i, l));
 
         expr_ref v = mk_str_var_fresh("replace_all");
         // create equation for propagating length constraints

@@ -82,50 +82,6 @@ namespace smt::noodler::util {
         return m_util_s.is_string(expression->get_sort()) && is_variable(expression);
     }
 
-    void gather_transducer_constraints(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds) {
-        if(m_util_s.str.is_string(ex) || is_variable(ex)) { // Handle string literals.
-            return;
-        }
-
-        if(!m_util_s.str.is_concat(ex)) {
-            expr* rpl = pred_replace.find(ex); // dies if it is not found
-            // so-far we handle just replace_all
-            expr * a1 = nullptr, *a2 = nullptr, *a3 = nullptr;
-            if (m_util_s.str.is_replace_all(ex, a1, a2, a3)) {
-                zstring find, replace;
-                if(!m_util_s.str.is_string(a2, find) || !m_util_s.str.is_string(a3, replace)) {
-                    util::throw_error("only replace_all with concrete find&replace is supported");
-                }
-
-                // recursively call on nested parameters
-                gather_transducer_constraints(to_app(a1), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
-                // collect and replace replace_all argument with a concatenation of basic terms
-                std::vector<BasicTerm> side {};
-                collect_terms(to_app(a1), m, m_util_s, pred_replace, var_name, side);
-
-                // result of the replace_all
-                std::string var = to_app(rpl)->get_decl()->get_name().str();
-                BasicTerm bvar(BasicTermType::Variable, var);
-
-                // transducer corresponding to replace_all
-                mata::nft::Nft nft = mata::nft::strings::replace_reluctant_literal(get_mata_word_zstring(find), get_mata_word_zstring(replace), mata_alph);
-
-                // TODO: switch sides?
-                Predicate rpl_all(PredicateType::Transducer, { {bvar}, side }, std::make_shared<mata::nft::Nft>(nft));
-                transducer_preds.push_back(rpl_all);
-            }
-            // TODO: handle replace_re_all
-            return;
-        }
-
-        SASSERT(ex->get_num_args() == 2);
-        app *a_x = to_app(ex->get_arg(0));
-        app *a_y = to_app(ex->get_arg(1));
-        gather_transducer_constraints(a_x, m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
-        gather_transducer_constraints(a_y, m, m_util_s, pred_replace, var_name, mata_alph,transducer_preds);
-
-    }
-
     void collect_terms(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace,
                        std::map<BasicTerm, expr_ref>& var_name, std::vector<BasicTerm>& terms) {
 

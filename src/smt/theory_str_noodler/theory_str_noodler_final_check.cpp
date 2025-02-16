@@ -483,11 +483,11 @@ namespace smt::noodler {
     }
 
     bool theory_str_noodler::is_tmp_transducer_eq(app* const ex) {
-        if (this->m_util_s.str.is_replace_all(ex->get_arg(0))) {
+        if (this->m_util_s.str.is_replace_all(ex->get_arg(0)) || this->m_util_s.str.is_replace_re_all(ex->get_arg(0))) {
             expr* rpl = this->predicate_replace.find(ex->get_arg(0));
             return rpl->hash() == ex->get_arg(1)->hash();
         }
-        if (this->m_util_s.str.is_replace_all(ex->get_arg(1))) {
+        if (this->m_util_s.str.is_replace_all(ex->get_arg(1)) || this->m_util_s.str.is_replace_re_all(ex->get_arg(1))) {
             expr* rpl = this->predicate_replace.find(ex->get_arg(1));
             return rpl->hash() == ex->get_arg(0)->hash();
         }
@@ -511,16 +511,16 @@ namespace smt::noodler {
             }
             Predicate inst = this->conv_eq_pred(ctx.mk_eq_atom(we.first, we.second));
             // gather transducer constraints occurring in the concatenation
-            util::gather_transducer_constraints(to_app(we.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
-            util::gather_transducer_constraints(to_app(we.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(we.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(we.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
             instance.add_predicate(inst);
         }
 
         for (const auto& wd : this->m_word_diseq_todo_rel) {
             Predicate inst = this->conv_eq_pred(m.mk_not(ctx.mk_eq_atom(wd.first, wd.second)));
             // gather transducer constraints occurring in the concatenation
-            util::gather_transducer_constraints(to_app(wd.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
-            util::gather_transducer_constraints(to_app(wd.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(wd.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(wd.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
             instance.add_predicate(inst);
         }
 
@@ -530,8 +530,8 @@ namespace smt::noodler {
             util::collect_terms(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, left);
             util::collect_terms(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, right);
             // gather transducer constraints occurring in the concatenation
-            util::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
-            util::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
             Predicate inst(PredicateType::NotContains, std::vector<Concat>{left, right});
             instance.add_predicate(inst);
         }

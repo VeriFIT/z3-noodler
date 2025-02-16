@@ -335,6 +335,7 @@ namespace smt::noodler {
         void handle_lex_leq(expr *e);
         void handle_lex_lt(expr *e);
         void handle_replace_all(expr *e);
+        void handle_replace_re_all(expr *e);
 
         // methods for assigning boolean values to predicates
         void assign_not_contains(expr *e);
