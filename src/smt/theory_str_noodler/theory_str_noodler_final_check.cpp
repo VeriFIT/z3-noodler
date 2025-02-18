@@ -156,7 +156,7 @@ namespace smt::noodler {
         std::set<mata::Symbol> symbols_in_formula = get_symbols_from_relevant();
 
         // Gather relevant word (dis)equations to noodler formula
-        Formula instance = get_word_formula_from_relevant(symbols_in_formula);
+        Formula instance = get_formula_from_relevant(symbols_in_formula);
         STRACE("str",
             tout << std::endl;
             for(const auto& f : instance.get_predicates()) {
@@ -494,7 +494,7 @@ namespace smt::noodler {
         return false;
     }
 
-    Formula theory_str_noodler::get_word_formula_from_relevant(const std::set<mata::Symbol>& alph) {
+    Formula theory_str_noodler::get_formula_from_relevant(const std::set<mata::Symbol>& alph) {
         Formula instance;
         std::vector<Predicate> transducer_pred {};
         // create mata alphabet for transducer constraints

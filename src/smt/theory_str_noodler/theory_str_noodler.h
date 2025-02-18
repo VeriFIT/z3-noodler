@@ -419,7 +419,7 @@ namespace smt::noodler {
          * 
          * @param alph Set of symbols of the current instance (for transducer constraints)
          */
-        Formula get_word_formula_from_relevant(const std::set<mata::Symbol>& alph);
+        Formula get_formula_from_relevant(const std::set<mata::Symbol>& alph);
         /**
          * @brief Get all symbols used in relevant word (dis)equations and memberships
          */
