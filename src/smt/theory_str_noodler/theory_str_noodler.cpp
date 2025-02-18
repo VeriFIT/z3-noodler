@@ -156,7 +156,7 @@ namespace smt::noodler {
 
     void theory_str_noodler::string_theory_propagation(expr *expr, bool init, bool neg, bool var_lengths) {
         STRACE("str", tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
-        // STRACE("str", tout << mk_pp(expr, get_manager()) << std::endl;);
+        STRACE("str-propagation", tout << mk_pp(expr, get_manager()) << std::endl;);
 
         context &ctx = get_context();
 
