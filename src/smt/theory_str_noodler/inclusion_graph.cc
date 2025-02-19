@@ -189,16 +189,11 @@ Graph smt::noodler::Graph::create_simplified_splitting_graph(const Formula& form
 
             if (!have_same_var(source_left_side, target_right_side)) {
                 continue;
-            } else if (source_left_side == target_right_side) {
+            } else if (source_predicate.strong_equals(target_predicate.get_switched_sides_predicate())) {
                 // Have same var and sides are equal.
-
-                if (source_predicate.strong_equals(target_predicate.get_switched_sides_predicate())) { // In the same reversed predicate.
-                    if (!source_predicate.mult_occurr_var_side(Predicate::EquationSideType::Left)) {
-                        // Does not have multiple occurrences of one var. Hence, cannot have an edge.
-                        continue;
-                    }
-                } else {
-                    // In different equation.
+                if (!source_predicate.mult_occurr_var_side      (Predicate::EquationSideType::Left)) {
+                    // Does not have multiple occurrences of one var. Hence, cannot have an edge.
+                    continue;
                 }
             } else {
                 // Have same var and sides are not equal, automatically add a new edge.
