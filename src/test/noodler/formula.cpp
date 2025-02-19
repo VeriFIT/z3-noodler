@@ -34,7 +34,7 @@ TEST_CASE( "Transducer predicate", "[noodler]" ) {
 
         // result
         Predicate switch_res { PredicateType::Transducer, { { y }, { x } }, std::make_shared<mata::nft::Nft>(nft_inv) };
-        CHECK(pred_trans_switch == switch_res);
+        CHECK(pred_trans_switch.strong_equals(switch_res));
     }
 
     SECTION("Comparison") {
@@ -46,11 +46,12 @@ TEST_CASE( "Transducer predicate", "[noodler]" ) {
         
         Predicate p1 { PredicateType::Transducer, { { x }, { y } }, std::make_shared<mata::nft::Nft>(nft) };
         Predicate p2 { PredicateType::Transducer, { { x }, { y } }, std::make_shared<mata::nft::Nft>(nft_other) };
-        Predicate p3 { PredicateType::Transducer, { { x }, { y } }, std::make_shared<mata::nft::Nft>(nft) };
+        Predicate p3 { PredicateType::Transducer, { { x }, { y } }, p1.get_transducer() };
         CHECK(p1 != p2);
         CHECK(!(p1 < p1));
         CHECK(p1 == p1);
-        CHECK(p1 == p3);
+        CHECK(p1.strong_equals(p1));
+        CHECK(p1.strong_equals(p3));
         CHECK(!(p1 < p3));
         CHECK(!(p3 < p1));
 
@@ -72,10 +73,11 @@ TEST_CASE( "Transducer predicate", "[noodler]" ) {
         nft_other.initial = {0};
         nft_other.final = {1};
         nft_other.insert_word_by_parts(0, { {'c'}, {'d'} } , 1);
+        auto nft_ptr = std::make_shared<mata::nft::Nft>(nft);
 
         
-        Predicate p1 { PredicateType::Transducer, { { x }, { y } }, std::make_shared<mata::nft::Nft>(nft) };
-        Predicate pres { PredicateType::Transducer, { { x }, { x } }, std::make_shared<mata::nft::Nft>(nft) };
+        Predicate p1 { PredicateType::Transducer, { { x }, { y } }, nft_ptr };
+        Predicate pres { PredicateType::Transducer, { { x }, { x } }, nft_ptr };
 
         Formula f{};
         f.add_predicate(p1);

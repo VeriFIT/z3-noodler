@@ -28,7 +28,7 @@ namespace smt::noodler {
         };
 
         [[nodiscard]] bool equals(const GraphNode& other) const {
-            return this->node_predicate == other.node_predicate;
+            return this->node_predicate.strong_equals(other.node_predicate);
         }
 
     private:
@@ -152,7 +152,7 @@ namespace smt::noodler {
         }
 
         std::shared_ptr<GraphNode> get_node(const Predicate& predicate) {
-            auto node = std::find_if(nodes.begin(), nodes.end(), [&predicate](const std::shared_ptr<GraphNode> &el){ return (el->get_predicate() == predicate);});
+            auto node = std::find_if(nodes.begin(), nodes.end(), [&predicate](const std::shared_ptr<GraphNode> &el){ return (el->get_predicate().strong_equals(predicate));});
             if (node == nodes.end()) { return nullptr; }
             return *node;
         }

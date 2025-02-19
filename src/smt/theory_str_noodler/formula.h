@@ -551,6 +551,17 @@ namespace smt::noodler {
 
         [[nodiscard]] bool equals(const Predicate& other) const;
 
+        /**
+         * @brief Strong equality. For the case of transducer predicates the transducers
+         * are compared for identity (not just the indentity of pointers). It is 
+         * necessary for the inclusion graph handling where we require get_switched_side
+         * (get_swithch_side(x)) == x (which is not true for pointer comparison).
+         * 
+         * @param other Other predicate
+         * @return true Is strongly equal
+         */
+        bool strong_equals(const Predicate& other) const;
+
         [[nodiscard]] std::string to_string() const;
 
         struct HashFunction {
@@ -608,8 +619,8 @@ namespace smt::noodler {
         }
         // For transducer predicates we compare pointers (assuming linear memory model)
         if (lhs.is_transducer()) {
-            // if we have the same object stored on two different places
-            if (lhs.get_transducer()->is_identical(*rhs.get_transducer())) {
+            // compare pointer for equality
+            if (lhs.get_transducer() == rhs.get_transducer()) {
                 return false;
             }
             // compare pointers

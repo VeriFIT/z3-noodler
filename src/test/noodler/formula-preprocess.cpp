@@ -278,13 +278,14 @@ TEST_CASE( "Propagate variables", "[noodler]" ) {
     nft.initial = {0};
     nft.final = {1};
     nft.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
+    auto nft_ptr = std::make_shared<mata::nft::Nft>(nft);
 
     Predicate eq1(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4}), std::vector<BasicTerm>({b, x1, x2}) })  );
     Predicate ieq1(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1, x1}), std::vector<BasicTerm>({x3, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x2}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) })  );
-    Predicate tr1(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), std::make_shared<mata::nft::Nft>(nft) );
-    Predicate tr2(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x1}) }), std::make_shared<mata::nft::Nft>(nft) );
+    Predicate tr1(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), nft_ptr );
+    Predicate tr2(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x1}) }), nft_ptr );
 
     SECTION("(In)equations") {
         Formula conj;
@@ -357,14 +358,15 @@ TEST_CASE( "Remove duplicates", "[noodler]" ) {
     nft.initial = {0};
     nft.final = {1};
     nft.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
+    auto nft_ptr = std::make_shared<mata::nft::Nft>(nft);
 
     Predicate eq1(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4}), std::vector<BasicTerm>({b, x1, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4}), std::vector<BasicTerm>({b, x1, x2}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) })  );
     Predicate ieq1(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) })  );
     Predicate ieq2(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) })  );
-    Predicate tr1(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), std::make_shared<mata::nft::Nft>(nft) );
-    Predicate tr2(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), std::make_shared<mata::nft::Nft>(nft)  );
+    Predicate tr1(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), nft_ptr );
+    Predicate tr2(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({x3}) }), nft_ptr  );
     Formula conj;
     conj.add_predicate(eq1);
     conj.add_predicate(eq3);
@@ -483,12 +485,13 @@ TEST_CASE( "Reduce regular", "[noodler]" ) {
 
     mata::nft::Nft nft{2, {0}, {1}};
     nft.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
+    auto nft_ptr = std::make_shared<mata::nft::Nft>(nft);
 
     Predicate eq1(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({a, x3, x4, b}), std::vector<BasicTerm>({x1, x1, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x2, x1, x2}), std::vector<BasicTerm>({b, x3, x4, b}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, x1, x2}) })  );
     Predicate eq4(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, a, b}) })  );
-    Predicate tr4(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, a, b}) }), std::make_shared<mata::nft::Nft>(nft)  );
+    Predicate tr4(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1, x2, x3}), std::vector<BasicTerm>({x4, a, b}) }), nft_ptr  );
 
     
     SECTION("basic") {
@@ -561,7 +564,7 @@ TEST_CASE( "Reduce regular", "[noodler]" ) {
         CHECK(mata::nfa::are_equivalent(*ret.at(tmp1), regex_to_nfa("(a|b)*a*")));
         CHECK(prep.get_formula().get_predicates_set() == std::set<Predicate>({
             Predicate(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({tmp0}), std::vector<BasicTerm>({x4, a, b}) })),
-            Predicate(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({tmp1}), std::vector<BasicTerm>({tmp0}) }), std::make_shared<mata::nft::Nft>(nft) ),
+            Predicate(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({tmp1}), std::vector<BasicTerm>({tmp0}) }), nft_ptr ),
             Predicate(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({tmp1 }), std::vector<BasicTerm>({x5, x1, x2, x3}) })  )
         }));
     }
@@ -591,13 +594,14 @@ TEST_CASE( "Propagate eps", "[noodler]" ) {
 
     mata::nft::Nft nft{2, {0}, {1}};
     nft.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
+    auto nft_ptr = std::make_shared<mata::nft::Nft>(nft);
 
     Predicate eq1(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({eps}), std::vector<BasicTerm>({x1, x2}) })  );
     Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x2, x1, x2}), std::vector<BasicTerm>({x3, x4}) })  );
     Predicate eq3(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x3, b, x4}), std::vector<BasicTerm>({x5, x1}) })  );
     Predicate eq4(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({b, x1}), std::vector<BasicTerm>({eps}) })  );
     Predicate ieq1(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x1}), std::vector<BasicTerm>({eps}) })  );
-    Predicate tr4(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1}), std::vector<BasicTerm>({x2}) }), std::make_shared<mata::nft::Nft>(nft)  );
+    Predicate tr4(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5, x1}), std::vector<BasicTerm>({x2}) }), nft_ptr  );
 
     SECTION("basic") {
         Formula conj;
@@ -642,7 +646,7 @@ TEST_CASE( "Propagate eps", "[noodler]" ) {
         CHECK(mata::nfa::are_equivalent(*ret.at(x1), regex_to_nfa("")));
         CHECK(mata::nfa::are_equivalent(*ret.at(x2), regex_to_nfa("")));
         CHECK(prep.get_formula().get_predicates_set() == std::set<Predicate>({
-            Predicate(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5}), std::vector<BasicTerm>() }), std::make_shared<mata::nft::Nft>(nft) ),
+            Predicate(PredicateType::Transducer, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x5}), std::vector<BasicTerm>() }), nft_ptr ),
         }));
     }
 }
