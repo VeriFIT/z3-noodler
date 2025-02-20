@@ -190,7 +190,7 @@ namespace smt::noodler {
     }
 
     std::set<BasicTerm> Predicate::get_side_vars(const Predicate::EquationSideType side) const {
-        assert(is_eq_or_ineq());
+        assert(is_two_sided());
         std::set<BasicTerm> vars;
         std::vector<BasicTerm> side_terms;
         switch (side) {
@@ -221,7 +221,7 @@ namespace smt::noodler {
     }
 
     bool Predicate::mult_occurr_var_side(const Predicate::EquationSideType side) const {
-        assert(is_eq_or_ineq());
+        assert(is_two_sided());
         const auto terms_begin{ get_side(side).cbegin() };
         const auto terms_end{ get_side(side).cend() };
         for (auto term_iter{ terms_begin }; term_iter < terms_end; ++term_iter) {
@@ -262,40 +262,39 @@ namespace smt::noodler {
     }
 
     std::string Predicate::to_string() const {
+
+        // joining BasicTerm in the given vector with str
+        auto join = [&](const std::vector<BasicTerm>& vec, const std::string& str) -> std::string {
+            if(vec.empty()) return "";
+            std::string ret = vec[0].to_string();
+            for(size_t i = 1; i < vec.size(); i++) {
+                ret += str + vec[i].to_string();
+            }
+            return ret;
+        };
+
         switch (type) {
             case PredicateType::Equation: {
-                std::string result{ "Equation:" };
-                for (const auto& item: get_left_side()) {
-                    result += " " + item.to_string();
-                }
-                result += " =";
-                for (const auto& item: get_right_side()) {
-                    result += " " + item.to_string();
-                }
+                std::string result{ "Equation: " };
+                result += join(get_left_side(), " ") + " = " + join(get_right_side(), " ");
                 return result;
             }
 
             case PredicateType::Inequation: {
-                std::string result{ "Inequation:" };
-                for (const auto& item: get_left_side()) {
-                    result += " " + item.to_string();
-                }
-                result += " !=";
-                for (const auto& item: get_right_side()) {
-                    result += " " + item.to_string();
-                }
+                std::string result{ "Inequation: " };
+                result += join(get_left_side(), " ") + " != " + join(get_right_side(), " ");
                 return result;
             }
 
             case PredicateType::NotContains: {
-                std::string result{ "Notcontains " };
-                for (const auto& item: params[0]) {
-                    result += " " + item.to_string();
-                }
-                result += " ,";
-                for (const auto& item: params[1]) {
-                    result += " " + item.to_string();
-                }
+                std::string result{ "Notcontains: " };
+                result += join(params[0], " ") + " , " + join(params[1], " ");
+                return result;
+            }
+
+            case PredicateType::Transducer: {
+                std::string result{ "Transducer: " };
+                result += join(params[0], " ") + " , " + join(params[1], " ");
                 return result;
             }
         }
@@ -305,16 +304,40 @@ namespace smt::noodler {
 
     bool Predicate::equals(const Predicate &other) const {
         if (type == other.type) {
+            if(is_transducer()) {
+                if(!(params[0] == other.params[0] && params[1] == other.params[1])) {
+                    return false;
+                }
+                // check if transducers are the same pointers
+                return transducer == other.transducer;
+            }
             if (is_two_sided()) {
                 return params[0] == other.params[0] && params[1] == other.params[1];
             }
-            return true;
+            return params == other.params;
+        }
+        return false;
+    }
+
+    bool Predicate::strong_equals(const Predicate& other) const {
+        if (type == other.type) {
+            if(is_transducer()) {
+                if(!(params[0] == other.params[0] && params[1] == other.params[1])) {
+                    return false;
+                }
+                // check if transducers are the same pointers
+                return transducer->is_identical(*other.get_transducer());
+            }
+            if (is_two_sided()) {
+                return params[0] == other.params[0] && params[1] == other.params[1];
+            }
+            return params == other.params;
         }
         return false;
     }
 
     const std::vector<BasicTerm> &Predicate::get_side(const Predicate::EquationSideType side) const {
-        assert(is_eq_or_ineq());
+        assert(is_two_sided());
         switch (side) {
             case EquationSideType::Left:
                 return params[0];
@@ -329,7 +352,7 @@ namespace smt::noodler {
     }
 
     std::vector<BasicTerm> &Predicate::get_side(const Predicate::EquationSideType side) {
-        assert(is_eq_or_ineq());
+        assert(is_two_sided());
         switch (side) {
             case EquationSideType::Left:
                 return params[0];

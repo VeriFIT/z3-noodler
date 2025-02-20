@@ -268,6 +268,14 @@ namespace smt::noodler::util {
 
         return true;
     }
+
+    mata::Word get_mata_word_zstring(const zstring& word) {
+        mata::Word ret{};
+        for(size_t i = 0; i < word.length(); i++) {
+            ret.push_back(word[i]);
+        }
+        return ret;
+    }
 }
 
 template <typename T>

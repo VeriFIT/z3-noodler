@@ -152,16 +152,22 @@ namespace smt::noodler {
             }
         }
 
+        // Gather symbols from relevant (dis)equations and from regular expressions of relevant memberships
+        std::set<mata::Symbol> symbols_in_formula = get_symbols_from_relevant();
+
         // Gather relevant word (dis)equations to noodler formula
-        Formula instance = get_word_formula_from_relevant();
+        Formula instance = get_formula_from_relevant(symbols_in_formula);
         STRACE("str",
+            tout << std::endl;
             for(const auto& f : instance.get_predicates()) {
                 tout << f.to_string() << std::endl;
             }
         );
+        // decison procedure for transducer constraints is not implemented yet
+        if(instance.contains_pred_type(PredicateType::Transducer)) {
+            util::throw_error("transducer constraints are not supported");
+        }
 
-        // Gather symbols from relevant (dis)equations and from regular expressions of relevant memberships
-        std::set<mata::Symbol> symbols_in_formula = get_symbols_from_relevant();
         // For the case that it is possible we have to_int/from_int, we keep digits (0-9) as explicit symbols, so that they are not represented by dummy_symbol and it is easier to handle to_int/from_int
         if (!m_conversion_todo.empty()) {
             for (mata::Symbol s = 48; s <= 57; ++s) {
@@ -476,16 +482,45 @@ namespace smt::noodler {
         return Predicate(ptype, std::vector<std::vector<BasicTerm>>{left, right});
     }
 
-    Formula theory_str_noodler::get_word_formula_from_relevant() {
+    bool theory_str_noodler::is_tmp_transducer_eq(app* const ex) {
+        if (this->m_util_s.str.is_replace_all(ex->get_arg(0)) || this->m_util_s.str.is_replace_re_all(ex->get_arg(0))) {
+            expr* rpl = this->predicate_replace.find(ex->get_arg(0));
+            return rpl->hash() == ex->get_arg(1)->hash();
+        }
+        if (this->m_util_s.str.is_replace_all(ex->get_arg(1)) || this->m_util_s.str.is_replace_re_all(ex->get_arg(1))) {
+            expr* rpl = this->predicate_replace.find(ex->get_arg(1));
+            return rpl->hash() == ex->get_arg(0)->hash();
+        }
+        return false;
+    }
+
+    Formula theory_str_noodler::get_formula_from_relevant(const std::set<mata::Symbol>& alph) {
         Formula instance;
+        std::vector<Predicate> transducer_pred {};
+        // create mata alphabet for transducer constraints
+        mata::EnumAlphabet mata_alph{};
+        for(const mata::Symbol& symb : alph) {
+            mata_alph.add_new_symbol(symb);
+        }
 
         for (const auto &we: this->m_word_eq_todo_rel) {
+            // ignore trivial equations obtained from axiomatization of 
+            // transducer constraints, e.g., tmp = replace_all(...)
+            if(is_tmp_transducer_eq(ctx.mk_eq_atom(we.first, we.second))) {
+                continue;
+            }
             Predicate inst = this->conv_eq_pred(ctx.mk_eq_atom(we.first, we.second));
+            // gather transducer constraints occurring in the concatenation
+            regex::gather_transducer_constraints(to_app(we.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(we.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
             instance.add_predicate(inst);
         }
 
         for (const auto& wd : this->m_word_diseq_todo_rel) {
             Predicate inst = this->conv_eq_pred(m.mk_not(ctx.mk_eq_atom(wd.first, wd.second)));
+            // gather transducer constraints occurring in the concatenation
+            regex::gather_transducer_constraints(to_app(wd.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(wd.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
             instance.add_predicate(inst);
         }
 
@@ -494,8 +529,16 @@ namespace smt::noodler {
             std::vector<BasicTerm> left, right;
             util::collect_terms(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, left);
             util::collect_terms(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, right);
+            // gather transducer constraints occurring in the concatenation
+            regex::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
             Predicate inst(PredicateType::NotContains, std::vector<Concat>{left, right});
             instance.add_predicate(inst);
+        }
+
+        // add all transducer predicates
+        for(const auto& p : transducer_pred) {
+            instance.add_predicate(p);
         }
 
         return instance;
@@ -506,6 +549,11 @@ namespace smt::noodler {
         std::set<mata::Symbol> symbols_in_formula{util::get_dummy_symbol()};
 
         for (const auto &word_equation: m_word_eq_todo_rel) {
+            // ignore trivial equations obtained from axiomatization of 
+            // transducer constraints, e.g., tmp = replace_all(...)
+            if(is_tmp_transducer_eq(ctx.mk_eq_atom(word_equation.first, word_equation.second))) {
+                continue;
+            }
             regex::extract_symbols(word_equation.first, m_util_s, symbols_in_formula);
             regex::extract_symbols(word_equation.second, m_util_s, symbols_in_formula);
         }

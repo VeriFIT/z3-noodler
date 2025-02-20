@@ -20,6 +20,7 @@ if (Catch2_FOUND)
             decision-procedure.cpp
             parikh.cc
             util.cc
+            formula.cpp
     )
 
     find_library(LIBMATA mata)

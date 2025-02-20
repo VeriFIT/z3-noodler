@@ -24,6 +24,7 @@
 #include <map>
 #include <unordered_set>
 #include <iostream>
+#include <mata/nft/nft.hh>
 
 #include "util/zstring.h"
 #include "ast/ast.h"
@@ -35,6 +36,7 @@ namespace smt::noodler {
         Equation,
         Inequation,
         NotContains,
+        Transducer, 
     };
 
     [[nodiscard]] static std::string to_string(PredicateType predicate_type) {
@@ -45,6 +47,8 @@ namespace smt::noodler {
                 return "Inequation";
             case PredicateType::NotContains:
                 return "Notcontains";
+            case PredicateType::Transducer:
+                return "Transducer";
         }
 
         throw std::runtime_error("Unhandled predicate type passed to to_string().");
@@ -290,7 +294,7 @@ namespace smt::noodler {
         };
 
         Predicate() : type(PredicateType::Equation) {}
-        explicit Predicate(const PredicateType type): type(type) {
+        explicit Predicate(const PredicateType type): type(type), params(), transducer() {
             if (is_equation() || is_inequation()) {
                 params.resize(2);
                 params.emplace_back();
@@ -300,15 +304,25 @@ namespace smt::noodler {
 
         explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par):
             type(type),
-            params(par)
+            params(par),
+            transducer()
             { }
+
+        explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par, std::shared_ptr<mata::nft::Nft> trans) : 
+            type(type),
+            params(par),
+            transducer(trans) {
+            assert(type == PredicateType::Transducer);
+            assert(trans->num_of_levels == 2);
+        }
 
         [[nodiscard]] PredicateType get_type() const { return type; }
         [[nodiscard]] bool is_equation() const { return type == PredicateType::Equation; }
         [[nodiscard]] bool is_inequation() const { return type == PredicateType::Inequation; }
         [[nodiscard]] bool is_not_cont() const { return type == PredicateType::NotContains; }
         [[nodiscard]] bool is_eq_or_ineq() const { return is_equation() || is_inequation(); }
-        [[nodiscard]] bool is_two_sided() const { return is_equation() || is_inequation() || is_not_cont(); }
+        [[nodiscard]] bool is_transducer() const { return is(PredicateType::Transducer); }
+        [[nodiscard]] bool is_two_sided() const { return is_equation() || is_inequation() || is_not_cont() || is_transducer(); }
         [[nodiscard]] bool is_predicate() const { return !is_eq_or_ineq(); }
         [[nodiscard]] bool is(const PredicateType predicate_type) const { return predicate_type == this->type; }
 
@@ -364,7 +378,7 @@ namespace smt::noodler {
         }
 
         std::set<BasicTerm> get_left_set() const {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             std::set<BasicTerm> ret;
             for(const BasicTerm& t : this->params[0])
                 ret.insert(t);
@@ -372,7 +386,7 @@ namespace smt::noodler {
         }
 
         std::set<BasicTerm> get_right_set() const {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
             std::set<BasicTerm> ret;
             for(const BasicTerm& t : this->params[1])
                 ret.insert(t);
@@ -413,6 +427,7 @@ namespace smt::noodler {
                 return LenNode(LenFormulaType::PLUS, ops);
             };
 
+            assert(is_eq_or_ineq());
             LenNode left = plus_chain(this->params[0]);
             LenNode right = plus_chain(this->params[1]);
             LenNode eq = LenNode(LenFormulaType::EQ, {left, right});
@@ -429,7 +444,12 @@ namespace smt::noodler {
         [[nodiscard]] const std::vector<BasicTerm>& get_side(EquationSideType side) const;
 
         [[nodiscard]] Predicate get_switched_sides_predicate() const {
-            assert(is_eq_or_ineq());
+            assert(is_two_sided());
+            // for transducers we need to invert tapes, i.e., T(x,y) iff T^{-1}(y,x)
+            if(is_transducer()) {
+                auto nft_inverse = std::make_shared<mata::nft::Nft>(mata::nft::invert_levels(*transducer));
+                return Predicate{ PredicateType::Transducer, { get_right_side(), get_left_side() }, nft_inverse };
+            }
             return Predicate{ type, { get_right_side(), get_left_side() } };
         }
 
@@ -479,6 +499,7 @@ namespace smt::noodler {
                 modif = modif || r;
             }
             res = Predicate(this->type, new_params);
+            res.transducer = this->transducer;
             return modif;
         }
 
@@ -530,29 +551,47 @@ namespace smt::noodler {
 
         [[nodiscard]] bool equals(const Predicate& other) const;
 
+        /**
+         * @brief Strong equality. For the case of transducer predicates the transducers
+         * are compared for identity (not just the indentity of pointers). It is 
+         * necessary for the inclusion graph handling where we require get_switched_side
+         * (get_swithch_side(x)) == x (which is not true for pointer comparison).
+         * 
+         * @param other Other predicate
+         * @return true Is strongly equal
+         */
+        bool strong_equals(const Predicate& other) const;
+
         [[nodiscard]] std::string to_string() const;
 
         struct HashFunction {
             size_t operator()(const Predicate& predicate) const {
                 size_t res{};
                 size_t row_hash = std::hash<PredicateType>()(predicate.type);
-                for (const auto& term: predicate.get_left_side()) {
-                    size_t col_hash = BasicTerm::HashFunction()(term) << 1;
-                    res ^= col_hash;
-                }
-                for (const auto& term: predicate.get_right_side()) {
-                    size_t col_hash = BasicTerm::HashFunction()(term) << 1;
-                    res ^= col_hash;
+                for(const auto& pr : predicate.get_params()) {
+                    for(const BasicTerm& term : pr) {
+                        size_t col_hash = BasicTerm::HashFunction()(term) << 1;
+                        res ^= col_hash;
+                    }
                 }
                 return row_hash ^ res;
             }
         };
 
-        // TODO: Additional operations.
+        /**
+         * @brief Get the transducer shared pointer (for the transducer predicates only).
+         * 
+         * @return std::shared_ptr<mata::nft::Nft> Transducer
+         */
+        const std::shared_ptr<mata::nft::Nft>& get_transducer() const {
+            assert(is_transducer());
+            return transducer;
+        }
 
     private:
         PredicateType type;
         std::vector<std::vector<BasicTerm>> params;
+        std::shared_ptr<mata::nft::Nft> transducer; // transducer for the case of PredicateType::Transducer
 
         // TODO: Add additional attributes such as cost, etc.
     }; // Class Predicate.
@@ -578,9 +617,14 @@ namespace smt::noodler {
         if (lhs.get_params() < rhs.get_params()) {
             return true;
         }
+        // For transducer predicates we compare pointers (assuming linear memory model)
+        if (lhs.is_transducer()) {
+            // compare pointers
+            return lhs.get_transducer() < rhs.get_transducer();
+        }
         return false;
     }
-    static bool operator>(const Predicate& lhs, const Predicate& rhs) { return !(lhs < rhs); }
+    static bool operator>(const Predicate& lhs, const Predicate& rhs) { return !(lhs < rhs) && lhs != rhs; }
 
     //----------------------------------------------------------------------------------------------------------------------------------
 

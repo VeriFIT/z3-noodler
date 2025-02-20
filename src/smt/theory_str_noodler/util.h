@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <mata/nft/nft.hh>
+#include <mata/nft/strings.hh>
 
 #include "smt/params/smt_params.h"
 #include "ast/arith_decl_plugin.h"
@@ -146,6 +148,14 @@ namespace smt::noodler::util {
      * @return boolean indicating whether we can split the @p word to @p automata (true if we can)
      */
     bool split_word_to_automata(const zstring& word, const std::vector<std::shared_ptr<mata::nfa::Nfa>>& automata, std::vector<zstring>& words);
+
+    /**
+     * @brief Convert zstring to mata::Word
+     * 
+     * @param word zstring
+     * @return mata::Word 
+     */
+    mata::Word get_mata_word_zstring(const zstring& word);
 }
 
 size_t bin_search_leftmost(const std::vector<mata::nfa::State>& haystack, mata::nfa::State needle);

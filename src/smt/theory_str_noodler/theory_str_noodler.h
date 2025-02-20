@@ -334,6 +334,8 @@ namespace smt::noodler {
         void handle_conversion(expr *e);
         void handle_lex_leq(expr *e);
         void handle_lex_lt(expr *e);
+        void handle_replace_all(expr *e);
+        void handle_replace_re_all(expr *e);
 
         // methods for assigning boolean values to predicates
         void assign_not_contains(expr *e);
@@ -397,10 +399,27 @@ namespace smt::noodler {
         @return Instance of predicate
         */
         Predicate conv_eq_pred(app* expr);
+
+        /**
+         * @brief Check if the given equation is a temporary equations that was added 
+         * among axioms during axiomatization in handle_replace_all. These equalities
+         * are there due to length axioms inferring and proper handling of variable 
+         * substitution. We want to discard them as they make the instances artificially harder: 
+         * x = replace_all(...) || x = y --> we might get in final_check x = y && tmp = replace_all(...)
+         * in final_check we include only those transducer constraints that are present in remaining 
+         * constraints (ignoring tmp = replace_all(...)).
+         * 
+         * @param ex Equation
+         * @return true <-> is temporary transducer constraint
+         */
+        bool is_tmp_transducer_eq(app* const ex);
+
         /**
          * @brief Creates noodler formula containing relevant word equations and disequations
+         * 
+         * @param alph Set of symbols of the current instance (for transducer constraints)
          */
-        Formula get_word_formula_from_relevant();
+        Formula get_formula_from_relevant(const std::set<mata::Symbol>& alph);
         /**
          * @brief Get all symbols used in relevant word (dis)equations and memberships
          */
