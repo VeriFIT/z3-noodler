@@ -619,10 +619,6 @@ namespace smt::noodler {
         }
         // For transducer predicates we compare pointers (assuming linear memory model)
         if (lhs.is_transducer()) {
-            // compare pointer for equality
-            if (lhs.get_transducer() == rhs.get_transducer()) {
-                return false;
-            }
             // compare pointers
             return lhs.get_transducer() < rhs.get_transducer();
         }
