@@ -363,11 +363,22 @@ namespace smt::noodler {
                 assert(right_side_automata.size() == 1); // there should be exactly one element in right_side_automata as we do not have length variables
                 // TODO probably we should try shortest words, it might work correctly
                 if (is_inclusion_to_process_on_cycle // we do not test inclusion if we have node that is not on cycle, because we will not go back to it (TODO: should we really not test it?)
-                    && mata::nfa::is_included(element_to_process.aut_ass.get_automaton_concat(left_side_vars), *right_side_automata[0])) {
-                    // TODO can I push to front? I think I can, and I probably want to, so I can immediately test if it is not sat (if element_to_process.inclusions_to_process is empty), or just to get to sat faster
-                    worklist.push_front(element_to_process);
-                    // we continue as there is no need for noodlification, inclusion already holds
-                    continue;
+                    // && mata::nfa::is_included(element_to_process.aut_ass.get_automaton_concat(left_side_vars), *right_side_automata[0])) {
+                ) {
+                    std::shared_ptr<mata::nfa::Nfa> right_side_aut = right_side_automata[0];
+                    bool is_min_included = true;
+                    for (const mata::Word& shortest_word : mata::strings::get_shortest_words(element_to_process.aut_ass.get_automaton_concat(left_side_vars))) {
+                        if (!right_side_aut->is_in_lang(shortest_word)) {
+                            is_min_included = false;
+                            break;
+                        }
+                    }
+                    if (is_min_included) {
+                        // TODO can I push to front? I think I can, and I probably want to, so I can immediately test if it is not sat (if element_to_process.inclusions_to_process is empty), or just to get to sat faster
+                        worklist.push_front(element_to_process);
+                        // we continue as there is no need for noodlification, inclusion already holds
+                        continue;
+                    }
                 }
             }
             /********************************************************************************************************/
