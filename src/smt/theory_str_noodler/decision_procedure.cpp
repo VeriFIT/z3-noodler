@@ -49,22 +49,22 @@ namespace smt::noodler {
         };
 
         inclusions = substitute_set(inclusions);
-        inclusions_not_on_cycle = substitute_set(inclusions_not_on_cycle);
+        predicates_not_on_cycle = substitute_set(predicates_not_on_cycle);
 
         // substituting inclusions to process is bit harder, it is possible that two inclusions that were supposed to
         // be processed become same after substituting, so we do not want to keep both in inclusions to process
         std::set<Predicate> substituted_inclusions_to_process;
         std::deque<Predicate> new_inclusions_to_process;
-        while (!inclusions_to_process.empty()) {
-            Predicate substituted_inclusion = substitute_inclusion(inclusions_to_process.front());
-            inclusions_to_process.pop_front();
+        while (!predicates_to_process.empty()) {
+            Predicate substituted_inclusion = substitute_inclusion(predicates_to_process.front());
+            predicates_to_process.pop_front();
 
-            if (!inclusion_has_same_sides(substituted_inclusion) // we do not want to add inclusion that is already in inclusions_to_process
+            if (!inclusion_has_same_sides(substituted_inclusion) // we do not want to add inclusion that is already in predicates_to_process
                 && substituted_inclusions_to_process.count(substituted_inclusion) == 0) {
                 new_inclusions_to_process.push_back(substituted_inclusion);
             }
         }
-        inclusions_to_process = new_inclusions_to_process;
+        predicates_to_process = new_inclusions_to_process;
     }
 
     LenNode SolvingState::get_lengths(const BasicTerm& var) const {
@@ -141,7 +141,7 @@ namespace smt::noodler {
             SolvingState element_to_process = std::move(worklist.front());
             worklist.pop_front();
 
-            if (element_to_process.inclusions_to_process.empty()) {
+            if (element_to_process.predicates_to_process.empty()) {
                 // we found another solution, element_to_process contain the automata
                 // assignment and variable substition that satisfy the original
                 // inclusion graph
@@ -167,8 +167,8 @@ namespace smt::noodler {
 
             // we will now process one inclusion from the inclusion graph which is at front
             // i.e. we will update automata assignments and substitutions so that this inclusion is fulfilled
-            Predicate inclusion_to_process = element_to_process.inclusions_to_process.front();
-            element_to_process.inclusions_to_process.pop_front();
+            Predicate inclusion_to_process = element_to_process.predicates_to_process.front();
+            element_to_process.predicates_to_process.pop_front();
 
             // this will decide whether we will continue in our search by DFS or by BFS
             bool is_inclusion_to_process_on_cycle = element_to_process.is_inclusion_on_cycle(inclusion_to_process);
@@ -225,13 +225,13 @@ namespace smt::noodler {
 
                 // TODO: all this following shit is done also during normal noodlification, I need to split it to some better defined functions
 
-                element_to_process.remove_inclusion(inclusion_to_process);
+                element_to_process.remove_predicate(inclusion_to_process);
 
                 // We might be updating left side, in that case we need to process all nodes that contain the variables from the left,
                 // i.e. those nodes to which inclusion_to_process goes to. In the case we are updating right side, there will be no edges
                 // coming from inclusion_to_process, so this for loop will do nothing.
                 for (const auto &dependent_inclusion : element_to_process.get_dependent_inclusions(inclusion_to_process)) {
-                    // we push only those nodes which are not already in inclusions_to_process
+                    // we push only those nodes which are not already in predicates_to_process
                     // if the inclusion_to_process is on cycle, we need to do BFS
                     // if it is not on cycle, we can do DFS
                     // TODO: can we really do DFS??
@@ -364,7 +364,7 @@ namespace smt::noodler {
                 // TODO probably we should try shortest words, it might work correctly
                 if (is_inclusion_to_process_on_cycle // we do not test inclusion if we have node that is not on cycle, because we will not go back to it (TODO: should we really not test it?)
                     && mata::nfa::is_included(element_to_process.aut_ass.get_automaton_concat(left_side_vars), *right_side_automata[0])) {
-                    // TODO can I push to front? I think I can, and I probably want to, so I can immediately test if it is not sat (if element_to_process.inclusions_to_process is empty), or just to get to sat faster
+                    // TODO can I push to front? I think I can, and I probably want to, so I can immediately test if it is not sat (if element_to_process.predicates_to_process is empty), or just to get to sat faster
                     worklist.push_front(element_to_process);
                     // we continue as there is no need for noodlification, inclusion already holds
                     continue;
@@ -374,14 +374,14 @@ namespace smt::noodler {
             /*************************************** End of inclusion test ******************************************/
             /********************************************************************************************************/
 
-            element_to_process.remove_inclusion(inclusion_to_process);
+            element_to_process.remove_predicate(inclusion_to_process);
 
             // We are going to change the automata on the left side (potentially also split some on the right side, but that should not have impact)
             // so we need to add all nodes whose variable assignments are going to change on the right side (i.e. we follow inclusion graph) for processing.
-            // Warning: Self-loops are not in inclusion graph, but we might still want to add this node again to inclusions_to_process, however, this node will be
+            // Warning: Self-loops are not in inclusion graph, but we might still want to add this node again to predicates_to_process, however, this node will be
             // split during noodlification, so we will only add parts whose right sides actually change (see below in noodlification)
             for (const auto &node : element_to_process.get_dependent_inclusions(inclusion_to_process)) {
-                // we push only those nodes which are not already in inclusions_to_process
+                // we push only those nodes which are not already in predicates_to_process
                 // if the inclusion_to_process is on cycle, we need to do BFS
                 // if it is not on cycle, we can do DFS
                 // TODO: can we really do DFS??
@@ -1298,12 +1298,12 @@ namespace smt::noodler {
             for (auto const &node : incl_graph.get_nodes()) {
                 init_solving_state.inclusions.insert(node->get_predicate());
                 if (!incl_graph.is_on_cycle(node)) {
-                    init_solving_state.inclusions_not_on_cycle.insert(node->get_predicate());
+                    init_solving_state.predicates_not_on_cycle.insert(node->get_predicate());
                 }
             }
-            // TODO the ordering of inclusions_to_process right now is given by how they were added from the splitting graph, should we use something different? also it is not deterministic now, depends on hashes
+            // TODO the ordering of predicates_to_process right now is given by how they were added from the splitting graph, should we use something different? also it is not deterministic now, depends on hashes
             while (!tmp.empty()) {
-                init_solving_state.inclusions_to_process.push_back(tmp.front()->get_predicate());
+                init_solving_state.predicates_to_process.push_back(tmp.front()->get_predicate());
                 tmp.pop_front();
             }
         }
@@ -1558,7 +1558,7 @@ namespace smt::noodler {
         //     model of vars on the right side from the left side)
         for (const Predicate& incl : inclusions_from_preprocessing) {
             solution.inclusions.insert(incl);
-            solution.inclusions_not_on_cycle.insert(incl);
+            solution.predicates_not_on_cycle.insert(incl);
         }
         inclusions_from_preprocessing.clear();
 

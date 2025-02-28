@@ -113,14 +113,17 @@ namespace smt::noodler {
         AutAssignment aut_ass;
         std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
 
-        // set of inclusions where we are trying to find aut_ass + substitution_map such that they hold 
+        // set of inclusions (i.e. Predicate must be of type equations which we pretend is an inclusion) where we are trying to find aut_ass + substitution_map such that they hold
         std::set<Predicate> inclusions;
-        // set of inclusion from the previous set that for sure are not on cycle in the inclusion graph
-        // that would be generated from inclusions
-        std::set<Predicate> inclusions_not_on_cycle;
+        // set of transducers which we want to smiplify so that we only have one var on input and one var on output
+        std::set<Predicate> transducers;
 
-        // contains inclusions where we need to check if it holds (and if not, do something so that the inclusion holds)
-        std::deque<Predicate> inclusions_to_process;
+        // set of inclusions/transducers from the previous sets that for sure are not on cycle in the inclusion graph
+        // that would be generated from inclusions
+        std::set<Predicate> predicates_not_on_cycle;
+
+        // contains inclusions/transducers we need to process (for inclusions we want them to hold under aut_ass and substitution_map, for transducers we want to simplify them)
+        std::deque<Predicate> predicates_to_process;
 
         // the variables that have length constraint on them in the rest of formula
         std::unordered_set<BasicTerm> length_sensitive_vars;
@@ -128,60 +131,64 @@ namespace smt::noodler {
 
         SolvingState() = default;
         SolvingState(AutAssignment aut_ass,
-                     std::deque<Predicate> inclusions_to_process,
+                     std::deque<Predicate> predicates_to_process,
                      std::set<Predicate> inclusions,
-                     std::set<Predicate> inclusions_not_on_cycle,
+                     std::set<Predicate> predicates_not_on_cycle,
                      std::unordered_set<BasicTerm> length_sensitive_vars,
                      std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map)
                         : aut_ass(aut_ass),
                           substitution_map(substitution_map),
                           inclusions(inclusions),
-                          inclusions_not_on_cycle(inclusions_not_on_cycle),
-                          inclusions_to_process(inclusions_to_process),
+                          predicates_not_on_cycle(predicates_not_on_cycle),
+                          predicates_to_process(predicates_to_process),
                           length_sensitive_vars(length_sensitive_vars) {}
 
-        /// pushes inclusion to the beginning of inclusions_to_process but only if it is not in it yet
-        void push_front_unique(const Predicate &inclusion) {
-            if (std::find(inclusions_to_process.begin(), inclusions_to_process.end(), inclusion) == inclusions_to_process.end()) {
-                inclusions_to_process.push_front(inclusion);
+        /// pushes predicate to the beginning of predicates_to_process but only if it is not in it yet
+        void push_front_unique(const Predicate &predicate) {
+            if (std::find(predicates_to_process.begin(), predicates_to_process.end(), predicate) == predicates_to_process.end()) {
+                predicates_to_process.push_front(predicate);
             }
         }
 
-        /// pushes node to the end of nodes_to_process but only if it is not in it yet
-        void push_back_unique(const Predicate &inclusion) {
-            if (std::find(inclusions_to_process.begin(), inclusions_to_process.end(), inclusion) == inclusions_to_process.end()) {
-                inclusions_to_process.push_back(inclusion);
+        /// pushes predicate to the end of predicates_to_process but only if it is not in it yet
+        void push_back_unique(const Predicate &predicate) {
+            if (std::find(predicates_to_process.begin(), predicates_to_process.end(), predicate) == predicates_to_process.end()) {
+                predicates_to_process.push_back(predicate);
             }
         }
 
-        /// pushes node either to the end or beginning of inclusions_to_process (according to @p to_back) but only if it is not in it yet
-        void push_unique(const Predicate &inclusion, bool to_back) {
+        /// pushes predicate either to the end or beginning of predicates_to_process (according to @p to_back) but only if it is not in it yet
+        void push_unique(const Predicate &predicate, bool to_back) {
             if (to_back) {
-                push_back_unique(inclusion);
+                push_back_unique(predicate);
             } else {
-                push_front_unique(inclusion);
+                push_front_unique(predicate);
             }
         }
 
         /**
-         * Checks whether @p inclusion would be on cycle in the inclusion graph (can overapproxamte
-         * and say that inclusion is on cycle even if it is not).
+         * Checks whether @p predicate would be on cycle in the inclusion graph (can overapproximate
+         * and say that predicate is on cycle even if it is not).
          */
-        bool is_inclusion_on_cycle(const Predicate &inclusion) {
-            return (inclusions_not_on_cycle.count(inclusion) == 0);
+        bool is_inclusion_on_cycle(const Predicate &predicate) {
+            return (predicates_not_on_cycle.count(predicate) == 0);
         }
 
         /**
-         * Adds inclusion @p inclusion to this solving state (i.e. we will start checking if
-         * this inclusion should not be added to inclusion_to_process during the decision procedure). 
+         * Adds @p predicate to this solving state 
          * 
-         * @param inclusion Inclusion to add
-         * @param is_on_cycle Whether the inclusion would be on cycle in the inclusion graph (if not sure, set to true)
+         * @param predicate Predicate to add
+         * @param is_on_cycle Whether the predicate would be on cycle in the inclusion graph (if not sure, set to true)
          */
-        void add_inclusion(const Predicate &inclusion, bool is_on_cycle = true) {
-            inclusions.insert(inclusion);
+        void add_predicate(const Predicate &predicate, bool is_on_cycle = true) {
+            if (predicate.get_type() == PredicateType::Equation) {
+                inclusions.insert(predicate);
+            } else {
+                SASSERT(predicate.get_type() == PredicateType::Transducer);
+                transducers.insert(predicate);
+            }
             if (!is_on_cycle) {
-                inclusions_not_on_cycle.insert(inclusion);
+                predicates_not_on_cycle.insert(predicate);
             }
         }
 
@@ -196,13 +203,33 @@ namespace smt::noodler {
          */
         Predicate add_inclusion(const std::vector<BasicTerm> &left_side, const std::vector<BasicTerm> &right_side, bool is_on_cycle = true) {
             Predicate new_inclusion{PredicateType::Equation, std::vector<std::vector<BasicTerm>> {left_side, right_side}};
-            add_inclusion(new_inclusion, is_on_cycle);
+            add_predicate(new_inclusion, is_on_cycle);
             return new_inclusion;
         }
 
-        void remove_inclusion(const Predicate &inclusion) {
-            inclusions.erase(inclusion);
-            inclusions_not_on_cycle.erase(inclusion);
+        /**
+         * Adds transducer @p trans with ipnut variables in @p input and output variables in @p output to this solving state (i.e. we will start checking if
+         * this transducer should not be added to inclusion_to_process during the decision procedure).
+         * 
+         * @param input Input variables
+         * @param ouptut Output variables
+         * @param is_on_cycle Whether the transducer would be on cycle in the inclusion graph (if not sure, set to true)
+         * @return The newly added transducer predicate
+         */
+        Predicate add_transducer(std::shared_ptr<mata::nft::Nft> trans, const std::vector<BasicTerm> &input, const std::vector<BasicTerm> &output, bool is_on_cycle = true) {
+            Predicate new_transducer{PredicateType::Transducer, std::vector<std::vector<BasicTerm>> {input, output}, trans};
+            add_predicate(new_transducer, is_on_cycle);
+            return new_transducer;
+        }
+
+        void remove_predicate(const Predicate &predicate) {
+            if (predicate.get_type() == PredicateType::Equation) {
+                inclusions.erase(predicate);
+            } else {
+                SASSERT(predicate.get_type() == PredicateType::Transducer);
+                transducers.erase(predicate);
+            }
+            predicates_not_on_cycle.erase(predicate);
         }
 
         /**
@@ -249,14 +276,14 @@ namespace smt::noodler {
                 return false;
             }
             for (auto const &right_var : right_side_vars) {
-                if (right_var.is_variable() && left_side_vars.count(right_var) > 0) {
+                if (right_var.is_variable() && left_side_vars.contains(right_var)) {
                     return true;
                 }
             }
             return false;
         }
 
-        // substitutes vars and merge same nodes + delete copies of the merged nodes from the inclusions_to_process (and also nodes that have same sides are deleted)
+        // substitutes vars and merge same nodes + delete copies of the merged nodes from the predicates_to_process (and also nodes that have same sides are deleted)
         void substitute_vars(std::unordered_map<BasicTerm, std::vector<BasicTerm>> &substitution_map);
 
         /**
