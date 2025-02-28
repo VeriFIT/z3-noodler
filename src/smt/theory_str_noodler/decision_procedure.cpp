@@ -167,140 +167,171 @@ namespace smt::noodler {
 
             // we will now process one inclusion from the inclusion graph which is at front
             // i.e. we will update automata assignments and substitutions so that this inclusion is fulfilled
-            Predicate inclusion_to_process = element_to_process.predicates_to_process.front();
+            Predicate predicate_to_process = element_to_process.predicates_to_process.front();
             element_to_process.predicates_to_process.pop_front();
 
-            // this will decide whether we will continue in our search by DFS or by BFS
-            bool is_inclusion_to_process_on_cycle = element_to_process.is_inclusion_on_cycle(inclusion_to_process);
+            if (predicate_to_process.get_type() == PredicateType::Equation) { // inclusion
+                process_inclusion(predicate_to_process, element_to_process);
+            } else {
+                SASSERT(predicate_to_process.get_type() == PredicateType::Transducer);
+                process_transducer(predicate_to_process, element_to_process);
+            }
+        }
 
-            STRACE("str", tout << "Processing node with inclusion " << inclusion_to_process << " which is" << (is_inclusion_to_process_on_cycle ? " " : " not ") << "on the cycle" << std::endl;);
-            STRACE("str",
-                tout << "Length variables are:";
-                for(auto const &var : inclusion_to_process.get_vars()) {
-                    if (element_to_process.length_sensitive_vars.count(var)) {
-                        tout << " " << var.to_string();
+        // there are no solving states left, which means nothing led to solution -> it must be unsatisfiable
+        return l_false;
+    }
+
+    void DecisionProcedure::process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state) {
+        // this will decide whether we will continue in our search by DFS or by BFS
+        bool is_inclusion_to_process_on_cycle = solving_state.is_inclusion_on_cycle(inclusion_to_process);
+
+        STRACE("str", tout << "Processing node with inclusion " << inclusion_to_process << " which is" << (is_inclusion_to_process_on_cycle ? " " : " not ") << "on the cycle" << std::endl;);
+        STRACE("str",
+            tout << "Length variables are:";
+            for(auto const &var : inclusion_to_process.get_vars()) {
+                if (solving_state.length_sensitive_vars.count(var)) {
+                    tout << " " << var.to_string();
+                }
+            }
+            tout << std::endl;
+        );
+
+        const auto &left_side_vars = inclusion_to_process.get_left_side();
+        const auto &right_side_vars = inclusion_to_process.get_right_side();
+
+        /********************************************************************************************************/
+        /****************************************** One side is empty *******************************************/
+        /********************************************************************************************************/
+        // As kinda optimization step, we do "noodlification" for empty sides separately (i.e. sides that
+        // represent empty string). This is because it is simpler, we would get only one noodle so we just need to
+        // check that the non-empty side actually contains empty string and replace the vars on that side by epsilon.
+        if (right_side_vars.empty() || left_side_vars.empty()) {
+            std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
+            auto const non_empty_side_vars = right_side_vars.empty() ?
+                                                    inclusion_to_process.get_left_set()
+                                                    : inclusion_to_process.get_right_set();
+            bool non_empty_side_contains_empty_word = true;
+            for (const auto &var : non_empty_side_vars) {
+                if (solving_state.aut_ass.contains_epsilon(var)) {
+                    // var contains empty word, we substitute it with only empty word, but only if...
+                    if (right_side_vars.empty() // ...non-empty side is the left side (var is from left) or...
+                            || solving_state.length_sensitive_vars.count(var) > 0 // ...var is length-aware
+                        ) {
+                        assert(substitution_map.count(var) == 0 && solving_state.aut_ass.count(var) > 0);
+                        // we prepare substitution for all vars on the left or only the length vars on the right
+                        // (as non-length vars are probably not needed? TODO: would it make sense to update non-length vars too?)
+                        substitution_map[var] = {};
+                        solving_state.aut_ass.erase(var);
                     }
-                }
-                tout << std::endl;
-            );
-
-            const auto &left_side_vars = inclusion_to_process.get_left_side();
-            const auto &right_side_vars = inclusion_to_process.get_right_side();
-
-            /********************************************************************************************************/
-            /****************************************** One side is empty *******************************************/
-            /********************************************************************************************************/
-            // As kinda optimization step, we do "noodlification" for empty sides separately (i.e. sides that
-            // represent empty string). This is because it is simpler, we would get only one noodle so we just need to
-            // check that the non-empty side actually contains empty string and replace the vars on that side by epsilon.
-            if (right_side_vars.empty() || left_side_vars.empty()) {
-                std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
-                auto const non_empty_side_vars = right_side_vars.empty() ?
-                                                        inclusion_to_process.get_left_set()
-                                                      : inclusion_to_process.get_right_set();
-                bool non_empty_side_contains_empty_word = true;
-                for (const auto &var : non_empty_side_vars) {
-                    if (element_to_process.aut_ass.contains_epsilon(var)) {
-                        // var contains empty word, we substitute it with only empty word, but only if...
-                        if (right_side_vars.empty() // ...non-empty side is the left side (var is from left) or...
-                               || element_to_process.length_sensitive_vars.count(var) > 0 // ...var is length-aware
-                         ) {
-                            assert(substitution_map.count(var) == 0 && element_to_process.aut_ass.count(var) > 0);
-                            // we prepare substitution for all vars on the left or only the length vars on the right
-                            // (as non-length vars are probably not needed? TODO: would it make sense to update non-length vars too?)
-                            substitution_map[var] = {};
-                            element_to_process.aut_ass.erase(var);
-                        }
-                    } else {
-                        // var does not contain empty word => whole non-empty side cannot contain empty word
-                        non_empty_side_contains_empty_word = false;
-                        break;
-                    }
-                }
-                if (!non_empty_side_contains_empty_word) {
-                    // in the case that the non_empty side does not contain empty word
-                    // the inclusion cannot hold (noodlification would not create anything)
-                    continue;
-                }
-
-                // TODO: all this following shit is done also during normal noodlification, I need to split it to some better defined functions
-
-                element_to_process.remove_predicate(inclusion_to_process);
-
-                // We might be updating left side, in that case we need to process all nodes that contain the variables from the left,
-                // i.e. those nodes to which inclusion_to_process goes to. In the case we are updating right side, there will be no edges
-                // coming from inclusion_to_process, so this for loop will do nothing.
-                for (const auto &dependent_inclusion : element_to_process.get_dependent_inclusions(inclusion_to_process)) {
-                    // we push only those nodes which are not already in predicates_to_process
-                    // if the inclusion_to_process is on cycle, we need to do BFS
-                    // if it is not on cycle, we can do DFS
-                    // TODO: can we really do DFS??
-                    element_to_process.push_unique(dependent_inclusion, is_inclusion_to_process_on_cycle);
-                }
-
-                // do substitution in the inclusion graph
-                element_to_process.substitute_vars(substitution_map);
-                // update the substitution_map of new_element by the new substitutions
-                element_to_process.substitution_map.merge(substitution_map);
-
-                // TODO: should we really push to front when not on cycle?
-                // TODO: maybe for this case of one side being empty, we should just push to front?
-                if (!is_inclusion_to_process_on_cycle) {
-                    worklist.push_front(element_to_process);
                 } else {
-                    worklist.push_back(element_to_process);
+                    // var does not contain empty word => whole non-empty side cannot contain empty word
+                    non_empty_side_contains_empty_word = false;
+                    break;
                 }
-                continue;
             }
-            /********************************************************************************************************/
-            /*************************************** End of one side is empty ***************************************/
-            /********************************************************************************************************/
+            if (!non_empty_side_contains_empty_word) {
+                // in the case that the non_empty side does not contain empty word
+                // the inclusion cannot hold (noodlification would not create anything)
+                return;
+            }
+
+            // TODO: all this following shit is done also during normal noodlification, I need to split it to some better defined functions
+
+            solving_state.remove_predicate(inclusion_to_process);
+
+            // We might be updating left side, in that case we need to process all nodes that contain the variables from the left,
+            // i.e. those nodes to which inclusion_to_process goes to. In the case we are updating right side, there will be no edges
+            // coming from inclusion_to_process, so this for loop will do nothing.
+            for (const auto &dependent_inclusion : solving_state.get_dependent_inclusions(inclusion_to_process)) {
+                // we push only those nodes which are not already in predicates_to_process
+                // if the inclusion_to_process is on cycle, we need to do BFS
+                // if it is not on cycle, we can do DFS
+                // TODO: can we really do DFS??
+                solving_state.push_unique(dependent_inclusion, is_inclusion_to_process_on_cycle);
+            }
+
+            // do substitution in the inclusion graph
+            solving_state.substitute_vars(substitution_map);
+            // update the substitution_map of new_element by the new substitutions
+            solving_state.substitution_map.merge(substitution_map);
+
+            // TODO: should we really push to front when not on cycle?
+            // TODO: maybe for this case of one side being empty, we should just push to front?
+            if (!is_inclusion_to_process_on_cycle) {
+                worklist.push_front(solving_state);
+            } else {
+                worklist.push_back(solving_state);
+            }
+            return;
+        }
+        /********************************************************************************************************/
+        /*************************************** End of one side is empty ***************************************/
+        /********************************************************************************************************/
 
 
 
-            /********************************************************************************************************/
-            /****************************************** Process left side *******************************************/
-            /********************************************************************************************************/
-            std::vector<std::shared_ptr<mata::nfa::Nfa>> left_side_automata;
-            STRACE("str-nfa", tout << "Left automata:" << std::endl);
-            for (const auto &l_var : left_side_vars) {
-                left_side_automata.push_back(element_to_process.aut_ass.at(l_var));
+        /********************************************************************************************************/
+        /****************************************** Process left side *******************************************/
+        /********************************************************************************************************/
+        std::vector<std::shared_ptr<mata::nfa::Nfa>> left_side_automata;
+        STRACE("str-nfa", tout << "Left automata:" << std::endl);
+        for (const auto &l_var : left_side_vars) {
+            left_side_automata.push_back(solving_state.aut_ass.at(l_var));
+            STRACE("str-nfa",
+                tout << "Automaton for left var " << l_var.get_name() << ":" << std::endl << *left_side_automata.back();
+            );
+        }
+        /********************************************************************************************************/
+        /************************************** End of left side processing *************************************/
+        /********************************************************************************************************/
+
+
+
+
+        /********************************************************************************************************/
+        /***************************************** Process right side *******************************************/
+        /********************************************************************************************************/
+        // We combine the right side into automata where we concatenate non-length-aware vars next to each other.
+        // Each right side automaton corresponds to either concatenation of non-length-aware vars (vector of
+        // basic terms) or one lenght-aware var (vector of one basic term). Division then contains for each right
+        // side automaton the variables whose concatenation it represents.
+        std::vector<std::shared_ptr<mata::nfa::Nfa>> right_side_automata;
+        std::vector<std::vector<BasicTerm>> right_side_division;
+
+        assert(!right_side_vars.empty()); // empty case was processed at the beginning
+        auto right_var_it = right_side_vars.begin();
+        auto right_side_end = right_side_vars.end();
+
+        std::shared_ptr<mata::nfa::Nfa> next_aut = solving_state.aut_ass[*right_var_it];
+        std::vector<BasicTerm> next_division{ *right_var_it };
+        bool last_was_length = (solving_state.length_sensitive_vars.count(*right_var_it) > 0);
+        bool is_there_length_on_right = last_was_length;
+        ++right_var_it;
+
+        STRACE("str-nfa", tout << "Right automata:" << std::endl);
+        for (; right_var_it != right_side_end; ++right_var_it) {
+            std::shared_ptr<mata::nfa::Nfa> right_var_aut = solving_state.aut_ass.at(*right_var_it);
+            if (solving_state.length_sensitive_vars.count(*right_var_it) > 0) {
+                // current right_var is length-aware
+                right_side_automata.push_back(next_aut);
+                right_side_division.push_back(next_division);
                 STRACE("str-nfa",
-                    tout << "Automaton for left var " << l_var.get_name() << ":" << std::endl << *left_side_automata.back();
+                    tout << "Automaton for right var(s)";
+                    for (const auto &r_var : next_division) {
+                        tout << " " << r_var.get_name();
+                    }
+                    tout << ":" << std::endl
+                            << *next_aut;
                 );
-            }
-            /********************************************************************************************************/
-            /************************************** End of left side processing *************************************/
-            /********************************************************************************************************/
-
-
-
-
-            /********************************************************************************************************/
-            /***************************************** Process right side *******************************************/
-            /********************************************************************************************************/
-            // We combine the right side into automata where we concatenate non-length-aware vars next to each other.
-            // Each right side automaton corresponds to either concatenation of non-length-aware vars (vector of
-            // basic terms) or one lenght-aware var (vector of one basic term). Division then contains for each right
-            // side automaton the variables whose concatenation it represents.
-            std::vector<std::shared_ptr<mata::nfa::Nfa>> right_side_automata;
-            std::vector<std::vector<BasicTerm>> right_side_division;
-
-            assert(!right_side_vars.empty()); // empty case was processed at the beginning
-            auto right_var_it = right_side_vars.begin();
-            auto right_side_end = right_side_vars.end();
-
-            std::shared_ptr<mata::nfa::Nfa> next_aut = element_to_process.aut_ass[*right_var_it];
-            std::vector<BasicTerm> next_division{ *right_var_it };
-            bool last_was_length = (element_to_process.length_sensitive_vars.count(*right_var_it) > 0);
-            bool is_there_length_on_right = last_was_length;
-            ++right_var_it;
-
-            STRACE("str-nfa", tout << "Right automata:" << std::endl);
-            for (; right_var_it != right_side_end; ++right_var_it) {
-                std::shared_ptr<mata::nfa::Nfa> right_var_aut = element_to_process.aut_ass.at(*right_var_it);
-                if (element_to_process.length_sensitive_vars.count(*right_var_it) > 0) {
-                    // current right_var is length-aware
+                next_aut = right_var_aut;
+                next_division = std::vector<BasicTerm>{ *right_var_it };
+                last_was_length = true;
+                is_there_length_on_right = true;
+            } else {
+                // current right_var is not length-aware
+                if (last_was_length) {
+                    // if last var was length-aware, we need to add automaton for it into right_side_automata
                     right_side_automata.push_back(next_aut);
                     right_side_division.push_back(next_division);
                     STRACE("str-nfa",
@@ -309,263 +340,241 @@ namespace smt::noodler {
                             tout << " " << r_var.get_name();
                         }
                         tout << ":" << std::endl
-                             << *next_aut;
+                                << *next_aut;
                     );
                     next_aut = right_var_aut;
                     next_division = std::vector<BasicTerm>{ *right_var_it };
-                    last_was_length = true;
-                    is_there_length_on_right = true;
                 } else {
-                    // current right_var is not length-aware
-                    if (last_was_length) {
-                        // if last var was length-aware, we need to add automaton for it into right_side_automata
-                        right_side_automata.push_back(next_aut);
-                        right_side_division.push_back(next_division);
-                        STRACE("str-nfa",
-                            tout << "Automaton for right var(s)";
-                            for (const auto &r_var : next_division) {
-                                tout << " " << r_var.get_name();
-                            }
-                            tout << ":" << std::endl
-                                 << *next_aut;
-                        );
-                        next_aut = right_var_aut;
-                        next_division = std::vector<BasicTerm>{ *right_var_it };
-                    } else {
-                        // if last var was not length-aware, we combine it (and possibly the non-length-aware vars before)
-                        // with the current one
-                        next_aut = std::make_shared<mata::nfa::Nfa>(mata::nfa::concatenate(*next_aut, *right_var_aut));
-                        next_division.push_back(*right_var_it);
-                        // TODO should we reduce size here?
-                    }
-                    last_was_length = false;
+                    // if last var was not length-aware, we combine it (and possibly the non-length-aware vars before)
+                    // with the current one
+                    next_aut = std::make_shared<mata::nfa::Nfa>(mata::nfa::concatenate(*next_aut, *right_var_aut));
+                    next_division.push_back(*right_var_it);
+                    // TODO should we reduce size here?
                 }
+                last_was_length = false;
             }
-            right_side_automata.push_back(next_aut);
-            right_side_division.push_back(next_division);
-            STRACE("str-nfa",
-                tout << "Automaton for right var(s)";
-                for (const auto &r_var : next_division) {
-                    tout << " " << r_var.get_name();
-                }
-                tout << ":" << std::endl << *next_aut;
-            );
-            /********************************************************************************************************/
-            /************************************* End of right side processing *************************************/
-            /********************************************************************************************************/
-
-
-            /********************************************************************************************************/
-            /****************************************** Inclusion test **********************************************/
-            /********************************************************************************************************/
-            if (!is_there_length_on_right) {
-                // we have no length-aware variables on the right hand side => we need to check if inclusion holds
-                assert(right_side_automata.size() == 1); // there should be exactly one element in right_side_automata as we do not have length variables
-                // TODO probably we should try shortest words, it might work correctly
-                if (is_inclusion_to_process_on_cycle // we do not test inclusion if we have node that is not on cycle, because we will not go back to it (TODO: should we really not test it?)
-                    && mata::nfa::is_included(element_to_process.aut_ass.get_automaton_concat(left_side_vars), *right_side_automata[0])) {
-                    // TODO can I push to front? I think I can, and I probably want to, so I can immediately test if it is not sat (if element_to_process.predicates_to_process is empty), or just to get to sat faster
-                    worklist.push_front(element_to_process);
-                    // we continue as there is no need for noodlification, inclusion already holds
-                    continue;
-                }
+        }
+        right_side_automata.push_back(next_aut);
+        right_side_division.push_back(next_division);
+        STRACE("str-nfa",
+            tout << "Automaton for right var(s)";
+            for (const auto &r_var : next_division) {
+                tout << " " << r_var.get_name();
             }
-            /********************************************************************************************************/
-            /*************************************** End of inclusion test ******************************************/
-            /********************************************************************************************************/
+            tout << ":" << std::endl << *next_aut;
+        );
+        /********************************************************************************************************/
+        /************************************* End of right side processing *************************************/
+        /********************************************************************************************************/
 
-            element_to_process.remove_predicate(inclusion_to_process);
 
-            // We are going to change the automata on the left side (potentially also split some on the right side, but that should not have impact)
-            // so we need to add all nodes whose variable assignments are going to change on the right side (i.e. we follow inclusion graph) for processing.
-            // Warning: Self-loops are not in inclusion graph, but we might still want to add this node again to predicates_to_process, however, this node will be
-            // split during noodlification, so we will only add parts whose right sides actually change (see below in noodlification)
-            for (const auto &node : element_to_process.get_dependent_inclusions(inclusion_to_process)) {
-                // we push only those nodes which are not already in predicates_to_process
-                // if the inclusion_to_process is on cycle, we need to do BFS
-                // if it is not on cycle, we can do DFS
-                // TODO: can we really do DFS??
-                element_to_process.push_unique(node, is_inclusion_to_process_on_cycle);
+        /********************************************************************************************************/
+        /****************************************** Inclusion test **********************************************/
+        /********************************************************************************************************/
+        if (!is_there_length_on_right) {
+            // we have no length-aware variables on the right hand side => we need to check if inclusion holds
+            assert(right_side_automata.size() == 1); // there should be exactly one element in right_side_automata as we do not have length variables
+            // TODO probably we should try shortest words, it might work correctly
+            if (is_inclusion_to_process_on_cycle // we do not test inclusion if we have node that is not on cycle, because we will not go back to it (TODO: should we really not test it?)
+                && mata::nfa::is_included(solving_state.aut_ass.get_automaton_concat(left_side_vars), *right_side_automata[0])) {
+                // TODO can I push to front? I think I can, and I probably want to, so I can immediately test if it is not sat (if solving_state.predicates_to_process is empty), or just to get to sat faster
+                worklist.push_front(solving_state);
+                // we continue as there is no need for noodlification, inclusion already holds
+                return;
             }
-            // We will need the set of left vars, so we can sort the 'non-existing self-loop' in noodlification (see previous warning)
-            const auto left_vars_set = inclusion_to_process.get_left_set();
+        }
+        /********************************************************************************************************/
+        /*************************************** End of inclusion test ******************************************/
+        /********************************************************************************************************/
+
+        solving_state.remove_predicate(inclusion_to_process);
+
+        // We are going to change the automata on the left side (potentially also split some on the right side, but that should not have impact)
+        // so we need to add all nodes whose variable assignments are going to change on the right side (i.e. we follow inclusion graph) for processing.
+        // Warning: Self-loops are not in inclusion graph, but we might still want to add this node again to predicates_to_process, however, this node will be
+        // split during noodlification, so we will only add parts whose right sides actually change (see below in noodlification)
+        for (const auto &node : solving_state.get_dependent_inclusions(inclusion_to_process)) {
+            // we push only those nodes which are not already in predicates_to_process
+            // if the inclusion_to_process is on cycle, we need to do BFS
+            // if it is not on cycle, we can do DFS
+            // TODO: can we really do DFS??
+            solving_state.push_unique(node, is_inclusion_to_process_on_cycle);
+        }
+        // We will need the set of left vars, so we can sort the 'non-existing self-loop' in noodlification (see previous warning)
+        const auto left_vars_set = inclusion_to_process.get_left_set();
 
 
-            /* TODO check here if we have empty elements_to_process, if we do, then every noodle we get should finish and return sat
-             * right now if we test sat at the beginning it should work, but it is probably better to immediatly return sat if we have
-             * empty elements_to_process, however, we need to remmeber the state of the algorithm, we would need to return back to noodles
-             * and process them if z3 realizes that the result is actually not sat (because of lengths)
-             */
+        /* TODO check here if we have empty elements_to_process, if we do, then every noodle we get should finish and return sat
+            * right now if we test sat at the beginning it should work, but it is probably better to immediatly return sat if we have
+            * empty elements_to_process, however, we need to remmeber the state of the algorithm, we would need to return back to noodles
+            * and process them if z3 realizes that the result is actually not sat (because of lengths)
+            */
 
 
 
-            /********************************************************************************************************/
-            /******************************************* Noodlification *********************************************/
-            /********************************************************************************************************/
-            /**
-             * We get noodles where each noodle consists of automata connected with a vector of numbers.
-             * So for example if we have some noodle and automaton noodle[i].first, then noodle[i].second is a vector,
-             * where first element i_l = noodle[i].second[0] tells us that automaton noodle[i].first belongs to the
-             * i_l-th left var (i.e. left_side_vars[i_l]) and the second element i_r = noodle[i].second[1] tell us that
-             * it belongs to the i_r-th division of the right side (i.e. right_side_division[i_r])
-             **/
-            auto noodles = mata::strings::seg_nfa::noodlify_for_equation(left_side_automata,
-                                                                        right_side_automata,
-                                                                        false,
-                                                                        {{"reduce", "forward"}});
+        /********************************************************************************************************/
+        /******************************************* Noodlification *********************************************/
+        /********************************************************************************************************/
+        /**
+         * We get noodles where each noodle consists of automata connected with a vector of numbers.
+         * So for example if we have some noodle and automaton noodle[i].first, then noodle[i].second is a vector,
+         * where first element i_l = noodle[i].second[0] tells us that automaton noodle[i].first belongs to the
+         * i_l-th left var (i.e. left_side_vars[i_l]) and the second element i_r = noodle[i].second[1] tell us that
+         * it belongs to the i_r-th division of the right side (i.e. right_side_division[i_r])
+         **/
+        auto noodles = mata::strings::seg_nfa::noodlify_for_equation(left_side_automata,
+                                                                    right_side_automata,
+                                                                    false,
+                                                                    {{"reduce", "forward"}});
 
-            for (const auto &noodle : noodles) {
-                STRACE("str", tout << "Processing noodle" << (is_trace_enabled("str-nfa") ? " with automata:" : "") << std::endl;);
-                SolvingState new_element = element_to_process;
+        for (const auto &noodle : noodles) {
+            STRACE("str", tout << "Processing noodle" << (is_trace_enabled("str-nfa") ? " with automata:" : "") << std::endl;);
+            SolvingState new_element = solving_state;
 
-                /* Explanation of the next code on an example:
-                 * Left side has variables x_1, x_2, x_3, x_2 while the right side has variables x_4, x_1, x_5, x_6, where x_1
-                 * and x_4 are length-aware (i.e. there is one automaton for concatenation of x_5 and x_6 on the right side).
-                 * Assume that noodle represents the case where it was split like this:
-                 *              | x_1 |    x_2    | x_3 |       x_2       |
-                 *              | t_1 | t_2 | t_3 | t_4 | t_5 |    t_6    |
-                 *              |    x_4    |       x_1       | x_5 | x_6 |
-                 * In the following for loop, we create the vars t1, t2, ..., t6 and prepare two vectors left_side_vars_to_new_vars
-                 * and right_side_divisions_to_new_vars which map left vars and right divisions into the concatenation of the new
-                 * vars. So for example left_side_vars_to_new_vars[1] = t_2 t_3, because second left var is x_2 and we map it to t_2 t_3,
-                 * while right_side_divisions_to_new_vars[2] = t_6, because the third division on the right represents the automaton for
-                 * concatenation of x_5 and x_6 and we map it to t_6.
-                 */
-                std::vector<std::vector<BasicTerm>> left_side_vars_to_new_vars(left_side_vars.size());
-                std::vector<std::vector<BasicTerm>> right_side_divisions_to_new_vars(right_side_division.size());
-                for (unsigned i = 0; i < noodle.size(); ++i) {
-                    // TODO do not make a new_var if we can replace it with one left or right var (i.e. new_var is exactly left or right var)
-                    // TODO also if we can substitute with epsilon, we should do that first? or generally process epsilon substitutions better, in some sort of 'preprocessing'
-                    BasicTerm new_var = util::mk_noodler_var_fresh(std::string("align_") + std::to_string(noodlification_no));
-                    left_side_vars_to_new_vars[noodle[i].second[0]].push_back(new_var);
-                    right_side_divisions_to_new_vars[noodle[i].second[1]].push_back(new_var);
-                    new_element.aut_ass[new_var] = noodle[i].first; // we assign the automaton to new_var
-                    STRACE("str-nfa", tout << new_var << std::endl << *noodle[i].first;);
-                }
+            /* Explanation of the next code on an example:
+                * Left side has variables x_1, x_2, x_3, x_2 while the right side has variables x_4, x_1, x_5, x_6, where x_1
+                * and x_4 are length-aware (i.e. there is one automaton for concatenation of x_5 and x_6 on the right side).
+                * Assume that noodle represents the case where it was split like this:
+                *              | x_1 |    x_2    | x_3 |       x_2       |
+                *              | t_1 | t_2 | t_3 | t_4 | t_5 |    t_6    |
+                *              |    x_4    |       x_1       | x_5 | x_6 |
+                * In the following for loop, we create the vars t1, t2, ..., t6 and prepare two vectors left_side_vars_to_new_vars
+                * and right_side_divisions_to_new_vars which map left vars and right divisions into the concatenation of the new
+                * vars. So for example left_side_vars_to_new_vars[1] = t_2 t_3, because second left var is x_2 and we map it to t_2 t_3,
+                * while right_side_divisions_to_new_vars[2] = t_6, because the third division on the right represents the automaton for
+                * concatenation of x_5 and x_6 and we map it to t_6.
+                */
+            std::vector<std::vector<BasicTerm>> left_side_vars_to_new_vars(left_side_vars.size());
+            std::vector<std::vector<BasicTerm>> right_side_divisions_to_new_vars(right_side_division.size());
+            for (unsigned i = 0; i < noodle.size(); ++i) {
+                // TODO do not make a new_var if we can replace it with one left or right var (i.e. new_var is exactly left or right var)
+                // TODO also if we can substitute with epsilon, we should do that first? or generally process epsilon substitutions better, in some sort of 'preprocessing'
+                BasicTerm new_var = util::mk_noodler_var_fresh(std::string("align_") + std::to_string(noodlification_no));
+                left_side_vars_to_new_vars[noodle[i].second[0]].push_back(new_var);
+                right_side_divisions_to_new_vars[noodle[i].second[1]].push_back(new_var);
+                new_element.aut_ass[new_var] = noodle[i].first; // we assign the automaton to new_var
+                STRACE("str-nfa", tout << new_var << std::endl << *noodle[i].first;);
+            }
 
-                // Each variable that occurs in the left side or is length-aware needs to be substituted, we use this map for that
-                std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
+            // Each variable that occurs in the left side or is length-aware needs to be substituted, we use this map for that
+            std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
 
-                /* Following the example from before, the following loop will create these inclusions from the right side divisions:
-                 *         t_1 t_2 ⊆ x_4
-                 *     t_3 t_4 t_5 ⊆ x_1
-                 *             t_6 ⊆ x_5 x_6
-                 * However, we do not add the first two inclusions into the inclusion graph but use them for substitution, i.e.
-                 *        substitution_map[x_4] = t_1 t_2
-                 *        substitution_map[x_1] = t_3 t_4 t_5
-                 * because they are length-aware vars.
-                 */
-                for (unsigned i = 0; i < right_side_division.size(); ++i) {
-                    const auto &division = right_side_division[i];
-                    if (division.size() == 1 && element_to_process.length_sensitive_vars.count(division[0]) != 0) {
-                        // right side is length-aware variable y => we are either substituting or adding new inclusion "new_vars ⊆ y"
-                        const BasicTerm &right_var = division[0];
-                        if (substitution_map.count(right_var)) {
-                            // right_var is already substituted, therefore we add 'new_vars ⊆ right_var' to the inclusion graph
-                            // TODO: how to decide if sometihng is on cycle? by previous node being on cycle, or when we recompute inclusion graph edges?
-                            const auto &new_inclusion = new_element.add_inclusion(right_side_divisions_to_new_vars[i], division, is_inclusion_to_process_on_cycle);
-                            // we also add this inclusion to the worklist, as it represents unification
-                            // we push it to the front if we are processing node that is not on the cycle, because it should not get stuck in the cycle then
-                            // TODO: is this correct? can we push to the front?
-                            // TODO: can't we push to front even if it is on cycle??
-                            new_element.push_unique(new_inclusion, is_inclusion_to_process_on_cycle);
-                            STRACE("str", tout << "added new inclusion from the right side because it could not be substituted: " << new_inclusion << std::endl; );
-                        } else {
-                            // right_var is not substitued by anything yet, we will substitute it
-                            substitution_map[right_var] = right_side_divisions_to_new_vars[i];
-                            STRACE("str", tout << "right side var " << right_var.get_name() << " replaced with:"; for (auto const &var : right_side_divisions_to_new_vars[i]) { tout << " " << var.get_name(); } tout << std::endl; );
-                            // as right_var wil be substituted in the inclusion graph, we do not need to remember the automaton assignment for it
-                            new_element.aut_ass.erase(right_var);
-                            // update the length variables
-                            for (const BasicTerm &new_var : right_side_divisions_to_new_vars[i]) {
-                                new_element.length_sensitive_vars.insert(new_var);
-                            }
-                        }
-
-                    } else {
-                        // right side is non-length concatenation "y_1...y_n" => we are adding new inclusion "new_vars ⊆ y1...y_n"
+            /* Following the example from before, the following loop will create these inclusions from the right side divisions:
+                *         t_1 t_2 ⊆ x_4
+                *     t_3 t_4 t_5 ⊆ x_1
+                *             t_6 ⊆ x_5 x_6
+                * However, we do not add the first two inclusions into the inclusion graph but use them for substitution, i.e.
+                *        substitution_map[x_4] = t_1 t_2
+                *        substitution_map[x_1] = t_3 t_4 t_5
+                * because they are length-aware vars.
+                */
+            for (unsigned i = 0; i < right_side_division.size(); ++i) {
+                const auto &division = right_side_division[i];
+                if (division.size() == 1 && solving_state.length_sensitive_vars.count(division[0]) != 0) {
+                    // right side is length-aware variable y => we are either substituting or adding new inclusion "new_vars ⊆ y"
+                    const BasicTerm &right_var = division[0];
+                    if (substitution_map.count(right_var)) {
+                        // right_var is already substituted, therefore we add 'new_vars ⊆ right_var' to the inclusion graph
                         // TODO: how to decide if sometihng is on cycle? by previous node being on cycle, or when we recompute inclusion graph edges?
-                        // TODO: do we need to add inclusion if previous node was not on cycle? because I think it is not possible to get to this new node anyway
                         const auto &new_inclusion = new_element.add_inclusion(right_side_divisions_to_new_vars[i], division, is_inclusion_to_process_on_cycle);
-                        // we add this inclusion to the worklist only if the right side contains something that was on the left (i.e. it was possibly changed)
-                        if (SolvingState::is_dependent(left_vars_set, new_inclusion.get_right_set())) {
-                            // TODO: again, push to front? back? where the fuck to push??
-                            new_element.push_unique(new_inclusion, is_inclusion_to_process_on_cycle);
-                        }
-                        STRACE("str", tout << "added new inclusion from the right side (non-length): " << new_inclusion << std::endl; );
-                    }
-                }
-
-                /* Following the example from before, the following loop will create these inclusions from the left side:
-                 *           x_1 ⊆ t_1
-                 *           x_2 ⊆ t_2 t_3
-                 *           x_3 ⊆ t_4
-                 *           x_2 ⊆ t_5 t_6
-                 * Again, we want to use the inclusions for substitutions, but we replace only those variables which were
-                 * not substituted yet, so the first inclusion stays (x_1 was substituted from the right side) and the
-                 * fourth inclusion stays (as we substitute x_2 using the second inclusion). So from the second and third
-                 * inclusion we get:
-                 *        substitution_map[x_2] = t_2 t_3
-                 *        substitution_map[x_3] = t_4
-                 */
-                for (unsigned i = 0; i < left_side_vars.size(); ++i) {
-                    // TODO maybe if !is_there_length_on_right, we should just do intersection and not create new inclusions
-                    const BasicTerm &left_var = left_side_vars[i];
-                    if (left_var.is_literal()) {
-                        // we skip literals, we do not want to substitute them
-                        continue;
-                    }
-                    if (substitution_map.count(left_var)) {
-                        // left_var is already substituted, therefore we add 'left_var ⊆ left_side_vars_to_new_vars[i]' to the inclusion graph
-                        std::vector<BasicTerm> new_inclusion_left_side{ left_var };
-                        // TODO: how to decide if sometihng is on cycle? by previous node being on cycle, or when we recompute inclusion graph edges?
-                        const auto &new_inclusion = new_element.add_inclusion(new_inclusion_left_side, left_side_vars_to_new_vars[i], is_inclusion_to_process_on_cycle);
                         // we also add this inclusion to the worklist, as it represents unification
                         // we push it to the front if we are processing node that is not on the cycle, because it should not get stuck in the cycle then
                         // TODO: is this correct? can we push to the front?
                         // TODO: can't we push to front even if it is on cycle??
                         new_element.push_unique(new_inclusion, is_inclusion_to_process_on_cycle);
-                        STRACE("str", tout << "added new inclusion from the left side because it could not be substituted: " << new_inclusion << std::endl; );
+                        STRACE("str", tout << "added new inclusion from the right side because it could not be substituted: " << new_inclusion << std::endl; );
                     } else {
-                        // TODO make this function or something, we do the same thing here as for the right side when substituting
-                        // left_var is not substitued by anything yet, we will substitute it
-                        substitution_map[left_var] = left_side_vars_to_new_vars[i];
-                        STRACE("str", tout << "left side var " << left_var.get_name() << " replaced with:"; for (auto const &var : left_side_vars_to_new_vars[i]) { tout << " " << var.get_name(); } tout << std::endl; );
-                        // as left_var wil be substituted in the inclusion graph, we do not need to remember the automaton assignment for it
-                        new_element.aut_ass.erase(left_var);
+                        // right_var is not substitued by anything yet, we will substitute it
+                        substitution_map[right_var] = right_side_divisions_to_new_vars[i];
+                        STRACE("str", tout << "right side var " << right_var.get_name() << " replaced with:"; for (auto const &var : right_side_divisions_to_new_vars[i]) { tout << " " << var.get_name(); } tout << std::endl; );
+                        // as right_var wil be substituted in the inclusion graph, we do not need to remember the automaton assignment for it
+                        new_element.aut_ass.erase(right_var);
                         // update the length variables
-                        if (new_element.length_sensitive_vars.count(left_var) > 0) { // if left_var is length-aware => substituted vars should become length-aware
-                            for (const BasicTerm &new_var : left_side_vars_to_new_vars[i]) {
-                                new_element.length_sensitive_vars.insert(new_var);
-                            }
+                        for (const BasicTerm &new_var : right_side_divisions_to_new_vars[i]) {
+                            new_element.length_sensitive_vars.insert(new_var);
+                        }
+                    }
+
+                } else {
+                    // right side is non-length concatenation "y_1...y_n" => we are adding new inclusion "new_vars ⊆ y1...y_n"
+                    // TODO: how to decide if sometihng is on cycle? by previous node being on cycle, or when we recompute inclusion graph edges?
+                    // TODO: do we need to add inclusion if previous node was not on cycle? because I think it is not possible to get to this new node anyway
+                    const auto &new_inclusion = new_element.add_inclusion(right_side_divisions_to_new_vars[i], division, is_inclusion_to_process_on_cycle);
+                    // we add this inclusion to the worklist only if the right side contains something that was on the left (i.e. it was possibly changed)
+                    if (SolvingState::is_dependent(left_vars_set, new_inclusion.get_right_set())) {
+                        // TODO: again, push to front? back? where the fuck to push??
+                        new_element.push_unique(new_inclusion, is_inclusion_to_process_on_cycle);
+                    }
+                    STRACE("str", tout << "added new inclusion from the right side (non-length): " << new_inclusion << std::endl; );
+                }
+            }
+
+            /* Following the example from before, the following loop will create these inclusions from the left side:
+                *           x_1 ⊆ t_1
+                *           x_2 ⊆ t_2 t_3
+                *           x_3 ⊆ t_4
+                *           x_2 ⊆ t_5 t_6
+                * Again, we want to use the inclusions for substitutions, but we replace only those variables which were
+                * not substituted yet, so the first inclusion stays (x_1 was substituted from the right side) and the
+                * fourth inclusion stays (as we substitute x_2 using the second inclusion). So from the second and third
+                * inclusion we get:
+                *        substitution_map[x_2] = t_2 t_3
+                *        substitution_map[x_3] = t_4
+                */
+            for (unsigned i = 0; i < left_side_vars.size(); ++i) {
+                // TODO maybe if !is_there_length_on_right, we should just do intersection and not create new inclusions
+                const BasicTerm &left_var = left_side_vars[i];
+                if (left_var.is_literal()) {
+                    // we skip literals, we do not want to substitute them
+                    continue;
+                }
+                if (substitution_map.count(left_var)) {
+                    // left_var is already substituted, therefore we add 'left_var ⊆ left_side_vars_to_new_vars[i]' to the inclusion graph
+                    std::vector<BasicTerm> new_inclusion_left_side{ left_var };
+                    // TODO: how to decide if sometihng is on cycle? by previous node being on cycle, or when we recompute inclusion graph edges?
+                    const auto &new_inclusion = new_element.add_inclusion(new_inclusion_left_side, left_side_vars_to_new_vars[i], is_inclusion_to_process_on_cycle);
+                    // we also add this inclusion to the worklist, as it represents unification
+                    // we push it to the front if we are processing node that is not on the cycle, because it should not get stuck in the cycle then
+                    // TODO: is this correct? can we push to the front?
+                    // TODO: can't we push to front even if it is on cycle??
+                    new_element.push_unique(new_inclusion, is_inclusion_to_process_on_cycle);
+                    STRACE("str", tout << "added new inclusion from the left side because it could not be substituted: " << new_inclusion << std::endl; );
+                } else {
+                    // TODO make this function or something, we do the same thing here as for the right side when substituting
+                    // left_var is not substitued by anything yet, we will substitute it
+                    substitution_map[left_var] = left_side_vars_to_new_vars[i];
+                    STRACE("str", tout << "left side var " << left_var.get_name() << " replaced with:"; for (auto const &var : left_side_vars_to_new_vars[i]) { tout << " " << var.get_name(); } tout << std::endl; );
+                    // as left_var wil be substituted in the inclusion graph, we do not need to remember the automaton assignment for it
+                    new_element.aut_ass.erase(left_var);
+                    // update the length variables
+                    if (new_element.length_sensitive_vars.count(left_var) > 0) { // if left_var is length-aware => substituted vars should become length-aware
+                        for (const BasicTerm &new_var : left_side_vars_to_new_vars[i]) {
+                            new_element.length_sensitive_vars.insert(new_var);
                         }
                     }
                 }
-
-                // do substitution in the inclusion graph
-                new_element.substitute_vars(substitution_map);
-
-                // update the substitution_map of new_element by the new substitutions
-                new_element.substitution_map.merge(substitution_map);
-
-                // TODO should we really push to front when not on cycle?
-                if (!is_inclusion_to_process_on_cycle) {
-                    worklist.push_front(new_element);
-                } else {
-                    worklist.push_back(new_element);
-                }
-
             }
 
-            ++noodlification_no; // TODO: when to do this increment?? maybe noodlification_no should be part of SolvingState?
-            /********************************************************************************************************/
-            /*************************************** End of noodlification ******************************************/
-            /********************************************************************************************************/
+            // do substitution in the inclusion graph
+            new_element.substitute_vars(substitution_map);
+
+            // update the substitution_map of new_element by the new substitutions
+            new_element.substitution_map.merge(substitution_map);
+
+            // TODO should we really push to front when not on cycle?
+            if (!is_inclusion_to_process_on_cycle) {
+                worklist.push_front(new_element);
+            } else {
+                worklist.push_back(new_element);
+            }
 
         }
 
-        // there are no solving states left, which means nothing led to solution -> it must be unsatisfiable
-        return l_false;
+        ++noodlification_no; // TODO: when to do this increment?? maybe noodlification_no should be part of SolvingState?
+        /********************************************************************************************************/
+        /*************************************** End of noodlification ******************************************/
+        /********************************************************************************************************/
+
     }
 
     LenNode DecisionProcedure::get_initial_lengths(bool all_vars) {

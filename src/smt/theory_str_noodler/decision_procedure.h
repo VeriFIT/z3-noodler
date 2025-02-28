@@ -363,6 +363,9 @@ namespace smt::noodler {
          */
         std::vector<Predicate> replace_disequality(Predicate diseq);
 
+        void process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state);
+        void process_transducer(const Predicate& transducer_to_process, SolvingState& solving_state);
+
         /**
          * @brief Gets the formula encoding to_code/from_code/to_int/from_int conversions
          */
