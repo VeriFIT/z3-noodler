@@ -405,10 +405,10 @@ namespace smt::noodler {
 
 
         /* TODO check here if we have empty elements_to_process, if we do, then every noodle we get should finish and return sat
-            * right now if we test sat at the beginning it should work, but it is probably better to immediatly return sat if we have
-            * empty elements_to_process, however, we need to remmeber the state of the algorithm, we would need to return back to noodles
-            * and process them if z3 realizes that the result is actually not sat (because of lengths)
-            */
+         * right now if we test sat at the beginning it should work, but it is probably better to immediatly return sat if we have
+         * empty elements_to_process, however, we need to remmeber the state of the algorithm, we would need to return back to noodles
+         * and process them if z3 realizes that the result is actually not sat (because of lengths)
+         */
 
 
 
@@ -432,18 +432,18 @@ namespace smt::noodler {
             SolvingState new_element = solving_state;
 
             /* Explanation of the next code on an example:
-                * Left side has variables x_1, x_2, x_3, x_2 while the right side has variables x_4, x_1, x_5, x_6, where x_1
-                * and x_4 are length-aware (i.e. there is one automaton for concatenation of x_5 and x_6 on the right side).
-                * Assume that noodle represents the case where it was split like this:
-                *              | x_1 |    x_2    | x_3 |       x_2       |
-                *              | t_1 | t_2 | t_3 | t_4 | t_5 |    t_6    |
-                *              |    x_4    |       x_1       | x_5 | x_6 |
-                * In the following for loop, we create the vars t1, t2, ..., t6 and prepare two vectors left_side_vars_to_new_vars
-                * and right_side_divisions_to_new_vars which map left vars and right divisions into the concatenation of the new
-                * vars. So for example left_side_vars_to_new_vars[1] = t_2 t_3, because second left var is x_2 and we map it to t_2 t_3,
-                * while right_side_divisions_to_new_vars[2] = t_6, because the third division on the right represents the automaton for
-                * concatenation of x_5 and x_6 and we map it to t_6.
-                */
+             * Left side has variables x_1, x_2, x_3, x_2 while the right side has variables x_4, x_1, x_5, x_6, where x_1
+             * and x_4 are length-aware (i.e. there is one automaton for concatenation of x_5 and x_6 on the right side).
+             * Assume that noodle represents the case where it was split like this:
+             *              | x_1 |    x_2    | x_3 |       x_2       |
+             *              | t_1 | t_2 | t_3 | t_4 | t_5 |    t_6    |
+             *              |    x_4    |       x_1       | x_5 | x_6 |
+             * In the following for loop, we create the vars t1, t2, ..., t6 and prepare two vectors left_side_vars_to_new_vars
+             * and right_side_divisions_to_new_vars which map left vars and right divisions into the concatenation of the new
+             * vars. So for example left_side_vars_to_new_vars[1] = t_2 t_3, because second left var is x_2 and we map it to t_2 t_3,
+             * while right_side_divisions_to_new_vars[2] = t_6, because the third division on the right represents the automaton for
+             * concatenation of x_5 and x_6 and we map it to t_6.
+             */
             std::vector<std::vector<BasicTerm>> left_side_vars_to_new_vars(left_side_vars.size());
             std::vector<std::vector<BasicTerm>> right_side_divisions_to_new_vars(right_side_division.size());
             for (unsigned i = 0; i < noodle.size(); ++i) {
@@ -510,17 +510,17 @@ namespace smt::noodler {
             }
 
             /* Following the example from before, the following loop will create these inclusions from the left side:
-                *           x_1 ⊆ t_1
-                *           x_2 ⊆ t_2 t_3
-                *           x_3 ⊆ t_4
-                *           x_2 ⊆ t_5 t_6
-                * Again, we want to use the inclusions for substitutions, but we replace only those variables which were
-                * not substituted yet, so the first inclusion stays (x_1 was substituted from the right side) and the
-                * fourth inclusion stays (as we substitute x_2 using the second inclusion). So from the second and third
-                * inclusion we get:
-                *        substitution_map[x_2] = t_2 t_3
-                *        substitution_map[x_3] = t_4
-                */
+             *           x_1 ⊆ t_1
+             *           x_2 ⊆ t_2 t_3
+             *           x_3 ⊆ t_4
+             *           x_2 ⊆ t_5 t_6
+             * Again, we want to use the inclusions for substitutions, but we replace only those variables which were
+             * not substituted yet, so the first inclusion stays (x_1 was substituted from the right side) and the
+             * fourth inclusion stays (as we substitute x_2 using the second inclusion). So from the second and third
+             * inclusion we get:
+             *        substitution_map[x_2] = t_2 t_3
+             *        substitution_map[x_3] = t_4
+             */
             for (unsigned i = 0; i < left_side_vars.size(); ++i) {
                 // TODO maybe if !is_there_length_on_right, we should just do intersection and not create new inclusions
                 const BasicTerm &left_var = left_side_vars[i];
