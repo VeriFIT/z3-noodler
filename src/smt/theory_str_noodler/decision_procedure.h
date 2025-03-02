@@ -183,10 +183,10 @@ namespace smt::noodler {
          * @param is_on_cycle Whether the predicate would be on cycle in the inclusion graph (if not sure, set to true)
          */
         void add_predicate(const Predicate &predicate, bool is_on_cycle = true) {
-            if (predicate.get_type() == PredicateType::Equation) {
+            if (predicate.is_equation()) { // inclusion
                 inclusions.insert(predicate);
             } else {
-                SASSERT(predicate.get_type() == PredicateType::Transducer);
+                SASSERT(predicate.is_transducer());
                 transducers.insert(predicate);
             }
             if (!is_on_cycle) {
@@ -225,10 +225,10 @@ namespace smt::noodler {
         }
 
         void remove_predicate(const Predicate &predicate) {
-            if (predicate.get_type() == PredicateType::Equation) {
+            if (predicate.is_equation()) { // inclusion
                 inclusions.erase(predicate);
             } else {
-                SASSERT(predicate.get_type() == PredicateType::Transducer);
+                SASSERT(predicate.is_transducer());
                 transducers.erase(predicate);
             }
             predicates_not_on_cycle.erase(predicate);
@@ -245,10 +245,10 @@ namespace smt::noodler {
          */
         std::vector<Predicate> get_dependent_predicates(const Predicate &predicate) {
             std::set<BasicTerm> vars_to_check_dependency;
-            if (predicate.get_type() == PredicateType::Equation) {
+            if (predicate.is_equation()) { // inclusion
                 vars_to_check_dependency = predicate.get_left_set();
             } else {
-                SASSERT(predicate.get_type() == PredicateType::Transducer);
+                SASSERT(predicate.is_transducer());
                 vars_to_check_dependency = predicate.get_set_of_param(1);
             }
 

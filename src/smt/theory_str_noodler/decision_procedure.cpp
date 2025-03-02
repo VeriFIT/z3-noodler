@@ -1353,25 +1353,31 @@ namespace smt::noodler {
      * @brief Creates initial inclusion graph according to the preprocessed instance.
      */
     void DecisionProcedure::init_computation() {
-        Formula equations;
+        Formula equations_and_transducers;
 
         bool some_diseq_handled_by_ca = false;
 
-        for (auto const &dis_or_eq : formula.get_predicates()) {
-            if (dis_or_eq.is_equation()) {
-                equations.add_predicate(dis_or_eq);
-            } else if (dis_or_eq.is_inequation()) {
+        for (auto const &pred : formula.get_predicates()) {
+            if (pred.is_equation()) {
+                equations_and_transducers.add_predicate(pred);
+            } else if (pred.is_inequation()) {
                 // If we solve diesquations using CA --> we store the disequations to be solved later on
                 if (this->m_params.m_ca_constr) {
-                    init_ca_diseq(dis_or_eq);
+                    init_ca_diseq(pred);
                     some_diseq_handled_by_ca = true;
                 } else {
-                    for (auto const &eq_from_diseq : replace_disequality(dis_or_eq)) {
-                        equations.add_predicate(eq_from_diseq);
+                    for (auto const &eq_from_diseq : replace_disequality(pred)) {
+                        equations_and_transducers.add_predicate(eq_from_diseq);
                     }
                 }
+            } else if (pred.is_transducer()) {
+                equations_and_transducers.add_predicate(pred);
+                for (const BasicTerm& var : pred.get_vars()) {
+                    // we add all vars from transducers as length-aware (TODO: do we need to?)
+                    this->init_length_sensitive_vars.insert(var);
+                }
             } else {
-                util::throw_error("Decision procedure can handle only equations and disequations");
+                util::throw_error("Unsupported constraint in the decision procedure");
             }
         }
         // we set all variables in not contains as length
@@ -1388,8 +1394,8 @@ namespace smt::noodler {
         );
 
         STRACE("str-dis",
-            tout << "Equations after removing disequations" << std::endl;
-            for (const auto &eq : equations.get_predicates()) {
+            tout << "Equations and transducers after removing disequations" << std::endl;
+            for (const auto &eq : equations_and_transducers.get_predicates()) {
                 tout << "    " << eq << std::endl;
             }
         );
@@ -1402,10 +1408,10 @@ namespace smt::noodler {
         }
         init_solving_state.substitution_map = std::move(this->init_substitution_map);
 
-        if (!equations.get_predicates().empty()) {
+        if (!equations_and_transducers.get_predicates().empty()) {
             // TODO we probably want to completely get rid of inclusion graphs
             std::deque<std::shared_ptr<GraphNode>> tmp;
-            Graph incl_graph = Graph::create_inclusion_graph(equations, tmp);
+            Graph incl_graph = Graph::create_inclusion_graph(equations_and_transducers, tmp);
             for (auto const &node : incl_graph.get_nodes()) {
                 init_solving_state.inclusions.insert(node->get_predicate());
                 if (!incl_graph.is_on_cycle(node)) {
