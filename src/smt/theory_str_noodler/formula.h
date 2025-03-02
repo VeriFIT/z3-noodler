@@ -287,6 +287,10 @@ namespace smt::noodler {
     //----------------------------------------------------------------------------------------------------------------------------------
 
     class Predicate {
+    private:
+        PredicateType type;
+        std::vector<std::vector<BasicTerm>> params;
+        std::shared_ptr<mata::nft::Nft> transducer; // transducer for the case of PredicateType::Transducer
     public:
         enum struct EquationSideType {
             Left,
@@ -373,6 +377,14 @@ namespace smt::noodler {
             for(const auto& side : this->params) {
                 for(const BasicTerm& t : side)
                     ret.insert(t);
+            }
+            return ret;
+        }
+
+        std::set<BasicTerm> get_set_of_param(std::vector<std::vector<BasicTerm>>::size_type index) const {
+            std::set<BasicTerm> ret;
+            for(const BasicTerm& t : this->params[index]) {
+                ret.insert(t);
             }
             return ret;
         }
@@ -587,13 +599,6 @@ namespace smt::noodler {
             assert(is_transducer());
             return transducer;
         }
-
-    private:
-        PredicateType type;
-        std::vector<std::vector<BasicTerm>> params;
-        std::shared_ptr<mata::nft::Nft> transducer; // transducer for the case of PredicateType::Transducer
-
-        // TODO: Add additional attributes such as cost, etc.
     }; // Class Predicate.
 
     [[nodiscard]] static std::string to_string(const Predicate& predicate) {

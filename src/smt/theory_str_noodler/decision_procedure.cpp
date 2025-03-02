@@ -184,7 +184,7 @@ namespace smt::noodler {
 
     void DecisionProcedure::process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state) {
         // this will decide whether we will continue in our search by DFS or by BFS
-        bool is_inclusion_to_process_on_cycle = solving_state.is_inclusion_on_cycle(inclusion_to_process);
+        bool is_inclusion_to_process_on_cycle = solving_state.is_predicate_on_cycle(inclusion_to_process);
 
         STRACE("str", tout << "Processing node with inclusion " << inclusion_to_process << " which is" << (is_inclusion_to_process_on_cycle ? " " : " not ") << "on the cycle" << std::endl;);
         STRACE("str",
@@ -243,7 +243,7 @@ namespace smt::noodler {
             // We might be updating left side, in that case we need to process all nodes that contain the variables from the left,
             // i.e. those nodes to which inclusion_to_process goes to. In the case we are updating right side, there will be no edges
             // coming from inclusion_to_process, so this for loop will do nothing.
-            for (const auto &dependent_inclusion : solving_state.get_dependent_inclusions(inclusion_to_process)) {
+            for (const auto &dependent_inclusion : solving_state.get_dependent_predicates(inclusion_to_process)) {
                 // we push only those nodes which are not already in predicates_to_process
                 // if the inclusion_to_process is on cycle, we need to do BFS
                 // if it is not on cycle, we can do DFS
@@ -393,7 +393,7 @@ namespace smt::noodler {
         // so we need to add all nodes whose variable assignments are going to change on the right side (i.e. we follow inclusion graph) for processing.
         // Warning: Self-loops are not in inclusion graph, but we might still want to add this node again to predicates_to_process, however, this node will be
         // split during noodlification, so we will only add parts whose right sides actually change (see below in noodlification)
-        for (const auto &node : solving_state.get_dependent_inclusions(inclusion_to_process)) {
+        for (const auto &node : solving_state.get_dependent_predicates(inclusion_to_process)) {
             // we push only those nodes which are not already in predicates_to_process
             // if the inclusion_to_process is on cycle, we need to do BFS
             // if it is not on cycle, we can do DFS
@@ -555,6 +555,12 @@ namespace smt::noodler {
                 }
             }
 
+            // We need to process simple transducers (with at most one output/input var) that stop being simple by the substitution map
+            for (const Predicate& simple_transducer : new_element.get_broken_simple_transducers(substitution_map)) {
+                SASSERT(!is_inclusion_to_process_on_cycle); // if we have transducers, there should not be a cycle
+                new_element.push_unique(simple_transducer, is_inclusion_to_process_on_cycle);
+            }
+
             // do substitution in the inclusion graph
             new_element.substitute_vars(substitution_map);
 
@@ -575,6 +581,102 @@ namespace smt::noodler {
         /*************************************** End of noodlification ******************************************/
         /********************************************************************************************************/
 
+    }
+
+    void DecisionProcedure::process_transducer(const Predicate& transducer_to_process, SolvingState& solving_state) {
+        // We assume that if we have transducers in procedure, then the inclusion tree is without cycles
+        SASSERT(!solving_state.is_predicate_on_cycle(transducer_to_process));
+
+        // TODO handle epsilons in inputs/outputs differently???
+
+        solving_state.remove_predicate(transducer_to_process);
+
+        const std::vector<BasicTerm>& input_vars = transducer_to_process.get_params()[0];
+        const std::vector<BasicTerm>& output_vars = transducer_to_process.get_params()[1];
+        std::vector<std::shared_ptr<mata::nfa::Nfa>> input_vars_automata;
+        for (const BasicTerm& input_var : input_vars) {
+            input_vars_automata.push_back(solving_state.aut_ass.at(input_var));
+        }
+        std::vector<std::shared_ptr<mata::nfa::Nfa>> output_vars_automata;
+        for (const BasicTerm& output_var : output_vars) {
+            output_vars_automata.push_back(solving_state.aut_ass.at(output_var));
+        }
+
+        std::vector<std::vector<std::tuple<std::shared_ptr<mata::nft::Nft>,unsigned,std::shared_ptr<mata::nfa::Nfa>,unsigned,std::shared_ptr<mata::nfa::Nfa>>>> noodles; // TODO run transducer noodlification
+        for (const auto& noodle : noodles) {
+            // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
+            //      - T is a transducer, which will take one input and one output var: xo = T(xi)
+            //      - i is the number denoting which input variable is connected with T
+            //      - Ai is NFA for the new input variable xi
+            //      - o is the number denoting which output variable is connected with T
+            //      - Ao is NFA for the new output variable xo
+
+            SolvingState new_element = solving_state;
+
+            std::vector<std::vector<BasicTerm>> input_vars_to_new_input_vars(input_vars.size());
+            std::vector<std::vector<BasicTerm>> output_vars_to_new_output_vars(output_vars.size());
+            for (unsigned i = 0; i < noodle.size(); ++i) {
+                // TODO do not make new vars if we can replace them with one var
+
+                BasicTerm new_input_var = util::mk_noodler_var_fresh(std::string("input_") + std::to_string(noodlification_no)); // xi
+                input_vars_to_new_input_vars[std::get<1>(noodle[i])].push_back(new_input_var);
+                new_element.aut_ass[new_input_var] = std::get<2>(noodle[i]); // we assign Ai to new_input_var
+                new_element.length_sensitive_vars.insert(new_input_var); // xi is also length-aware as it is in transducer
+
+                BasicTerm new_output_var = util::mk_noodler_var_fresh(std::string("output_") + std::to_string(noodlification_no)); // xo
+                output_vars_to_new_output_vars[std::get<3>(noodle[i])].push_back(new_output_var);
+                new_element.aut_ass[new_output_var] = std::get<4>(noodle[i]); // we assign Ao to new_output_var
+                new_element.length_sensitive_vars.insert(new_output_var); // xo is also length-aware as it is in transducer
+
+                // add the new transducer xo = T(xi)
+                new_element.add_transducer(std::get<0>(noodle[i]), {new_input_var}, {new_output_var}, false);
+            }
+
+            std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
+
+            for (unsigned i = 0; i < input_vars.size(); ++i) {
+                const BasicTerm& cur_input_var = input_vars[i];
+                if (substitution_map.contains(cur_input_var)) {
+                    // cur_input_var is already substituted, we create an inclusion instead
+                    const auto &new_inclusion = new_element.add_inclusion(input_vars_to_new_input_vars[i], std::vector<BasicTerm>{cur_input_var}, false);
+                    new_element.push_unique(new_inclusion, false);
+
+                    // cur_input_var is certainly not in output_vars (as we assume that we do not have a cycle in the inclusion graph), therefore we do not
+                    // need to add this inclusion for processing like we sometimes need while processing inclusions 
+                } else {
+                    // cur_input_var is not substituted yet, so we substitute it now
+                    substitution_map[cur_input_var] = input_vars_to_new_input_vars[i];
+                    new_element.aut_ass.erase(cur_input_var);
+                }
+            }
+
+            for (unsigned i = 0; i < output_vars.size(); ++i) {
+                const BasicTerm& cur_output_var = output_vars[i];
+                if (substitution_map.contains(cur_output_var)) {
+                    // cur_output_var is already substituted, we create an inclusion instead
+                    const auto &new_inclusion = new_element.add_inclusion(output_vars_to_new_output_vars[i], std::vector<BasicTerm>{cur_output_var}, false);
+                    new_element.push_unique(new_inclusion, false);
+                } else {
+                    // cur_output_var is not substituted yet, so we substitute it now
+                    substitution_map[cur_output_var] = output_vars_to_new_output_vars[i];
+                    new_element.aut_ass.erase(cur_output_var);
+                }
+            }
+
+            // We need to process simple transducers (with at most one output/input var) that stop being simple by the substitution map
+            for (const Predicate& simple_transducer : new_element.get_broken_simple_transducers(substitution_map)) {
+                new_element.push_unique(simple_transducer, false);
+            }
+
+            // do substitution in the inclusion graph
+            new_element.substitute_vars(substitution_map);
+
+            // update the substitution_map of new_element by the new substitutions
+            new_element.substitution_map.merge(substitution_map);
+
+            worklist.push_front(new_element);
+        }
+        ++noodlification_no; // TODO: when to do this increment?? maybe noodlification_no should be part of SolvingState?
     }
 
     LenNode DecisionProcedure::get_initial_lengths(bool all_vars) {
@@ -1453,7 +1555,7 @@ namespace smt::noodler {
             return l_false;
         } else if (this->formula.get_predicates().empty()) {
             // preprocessing solved all (dis)equations => we set the solution (for lengths check)
-            this->solution = SolvingState(this->init_aut_ass, {}, {}, {}, this->init_length_sensitive_vars, {});
+            this->solution = SolvingState(this->init_aut_ass, {}, {}, {}, {}, this->init_length_sensitive_vars, {});
             return l_true;
         } else {
             // preprocessing was not able to solve it, we at least reduce the size of created automata

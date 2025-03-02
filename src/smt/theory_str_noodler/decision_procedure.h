@@ -115,7 +115,7 @@ namespace smt::noodler {
 
         // set of inclusions (i.e. Predicate must be of type equations which we pretend is an inclusion) where we are trying to find aut_ass + substitution_map such that they hold
         std::set<Predicate> inclusions;
-        // set of transducers which we want to smiplify so that we only have one var on input and one var on output
+        // set of transducers which we want to smiplify so that we only have at most one var in input and at most one var in output
         std::set<Predicate> transducers;
 
         // set of inclusions/transducers from the previous sets that for sure are not on cycle in the inclusion graph
@@ -133,12 +133,14 @@ namespace smt::noodler {
         SolvingState(AutAssignment aut_ass,
                      std::deque<Predicate> predicates_to_process,
                      std::set<Predicate> inclusions,
+                     std::set<Predicate> transducers,
                      std::set<Predicate> predicates_not_on_cycle,
                      std::unordered_set<BasicTerm> length_sensitive_vars,
                      std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map)
                         : aut_ass(aut_ass),
                           substitution_map(substitution_map),
                           inclusions(inclusions),
+                          transducers(transducers),
                           predicates_not_on_cycle(predicates_not_on_cycle),
                           predicates_to_process(predicates_to_process),
                           length_sensitive_vars(length_sensitive_vars) {}
@@ -170,8 +172,8 @@ namespace smt::noodler {
          * Checks whether @p predicate would be on cycle in the inclusion graph (can overapproximate
          * and say that predicate is on cycle even if it is not).
          */
-        bool is_inclusion_on_cycle(const Predicate &predicate) {
-            return (predicates_not_on_cycle.count(predicate) == 0);
+        bool is_predicate_on_cycle(const Predicate &predicate) {
+            return !predicates_not_on_cycle.contains(predicate);
         }
 
         /**
@@ -233,21 +235,60 @@ namespace smt::noodler {
         }
 
         /**
-         * Returns the vector of inclusions that would depend on the given @p inclusion in the inclusion graph.
-         * That this all inclusions whose right side contain some variable from the left side of the given @p inclusion.
+         * Returns the vector of predicates that would depend on the given @p predicate in the inclusion graph.
          * 
-         * @param inclusion Inclusion whose dependencies we are looking for
-         * @return The set of inclusions that depend on @p inclusion
+         * More concretely, it returns all predicates whose right side (for inclusion) or inputs (for transducers)
+         * contain some variable from the left side/outputs of the given @p predicate.
+         * 
+         * @param predicate Predicate whose dependencies we are looking for
+         * @return The set of predicates that depend on @p predicate
          */
-        std::vector<Predicate> get_dependent_inclusions(const Predicate &inclusion) {
-            std::vector<Predicate> dependent_inclusions;
-            auto left_vars_set = inclusion.get_left_set();
-            for (const Predicate &other_inclusion : inclusions) {
-                if (is_dependent(left_vars_set, other_inclusion.get_right_set())) {
-                    dependent_inclusions.push_back(other_inclusion);
+        std::vector<Predicate> get_dependent_predicates(const Predicate &predicate) {
+            std::set<BasicTerm> vars_to_check_dependency;
+            if (predicate.get_type() == PredicateType::Equation) {
+                vars_to_check_dependency = predicate.get_left_set();
+            } else {
+                SASSERT(predicate.get_type() == PredicateType::Transducer);
+                vars_to_check_dependency = predicate.get_set_of_param(1);
+            }
+
+            std::vector<Predicate> dependent_predicates;
+            for (const Predicate &inclusion : inclusions) {
+                if (is_dependent(vars_to_check_dependency, inclusion.get_right_set())) {
+                    dependent_predicates.push_back(inclusion);
                 }
             }
-            return dependent_inclusions;
+            for (const Predicate &transducer : transducers) {
+                if (is_dependent(vars_to_check_dependency, transducer.get_set_of_param(1))) {
+                    dependent_predicates.push_back(transducer);
+                }
+            }
+            return dependent_predicates;
+        }
+
+        /**
+         * @brief Returns simple transducers that will stop being simple after applying substitution map @p breaking_substitution_map
+         */
+        std::vector<Predicate> get_broken_simple_transducers(const std::unordered_map<BasicTerm, std::vector<BasicTerm>>& breaking_substitution_map) {
+            std::set<BasicTerm> breaking_vars;
+            for (const auto& [var, substitution] : breaking_substitution_map) {
+                if (substitution.size() > 1) {
+                    breaking_vars.insert(var);
+                }
+            }
+            return get_simple_transducers_with_output_var_in(breaking_vars);
+        }
+
+        std::vector<Predicate> get_simple_transducers_with_output_var_in(const std::set<BasicTerm>& vars) {
+            std::vector<Predicate> simple_transducers;
+            for (const Predicate &transducer : transducers) {
+                if (transducer.get_params()[0].size() == 1 && transducer.get_params()[1].size() <= 1) { // if we have simple transducer that contains some output var
+                    if (vars.contains(transducer.get_params()[1][0])) { // if (the only) output variable is in vars
+                        simple_transducers.push_back(transducer);
+                    }
+                }
+            }
+            return simple_transducers;
         }
 
         /**
