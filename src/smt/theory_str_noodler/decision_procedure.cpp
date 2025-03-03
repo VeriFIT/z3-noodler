@@ -27,44 +27,48 @@ namespace smt::noodler {
         };
 
         // substitutes variables in both sides of inclusion using substitution_map
-        auto substitute_inclusion = [&substitute_vector](const Predicate &inclusion) {
-            std::vector<BasicTerm> new_left_side = substitute_vector(inclusion.get_left_side());
-            std::vector<BasicTerm> new_right_side = substitute_vector(inclusion.get_right_side());
-            return Predicate{inclusion.get_type(), { new_left_side, new_right_side }};
+        auto substitute_predicate = [&substitute_vector](const Predicate &pred) {
+            std::vector<std::vector<BasicTerm>> new_params;
+            for (const auto& param : pred.get_params()) {
+                new_params.push_back(substitute_vector(param));
+            }
+            if (pred.is_transducer()) return Predicate{pred.get_type(), new_params, pred.get_transducer()};
+            else return Predicate{pred.get_type(), new_params};
         };
 
         // returns true if the inclusion has the same thing on both sides
-        auto inclusion_has_same_sides = [](const Predicate &inclusion) { return inclusion.get_left_side() == inclusion.get_right_side(); };
+        auto inclusion_has_same_sides = [](const Predicate &inclusion) { return !(inclusion.is_equation() && inclusion.get_left_side() == inclusion.get_right_side()); };
 
         // substitutes variables of inclusions in a vector using substitute_map, but does not keep the ones that have the same sides after substitution
-        auto substitute_set = [&substitute_inclusion, &inclusion_has_same_sides](const std::set<Predicate> inclusions) {
-            std::set<Predicate> new_inclusions;
-            for (const auto &old_inclusion : inclusions) {
-                auto new_inclusion = substitute_inclusion(old_inclusion);
-                if (!inclusion_has_same_sides(new_inclusion)) {
-                    new_inclusions.insert(new_inclusion);
+        auto substitute_set = [&substitute_predicate, &inclusion_has_same_sides](const std::set<Predicate> predicates) {
+            std::set<Predicate> new_predicates;
+            for (const auto &old_pred : predicates) {
+                auto new_pred = substitute_predicate(old_pred);
+                if (inclusion_has_same_sides(new_pred)) { // skip inclusions that have both sides equal
+                    new_predicates.insert(new_pred);
                 }
             }
-            return new_inclusions;
+            return new_predicates;
         };
 
         inclusions = substitute_set(inclusions);
+        transducers = substitute_set(transducers);
         predicates_not_on_cycle = substitute_set(predicates_not_on_cycle);
 
-        // substituting inclusions to process is bit harder, it is possible that two inclusions that were supposed to
-        // be processed become same after substituting, so we do not want to keep both in inclusions to process
-        std::set<Predicate> substituted_inclusions_to_process;
-        std::deque<Predicate> new_inclusions_to_process;
+        // substituting predicates to process is bit harder, it is possible that two predicates that were supposed to
+        // be processed become same after substituting, so we do not want to keep both in predicates to process
+        std::set<Predicate> substituted_predicates_to_process;
+        std::deque<Predicate> new_predicates_to_process;
         while (!predicates_to_process.empty()) {
-            Predicate substituted_inclusion = substitute_inclusion(predicates_to_process.front());
+            Predicate substituted_inclusion = substitute_predicate(predicates_to_process.front());
             predicates_to_process.pop_front();
 
-            if (!inclusion_has_same_sides(substituted_inclusion) // we do not want to add inclusion that is already in predicates_to_process
-                && substituted_inclusions_to_process.count(substituted_inclusion) == 0) {
-                new_inclusions_to_process.push_back(substituted_inclusion);
+            if (!inclusion_has_same_sides(substituted_inclusion)
+                && !substituted_predicates_to_process.contains(substituted_inclusion)) { // we do not want to add predicates that are already in predicates_to_process
+                new_predicates_to_process.push_back(substituted_inclusion);
             }
         }
-        predicates_to_process = new_inclusions_to_process;
+        predicates_to_process = new_predicates_to_process;
     }
 
     LenNode SolvingState::get_lengths(const BasicTerm& var) const {

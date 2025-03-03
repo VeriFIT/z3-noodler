@@ -116,46 +116,6 @@ void smt::noodler::Graph::add_inclusion_graph_edges() {
     }
 }
 
-void smt::noodler::Graph::substitute_vars(const std::unordered_map<BasicTerm, std::vector<BasicTerm>> &substitution_map, std::unordered_set<std::shared_ptr<GraphNode>> &out_deleted_nodes) {
-    auto substitute_vector = [&substitution_map](std::vector<BasicTerm> &vector) {
-        std::vector<BasicTerm> result;
-        for (const BasicTerm &var : vector) {
-            if (substitution_map.count(var) == 0) {
-                result.push_back(var);
-            } else {
-                const auto &to_this = substitution_map.at(var);
-                result.insert(result.end(), to_this.begin(), to_this.end());
-            }
-        }
-        return result;
-    };
-
-    for (std::shared_ptr<GraphNode> node : get_nodes()) {
-        Predicate &node_predicate = node->get_predicate();
-        std::vector<BasicTerm> new_left_side = substitute_vector(node_predicate.get_left_side());
-        std::vector<BasicTerm> new_right_side = substitute_vector(node_predicate.get_right_side());
-        node_predicate.set_left_side(std::move(new_left_side));
-        node_predicate.set_right_side(std::move(new_right_side));
-    }
-
-    // merge same nodes and delete nodes with the same right and left side
-    std::set<GraphNode> unique_nodes;
-    for (const auto &node : get_nodes()) {
-        if (node->get_predicate().get_left_side() == node->get_predicate().get_right_side()) {
-            out_deleted_nodes.insert(node);
-        }
-
-        if (unique_nodes.count(*node) == 0) {
-            unique_nodes.insert(*node);
-        } else {
-            out_deleted_nodes.insert(node);
-        }
-    }
-    for (const auto &node : out_deleted_nodes) {
-        nodes.erase(node);
-    }
-}
-
 Graph smt::noodler::Graph::create_inclusion_graph(const Formula& formula, std::deque<std::shared_ptr<GraphNode>> &out_node_order) {
     Graph splitting_graph{ create_simplified_splitting_graph(formula) };
     return create_inclusion_graph(splitting_graph, out_node_order);

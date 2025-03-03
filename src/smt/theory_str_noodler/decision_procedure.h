@@ -324,7 +324,15 @@ namespace smt::noodler {
             return false;
         }
 
-        // substitutes vars and merge same nodes + delete copies of the merged nodes from the predicates_to_process (and also nodes that have same sides are deleted)
+        // substitutes vars and merge same nodes + delete copies of the merged nodes from the predicates_to_process (and also inclusions that have same sides are deleted)
+
+        /**
+         * @brief Substitutes variables in predicates using @p substitution_map and removes unnnecessary nodes
+         * 
+         * Concretely, substitutes the variables of both sides of inclusions and vars in inputs/outputs of transducers,
+         * both in the corresponding sets and in the worklist of predicates to process (if two nodes become equal, keeps only
+         * one). Furthermore, it removes inclusions that have both sides equal after substitution.
+         */
         void substitute_vars(std::unordered_map<BasicTerm, std::vector<BasicTerm>> &substitution_map);
 
         /**

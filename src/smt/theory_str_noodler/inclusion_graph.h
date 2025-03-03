@@ -212,11 +212,6 @@ namespace smt::noodler {
         // node_mapping - maps pointers of this graph into pointers of the returned graph (i.e. the same inclusion is mapped to the same inclusion)
         Graph deep_copy(std::unordered_map<std::shared_ptr<GraphNode>, std::shared_ptr<GraphNode>> &node_mapping) const;
 
-        // substitutes all vars in left/right sides in nodes based on the substitution_map and merge nodes that become same
-        // assumes that there are no edges in the graph
-        // in out_deleted_nodes there will be nodes that were deleted, because of merging
-        void substitute_vars(const std::unordered_map<BasicTerm, std::vector<BasicTerm>> &substitution_map, std::unordered_set<std::shared_ptr<GraphNode>> &out_deleted_nodes);
-
         // all these assume that formula does not contain same equalities
         static Graph create_inclusion_graph(const Formula& formula);
         static Graph create_inclusion_graph(const Formula& formula, std::deque<std::shared_ptr<GraphNode>> &out_node_order);
