@@ -49,6 +49,10 @@ namespace smt::noodler {
             update_alphabet();
         };
 
+        static mata::nfa::Nfa empty_string_automaton() {
+            return mata::nfa::Nfa(1, {0}, {0});
+        }
+
         mata::nfa::Nfa sigma_star_automaton() const {
             mata::nfa::Nfa nfa{};
             nfa.initial = {0};

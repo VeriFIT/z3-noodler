@@ -597,6 +597,63 @@ namespace smt::noodler {
 
         const std::vector<BasicTerm>& input_vars = transducer_to_process.get_params()[0];
         const std::vector<BasicTerm>& output_vars = transducer_to_process.get_params()[1];
+
+        if (input_vars.empty()) {
+            // emptiness means that on the input we have empty string, therefore, we do not do noodlification but instead apply the empty string on transducer and create new inclusion
+            mata::nfa::Nfa application_to_empty_string = mata::nft::project_to(transducer_to_process.get_transducer()->apply(AutAssignment::empty_string_automaton()), 1).to_nfa_move();
+            
+            if (application_to_empty_string.is_lang_empty()) {
+                // empty string is not accepted by transducer as input, this solving_state cannot lead to solution
+                return;
+            }
+
+            if (output_vars.empty()) {
+                // if also ouptut side is just empty string, then we can just check if the result of application contains it
+                if (application_to_empty_string.is_in_lang({})) {
+                    // if it does, we can continue with this solving_state, otherwise we keep it out of worklist as it will not lead to solution
+                    worklist.push_front(solving_state);
+                }
+                return;
+            }
+
+            // we create new inclusion output_var ⊆ application_to_empty_string
+            if (mata::strings::is_lang_eps(application_to_empty_string)) {
+                // if the application leads to empty string again, the right side of inclusion is empty
+                solving_state.push_front_unique(solving_state.add_inclusion(output_vars, {}, false));
+            } else {
+                // otherwise, right side of inclusion must be application, we create fresh var for it
+                BasicTerm fresh_var = util::mk_noodler_var_fresh(std::string("output_") + std::to_string(noodlification_no));
+                solving_state.aut_ass[fresh_var] = std::make_shared<mata::nfa::Nfa>(application_to_empty_string);
+                solving_state.push_front_unique(solving_state.add_inclusion(output_vars, {fresh_var}, false));
+            }
+
+            worklist.push_front(solving_state);
+            return;
+        }
+
+        if (output_vars.empty()) {
+            // we do the same thing when epsilon is in output vars, however we need to take inverted transducer
+            mata::nfa::Nfa application_to_empty_string = mata::nft::project_to(mata::nft::invert_levels(*transducer_to_process.get_transducer()).apply(AutAssignment::empty_string_automaton()), 1).to_nfa_move();
+            
+            if (application_to_empty_string.is_lang_empty()) {
+                return;
+            }
+
+            // we create new inclusion application_to_empty_string ⊆ input_vars
+            if (mata::strings::is_lang_eps(application_to_empty_string)) {
+                // if the application leads to empty string again, the left side of inclusion is empty
+                solving_state.push_front_unique(solving_state.add_inclusion({}, input_vars, false));
+            } else {
+                // otherwise, left side of inclusion must be application, we create fresh var for it
+                BasicTerm fresh_var = util::mk_noodler_var_fresh(std::string("input_") + std::to_string(noodlification_no));
+                solving_state.aut_ass[fresh_var] = std::make_shared<mata::nfa::Nfa>(application_to_empty_string);
+                solving_state.push_front_unique(solving_state.add_inclusion({fresh_var}, input_vars, false));
+            }
+
+            worklist.push_front(solving_state);
+            return;
+        }
+
         std::vector<std::shared_ptr<mata::nfa::Nfa>> input_vars_automata;
         for (const BasicTerm& input_var : input_vars) {
             input_vars_automata.push_back(solving_state.aut_ass.at(input_var));
