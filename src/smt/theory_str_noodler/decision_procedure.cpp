@@ -37,14 +37,14 @@ namespace smt::noodler {
         };
 
         // returns true if the inclusion has the same thing on both sides
-        auto inclusion_has_same_sides = [](const Predicate &inclusion) { return !(inclusion.is_equation() && inclusion.get_left_side() == inclusion.get_right_side()); };
+        auto inclusion_has_same_sides = [](const Predicate &inclusion) { return (inclusion.is_equation() && inclusion.get_left_side() == inclusion.get_right_side()); };
 
         // substitutes variables of inclusions in a vector using substitute_map, but does not keep the ones that have the same sides after substitution
         auto substitute_set = [&substitute_predicate, &inclusion_has_same_sides](const std::set<Predicate> predicates) {
             std::set<Predicate> new_predicates;
             for (const auto &old_pred : predicates) {
                 auto new_pred = substitute_predicate(old_pred);
-                if (inclusion_has_same_sides(new_pred)) { // skip inclusions that have both sides equal
+                if (!inclusion_has_same_sides(new_pred)) { // skip inclusions that have both sides equal
                     new_predicates.insert(new_pred);
                 }
             }
@@ -1474,7 +1474,12 @@ namespace smt::noodler {
             std::deque<std::shared_ptr<GraphNode>> tmp;
             Graph incl_graph = Graph::create_inclusion_graph(equations_and_transducers, tmp);
             for (auto const &node : incl_graph.get_nodes()) {
-                init_solving_state.inclusions.insert(node->get_predicate());
+                const Predicate& node_pred = node->get_predicate();
+                if (node_pred.is_equation()) {
+                    init_solving_state.inclusions.insert(node_pred);
+                } else {
+                    init_solving_state.transducers.insert(node_pred);
+                }
                 if (!incl_graph.is_on_cycle(node)) {
                     init_solving_state.predicates_not_on_cycle.insert(node->get_predicate());
                 }
