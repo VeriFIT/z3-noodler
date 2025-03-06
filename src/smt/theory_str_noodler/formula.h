@@ -599,6 +599,10 @@ namespace smt::noodler {
             assert(is_transducer());
             return transducer;
         }
+        std::shared_ptr<mata::nft::Nft>& get_transducer() {
+            assert(is_transducer());
+            return transducer;
+        }
     }; // Class Predicate.
 
     [[nodiscard]] static std::string to_string(const Predicate& predicate) {

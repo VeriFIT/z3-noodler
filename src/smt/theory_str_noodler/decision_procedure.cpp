@@ -663,7 +663,7 @@ namespace smt::noodler {
             output_vars_automata.push_back(solving_state.aut_ass.at(output_var));
         }
 
-        std::vector<std::vector<std::tuple<std::shared_ptr<mata::nft::Nft>,unsigned,std::shared_ptr<mata::nfa::Nfa>,unsigned,std::shared_ptr<mata::nfa::Nfa>>>> noodles; // TODO run transducer noodlification
+        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata);
         for (const auto& noodle : noodles) {
             // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
             //      - T is a transducer, which will take one input and one output var: xo = T(xi)
@@ -680,17 +680,17 @@ namespace smt::noodler {
                 // TODO do not make new vars if we can replace them with one var
 
                 BasicTerm new_input_var = util::mk_noodler_var_fresh(std::string("input_") + std::to_string(noodlification_no)); // xi
-                input_vars_to_new_input_vars[std::get<1>(noodle[i])].push_back(new_input_var);
-                new_element.aut_ass[new_input_var] = std::get<2>(noodle[i]); // we assign Ai to new_input_var
+                input_vars_to_new_input_vars[noodle[i].input_index].push_back(new_input_var);
+                new_element.aut_ass[new_input_var] = noodle[i].input_aut; // we assign Ai to new_input_var
                 new_element.length_sensitive_vars.insert(new_input_var); // xi is also length-aware as it is in transducer
 
                 BasicTerm new_output_var = util::mk_noodler_var_fresh(std::string("output_") + std::to_string(noodlification_no)); // xo
-                output_vars_to_new_output_vars[std::get<3>(noodle[i])].push_back(new_output_var);
-                new_element.aut_ass[new_output_var] = std::get<4>(noodle[i]); // we assign Ao to new_output_var
+                output_vars_to_new_output_vars[noodle[i].output_index].push_back(new_output_var);
+                new_element.aut_ass[new_output_var] = noodle[i].output_aut; // we assign Ao to new_output_var
                 new_element.length_sensitive_vars.insert(new_output_var); // xo is also length-aware as it is in transducer
 
                 // add the new transducer xo = T(xi)
-                new_element.add_transducer(std::get<0>(noodle[i]), {new_input_var}, {new_output_var}, false);
+                new_element.add_transducer(noodle[i].transducer, {new_input_var}, {new_output_var}, false);
             }
 
             std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
