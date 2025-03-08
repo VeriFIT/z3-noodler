@@ -1418,6 +1418,8 @@ namespace smt::noodler {
 
         bool some_diseq_handled_by_ca = false;
 
+        bool has_length_vars = !init_length_sensitive_vars.empty();
+
         for (auto const &pred : formula.get_predicates()) {
             if (pred.is_equation()) {
                 equations_and_transducers.add_predicate(pred);
@@ -1432,6 +1434,7 @@ namespace smt::noodler {
                     }
                 }
             } else if (pred.is_transducer()) {
+                if (has_length_vars) { util::throw_error("We cannot handle lengths with transducers yet"); } // TODO: remove when we will be able to handle them
                 equations_and_transducers.add_predicate(pred);
                 for (const BasicTerm& var : pred.get_vars()) {
                     // we add all vars from transducers as length-aware (TODO: do we need to?)
