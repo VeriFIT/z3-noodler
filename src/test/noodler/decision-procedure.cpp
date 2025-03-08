@@ -20,6 +20,10 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     auto& m_util_a{ noodler.m_util_a };
     auto& m{ noodler.m };
 
+    mata::nft::Nft identity{1, {0}, {0}};
+    identity.add_transition(0, {'a', 'a'}, 0);
+    identity.add_transition(0, {'b', 'b'}, 0);
+
     SECTION("unsat-simple", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("xy", "zu"));
@@ -263,6 +267,64 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         // equalities.add_predicate(create_equality("yx", "r"));
         AutAssignment init_ass;
         init_ass[get_var('x')] = regex_to_nfa("a*b*");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        CHECK(proc.compute_next_solution());
+    }
+
+    SECTION("unsat-simple-transducer", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_transducer(identity, "xy", "zu"));
+        // equalities.add_predicate(create_equality("yx", "r"));
+        AutAssignment init_ass;
+        init_ass[get_var('x')] = regex_to_nfa("a");
+        init_ass[get_var('y')] = regex_to_nfa("a*");
+        init_ass[get_var('z')] = regex_to_nfa("b");
+        init_ass[get_var('u')] = regex_to_nfa("b*");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        CHECK(proc.compute_next_solution() == lbool::l_false);
+    }
+
+    SECTION("sat-simple-transducer", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_transducer(identity, "xy", "zu"));
+        // equalities.add_predicate(create_equality("yx", "r"));
+        AutAssignment init_ass;
+        init_ass[get_var('x')] = regex_to_nfa("a*");
+        init_ass[get_var('y')] = regex_to_nfa("a*");
+        init_ass[get_var('z')] = regex_to_nfa("a*");
+        init_ass[get_var('u')] = regex_to_nfa("a*");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        CHECK(proc.compute_next_solution() == lbool::l_true);
+    }
+
+    SECTION("unsat-two-equations-transducer", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_transducer(identity, "xy", "zu"));
+        equalities.add_predicate(create_transducer(identity, "yx", "r"));
+        AutAssignment init_ass;
+        init_ass[get_var('x')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('y')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('z')] = regex_to_nfa("b");
+        init_ass[get_var('u')] = regex_to_nfa("b*");
+        init_ass[get_var('r')] = regex_to_nfa("a*");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        CHECK(proc.compute_next_solution() == lbool::l_false);
+    }
+
+    SECTION("sat-two-equations-transducer", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_transducer(identity, "xy", "zu"));
+        equalities.add_predicate(create_transducer(identity, "yx", "r"));
+        AutAssignment init_ass;
+        init_ass[get_var('x')] = regex_to_nfa("a*");
+        init_ass[get_var('y')] = regex_to_nfa("a*");
+        init_ass[get_var('z')] = regex_to_nfa("a*");
+        init_ass[get_var('u')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('r')] = regex_to_nfa("aaa");
         DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         CHECK(proc.compute_next_solution());
