@@ -302,23 +302,6 @@ namespace smt::noodler {
         throw std::runtime_error("Unhandled predicate type passed as 'this' to to_string().");
     }
 
-    bool Predicate::equals(const Predicate &other) const {
-        if (type == other.type) {
-            if(is_transducer()) {
-                if(!(params[0] == other.params[0] && params[1] == other.params[1])) {
-                    return false;
-                }
-                // check if transducers are the same pointers
-                return transducer == other.transducer;
-            }
-            if (is_two_sided()) {
-                return params[0] == other.params[0] && params[1] == other.params[1];
-            }
-            return params == other.params;
-        }
-        return false;
-    }
-
     bool Predicate::strong_equals(const Predicate& other) const {
         if (type == other.type) {
             if(is_transducer()) {

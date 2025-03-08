@@ -8,10 +8,10 @@
 
 using namespace smt::noodler;
 
-bool graph_nodes_are_equal_to(const Graph::Nodes &graph_nodes, const std::set<GraphNode> &nodes_to_compare) {
-    std::set<GraphNode> graph_nodes_set;
+bool graph_nodes_are_equal_to(const FormulaGraph::Nodes &graph_nodes, const std::set<FormulaGraphNode> &nodes_to_compare) {
+    std::set<FormulaGraphNode> graph_nodes_set;
     for (const auto &node : graph_nodes) {
-        graph_nodes_set.insert(*node);
+        graph_nodes_set.insert(node);
     }
     return graph_nodes_set == nodes_to_compare;
 }
@@ -97,8 +97,8 @@ TEST_CASE("Mata integration", "[noodler]") {
     CHECK(!nfa.delta.empty());
 }
 
-TEST_CASE("Graph::get_edges_to", "[noodler]") {
-    Graph graph;
+TEST_CASE("FormulaGraph::get_edges_to", "[noodler]") {
+    FormulaGraph graph;
     Formula formula;
     BasicTerm x{ BasicTermType::Variable, "x" };
     BasicTerm y{ BasicTermType::Variable, "y" };
@@ -107,20 +107,22 @@ TEST_CASE("Graph::get_edges_to", "[noodler]") {
 
     formula.add_predicate(predicate);
     formula.add_predicate(predicate2);
-    graph = Graph::create_simplified_splitting_graph(formula);
-    auto target{ graph.get_node(predicate) };
-    REQUIRE(target != nullptr);
-    auto edges_to_target{ graph.get_edges_to(target) };
-    REQUIRE(graph.get_node(predicate) != nullptr);
-    CHECK(edges_to_target.find(graph.get_node(predicate)) != edges_to_target.end());
-    REQUIRE(graph.get_node(predicate2) != nullptr);
-    CHECK(edges_to_target.find(graph.get_node(predicate2)) != edges_to_target.end());
-    REQUIRE(graph.get_node(predicate2.get_switched_sides_predicate()) != nullptr);
-    CHECK(edges_to_target.find(graph.get_node(predicate2.get_switched_sides_predicate())) != edges_to_target.end());
+    graph = FormulaGraph::create_simplified_splitting_graph(formula);
+    FormulaGraphNode pred_node = FormulaGraphNode(predicate);
+    FormulaGraphNode pred_node2 = FormulaGraphNode(predicate2);
+    FormulaGraphNode pred_node_rev = FormulaGraphNode(predicate,true);
+    FormulaGraphNode pred_node2_rev = FormulaGraphNode(predicate2,true);
+    REQUIRE(graph.contains_node(pred_node));
+    auto edges_to_target{ graph.get_edges_to(FormulaGraphNode(predicate)) };
+    CHECK(edges_to_target.contains(pred_node));
+    REQUIRE(graph.contains_node(pred_node2));
+    CHECK(edges_to_target.contains(pred_node2));
+    REQUIRE(graph.contains_node(pred_node2_rev));
+    CHECK(edges_to_target.contains(pred_node2_rev));
 }
 
 TEST_CASE("Inclusion graph", "[noodler]") {
-    Graph graph;
+    FormulaGraph graph;
     Formula formula;
 
     BasicTerm u{ BasicTermType::Variable, "u" };
@@ -137,7 +139,7 @@ TEST_CASE("Inclusion graph", "[noodler]") {
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
         formula.add_predicate(predicate3);
-        graph = Graph::create_inclusion_graph(formula);
+        graph = FormulaGraph::create_inclusion_graph(formula);
         CHECK(graph.get_nodes().size() == 5);
         CHECK(graph.get_edges().size() == 5);
         CHECK(graph.get_num_of_edges() == 10);
@@ -149,10 +151,10 @@ TEST_CASE("Inclusion graph", "[noodler]") {
 
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
-        graph = Graph::create_inclusion_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() },
-                GraphNode{ predicate2 }, GraphNode{ predicate2.get_switched_sides_predicate() },
+        graph = FormulaGraph::create_inclusion_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true },
+                FormulaGraphNode{ predicate2 }, FormulaGraphNode{ predicate2, true },
         }));
         CHECK(graph.get_edges().size() == 4);
         CHECK(graph.get_num_of_edges() == 12);
@@ -162,9 +164,9 @@ TEST_CASE("Inclusion graph", "[noodler]") {
         Predicate predicate{ PredicateType::Equation, { { x }, { y, x } } };
 
         formula.add_predicate(predicate);
-        graph = Graph::create_inclusion_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() },
+        graph = FormulaGraph::create_inclusion_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true },
         }));
         CHECK(graph.get_edges().size() == 2);
         CHECK(graph.get_num_of_edges() == 2);
@@ -175,14 +177,14 @@ TEST_CASE("Inclusion graph", "[noodler]") {
     //     Predicate predicate{ PredicateType::Equation, { { x }, { x, y } } };
 
     //     formula.add_predicate(predicate);
-    //     CHECK_THROWS(Graph::create_inclusion_graph(formula)); // Catch2 cannot catch failing assert.
+    //     CHECK_THROWS(FormulaGraph::create_inclusion_graph(formula)); // Catch2 cannot catch failing assert.
     // }
 
     // SECTION("x = x") {
     //     Predicate predicate{ PredicateType::Equation, { { x }, { x } } };
 
     //     formula.add_predicate(predicate);
-    //     CHECK_THROWS(Graph::create_inclusion_graph(formula)); // Catch2 cannot catch failing assert.
+    //     CHECK_THROWS(FormulaGraph::create_inclusion_graph(formula)); // Catch2 cannot catch failing assert.
     // }
 
     SECTION("x=y && u = x") {
@@ -191,12 +193,12 @@ TEST_CASE("Inclusion graph", "[noodler]") {
 
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
-        graph = Graph::create_inclusion_graph(formula);
+        graph = FormulaGraph::create_inclusion_graph(formula);
         CHECK(graph.get_nodes().size() == 2);
         CHECK(
-            !(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate.get_switched_sides_predicate() },
-                GraphNode{ predicate2 },
+            !(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate, true },
+                FormulaGraphNode{ predicate2 },
         }))
         );
         CHECK((graph.get_edges().empty() || graph.get_edges().size() == 1));
@@ -208,10 +210,10 @@ TEST_CASE("Inclusion graph", "[noodler]") {
 
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
-        graph = Graph::create_inclusion_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() },
-                GraphNode{ predicate2.get_switched_sides_predicate() },
+        graph = FormulaGraph::create_inclusion_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true },
+                FormulaGraphNode{ predicate2, true },
         }));
         CHECK(graph.get_edges().size() == 3);
         CHECK(graph.get_num_of_edges() == 4);
@@ -223,14 +225,14 @@ TEST_CASE("Inclusion graph", "[noodler]") {
 
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
-        graph = Graph::create_inclusion_graph(formula);
-        CHECK(!graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate },
-                GraphNode{ predicate.get_switched_sides_predicate() },
+        graph = FormulaGraph::create_inclusion_graph(formula);
+        CHECK(!graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate },
+                FormulaGraphNode{ predicate, true },
         }));
-        CHECK(!graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate2 },
-                GraphNode{ predicate2.get_switched_sides_predicate() },
+        CHECK(!graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate2 },
+                FormulaGraphNode{ predicate2, true },
         }));
         CHECK(graph.get_nodes().size() == 2);
         CHECK(graph.get_edges().empty());
@@ -238,7 +240,7 @@ TEST_CASE("Inclusion graph", "[noodler]") {
 }
 
 TEST_CASE("Splitting graph", "[noodler]") {
-    Graph graph;
+    FormulaGraph graph;
     Formula formula;
 
     BasicTerm u{ BasicTermType::Variable, "u" };
@@ -251,8 +253,8 @@ TEST_CASE("Splitting graph", "[noodler]") {
         CHECK(predicate.to_string() == "Equation: x y = y x");
 
         formula.add_predicate(predicate);
-        graph = Graph::create_simplified_splitting_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{ GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() } }));
+        graph = FormulaGraph::create_simplified_splitting_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{ FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true } }));
         REQUIRE(graph.get_edges().size() == 2);
         CHECK(graph.get_edges().begin()->first == *graph.get_edges().begin()->second.begin());
         CHECK((++graph.get_edges().begin())->first == *(++graph.get_edges().begin())->second.begin());
@@ -263,7 +265,7 @@ TEST_CASE("Splitting graph", "[noodler]") {
     //     CHECK(predicate.to_string() == "Equation: x x = x x");
 
     //     formula.add_predicate(predicate);
-    //     CHECK_THROWS(Graph::create_simplified_splitting_graph(formula)); // Catch2 cannot catch failing assert.
+    //     CHECK_THROWS(FormulaGraph::create_simplified_splitting_graph(formula)); // Catch2 cannot catch failing assert.
     // }
 
     SECTION("x=xy") {
@@ -272,8 +274,8 @@ TEST_CASE("Splitting graph", "[noodler]") {
 
         Formula formula;
         formula.add_predicate(predicate);
-        graph = Graph::create_simplified_splitting_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{ GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() } }));
+        graph = FormulaGraph::create_simplified_splitting_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{ FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true } }));
         REQUIRE(graph.get_edges().size() == 2);
         CHECK(graph.get_edges().begin()->first == *graph.get_edges().begin()->second.begin());
         CHECK((++graph.get_edges().begin())->first == *(++graph.get_edges().begin())->second.begin());
@@ -285,10 +287,10 @@ TEST_CASE("Splitting graph", "[noodler]") {
 
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
-        graph = Graph::create_simplified_splitting_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-            GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() },
-            GraphNode{ predicate2 }, GraphNode{ predicate2.get_switched_sides_predicate() },
+        graph = FormulaGraph::create_simplified_splitting_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+            FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true },
+            FormulaGraphNode{ predicate2 }, FormulaGraphNode{ predicate2, true },
         }));
         CHECK(graph.get_edges().size() == 4);
         CHECK(graph.get_num_of_edges() == 12);
@@ -300,10 +302,10 @@ TEST_CASE("Splitting graph", "[noodler]") {
 
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
-        graph = Graph::create_simplified_splitting_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() },
-                GraphNode{ predicate2 }, GraphNode{ predicate2.get_switched_sides_predicate() },
+        graph = FormulaGraph::create_simplified_splitting_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true },
+                FormulaGraphNode{ predicate2 }, FormulaGraphNode{ predicate2, true },
         }));
         CHECK(graph.get_edges().size() == 2);
         CHECK(graph.get_num_of_edges() == 2);
@@ -315,10 +317,10 @@ TEST_CASE("Splitting graph", "[noodler]") {
 
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
-        graph = Graph::create_simplified_splitting_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() },
-                GraphNode{ predicate2 }, GraphNode{ predicate2.get_switched_sides_predicate() },
+        graph = FormulaGraph::create_simplified_splitting_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true },
+                FormulaGraphNode{ predicate2 }, FormulaGraphNode{ predicate2, true },
         }));
         CHECK(graph.get_edges().size() == 3);
         CHECK(graph.get_num_of_edges() == 6);
@@ -330,17 +332,17 @@ TEST_CASE("Splitting graph", "[noodler]") {
 
         formula.add_predicate(predicate);
         formula.add_predicate(predicate2);
-        graph = Graph::create_simplified_splitting_graph(formula);
-        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<GraphNode>{
-                GraphNode{ predicate }, GraphNode{ predicate.get_switched_sides_predicate() },
-                GraphNode{ predicate2 }, GraphNode{ predicate2.get_switched_sides_predicate() },
+        graph = FormulaGraph::create_simplified_splitting_graph(formula);
+        CHECK(graph_nodes_are_equal_to(graph.get_nodes(), std::set<FormulaGraphNode>{
+                FormulaGraphNode{ predicate }, FormulaGraphNode{ predicate, true },
+                FormulaGraphNode{ predicate2 }, FormulaGraphNode{ predicate2, true },
         }));
         CHECK(graph.get_edges().empty());
     }
 }
 
 TEST_CASE("print_to_dot()") {
-    Graph graph;
+    FormulaGraph graph;
     Formula formula;
 
     BasicTerm u{ BasicTermType::Variable, "u" };
@@ -356,14 +358,14 @@ TEST_CASE("print_to_dot()") {
     formula.add_predicate(predicate);
     formula.add_predicate(predicate2);
     formula.add_predicate(predicate3);
-    graph = Graph::create_inclusion_graph(formula);
+    graph = FormulaGraph::create_inclusion_graph(formula);
     std::stringstream stream;
     graph.print_to_dot(stream);
     CHECK(!stream.str().empty());
 }
 
 TEST_CASE("Inclusion graph with transducers", "[noodler]") {
-    Graph graph;
+    FormulaGraph graph;
     Formula formula;
 
     BasicTerm u{ BasicTermType::Variable, "u" };
@@ -390,7 +392,7 @@ TEST_CASE("Inclusion graph with transducers", "[noodler]") {
         Formula formula;
         formula.add_predicate(p1);
         formula.add_predicate(p2);
-        graph = Graph::create_inclusion_graph(formula);
+        graph = FormulaGraph::create_inclusion_graph(formula);
 
         CHECK(graph.get_nodes().size() == 2);
         CHECK(graph.get_num_of_edges() == 1);
@@ -404,7 +406,7 @@ TEST_CASE("Inclusion graph with transducers", "[noodler]") {
         Formula formula;
         formula.add_predicate(p1);
         formula.add_predicate(p2);
-        graph = Graph::create_inclusion_graph(formula);
+        graph = FormulaGraph::create_inclusion_graph(formula);
 
         CHECK(graph.get_nodes().size() == 2);
         CHECK(graph.get_num_of_edges() == 1);
@@ -416,7 +418,7 @@ TEST_CASE("Inclusion graph with transducers", "[noodler]") {
 
         Formula formula;
         formula.add_predicate(p1);
-        graph = Graph::create_inclusion_graph(formula);
+        graph = FormulaGraph::create_inclusion_graph(formula);
 
         CHECK(graph.get_nodes().size() == 2);
         CHECK(graph.get_num_of_edges() == 2);
@@ -430,7 +432,7 @@ TEST_CASE("Inclusion graph with transducers", "[noodler]") {
         Formula formula;
         formula.add_predicate(p1);
         formula.add_predicate(p2);
-        graph = Graph::create_inclusion_graph(formula);
+        graph = FormulaGraph::create_inclusion_graph(formula);
 
         CHECK(graph.get_nodes().size() == 4);
         CHECK(graph.get_num_of_edges() == 8);
@@ -444,10 +446,10 @@ TEST_CASE("Inclusion graph with transducers", "[noodler]") {
         Formula formula;
         formula.add_predicate(p1);
         formula.add_predicate(p2);
-        graph = Graph::create_inclusion_graph(formula);
+        graph = FormulaGraph::create_inclusion_graph(formula);
 
         CHECK(graph.get_nodes().size() == 2);
-        CHECK(graph.get_num_of_edges() == 1);
+        CHECK(graph.get_num_of_edges() == 0);
         CHECK(!graph.is_cyclic());
     }
 }

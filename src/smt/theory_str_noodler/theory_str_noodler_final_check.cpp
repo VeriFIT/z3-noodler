@@ -828,7 +828,7 @@ namespace smt::noodler {
             return false;
         }
 
-        Graph incl = Graph::create_inclusion_graph(instance);
+        FormulaGraph incl = FormulaGraph::create_inclusion_graph(instance);
         return incl.is_cyclic();
     }
 

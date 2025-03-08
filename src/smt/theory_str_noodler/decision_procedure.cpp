@@ -663,7 +663,7 @@ namespace smt::noodler {
             output_vars_automata.push_back(solving_state.aut_ass.at(output_var));
         }
 
-        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata);
+        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles; // = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata);
         for (const auto& noodle : noodles) {
             // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
             //      - T is a transducer, which will take one input and one output var: xo = T(xi)
@@ -1470,24 +1470,25 @@ namespace smt::noodler {
         init_solving_state.substitution_map = std::move(this->init_substitution_map);
 
         if (!equations_and_transducers.get_predicates().empty()) {
-            // TODO we probably want to completely get rid of inclusion graphs
-            std::deque<std::shared_ptr<GraphNode>> tmp;
-            Graph incl_graph = Graph::create_inclusion_graph(equations_and_transducers, tmp);
-            for (auto const &node : incl_graph.get_nodes()) {
-                const Predicate& node_pred = node->get_predicate();
-                if (node_pred.is_equation()) {
+            FormulaGraph incl_graph = FormulaGraph::create_inclusion_graph(equations_and_transducers);
+            for (const FormulaGraphNode &node : incl_graph.get_nodes()) {
+                Predicate node_pred = node.get_real_predicate();
+                if (node_pred.is_equation()) { // inclusion
                     init_solving_state.inclusions.insert(node_pred);
-                } else {
+                } else { // transducer
+                    SASSERT(node_pred.is_transducer());
+                    if (incl_graph.is_on_cycle(node)) {
+                        util::throw_error("We cannot handle non-chain free constraints with transducers");
+                    }
                     init_solving_state.transducers.insert(node_pred);
                 }
+
                 if (!incl_graph.is_on_cycle(node)) {
-                    init_solving_state.predicates_not_on_cycle.insert(node->get_predicate());
+                    init_solving_state.predicates_not_on_cycle.insert(node_pred);
                 }
-            }
-            // TODO the ordering of predicates_to_process right now is given by how they were added from the splitting graph, should we use something different? also it is not deterministic now, depends on hashes
-            while (!tmp.empty()) {
-                init_solving_state.predicates_to_process.push_back(tmp.front()->get_predicate());
-                tmp.pop_front();
+
+                // we assume that nodes of incl_graph are ordered by the topological order
+                init_solving_state.predicates_to_process.push_back(node_pred);
             }
         }
 

@@ -6,9 +6,9 @@ namespace {
 
     bool have_same_var(const std::vector<BasicTerm>& first_side, const std::vector<BasicTerm>& second_side) {
         for (const auto& first_side_term: first_side) {
-            for (const auto& second_side_term: second_side) {
-                if (first_side_term == second_side_term) {
-                    if (first_side_term.is_variable()) {
+            if (first_side_term.is_variable()) {
+                for (const auto& second_side_term: second_side) {
+                    if (first_side_term == second_side_term) {
                         return true;
                     }
                 }
@@ -17,98 +17,31 @@ namespace {
         return false;
     }
 
-    /**
-     * Convert graph node into string representation.
-     * @param node Node to convert.
-     * @return String representation of @p node.
-     */
-    std::string conv_node_to_string(const std::shared_ptr<GraphNode>& node) {
-        // joining BasicTerm in the given vector with str
-        auto join = [&](const std::vector<BasicTerm>& vec, const std::string& str) -> std::string {
-            if(vec.empty()) return "";
-            std::string ret = vec[0].to_string();
-            for(size_t i = 1; i < vec.size(); i++) {
-                ret += str + vec[i].to_string();
-            }
-            return ret;
-        };
-
-        auto& predicate{ node->get_predicate() };
-        std::string result{};
-        switch (predicate.get_type()) {
-            case PredicateType::NotContains: {
-                util::throw_error("Decision procedure can handle only equations and disequations");
-            }
- 
-            case PredicateType::Transducer: {
-                std::string left_side = join(predicate.get_left_side(), " ");
-                std::string right_side = join(predicate.get_right_side(), " ");
-                result = "T(" + left_side + ", " + right_side + ")";
-                break;
-            }
-
-            case PredicateType::Equation:
-            case PredicateType::Inequation: {
-                std::string left_side = join(predicate.get_left_side(), " ");
-                std::string right_side = join(predicate.get_right_side(), " ");
-                result = left_side;
-                if (predicate.get_type() == PredicateType::Inequation) {
-                    result += " !";
-                } else {
-                    result += " ";
+    bool have_some_var_twice(const std::vector<BasicTerm>& v) {
+        std::set<BasicTerm> vars_in_v;
+        for (const BasicTerm& var : v) {
+            if (var.is_variable()) {
+                if (vars_in_v.contains(var)) {
+                    return true;
                 }
-                result += "<= ";
-                result += right_side;
-                break;
+                vars_in_v.insert(var);
             }
         }
-        return result;
+        return false;
     }
+
 } // Anonymous namespace.
 
-const smt::noodler::Graph::Nodes smt::noodler::Graph::empty_nodes = smt::noodler::Graph::Nodes();
+const smt::noodler::FormulaGraph::NodeSet smt::noodler::FormulaGraph::empty_nodes = smt::noodler::FormulaGraph::NodeSet();
 
-Graph smt::noodler::Graph::deep_copy() const {
-    std::unordered_map<std::shared_ptr<GraphNode>, std::shared_ptr<GraphNode>> node_mapping;
-    return deep_copy(node_mapping);
-}
-
-Graph smt::noodler::Graph::deep_copy(std::unordered_map<std::shared_ptr<GraphNode>, std::shared_ptr<GraphNode>> &node_mapping) const {
-    Graph new_graph;
-
-    for (const auto &this_node : get_nodes()) {
-        node_mapping[this_node] = new_graph.add_node(this_node->get_predicate());
-    }
-
-    for (const auto &edge : get_edges()) {
-        const auto &source = edge.first;
-        for (const auto &target : edge.second) {
-            new_graph.add_edge(node_mapping[source], node_mapping[target]);
-        }
-    }
-
-    for (const auto &node_not_on_cycle : nodes_not_on_cycle) {
-        if (get_nodes().count(node_not_on_cycle) > 0) {
-            new_graph.nodes_not_on_cycle.insert(node_mapping.at(node_not_on_cycle));
-        }
-    }
-
-    return new_graph;
-}
-
-void smt::noodler::Graph::add_inclusion_graph_edges() {
+void smt::noodler::FormulaGraph::add_inclusion_graph_edges() {
     for (auto& source_node: get_nodes() ) {
         for (auto& target_node: get_nodes()) {
             if (source_node == target_node) { // we do not want self-loops (difference from FM'23)
                 continue;
             }
 
-            auto& source_predicate{ source_node->get_predicate() };
-            auto& target_predicate{ target_node->get_predicate() };
-            auto& source_left_side{ source_predicate.get_left_side() };
-            auto& target_right_side{ target_predicate.get_right_side() };
-
-            if (have_same_var(source_left_side, target_right_side)) {
+            if (have_same_var(source_node.get_real_left_side(), target_node.get_real_right_side())) {
                 // Have same var, automatically add a new edge.
                 add_edge(source_node, target_node);
             }
@@ -116,85 +49,66 @@ void smt::noodler::Graph::add_inclusion_graph_edges() {
     }
 }
 
-Graph smt::noodler::Graph::create_inclusion_graph(const Formula& formula, std::deque<std::shared_ptr<GraphNode>> &out_node_order) {
-    Graph splitting_graph{ create_simplified_splitting_graph(formula) };
-    return create_inclusion_graph(splitting_graph, out_node_order);
+FormulaGraph smt::noodler::FormulaGraph::create_inclusion_graph(const Formula& formula) {
+    FormulaGraph splitting_graph{ create_simplified_splitting_graph(formula) };
+    return create_inclusion_graph(splitting_graph);
 }
 
-Graph smt::noodler::Graph::create_simplified_splitting_graph(const Formula& formula) {
-    Graph graph;
+FormulaGraph smt::noodler::FormulaGraph::create_simplified_splitting_graph(const Formula& formula) {
+    FormulaGraph graph;
 
     // Add all nodes which are not already present in direct and switched form.
     for (const auto& predicate: formula.get_predicates()) {
         // we skip trivial equations of the form x = x
-        if(!predicate.is_transducer() && predicate.get_left_side() == predicate.get_right_side()) {
+        if(predicate.is_equation() && predicate.get_left_side() == predicate.get_right_side()) {
             continue;
         }
-        graph.add_node(predicate);
-        graph.add_node(predicate.get_switched_sides_predicate());
+        graph.add_node(predicate, false);
+        graph.add_node(predicate, true);
     }
 
     if (graph.nodes.empty()) {
-        return Graph{};
+        return FormulaGraph{};
     }
 
-    for (auto &source_node: graph.get_nodes() ) {
-        for (auto &target_node: graph.get_nodes()) {
-            auto& source_predicate{ source_node->get_predicate() };
-            auto& target_predicate{ target_node->get_predicate() };
-            auto& source_left_side{ source_predicate.get_left_side() };
-            auto& source_right_side{ source_predicate.get_right_side() };
-            auto& target_left_side{ target_predicate.get_left_side() };
-            auto& target_right_side{ target_predicate.get_right_side() };
-
-            if (!have_same_var(source_left_side, target_right_side)) {
-                continue;
-            } else if (source_predicate.strong_equals(target_predicate.get_switched_sides_predicate())) {
-                // Have same var and sides are equal.
-                if (!source_predicate.mult_occurr_var_side      (Predicate::EquationSideType::Left)) {
-                    // Does not have multiple occurrences of one var. Hence, cannot have an edge.
-                    continue;
-                }
-            } else {
-                // Have same var and sides are not equal, automatically add a new edge.
+    for (const FormulaGraphNode &source_node: graph.get_nodes() ) {
+        for (const FormulaGraphNode &target_node: graph.get_nodes()) {
+            // we want to add edge whenever the left side of source contains some variable of right side of target
+            // however, if the two nodes are created from the same predicate, just in reversed form
+            // we need to have two different "occurrences" of the same var, so we just check
+            // if one of the two sides (which should be equal) contain some variable twice
+            if (have_same_var(source_node.get_real_left_side(), target_node.get_real_right_side())
+                && !(target_node.is_reverse_of(source_node) && !have_some_var_twice(source_node.get_real_left_side())))
+            {
+                    graph.add_edge(source_node, target_node);
             }
-
-            graph.add_edge(source_node, target_node);
         }
     }
 
     return graph;
 }
 
-Graph smt::noodler::Graph::create_inclusion_graph(const Formula& formula) {
-    std::deque<std::shared_ptr<GraphNode>> out_node_order;
-    return create_inclusion_graph(formula, out_node_order);
-}
+FormulaGraph smt::noodler::FormulaGraph::create_inclusion_graph(FormulaGraph& simplified_splitting_graph) {
+    FormulaGraph inclusion_graph{};
 
-Graph smt::noodler::Graph::create_inclusion_graph(Graph& simplified_splitting_graph, std::deque<std::shared_ptr<GraphNode>> &out_node_order) {
-    Graph inclusion_graph{};
-
+    NodeSet erased_nodes;
     bool splitting_graph_changed{ true };
-    while(splitting_graph_changed) {
+    while (splitting_graph_changed) {
         splitting_graph_changed = false;
 
-        for (auto& node: simplified_splitting_graph.get_nodes()) {
-            if (simplified_splitting_graph.inverse_edges.count(node) == 0) {
-                inclusion_graph.nodes.insert(node);
-                STRACE("str", tout << "Added node " << node->get_predicate() << " to the graph without the reversed inclusion." << std::endl;);
+        for (const FormulaGraphNode& node: simplified_splitting_graph.get_nodes()) {
+            if (!erased_nodes.contains(node) && simplified_splitting_graph.inverse_edges[node].empty()) { // if node is initial (has no transitions going into it)
+                inclusion_graph.nodes.push_back(node);
+                STRACE("str", tout << "Added node " << node.print() << " to the graph without the reversed inclusion." << std::endl;);
                 inclusion_graph.nodes_not_on_cycle.insert(node); // the inserted node cannot be on the cycle, because it is either initial or all nodes leading to it were not on cycle
 
-                out_node_order.push_back(node);
-
-                auto switched_node{ simplified_splitting_graph.get_node(node->get_predicate().get_switched_sides_predicate()) };
+                FormulaGraphNode reversed_node{ node.get_reversed() };
 
                 // Remove edges of node and switched node.
+                erased_nodes.insert(node);
                 simplified_splitting_graph.remove_edges_with(node);
-                simplified_splitting_graph.remove_edges_with(switched_node);
-
-                // we can erase nodes, because we are breaking from the for loop (so no problem with invalidating iterators)
-                simplified_splitting_graph.nodes.erase(node);
-                simplified_splitting_graph.nodes.erase(switched_node);
+                erased_nodes.insert(reversed_node);
+                simplified_splitting_graph.remove_edges_with(reversed_node);
 
                 splitting_graph_changed = true;
                 break;
@@ -202,24 +116,25 @@ Graph smt::noodler::Graph::create_inclusion_graph(Graph& simplified_splitting_gr
         }
     }
 
-    // we add rest of the nodes (the ones on the cycle) to the inclusion graph
+    // we add rest of the nodes (the ones on the cycles) to the inclusion graph
     for (auto& node: simplified_splitting_graph.get_nodes()) {
-        out_node_order.push_back(node);
-        STRACE("str", tout << "Added node " << node->get_predicate() << " to the graph with its reversed inclusion." << std::endl;);
+        if (!erased_nodes.contains(node)) {
+            inclusion_graph.nodes.push_back(node);
+            STRACE("str", tout << "Added node " << node.print() << " to the graph with its reversed inclusion." << std::endl;);
+        }
     }
-    inclusion_graph.nodes.merge(simplified_splitting_graph.nodes);
 
     inclusion_graph.add_inclusion_graph_edges();
 
     return inclusion_graph;
 }
 
-void Graph::print_to_dot(std::ostream &output_stream) const {
+void FormulaGraph::print_to_dot(std::ostream &output_stream) const {
     output_stream << "digraph inclusionGraph {\nnode [shape=none];\n";
-    for (const auto& edge : edges) {
-        output_stream << "\"" << conv_node_to_string(edge.first) << "\" -> {";
-        for (const auto& target : edge.second) {
-            output_stream << "\"" << conv_node_to_string(target) << "\" ";
+    for (const FormulaGraphNode& node : nodes) {
+        output_stream << "\"" << node.print() << "\" -> {";
+        for (const FormulaGraphNode& target : get_edges_from(node)) {
+            output_stream << "\"" << target.print() << "\" ";
         }
         output_stream << "} [label=\"\"]\n";
     }

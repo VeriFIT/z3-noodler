@@ -290,7 +290,7 @@ namespace smt::noodler {
     private:
         PredicateType type;
         std::vector<std::vector<BasicTerm>> params;
-        std::shared_ptr<mata::nft::Nft> transducer; // transducer for the case of PredicateType::Transducer
+        std::shared_ptr<mata::nft::Nft> transducer = nullptr; // transducer for the case of PredicateType::Transducer
     public:
         enum struct EquationSideType {
             Left,
@@ -561,8 +561,6 @@ namespace smt::noodler {
          */
         Predicate split_literals() const;
 
-        [[nodiscard]] bool equals(const Predicate& other) const;
-
         /**
          * @brief Strong equality. For the case of transducer predicates the transducers
          * are compared for identity (not just the indentity of pointers). It is 
@@ -573,6 +571,33 @@ namespace smt::noodler {
          * @return true Is strongly equal
          */
         bool strong_equals(const Predicate& other) const;
+
+        bool operator==(const Predicate& other) const {
+            return (type == other.type && params == other.params && transducer == other.transducer);
+        }
+
+        std::strong_ordering operator<=>(const Predicate& other) const {
+            if (type < other.type) {
+                return std::strong_ordering::less;
+            } else if (type > other.type) {
+                return std::strong_ordering::greater;
+            }
+    
+            // Types are equal. Compare data.
+            if (params < other.params) {
+                return std::strong_ordering::less;
+            } else if (params > other.params) {
+                return std::strong_ordering::greater;
+            }
+
+            if (transducer < other.transducer) {
+                return std::strong_ordering::less;
+            } else if (transducer > other.transducer) {
+                return std::strong_ordering::greater;
+            }
+
+            return std::strong_ordering::equal;
+        }
 
         [[nodiscard]] std::string to_string() const;
 
@@ -614,26 +639,30 @@ namespace smt::noodler {
         return os;
     }
 
-    static bool operator==(const Predicate& lhs, const Predicate& rhs) { return lhs.equals(rhs); }
-    static bool operator!=(const Predicate& lhs, const Predicate& rhs) { return !(lhs == rhs); }
-    static bool operator<(const Predicate& lhs, const Predicate& rhs) {
-        if (lhs.get_type() < rhs.get_type()) {
-            return true;
-        } else if (lhs.get_type() > rhs.get_type()) {
-            return false;
-        }
-        // Types are equal. Compare data.
-        if (lhs.get_params() < rhs.get_params()) {
-            return true;
-        }
-        // For transducer predicates we compare pointers (assuming linear memory model)
-        if (lhs.is_transducer()) {
-            // compare pointers
-            return lhs.get_transducer() < rhs.get_transducer();
-        }
-        return false;
-    }
-    static bool operator>(const Predicate& lhs, const Predicate& rhs) { return !(lhs < rhs) && lhs != rhs; }
+    // static bool operator==(const Predicate& lhs, const Predicate& rhs) { return lhs.equals(rhs); }
+    // static bool operator!=(const Predicate& lhs, const Predicate& rhs) { return !(lhs == rhs); }
+    // static bool operator<(const Predicate& lhs, const Predicate& rhs) {
+    //     if (lhs.get_type() < rhs.get_type()) {
+    //         return true;
+    //     } else if (lhs.get_type() > rhs.get_type()) {
+    //         return false;
+    //     }
+
+    //     // Types are equal. Compare data.
+    //     if (lhs.get_params() < rhs.get_params()) {
+    //         return true;
+    //     } else if (lhs.get_params() > rhs.get_params()) {
+    //         return false;
+    //     }
+
+    //     // For transducer predicates we compare pointers (assuming linear memory model)
+    //     if (lhs.is_transducer()) {
+    //         // compare pointers
+    //         return lhs.get_transducer() < rhs.get_transducer();
+    //     }
+    //     return false;
+    // }
+    // static bool operator>(const Predicate& lhs, const Predicate& rhs) { return !(lhs < rhs) && lhs != rhs; }
 
     //----------------------------------------------------------------------------------------------------------------------------------
 
