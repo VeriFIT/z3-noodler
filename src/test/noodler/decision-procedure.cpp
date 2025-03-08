@@ -167,10 +167,9 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     }
 
     SECTION("sat-two-equations-length", "[nooodler]") {
-        enable_trace("str");
         Formula equalities;
-        equalities.add_predicate(create_equality("xy", "zu"));
         equalities.add_predicate(create_equality("yx", "r"));
+        equalities.add_predicate(create_equality("xy", "zu"));
         AutAssignment init_ass;
         init_ass[get_var('x')] = regex_to_nfa("a*");
         init_ass[get_var('y')] = regex_to_nfa("ab*");
@@ -219,14 +218,12 @@ TEST_CASE("Decision Procedure", "[noodler]") {
 
         // CHECK(((resf({"x", "z"})->hash() == len->hash()) || (resf({"z", "x"})->hash() == len->hash())));
         CHECK(proc.compute_next_solution() == lbool::l_false);
-
-        disable_trace("str");
     }
 
     SECTION("sat-two-equations-length2", "[nooodler]") {
         Formula equalities;
-        equalities.add_predicate(create_equality("xy", "zu"));
         equalities.add_predicate(create_equality("yx", "r"));
+        equalities.add_predicate(create_equality("xy", "zu"));
         AutAssignment init_ass;
         init_ass[get_var('x')] = regex_to_nfa("a*");
         init_ass[get_var('y')] = regex_to_nfa("ab*");

@@ -663,7 +663,7 @@ namespace smt::noodler {
             output_vars_automata.push_back(solving_state.aut_ass.at(output_var));
         }
 
-        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles; // = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata);
+        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata);
         for (const auto& noodle : noodles) {
             // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
             //      - T is a transducer, which will take one input and one output var: xo = T(xi)
