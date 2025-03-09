@@ -163,10 +163,8 @@ namespace smt::noodler {
                 tout << f.to_string() << std::endl;
             }
         );
-        // decison procedure for transducer constraints is not implemented yet
-        if(instance.contains_pred_type(PredicateType::Transducer)) {
-            util::throw_error("transducer constraints are not supported");
-        }
+        
+        bool contains_transducers = instance.contains_pred_type(PredicateType::Transducer);
 
         // For the case that it is possible we have to_int/from_int, we keep digits (0-9) as explicit symbols, so that they are not represented by dummy_symbol and it is easier to handle to_int/from_int
         if (!m_conversion_todo.empty()) {
@@ -196,7 +194,7 @@ namespace smt::noodler {
 
 
         // There is only one symbol in the equation. The system is SAT iff lengths are SAT
-        if(m_params.m_try_unary_proc && symbols_in_formula.size() == 2 && !contains_word_disequations && !contains_conversions && this->m_not_contains_todo_rel.size() == 0 && this->m_membership_todo_rel.empty()) { // dummy symbol + 1
+        if(m_params.m_try_unary_proc && symbols_in_formula.size() == 2 && !contains_word_disequations && !contains_conversions && !contains_transducers && this->m_not_contains_todo_rel.size() == 0 && this->m_membership_todo_rel.empty()) { // dummy symbol + 1
             lbool result = run_length_sat(instance, aut_assignment, init_length_sensitive_vars, conversions);
             if(result == l_true) {
                 return FC_DONE;
@@ -243,7 +241,7 @@ namespace smt::noodler {
 
         // now we know that the initial formula is length-satisfiable
         // try length-based decision procedure (if enabled) to solve
-        if(m_params.m_try_length_proc && contains_eqs_and_diseqs_only && LengthDecisionProcedure::is_suitable(instance, aut_assignment)) {
+        if(m_params.m_try_length_proc && contains_eqs_and_diseqs_only && !contains_transducers && LengthDecisionProcedure::is_suitable(instance, aut_assignment)) {
             lbool result = run_length_proc(instance, aut_assignment, init_length_sensitive_vars);
             if(result == l_true) {
                 return FC_DONE;
@@ -820,7 +818,7 @@ namespace smt::noodler {
     }
 
     bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const {
-        if(!this->m_membership_todo_rel.empty() || !this->m_not_contains_todo_rel.empty() || !this->m_conversion_todo.empty() || !this->m_word_diseq_todo_rel.empty()) {
+        if(!this->m_membership_todo_rel.empty() || !this->m_not_contains_todo_rel.empty() || !this->m_conversion_todo.empty() || !this->m_word_diseq_todo_rel.empty() || instance.contains_pred_type(PredicateType::Transducer)) {
             return false;
         }
 
@@ -833,7 +831,7 @@ namespace smt::noodler {
     }
 
     bool theory_str_noodler::is_underapprox_suitable(const Formula& instance, const AutAssignment& aut_ass, const std::vector<TermConversion>& convs) const {
-        if(!convs.empty()) {
+        if(!convs.empty() || instance.contains_pred_type(PredicateType::Transducer)) {
             return false;
         }
         /**
