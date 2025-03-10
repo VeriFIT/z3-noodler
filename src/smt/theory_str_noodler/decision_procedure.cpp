@@ -174,10 +174,10 @@ namespace smt::noodler {
             Predicate predicate_to_process = element_to_process.predicates_to_process.front();
             element_to_process.predicates_to_process.pop_front();
 
-            if (predicate_to_process.get_type() == PredicateType::Equation) { // inclusion
+            if (predicate_to_process.is_equation()) { // inclusion
                 process_inclusion(predicate_to_process, element_to_process);
             } else {
-                SASSERT(predicate_to_process.get_type() == PredicateType::Transducer);
+                SASSERT(predicate_to_process.is_transducer());
                 process_transducer(predicate_to_process, element_to_process);
             }
         }
@@ -697,30 +697,31 @@ namespace smt::noodler {
 
             for (unsigned i = 0; i < input_vars.size(); ++i) {
                 const BasicTerm& cur_input_var = input_vars[i];
-                if (substitution_map.contains(cur_input_var)) {
-                    // cur_input_var is already substituted, we create an inclusion instead
-                    const auto &new_inclusion = new_element.add_inclusion(input_vars_to_new_input_vars[i], std::vector<BasicTerm>{cur_input_var}, false);
-                    new_element.push_unique(new_inclusion, false);
-
-                    // cur_input_var is certainly not in output_vars (as we assume that we do not have a cycle in the inclusion graph), therefore we do not
-                    // need to add this inclusion for processing like we sometimes need while processing inclusions 
-                } else {
-                    // cur_input_var is not substituted yet, so we substitute it now
-                    substitution_map[cur_input_var] = input_vars_to_new_input_vars[i];
-                    new_element.aut_ass.erase(cur_input_var);
+                if (cur_input_var.is_variable()) { // skip literals
+                    if (substitution_map.contains(cur_input_var)) {
+                        // cur_input_var cannot be already substituted, as we assume that we do not have a cycle in the inclusion graph, therefore
+                        // cur_input_var can be in the inputs only once
+                        UNREACHABLE();
+                    } else {
+                        // cur_input_var is not substituted yet, so we substitute it now
+                        substitution_map[cur_input_var] = input_vars_to_new_input_vars[i];
+                        new_element.aut_ass.erase(cur_input_var);
+                    }
                 }
             }
 
             for (unsigned i = 0; i < output_vars.size(); ++i) {
                 const BasicTerm& cur_output_var = output_vars[i];
-                if (substitution_map.contains(cur_output_var)) {
-                    // cur_output_var is already substituted, we create an inclusion instead
-                    const auto &new_inclusion = new_element.add_inclusion(output_vars_to_new_output_vars[i], std::vector<BasicTerm>{cur_output_var}, false);
-                    new_element.push_unique(new_inclusion, false);
-                } else {
-                    // cur_output_var is not substituted yet, so we substitute it now
-                    substitution_map[cur_output_var] = output_vars_to_new_output_vars[i];
-                    new_element.aut_ass.erase(cur_output_var);
+                if (cur_output_var.is_variable()) { // skip literals
+                    if (substitution_map.contains(cur_output_var)) {
+                        // cur_output_var is already substituted, we create an inclusion instead
+                        const auto &new_inclusion = new_element.add_inclusion(output_vars_to_new_output_vars[i], std::vector<BasicTerm>{cur_output_var}, false);
+                        new_element.push_unique(new_inclusion, false);
+                    } else {
+                        // cur_output_var is not substituted yet, so we substitute it now
+                        substitution_map[cur_output_var] = output_vars_to_new_output_vars[i];
+                        new_element.aut_ass.erase(cur_output_var);
+                    }
                 }
             }
 
