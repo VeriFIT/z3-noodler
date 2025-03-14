@@ -134,6 +134,63 @@ namespace smt::noodler {
         substitution_map = new_substitution_map;
     }
 
+    std::pair<std::vector<std::shared_ptr<mata::nfa::Nfa>>,std::vector<std::vector<BasicTerm>>> SolvingState::get_automata_and_division_of_concatenation(const std::vector<BasicTerm>& concatenation, bool group_non_length) {
+        if (concatenation.empty()) {
+            return std::make_pair<std::vector<std::shared_ptr<mata::nfa::Nfa>>,std::vector<std::vector<BasicTerm>>>({}, {});
+        }
+
+        std::vector<std::shared_ptr<mata::nfa::Nfa>> automata_for_concatenation;
+        std::vector<std::vector<BasicTerm>> divisions;
+
+        BasicTerm cur_var = concatenation[0];
+        // we will build an automaton in prev_aut for the variables in prev_division which are pushed into result when needed
+        std::shared_ptr<mata::nfa::Nfa> prev_aut = aut_ass.at(cur_var);
+        std::vector<BasicTerm> prev_division{ cur_var };
+        bool prev_is_length = length_sensitive_vars.contains(cur_var);
+
+        for (std::vector<BasicTerm>::size_type i = 1; i < concatenation.size(); ++i) {
+            cur_var = concatenation[i];
+            std::shared_ptr<mata::nfa::Nfa> cur_var_aut = aut_ass.at(cur_var);
+            bool cur_is_length = length_sensitive_vars.contains(cur_var);
+
+            if (!group_non_length || prev_is_length || cur_is_length) {
+                // we want to push prev_aut and prev_division into result as either we are not grouping automata, or previous var is
+                // length, therefore it cannot be grouped, or the current variable is length, therefore, we do not want to group it
+                // with the previous automaton
+                automata_for_concatenation.push_back(prev_aut);
+                divisions.push_back(prev_division);
+                STRACE("str-nfa",
+                    tout << "Automaton for var(s)";
+                    for (const auto &var : prev_division) {
+                        tout << " " << var.get_name();
+                    }
+                    tout << ":" << std::endl
+                            << *prev_aut;
+                );
+                prev_aut = cur_var_aut;
+                prev_division = std::vector<BasicTerm>{ cur_var };
+            } else {
+                // we group the current non-length-aware variable with the non-length-aware vars before
+                prev_aut = std::make_shared<mata::nfa::Nfa>(mata::nfa::concatenate(*prev_aut, *cur_var_aut));
+                prev_division.push_back(cur_var);
+            }
+
+            prev_is_length = cur_is_length;
+        }
+        // we need to push last automaton into result
+        automata_for_concatenation.push_back(prev_aut);
+        divisions.push_back(prev_division);
+        STRACE("str-nfa",
+            tout << "Automaton for var(s)";
+            for (const auto &var : prev_division) {
+                tout << " " << var.get_name();
+            }
+            tout << ":" << std::endl << *prev_aut;
+        );
+
+        return std::make_pair<std::vector<std::shared_ptr<mata::nfa::Nfa>>,std::vector<std::vector<BasicTerm>>>(std::move(automata_for_concatenation), std::move(divisions));
+    }
+
     lbool DecisionProcedure::compute_next_solution() {
         // iteratively select next state of solving that can lead to solution and
         // process one of the unprocessed nodes (or possibly find solution)
@@ -275,107 +332,23 @@ namespace smt::noodler {
 
 
 
-        /********************************************************************************************************/
-        /****************************************** Process left side *******************************************/
-        /********************************************************************************************************/
+        // PROCESS LEFT SIDE
         std::vector<std::shared_ptr<mata::nfa::Nfa>> left_side_automata;
-        STRACE("str-nfa", tout << "Left automata:" << std::endl);
-        for (const auto &l_var : left_side_vars) {
-            left_side_automata.push_back(solving_state.aut_ass.at(l_var));
-            STRACE("str-nfa",
-                tout << "Automaton for left var " << l_var.get_name() << ":" << std::endl << *left_side_automata.back();
-            );
-        }
-        /********************************************************************************************************/
-        /************************************** End of left side processing *************************************/
-        /********************************************************************************************************/
+        std::tie(left_side_automata, std::ignore) = solving_state.get_automata_and_division_of_concatenation(left_side_vars, false);
 
-
-
-
-        /********************************************************************************************************/
-        /***************************************** Process right side *******************************************/
-        /********************************************************************************************************/
+        // PROCESS RIGHT SIDE
         // We combine the right side into automata where we concatenate non-length-aware vars next to each other.
         // Each right side automaton corresponds to either concatenation of non-length-aware vars (vector of
         // basic terms) or one lenght-aware var (vector of one basic term). Division then contains for each right
         // side automaton the variables whose concatenation it represents.
-        std::vector<std::shared_ptr<mata::nfa::Nfa>> right_side_automata;
-        std::vector<std::vector<BasicTerm>> right_side_division;
-
-        assert(!right_side_vars.empty()); // empty case was processed at the beginning
-        auto right_var_it = right_side_vars.begin();
-        auto right_side_end = right_side_vars.end();
-
-        std::shared_ptr<mata::nfa::Nfa> next_aut = solving_state.aut_ass[*right_var_it];
-        std::vector<BasicTerm> next_division{ *right_var_it };
-        bool last_was_length = (solving_state.length_sensitive_vars.count(*right_var_it) > 0);
-        bool is_there_length_on_right = last_was_length;
-        ++right_var_it;
-
         STRACE("str-nfa", tout << "Right automata:" << std::endl);
-        for (; right_var_it != right_side_end; ++right_var_it) {
-            std::shared_ptr<mata::nfa::Nfa> right_var_aut = solving_state.aut_ass.at(*right_var_it);
-            if (solving_state.length_sensitive_vars.count(*right_var_it) > 0) {
-                // current right_var is length-aware
-                right_side_automata.push_back(next_aut);
-                right_side_division.push_back(next_division);
-                STRACE("str-nfa",
-                    tout << "Automaton for right var(s)";
-                    for (const auto &r_var : next_division) {
-                        tout << " " << r_var.get_name();
-                    }
-                    tout << ":" << std::endl
-                            << *next_aut;
-                );
-                next_aut = right_var_aut;
-                next_division = std::vector<BasicTerm>{ *right_var_it };
-                last_was_length = true;
-                is_there_length_on_right = true;
-            } else {
-                // current right_var is not length-aware
-                if (last_was_length) {
-                    // if last var was length-aware, we need to add automaton for it into right_side_automata
-                    right_side_automata.push_back(next_aut);
-                    right_side_division.push_back(next_division);
-                    STRACE("str-nfa",
-                        tout << "Automaton for right var(s)";
-                        for (const auto &r_var : next_division) {
-                            tout << " " << r_var.get_name();
-                        }
-                        tout << ":" << std::endl
-                                << *next_aut;
-                    );
-                    next_aut = right_var_aut;
-                    next_division = std::vector<BasicTerm>{ *right_var_it };
-                } else {
-                    // if last var was not length-aware, we combine it (and possibly the non-length-aware vars before)
-                    // with the current one
-                    next_aut = std::make_shared<mata::nfa::Nfa>(mata::nfa::concatenate(*next_aut, *right_var_aut));
-                    next_division.push_back(*right_var_it);
-                    // TODO should we reduce size here?
-                }
-                last_was_length = false;
-            }
-        }
-        right_side_automata.push_back(next_aut);
-        right_side_division.push_back(next_division);
-        STRACE("str-nfa",
-            tout << "Automaton for right var(s)";
-            for (const auto &r_var : next_division) {
-                tout << " " << r_var.get_name();
-            }
-            tout << ":" << std::endl << *next_aut;
-        );
-        /********************************************************************************************************/
-        /************************************* End of right side processing *************************************/
-        /********************************************************************************************************/
+        auto [right_side_automata, right_side_division] = solving_state.get_automata_and_division_of_concatenation(right_side_vars, true);
 
 
         /********************************************************************************************************/
         /****************************************** Inclusion test **********************************************/
         /********************************************************************************************************/
-        if (!is_there_length_on_right) {
+        if (!solving_state.contains_length_var(right_side_vars)) {
             // we have no length-aware variables on the right hand side => we need to check if inclusion holds
             assert(right_side_automata.size() == 1); // there should be exactly one element in right_side_automata as we do not have length variables
             // TODO probably we should try shortest words, it might work correctly
@@ -591,8 +564,6 @@ namespace smt::noodler {
         // We assume that if we have transducers in procedure, then the inclusion tree is without cycles
         SASSERT(!solving_state.is_predicate_on_cycle(transducer_to_process));
 
-        // TODO handle epsilons in inputs/outputs differently???
-
         solving_state.remove_predicate(transducer_to_process);
 
         const std::vector<BasicTerm>& input_vars = transducer_to_process.get_params()[0];
@@ -655,13 +626,10 @@ namespace smt::noodler {
         }
 
         std::vector<std::shared_ptr<mata::nfa::Nfa>> input_vars_automata;
-        for (const BasicTerm& input_var : input_vars) {
-            input_vars_automata.push_back(solving_state.aut_ass.at(input_var));
-        }
+        std::tie(input_vars_automata, std::ignore) = solving_state.get_automata_and_division_of_concatenation(input_vars, false);
+
         std::vector<std::shared_ptr<mata::nfa::Nfa>> output_vars_automata;
-        for (const BasicTerm& output_var : output_vars) {
-            output_vars_automata.push_back(solving_state.aut_ass.at(output_var));
-        }
+        std::tie(output_vars_automata, std::ignore) = solving_state.get_automata_and_division_of_concatenation(output_vars, false);
 
         std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata);
         for (const auto& noodle : noodles) {

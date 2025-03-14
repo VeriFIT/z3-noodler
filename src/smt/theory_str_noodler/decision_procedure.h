@@ -370,6 +370,34 @@ namespace smt::noodler {
             else
                 return std::vector<BasicTerm>{var};
         }
+
+        /**
+         * @brief Get the assigned automata of variables in a @p concatenation of variables.
+         * 
+         * If @p group_non_length is true, we also concatenate automata of the sequences of non-length variables.
+         * For example, for xyyxxzyz where y is length variable we will get 6 automata:
+         *      - one for first x
+         *      - second for first y
+         *      - third for second y
+         *      - fourth as a concatenation of automata for xxz
+         *      - fifth for y
+         *      - sixth for z
+         * If @p group_non_length was false, we would get 8 automata, one for each variable.
+         * 
+         * Assumes that each variable in @p concatenation is assigned in aut_ass.
+         * 
+         * @return a pair where first item is the vector of automata and the second tells us for each automaton which variables were concatenated for it 
+         */
+        [[nodiscard]] std::pair<std::vector<std::shared_ptr<mata::nfa::Nfa>>,std::vector<std::vector<BasicTerm>>> get_automata_and_division_of_concatenation(const std::vector<BasicTerm>& concatenation, bool group_non_length);
+
+        bool contains_length_var(const std::vector<BasicTerm>& vars) {
+            for (const BasicTerm& var : vars) {
+                if (length_sensitive_vars.contains(var)) {
+                    return true;
+                }
+            }
+            return false;
+        }
     };
 
     class DecisionProcedure : public AbstractDecisionProcedure {
