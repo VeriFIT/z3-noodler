@@ -265,9 +265,9 @@ namespace smt::noodler {
     }
 
     BasicTerm SolvingState::add_fresh_var(std::shared_ptr<mata::nfa::Nfa> nfa, std::string var_prefix, bool is_length, bool optimize_literal) {
-        mata::Word word;
-        if (optimize_literal && util::aut_contains_one_word(*nfa, word)) {
-            BasicTerm new_literal{BasicTermType::Literal, util::get_zstring_from_mata_word(word)};
+        zstring literal;
+        if (optimize_literal && util::aut_encodes_literal(*nfa, literal)) {
+            BasicTerm new_literal{BasicTermType::Literal, literal};
             aut_ass[new_literal] = nfa;
             return new_literal;
         } else {

@@ -277,26 +277,25 @@ namespace smt::noodler::util {
         return ret;
     }
 
-    zstring get_zstring_from_mata_word(const mata::Word& word) {
-        return zstring(word.size(), word.data());
-    }
-
-    bool aut_contains_one_word(const mata::nfa::Nfa& aut, mata::Word& word) {
+    bool aut_encodes_literal(const mata::nfa::Nfa& aut, zstring& found_literal) {
         // because aut is trimmed and reduced, the only way for it to accept exactly one word is if the automaton contains
         // only one path in it (on which the word is)
         if (aut.initial.size() != 1 || aut.final.size() != 1 || aut.num_of_states() != aut.delta.num_of_transitions() + 1) {
             return false;
         }
-        word = {};
+        mata::Word word = {};
         mata::nfa::State next_state = *aut.initial.begin();
         while (!aut.final.contains(next_state)) {
             const mata::nfa::StatePost& state_post = aut.delta[next_state];
             if (state_post.size() != 1) { return false; }
             const mata::nfa::SymbolPost& symbol_post = *state_post.begin();
             if (symbol_post.num_of_targets() != 1) { return false; }
-            word.push_back(symbol_post.symbol);
+            mata::Symbol symbol = symbol_post.symbol;
+            if (is_dummy_symbol(symbol)) { return false; }
+            word.push_back(symbol);
             next_state = *symbol_post.targets.begin();
         }
+        found_literal = zstring(word.size(), word.data());
         return true;
     }
 
