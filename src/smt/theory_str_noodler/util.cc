@@ -276,6 +276,38 @@ namespace smt::noodler::util {
         }
         return ret;
     }
+
+    zstring get_zstring_from_mata_word(const mata::Word& word) {
+        return zstring(word.size(), word.data());
+    }
+
+    bool aut_contains_one_word(const mata::nfa::Nfa& aut, mata::Word& word) {
+        // because aut is trimmed and reduced, the only way for it to accept exactly one word is if the automaton contains
+        // only one path in it (on which the word is)
+        if (aut.initial.size() != 1 || aut.final.size() != 1 || aut.num_of_states() != aut.delta.num_of_transitions() + 1) {
+            return false;
+        }
+        word = {};
+        mata::nfa::State next_state = *aut.initial.begin();
+        while (!aut.final.contains(next_state)) {
+            const mata::nfa::StatePost& state_post = aut.delta[next_state];
+            if (state_post.size() != 1) { return false; }
+            const mata::nfa::SymbolPost& symbol_post = *state_post.begin();
+            if (symbol_post.num_of_targets() != 1) { return false; }
+            word.push_back(symbol_post.symbol);
+            next_state = *symbol_post.targets.begin();
+        }
+        return true;
+    }
+
+    std::vector<Predicate> create_inclusions_from_multiple_sides(const std::vector<std::vector<BasicTerm>>& left_sides, const std::vector<std::vector<BasicTerm>>& right_sides) {
+        SASSERT(left_sides.size() == right_sides.size());
+        std::vector<Predicate> inclusions;
+        for (std::vector<std::vector<BasicTerm>>::size_type index = 0; index < left_sides.size(); ++index) {
+            inclusions.emplace_back(PredicateType::Equation, std::vector<std::vector<BasicTerm>>{ left_sides[index], right_sides[index] });
+        }
+        return inclusions;
+    }
 }
 
 template <typename T>

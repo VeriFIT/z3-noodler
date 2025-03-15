@@ -169,6 +169,61 @@ namespace smt::noodler {
         }
 
         /**
+         * @brief Pushes predicates that depend on any variable in @p vars_to_check_dependency.
+         * 
+         * More concretely, it pushes all predicates whose right side (for inclusion) or inputs (for transducers)
+         * contain some variable from @p vars_to_check_dependency.
+         * It pushes the predicate only if it is not pushed already.
+         * 
+         * @param to_back whether to push to front or back to predicates_to_process
+         */
+        void push_dependent_predicates(std::set<BasicTerm> vars_to_check_dependency, bool to_back) {
+            for (const Predicate &inclusion : inclusions) {
+                if (is_dependent(vars_to_check_dependency, inclusion.get_right_set())) {
+                    push_unique(inclusion, to_back);
+                }
+            }
+            for (const Predicate &transducer : transducers) {
+                if (is_dependent(vars_to_check_dependency, transducer.get_set_of_param(0))) {
+                    push_unique(transducer, to_back);
+                }
+            }
+        }
+
+        /**
+         * Pushes predicates that would depend on the given @p predicate in the inclusion graph for processing
+         * 
+         * More concretely, it pushes all predicates whose right side (for inclusion) or inputs (for transducers)
+         * contain some variable from the left side/outputs of the given @p predicate.
+         * It pushes the predicate only if it is not pushed already.
+         */
+        void push_dependent_predicates(const Predicate &predicate, bool to_back) {
+            std::set<BasicTerm> vars_to_check_dependency;
+            if (predicate.is_equation()) { // inclusion
+                vars_to_check_dependency = predicate.get_left_set();
+            } else {
+                SASSERT(predicate.is_transducer());
+                vars_to_check_dependency = predicate.get_set_of_param(1);
+            }
+            
+            push_dependent_predicates(vars_to_check_dependency, to_back);
+        }
+
+        /**
+         * @brief Adds all transducers that are not simple (that do not have one input and one output var) back to processing.
+         * 
+         * It pushes a transducer only if it is not pushed already.
+         * Useful after calling substitute_vars().
+         */
+        void push_non_simple_transducers_to_processing() {
+            for (const Predicate &transducer : transducers) {
+                if (transducer.get_params()[0].size() != 1 && transducer.get_params()[1].size() != 1) {
+                    push_unique(transducer, false);
+                }
+            }
+        }
+
+        /**
          * Checks whether @p predicate would be on cycle in the inclusion graph (can overapproximate
          * and say that predicate is on cycle even if it is not).
          */
@@ -235,63 +290,6 @@ namespace smt::noodler {
         }
 
         /**
-         * Returns the vector of predicates that would depend on the given @p predicate in the inclusion graph.
-         * 
-         * More concretely, it returns all predicates whose right side (for inclusion) or inputs (for transducers)
-         * contain some variable from the left side/outputs of the given @p predicate.
-         * 
-         * @param predicate Predicate whose dependencies we are looking for
-         * @return The set of predicates that depend on @p predicate
-         */
-        std::vector<Predicate> get_dependent_predicates(const Predicate &predicate) {
-            std::set<BasicTerm> vars_to_check_dependency;
-            if (predicate.is_equation()) { // inclusion
-                vars_to_check_dependency = predicate.get_left_set();
-            } else {
-                SASSERT(predicate.is_transducer());
-                vars_to_check_dependency = predicate.get_set_of_param(1);
-            }
-
-            std::vector<Predicate> dependent_predicates;
-            for (const Predicate &inclusion : inclusions) {
-                if (is_dependent(vars_to_check_dependency, inclusion.get_right_set())) {
-                    dependent_predicates.push_back(inclusion);
-                }
-            }
-            for (const Predicate &transducer : transducers) {
-                if (is_dependent(vars_to_check_dependency, transducer.get_set_of_param(1))) {
-                    dependent_predicates.push_back(transducer);
-                }
-            }
-            return dependent_predicates;
-        }
-
-        /**
-         * @brief Returns simple transducers that will stop being simple after applying substitution map @p breaking_substitution_map
-         */
-        std::vector<Predicate> get_broken_simple_transducers(const std::unordered_map<BasicTerm, std::vector<BasicTerm>>& breaking_substitution_map) {
-            std::set<BasicTerm> breaking_vars;
-            for (const auto& [var, substitution] : breaking_substitution_map) {
-                if (substitution.size() > 1) {
-                    breaking_vars.insert(var);
-                }
-            }
-            return get_simple_transducers_with_output_var_in(breaking_vars);
-        }
-
-        std::vector<Predicate> get_simple_transducers_with_output_var_in(const std::set<BasicTerm>& vars) {
-            std::vector<Predicate> simple_transducers;
-            for (const Predicate &transducer : transducers) {
-                if (transducer.get_params()[0].size() == 1 && transducer.get_params()[1].size() <= 1) { // if we have simple transducer that contains some output var
-                    if (vars.contains(transducer.get_params()[1][0])) { // if (the only) output variable is in vars
-                        simple_transducers.push_back(transducer);
-                    }
-                }
-            }
-            return simple_transducers;
-        }
-
-        /**
          * @brief Get any inclusion that has @p var on the right side and save it to @p found inclusion
          * 
          * @return was such an inclusion found?
@@ -327,13 +325,13 @@ namespace smt::noodler {
         // substitutes vars and merge same nodes + delete copies of the merged nodes from the predicates_to_process (and also inclusions that have same sides are deleted)
 
         /**
-         * @brief Substitutes variables in predicates using @p substitution_map and removes unnnecessary nodes
+         * @brief Substitutes variables from @p vars_to_substitute in predicates using substitution_map and removes unnnecessary nodes
          * 
          * Concretely, substitutes the variables of both sides of inclusions and vars in inputs/outputs of transducers,
          * both in the corresponding sets and in the worklist of predicates to process (if two nodes become equal, keeps only
          * one). Furthermore, it removes inclusions that have both sides equal after substitution.
          */
-        void substitute_vars(std::unordered_map<BasicTerm, std::vector<BasicTerm>> &substitution_map);
+        void substitute_vars(const std::set<BasicTerm>& vars_to_substitute);
 
         /**
          * @brief Get the length constraints for variable @p var
@@ -398,6 +396,54 @@ namespace smt::noodler {
             }
             return false;
         }
+
+        /**
+         * @brief Processes inclusions from noodlification that are of the form where the right side var should be substituted by left side.
+         * 
+         * It assumes that left sides contain fresh variables, right sides are not substituted yet and all inclusions hold.
+         * This function then takes each inclusions t_1 t_2 ... t_n ⊆ x where x is length var  and substitutes substitution_map[x] = t_1 t_2 ... t_n.
+         * It is possible that x is on the right side of two inclusions, the first one substitutes it and the second one is added into this SolvingState
+         * and also it is added for processing.
+         * There can be inclusions t_1 t_2 ... t_n ⊆ x y ... z where there are multiple variables on the right side, but all the variables on the right
+         * side must be non-length (these variables are not substituted). Such inclusions are only added to SolvingState and not event for processing.
+         * 
+         * Furthermore, it updates all other predicates with the substitutions and adds non-simple transducers that are broken by this substitution for processing.
+         * 
+         * @param inclusions Inclusion to process
+         * @param on_cycle Whether the inclusions should be on cycle or not
+         */
+        void process_substituting_inclusions_from_right(const std::vector<Predicate>& inclusions, bool on_cycle);
+
+        /**
+         * @brief Similar to process_substituting_inclusions_from_right but opposite (left var should be substituted by right side).
+         * 
+         * It assumes that right sides contain fresh variables and that all inclusion hold and are not substituted yet EXCEPT for those
+         * that were replaced in process_substituting_inclusions_from_right (it is assumed that process_substituting_inclusions_from_right
+         * is always called before this function).
+         * Furthermore, all inclusions must be of form x ⊆ t_1 .. t_n where x is substituted even if it is not length var, therefore
+         * we will have substitution_map[x] = t_1 t_2 ... t_n.
+         * Again, if x was already substituted (either by some other inclusion in this function OR by some inclusion from process_substituting_inclusions_from_right)
+         * then the inclusion is added to SolvingState and it is ALWAYS added for processing.
+         * 
+         * Furthermore, it updates all other predicates with the substitutions and adds non-simple transducers that are broken by the substitution for processing.
+         * It also adds all dependent predicates to processing.
+         * 
+         * @param inclusions Inclusions to process
+         * @param on_cycle Whether the inclusions should be on cycle or not
+         */
+        void process_substituting_inclusions_from_left(const std::vector<Predicate>& inclusions, bool on_cycle);
+
+
+        /**
+         * @brief Adds a new fresh var whose name starts with @p var_prefix, is length-aware if @p is_length is true and assigned to automaton @p nfa.
+         * 
+         * If @p optimize_literal is true and @p nfa accepts exactly one word, the resulting variable will be literal corresponding to this word instead
+         * and @p var_prefix and @p is_length are ignored. This assumes that @p nfa is trimmed and reduced (or determinized and minimized), otherwise
+         * the test for @p nfa to aaccept one word can return false even if it accepts one word.
+         * 
+         * @return The newly created variable. 
+         */
+        BasicTerm add_fresh_var(std::shared_ptr<mata::nfa::Nfa> nfa, std::string var_prefix, bool is_length, bool optimize_literal);
     };
 
     class DecisionProcedure : public AbstractDecisionProcedure {
