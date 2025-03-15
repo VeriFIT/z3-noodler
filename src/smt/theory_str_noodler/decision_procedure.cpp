@@ -1351,7 +1351,6 @@ namespace smt::noodler {
 
         bool some_diseq_handled_by_ca = false;
 
-        bool has_length_vars = !init_length_sensitive_vars.empty();
         bool has_transducers = false;
 
         for (auto const &pred : formula.get_predicates()) {
@@ -1369,12 +1368,7 @@ namespace smt::noodler {
                 }
             } else if (pred.is_transducer()) {
                 has_transducers = true;
-                if (has_length_vars) { util::throw_error("We cannot handle lengths with transducers yet"); } // TODO: remove when we will be able to handle them
                 equations_and_transducers.add_predicate(pred);
-                for (const BasicTerm& var : pred.get_vars()) {
-                    // we add all vars from transducers as length-aware (TODO: do we need to?)
-                    this->init_length_sensitive_vars.insert(var);
-                }
             } else {
                 util::throw_error("Unsupported constraint in the decision procedure");
             }
@@ -1392,9 +1386,9 @@ namespace smt::noodler {
             }
         }
 
-        if (has_transducers && !conversions.empty()) {
-            // we cannot handle conversions and transducers together yet (TODO: add handling)
-            util::throw_error("Conversions and transducers cannot be handled together");
+        if (has_transducers && !init_length_sensitive_vars.empty()) {
+            // we cannot handle length variables (and therefore conversions) and transducers together yet (TODO: add handling)
+            util::throw_error("Length variables/conversions and transducers cannot be handled together");
         }
 
         STRACE("str-dis",
