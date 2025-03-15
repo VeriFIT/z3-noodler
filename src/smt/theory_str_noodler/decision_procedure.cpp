@@ -209,16 +209,17 @@ namespace smt::noodler {
                     STRACE("str", tout << "right side var " << right_var.get_name() << " replaced with:"; for (auto const &var : inclusion.get_left_side()) { tout << " " << var.get_name(); } tout << std::endl; );
                 } else {
                     // right_var is already substituted, therefore we add the inclusion but with substituted right_var into the solving state
+                    Predicate new_inclusion = add_inclusion(inclusion.get_left_side(), substitution_map.at(right_var), on_cycle);
                     // and we also add it into the queue to process (because its right side changed)
-                    push_unique(add_inclusion(inclusion.get_left_side(), substitution_map.at(right_var), on_cycle), on_cycle);
-                    STRACE("str", tout << "added new inclusion from the right side because it could not be substituted: " << inclusion << std::endl; );
+                    push_unique(new_inclusion, on_cycle);
+                    STRACE("str", tout << "added new inclusion from the right side because it could not be substituted: " << new_inclusion << std::endl; );
                 }
             } else {
                 // the variables on the right side are non-length, therefore we just add the inclusion into the solving state
                 add_predicate(inclusion, on_cycle);
                 // because all the variables on the right side are non-length, they were not substituted and therefore we do not need to process
                 // the inclusion, as the function assumes that it already holds
-                STRACE("str", tout << "added new inclusion from the right side (non-length): " << new_inclusion << std::endl; );
+                STRACE("str", tout << "added new inclusion from the right side (non-length): " << inclusion << std::endl; );
             }
         }
         // we need to substitute the variables in all other inclusions/transducers
@@ -249,9 +250,10 @@ namespace smt::noodler {
                 STRACE("str", tout << "left side var " << left_var.get_name() << " replaced with:"; for (auto const &var : inclusion.get_right_side()) { tout << " " << var.get_name(); } tout << std::endl; );
             } else {
                 // left_var is already substituted, therefore we add the inclusion but with substituted left_var into the solving state
+                Predicate new_inclusion = add_inclusion(substitution_map.at(left_var), inclusion.get_right_side(), on_cycle);
                 // and we also add it into the queue to process (because the inclusion might not hold anymore)
-                add_inclusion(substitution_map.at(left_var), inclusion.get_right_side(), on_cycle);
-                STRACE("str", tout << "added new inclusion from the left side because it could not be substituted: " << inclusion << std::endl; );
+                push_unique(new_inclusion, on_cycle);
+                STRACE("str", tout << "added new inclusion from the left side because it could not be substituted: " << new_inclusion << std::endl; );
             }
         }
         // before substituting, we need to push all variables that depend on the changed vars for processing
@@ -353,14 +355,13 @@ namespace smt::noodler {
         // represent empty string). This is because it is simpler, we would get only one noodle so we just need to
         // check that the non-empty side actually contains empty string and replace the vars on that side by epsilon.
         if (right_side_vars.empty() || left_side_vars.empty()) {
-            std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
             auto const non_empty_side_vars = right_side_vars.empty() ?
                                                     inclusion_to_process.get_left_set()
                                                     : inclusion_to_process.get_right_set();
             bool non_empty_side_contains_empty_word = true;
             for (const auto &var : non_empty_side_vars) {
                 if (solving_state.aut_ass.contains_epsilon(var)) {
-                    substitution_map[var] = {};
+                    solving_state.substitution_map[var] = {};
                     solving_state.aut_ass.erase(var);
                 } else {
                     // var does not contain empty word => whole non-empty side cannot contain empty word
@@ -480,7 +481,7 @@ namespace smt::noodler {
             std::vector<std::vector<BasicTerm>> left_side_vars_to_new_vars(left_side_vars.size());
             std::vector<std::vector<BasicTerm>> right_side_divisions_to_new_vars(right_side_division.size());
             for (unsigned i = 0; i < noodle.size(); ++i) {
-                // we add a fresh var for each segment of noodle
+                // we add a fresh var for each segment of noodle (TODO: do not make new var if we can replace it from one side by one var)
                 BasicTerm new_var = new_element.add_fresh_var(
                                                         noodle[i].first, // we assign to it the automaton from the segment
                                                         std::string("align_") + std::to_string(noodlification_no), // the prefix of the new var
@@ -609,11 +610,14 @@ namespace smt::noodler {
             return;
         }
 
-        std::vector<std::shared_ptr<mata::nfa::Nfa>> input_vars_automata;
-        std::tie(input_vars_automata, std::ignore) = solving_state.get_automata_and_division_of_concatenation(input_vars, false);
+        STRACE("str-nfa", tout << "Input automata:" << std::endl);
+        auto [input_vars_automata, input_vars_divisions] = solving_state.get_automata_and_division_of_concatenation(input_vars, true);
+        SASSERT(input_vars_automata.size() == input_vars_divisions.size());
 
-        std::vector<std::shared_ptr<mata::nfa::Nfa>> output_vars_automata;
-        std::tie(output_vars_automata, std::ignore) = solving_state.get_automata_and_division_of_concatenation(output_vars, false);
+        STRACE("str-nfa", tout << "Output automata:" << std::endl);
+        auto [output_vars_automata, output_vars_divisions] = solving_state.get_automata_and_division_of_concatenation(output_vars, false);
+        SASSERT(output_vars_automata.size() == output_vars_divisions.size());
+        SASSERT(output_vars_divisions.size() == output_vars.size());
 
         std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata);
         for (const auto& noodle : noodles) {
@@ -624,6 +628,9 @@ namespace smt::noodler {
             //      - o is the number denoting which output variable is connected with T
             //      - Ao is NFA for the new output variable xo
 
+            // we are doing similar things as in processing of inclusion, just with two types of vars (input/output) instead of one
+            // and the result is also a set of simple transducers 
+
             SolvingState new_element = solving_state;
 
             std::vector<std::vector<BasicTerm>> input_vars_to_new_input_vars(input_vars.size());
@@ -631,60 +638,35 @@ namespace smt::noodler {
             for (unsigned i = 0; i < noodle.size(); ++i) {
                 // TODO do not make new vars if we can replace them with one var
 
-                BasicTerm new_input_var = util::mk_noodler_var_fresh(std::string("input_") + std::to_string(noodlification_no)); // xi
+                BasicTerm new_input_var = new_element.add_fresh_var(
+                                                            noodle[i].input_aut, // we assign Ai to new_input_var
+                                                            std::string("input_") + std::to_string(noodlification_no),
+                                                            new_element.contains_length_var(input_vars_divisions[noodle[i].input_index]),
+                                                            true
+                                                        ); // xi
                 input_vars_to_new_input_vars[noodle[i].input_index].push_back(new_input_var);
-                new_element.aut_ass[new_input_var] = noodle[i].input_aut; // we assign Ai to new_input_var
-                new_element.length_sensitive_vars.insert(new_input_var); // xi is also length-aware as it is in transducer
+                STRACE("str-nfa", tout << new_input_var << std::endl << *noodle[i].input_aut;);
 
-                BasicTerm new_output_var = util::mk_noodler_var_fresh(std::string("output_") + std::to_string(noodlification_no)); // xo
+                BasicTerm new_output_var = new_element.add_fresh_var(
+                                                            noodle[i].output_aut, // we assign Ao to new_output_var
+                                                            std::string("output_") + std::to_string(noodlification_no),
+                                                            // lengthness must be propagated from input to output too
+                                                            new_element.contains_length_var(input_vars_divisions[noodle[i].input_index])
+                                                                || new_element.length_sensitive_vars.contains(output_vars[noodle[i].output_index]),
+                                                            true
+                                                        ); // xo
                 output_vars_to_new_output_vars[noodle[i].output_index].push_back(new_output_var);
-                new_element.aut_ass[new_output_var] = noodle[i].output_aut; // we assign Ao to new_output_var
-                new_element.length_sensitive_vars.insert(new_output_var); // xo is also length-aware as it is in transducer
+                STRACE("str-nfa", tout << new_output_var << std::endl << *noodle[i].output_aut;);
 
                 // add the new transducer xo = T(xi)
                 new_element.add_transducer(noodle[i].transducer, {new_input_var}, {new_output_var}, false);
             }
 
-            std::set<BasicTerm> substituted_vars;
+            std::vector<Predicate> input_inclusions = util::create_inclusions_from_multiple_sides(input_vars_to_new_input_vars, input_vars_divisions);
+            new_element.process_substituting_inclusions_from_right(input_inclusions, false);
 
-            for (unsigned i = 0; i < input_vars.size(); ++i) {
-                const BasicTerm& cur_input_var = input_vars[i];
-                if (cur_input_var.is_variable()) { // skip literals
-                    if (new_element.substitution_map.contains(cur_input_var)) {
-                        // cur_input_var cannot be already substituted, as we assume that we do not have a cycle in the inclusion graph, therefore
-                        // cur_input_var can be in the inputs only once
-                        UNREACHABLE();
-                    } else {
-                        // cur_input_var is not substituted yet, so we substitute it now
-                        new_element.substitution_map[cur_input_var] = input_vars_to_new_input_vars[i];
-                        new_element.aut_ass.erase(cur_input_var);
-                        substituted_vars.insert(cur_input_var);
-                    }
-                }
-            }
-
-            std::set<BasicTerm> output_vars_set;
-
-            for (unsigned i = 0; i < output_vars.size(); ++i) {
-                const BasicTerm& cur_output_var = output_vars[i];
-                if (cur_output_var.is_variable()) { // skip literals
-                    if (new_element.substitution_map.contains(cur_output_var)) {
-                        // cur_output_var is already substituted, we create an inclusion instead
-                        const auto &new_inclusion = new_element.add_inclusion(output_vars_to_new_output_vars[i], new_element.substitution_map.at(cur_output_var), false);
-                        new_element.push_unique(new_inclusion, false);
-                    } else {
-                        // cur_output_var is not substituted yet, so we substitute it now
-                        new_element.substitution_map[cur_output_var] = output_vars_to_new_output_vars[i];
-                        new_element.aut_ass.erase(cur_output_var);
-                        substituted_vars.insert(cur_output_var);
-                        output_vars_set.insert(cur_output_var);
-                    }
-                }
-            }
-
-            new_element.push_dependent_predicates(output_vars_set, false);
-            new_element.substitute_vars(substituted_vars);
-            new_element.push_non_simple_transducers_to_processing();
+            std::vector<Predicate> output_inclusions = util::create_inclusions_from_multiple_sides(output_vars_divisions, output_vars_to_new_output_vars);
+            new_element.process_substituting_inclusions_from_left(output_inclusions, false);
 
             worklist.push_front(new_element);
         }
