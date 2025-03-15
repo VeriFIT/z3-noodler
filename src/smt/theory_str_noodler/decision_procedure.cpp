@@ -633,7 +633,7 @@ namespace smt::noodler {
 
             SolvingState new_element = solving_state;
 
-            std::vector<std::vector<BasicTerm>> input_vars_to_new_input_vars(input_vars.size());
+            std::vector<std::vector<BasicTerm>> input_vars_to_new_input_vars(input_vars_divisions.size());
             std::vector<std::vector<BasicTerm>> output_vars_to_new_output_vars(output_vars.size());
             for (unsigned i = 0; i < noodle.size(); ++i) {
                 // TODO do not make new vars if we can replace them with one var
