@@ -530,7 +530,7 @@ namespace smt::noodler {
             // gather transducer constraints occurring in the concatenation
             regex::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
             regex::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
-            Predicate inst(PredicateType::NotContains, std::vector<Concat>{left, right});
+            Predicate inst = Predicate::create_not_contains(left, right);
             instance.add_predicate(inst);
         }
 

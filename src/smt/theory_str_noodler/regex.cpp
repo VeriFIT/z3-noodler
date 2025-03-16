@@ -736,9 +736,7 @@ namespace smt::noodler::regex {
                 // transducer corresponding to replace_all
                 mata::nft::Nft nft = mata::nft::strings::replace_reluctant_literal(util::get_mata_word_zstring(find), util::get_mata_word_zstring(replace), mata_alph);
 
-                // TODO: switch sides?
-                Predicate rpl_all(PredicateType::Transducer, { {bvar}, side }, std::make_shared<mata::nft::Nft>(nft));
-                transducer_preds.push_back(rpl_all);
+                transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(nft), side, {bvar}));
 
             // replace_re_all
             } else if (m_util_s.str.is_replace_re_all(ex, a1, a2, a3)) {
@@ -766,11 +764,8 @@ namespace smt::noodler::regex {
                 // transducer corresponding to replace_all
                 mata::nft::Nft nft = mata::nft::strings::replace_reluctant_regex(find_nfa, util::get_mata_word_zstring(replace), mata_alph);
 
-                // TODO: switch sides?
-                Predicate rpl_all(PredicateType::Transducer, { {bvar}, side }, std::make_shared<mata::nft::Nft>(nft));
-                transducer_preds.push_back(rpl_all);
+                transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(nft), side, {bvar}));
             }
-            // TODO: handle replace_re_all
             return;
         }
 

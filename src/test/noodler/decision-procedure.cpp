@@ -24,6 +24,10 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     identity.add_transition(0, {'a', 'a'}, 0);
     identity.add_transition(0, {'b', 'b'}, 0);
 
+    mata::nft::Nft transform_to_empty{1, {0}, {0}};
+    transform_to_empty.add_transition(0, {'a', mata::nft::EPSILON}, 0);
+    transform_to_empty.add_transition(0, {'b', mata::nft::EPSILON}, 0);
+
     SECTION("unsat-simple", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("xy", "zu"));
@@ -107,7 +111,7 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { BasicTerm(BasicTermType::Variable, "x"), BasicTerm(BasicTermType::Variable, "z") }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
 
-        REQUIRE(proc.compute_next_solution());
+        REQUIRE(proc.compute_next_solution() == lbool::l_true);
 
         REQUIRE(proc.solution.substitution_map.count(get_var('z')) > 0);
         const auto &z_subst = proc.solution.substitution_map.at(get_var('z'));
@@ -152,7 +156,7 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         init_ass[get_var('r')] = regex_to_nfa("aaa");
         DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
-        CHECK(proc.compute_next_solution());
+        CHECK(proc.compute_next_solution() == lbool::l_true);
     }
 
     SECTION("unsat-two-equations-length", "[nooodler]") {
@@ -269,7 +273,7 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         init_ass[get_var('x')] = regex_to_nfa("a*b*");
         DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
-        CHECK(proc.compute_next_solution());
+        CHECK(proc.compute_next_solution() == lbool::l_true);
     }
 
     SECTION("unsat-simple-transducer", "[nooodler]") {
@@ -327,6 +331,17 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         init_ass[get_var('r')] = regex_to_nfa("aaa");
         DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
-        CHECK(proc.compute_next_solution());
+        CHECK(proc.compute_next_solution() == lbool::l_true);
+    }
+
+    SECTION("unsat-emptiness-transducer", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_transducer(transform_to_empty, "y", "x"));
+        AutAssignment init_ass;
+        init_ass[get_var('x')] = regex_to_nfa("a");
+        init_ass[get_var('y')] = regex_to_nfa("(a|b)*");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        CHECK(proc.compute_next_solution() == lbool::l_false);
     }
 }

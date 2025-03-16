@@ -303,7 +303,7 @@ namespace smt::noodler::util {
         SASSERT(left_sides.size() == right_sides.size());
         std::vector<Predicate> inclusions;
         for (std::vector<std::vector<BasicTerm>>::size_type index = 0; index < left_sides.size(); ++index) {
-            inclusions.emplace_back(PredicateType::Equation, std::vector<std::vector<BasicTerm>>{ left_sides[index], right_sides[index] });
+            inclusions.push_back(Predicate::create_equation(left_sides[index], right_sides[index]));
         }
         return inclusions;
     }

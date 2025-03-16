@@ -549,10 +549,22 @@ namespace smt::noodler {
         // We assume that if we have transducers in procedure, then the inclusion tree is without cycles
         SASSERT(!solving_state.is_predicate_on_cycle(transducer_to_process));
 
+        STRACE("str", tout << "Processing node with transducer " << transducer_to_process << std::endl;);
+        STRACE("str-nfa", tout << *transducer_to_process.get_transducer(););
+        STRACE("str",
+            tout << "Length variables are:";
+            for(auto const &var : transducer_to_process.get_vars()) {
+                if (solving_state.length_sensitive_vars.count(var)) {
+                    tout << " " << var.to_string();
+                }
+            }
+            tout << std::endl;
+        );
+
         solving_state.remove_predicate(transducer_to_process);
 
-        const std::vector<BasicTerm>& input_vars = transducer_to_process.get_params()[0];
-        const std::vector<BasicTerm>& output_vars = transducer_to_process.get_params()[1];
+        const std::vector<BasicTerm>& input_vars = transducer_to_process.get_input();
+        const std::vector<BasicTerm>& output_vars = transducer_to_process.get_output();
 
         if (input_vars.empty()) {
             // emptiness means that on the input we have empty string, therefore, we do not do noodlification but instead apply the empty string on transducer and create new inclusion
@@ -636,6 +648,9 @@ namespace smt::noodler {
             std::vector<std::vector<BasicTerm>> input_vars_to_new_input_vars(input_vars_divisions.size());
             std::vector<std::vector<BasicTerm>> output_vars_to_new_output_vars(output_vars.size());
             for (unsigned i = 0; i < noodle.size(); ++i) {
+                STRACE("str", tout << "Processing noodle" << (is_trace_enabled("str-nfa") ? " with automata:" : "") << std::endl;);
+                STRACE("str-nfa", tout << "Transducer:\n" << *noodle[i].transducer;);
+
                 // TODO do not make new vars if we can replace them with one var
 
                 BasicTerm new_input_var = new_element.add_fresh_var(
@@ -1305,10 +1320,10 @@ namespace smt::noodler {
         // propagate substitutions involved by the current substitution map of
         // a stable solution
         for(const Predicate& dis : this->disequations.get_predicates()) {
-            proj_diseqs.add_predicate(Predicate(PredicateType::Inequation, {
+            proj_diseqs.add_predicate(Predicate::create_disequation(
                 proj_concat(dis.get_left_side()),
-                proj_concat(dis.get_right_side()),
-            }));
+                proj_concat(dis.get_right_side())
+            ));
         }
 
         STRACE("str", tout << "CA-DISEQS (original): " << std::endl << this->disequations.to_string() << std::endl;);
@@ -1328,14 +1343,14 @@ namespace smt::noodler {
             return ret;
         };
 
-        // take the original disequations (taken from input) and
+        // take the original notcontains (taken from input) and
         // propagate substitutions involved by the current substitution map of
         // a stable solution
-        for(const Predicate& dis : this->not_contains.get_predicates()) {
-            proj_not_cont.add_predicate(Predicate(PredicateType::NotContains, {
-                proj_concat(dis.get_left_side()),
-                proj_concat(dis.get_right_side()),
-            }));
+        for(const Predicate& not_cont : this->not_contains.get_predicates()) {
+            proj_not_cont.add_predicate(Predicate::create_not_contains(
+                proj_concat(not_cont.get_haystack()),
+                proj_concat(not_cont.get_needle())
+            ));
         }
 
         STRACE("str", tout << "CA-DISEQS (original): " << std::endl << this->not_contains.to_string() << std::endl;);
@@ -1648,9 +1663,9 @@ namespace smt::noodler {
 
         std::vector<Predicate> new_eqs;
         // L = x1a1y1
-        new_eqs.push_back(Predicate(PredicateType::Equation, {diseq.get_left_side(), Concat{x1, a1, y1}}));
+        new_eqs.push_back(Predicate::create_equation(diseq.get_left_side(), Concat{x1, a1, y1}));
         // R = x2a2y2
-        new_eqs.push_back(Predicate(PredicateType::Equation, {diseq.get_right_side(), Concat{x2, a2, y2}}));
+        new_eqs.push_back(Predicate::create_equation(diseq.get_right_side(), Concat{x2, a2, y2}));
 
         // we want |x1| == |x2|, making x1 and x2 length ones
         init_length_sensitive_vars.insert(x1);

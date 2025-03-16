@@ -31,11 +31,11 @@ namespace smt::noodler {
 
         [[nodiscard]] const std::vector<BasicTerm>& get_real_left_side() const {
             if (node_predicate.is_transducer()) {
-                // for predicate, left side is output (params[1])
+                // for trasnducer, left side is output
                 if (!is_reversed()) {
-                    return node_predicate.get_params()[1];
+                    return node_predicate.get_output();
                 } else {
-                    return node_predicate.get_params()[0];
+                    return node_predicate.get_input();
                 }
             } else {
                 // for inclusions, left side is left side
@@ -50,11 +50,11 @@ namespace smt::noodler {
 
         [[nodiscard]] const std::vector<BasicTerm>& get_real_right_side() const {
             if (node_predicate.is_transducer()) {
-                // for predicate, left side is input (params[0])
+                // for predicate, right side is input
                 if (!is_reversed()) {
-                    return node_predicate.get_params()[0];
+                    return node_predicate.get_input();
                 } else {
-                    return node_predicate.get_params()[1];
+                    return node_predicate.get_output();
                 }
             } else  {
                 // for inclusions, right side is right side
@@ -107,24 +107,6 @@ namespace smt::noodler {
         Predicate node_predicate;
         bool reversed = false;
     }; // Class FormulaGraphNode.
-
-    // static bool operator==(const FormulaGraphNode& lhs, const FormulaGraphNode& rhs) { 
-    //     return (lhs.is_reversed() == rhs.is_reversed() && lhs.get_predicate() == rhs.get_predicate());
-    // }
-    // static bool operator!=(const FormulaGraphNode& lhs, const FormulaGraphNode& rhs) { return !(lhs == rhs); }
-    // static bool operator<(const FormulaGraphNode& lhs, const FormulaGraphNode& rhs) {
-    //     if (lhs.get_predicate() < rhs.get_predicate()) {
-    //         return true;
-    //     } else if (lhs.get_predicate() > rhs.get_predicate()) {
-    //         false;
-    //     }
-        
-    //     return (!lhs.is_reversed() && rhs.is_reversed());
-    // }
-    // static bool operator>(const FormulaGraphNode& lhs, const FormulaGraphNode& rhs) { return !(lhs < rhs || lhs == rhs); }
-
-    //----------------------------------------------------------------------------------------------------------------------------------
-
 
     class FormulaGraph {
     public:

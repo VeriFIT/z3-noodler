@@ -322,11 +322,11 @@ namespace smt::noodler {
                     break;
                 }
             }
-            std::vector<Concat> sides({
-                Concat(params[0].begin()+i, params[0].begin() + left + 1),
-                Concat(params[1].begin()+i, params[1].begin() + right + 1)
-            });
-            ret.add_predicate(Predicate(PredicateType::Equation, sides));
+            ret.add_predicate(
+                Predicate::create_equation(
+                    Concat(params[0].begin()+i, params[0].begin() + left + 1),
+                    Concat(params[1].begin()+i, params[1].begin() + right + 1)
+                ));
         }
         return ret;
     }

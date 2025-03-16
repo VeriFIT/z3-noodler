@@ -190,7 +190,7 @@ namespace smt::noodler {
     }
 
     std::set<BasicTerm> Predicate::get_side_vars(const Predicate::EquationSideType side) const {
-        assert(is_two_sided());
+        assert(is_eq_or_ineq());
         std::set<BasicTerm> vars;
         std::vector<BasicTerm> side_terms;
         switch (side) {
@@ -221,7 +221,7 @@ namespace smt::noodler {
     }
 
     bool Predicate::mult_occurr_var_side(const Predicate::EquationSideType side) const {
-        assert(is_two_sided());
+        assert(is_eq_or_ineq());
         const auto terms_begin{ get_side(side).cbegin() };
         const auto terms_end{ get_side(side).cend() };
         for (auto term_iter{ terms_begin }; term_iter < terms_end; ++term_iter) {
@@ -293,9 +293,9 @@ namespace smt::noodler {
             }
 
             case PredicateType::Transducer: {
-                std::string result{ "Transducer: " };
-                result += join(params[0], " ") + " , " + join(params[1], " ");
-                return result;
+                std::stringstream result;
+                result << "Transducer: " << join(params[1], " ") << " = T" << transducer << "(" << join(params[0], " ") << ")";
+                return result.str();
             }
         }
 
@@ -308,7 +308,7 @@ namespace smt::noodler {
                 if(!(params[0] == other.params[0] && params[1] == other.params[1])) {
                     return false;
                 }
-                // check if transducers are the same pointers
+                // check if transducers have the same language
                 return transducer->is_identical(*other.get_transducer());
             }
             if (is_two_sided()) {
@@ -320,7 +320,7 @@ namespace smt::noodler {
     }
 
     const std::vector<BasicTerm> &Predicate::get_side(const Predicate::EquationSideType side) const {
-        assert(is_two_sided());
+        assert(is_eq_or_ineq());
         switch (side) {
             case EquationSideType::Left:
                 return params[0];
@@ -335,7 +335,7 @@ namespace smt::noodler {
     }
 
     std::vector<BasicTerm> &Predicate::get_side(const Predicate::EquationSideType side) {
-        assert(is_two_sided());
+        assert(is_eq_or_ineq());
         switch (side) {
             case EquationSideType::Left:
                 return params[0];
@@ -350,6 +350,7 @@ namespace smt::noodler {
     }
 
     std::map<BasicTerm, unsigned> Predicate::variable_count(const Predicate::EquationSideType side) const {
+        assert(is_eq_or_ineq());
         std::map<BasicTerm, unsigned> occurr;
         BasicTerm litTerm(BasicTermType::Literal, "");
         unsigned lits = 0;

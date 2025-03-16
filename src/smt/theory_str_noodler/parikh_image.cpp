@@ -1199,8 +1199,8 @@ namespace smt::noodler::parikh {
 
     LenNode ParikhImageNotContTag::get_nt_all_mismatch_formula(const Predicate& not_cont) {
         LenNode mismatch(LenFormulaType::OR);
-        for(size_t i = 0; i < not_cont.get_left_side().size(); i++) {
-            for (size_t j = 0; j < not_cont.get_right_side().size(); j++) {
+        for(size_t i = 0; i < not_cont.get_haystack().size(); i++) {
+            for (size_t j = 0; j < not_cont.get_needle().size(); j++) {
                 mismatch.succ.push_back(get_mismatch_formula(i, j, not_cont, this->offset_var));
             }
         }
@@ -1211,14 +1211,14 @@ namespace smt::noodler::parikh {
 
         std::unordered_map<BasicTerm, int> lhs_var_occurence_occurence_diff;
 
-        for (const BasicTerm& term: not_contains.get_left_side()) {
+        for (const BasicTerm& term: not_contains.get_haystack()) {
             auto [old_map_entry, did_emplace_happen] = lhs_var_occurence_occurence_diff.emplace(term, 1);
             if (!did_emplace_happen) {
                 old_map_entry->second += 1;
             }
         }
 
-        for (const BasicTerm& term: not_contains.get_right_side()) {
+        for (const BasicTerm& term: not_contains.get_needle()) {
             auto [old_map_entry, did_emplace_happen] = lhs_var_occurence_occurence_diff.emplace(term, -1);
             if (!did_emplace_happen) {
                 old_map_entry->second -= 1;

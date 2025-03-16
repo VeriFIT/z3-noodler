@@ -258,8 +258,8 @@ namespace smt::noodler {
          * @param is_on_cycle Whether the inclusion would be on cycle in the inclusion graph (if not sure, set to true)
          * @return The newly added inclusion
          */
-        Predicate add_inclusion(const std::vector<BasicTerm> &left_side, const std::vector<BasicTerm> &right_side, bool is_on_cycle = true) {
-            Predicate new_inclusion{PredicateType::Equation, std::vector<std::vector<BasicTerm>> {left_side, right_side}};
+        Predicate add_inclusion(std::vector<BasicTerm> left_side, std::vector<BasicTerm> right_side, bool is_on_cycle = true) {
+            Predicate new_inclusion = Predicate::create_equation(std::move(left_side), std::move(right_side));
             add_predicate(new_inclusion, is_on_cycle);
             return new_inclusion;
         }
@@ -273,8 +273,8 @@ namespace smt::noodler {
          * @param is_on_cycle Whether the transducer would be on cycle in the inclusion graph (if not sure, set to true)
          * @return The newly added transducer predicate
          */
-        Predicate add_transducer(std::shared_ptr<mata::nft::Nft> trans, const std::vector<BasicTerm> &input, const std::vector<BasicTerm> &output, bool is_on_cycle = true) {
-            Predicate new_transducer{PredicateType::Transducer, std::vector<std::vector<BasicTerm>> {input, output}, trans};
+        Predicate add_transducer(std::shared_ptr<mata::nft::Nft> trans, std::vector<BasicTerm> input, std::vector<BasicTerm> output, bool is_on_cycle = true) {
+            Predicate new_transducer = Predicate::create_transducer(trans, std::move(input), std::move(output));
             add_predicate(new_transducer, is_on_cycle);
             return new_transducer;
         }

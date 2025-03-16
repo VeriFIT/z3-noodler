@@ -290,27 +290,26 @@ namespace smt::noodler {
     private:
         PredicateType type;
         std::vector<std::vector<BasicTerm>> params;
-        std::shared_ptr<mata::nft::Nft> transducer = nullptr; // transducer for the case of PredicateType::Transducer
+        // transducer for the case of PredicateType::Transducer where params[0] is input and params[1] is output
+        std::shared_ptr<mata::nft::Nft> transducer = nullptr;
     public:
-        enum struct EquationSideType {
+        enum struct EquationSideType { // can be used also for disequations
             Left,
             Right,
         };
 
         Predicate() : type(PredicateType::Equation) {}
         explicit Predicate(const PredicateType type): type(type), params(), transducer() {
-            if (is_equation() || is_inequation()) {
+            if (is_two_sided()) {
                 params.resize(2);
                 params.emplace_back();
                 params.emplace_back();
             }
         }
 
-        explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par):
-            type(type),
-            params(par),
-            transducer()
-            { }
+        explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par): type(type), params(par), transducer() {
+            assert(!is_two_sided() || params.size() == 2);
+        }
 
         explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par, std::shared_ptr<mata::nft::Nft> trans) : 
             type(type),
@@ -320,6 +319,23 @@ namespace smt::noodler {
             assert(trans->num_of_levels == 2);
         }
 
+
+        static Predicate create_equation(std::vector<BasicTerm> left_side, std::vector<BasicTerm> right_side) {
+            return Predicate{PredicateType::Equation, {std::move(left_side), std::move(right_side)}};
+        }
+
+        static Predicate create_disequation(std::vector<BasicTerm> left_side, std::vector<BasicTerm> right_side) {
+            return Predicate{PredicateType::Inequation, {std::move(left_side), std::move(right_side)}};
+        }
+
+        static Predicate create_transducer(std::shared_ptr<mata::nft::Nft> trans, std::vector<BasicTerm> input, std::vector<BasicTerm> output) {
+            return Predicate{PredicateType::Transducer, {std::move(input), std::move(output)}, trans};
+        }
+
+        static Predicate create_not_contains(std::vector<BasicTerm> haystick, std::vector<BasicTerm> needle) {
+            return Predicate{PredicateType::NotContains, {std::move(haystick), std::move(needle)}};
+        }
+
         [[nodiscard]] PredicateType get_type() const { return type; }
         [[nodiscard]] bool is_equation() const { return type == PredicateType::Equation; }
         [[nodiscard]] bool is_inequation() const { return type == PredicateType::Inequation; }
@@ -327,52 +343,157 @@ namespace smt::noodler {
         [[nodiscard]] bool is_eq_or_ineq() const { return is_equation() || is_inequation(); }
         [[nodiscard]] bool is_transducer() const { return is(PredicateType::Transducer); }
         [[nodiscard]] bool is_two_sided() const { return is_equation() || is_inequation() || is_not_cont() || is_transducer(); }
-        [[nodiscard]] bool is_predicate() const { return !is_eq_or_ineq(); }
         [[nodiscard]] bool is(const PredicateType predicate_type) const { return predicate_type == this->type; }
 
-        const std::vector<std::vector<BasicTerm>>& get_params() const { return this->params; }
+        [[nodiscard]] const std::vector<std::vector<BasicTerm>>& get_params() const { return this->params; }
 
-        std::vector<BasicTerm>& get_left_side() {
-            assert(is_two_sided());
+        /// get left side of (dis)equation 
+        [[nodiscard]] std::vector<BasicTerm>& get_left_side() {
+            assert(is_eq_or_ineq());
             return params[0];
         }
 
+        /// get left side of (dis)equation 
         [[nodiscard]] const std::vector<BasicTerm>& get_left_side() const {
-            assert(is_two_sided());
+            assert(is_eq_or_ineq());
             return params[0];
         }
 
-        std::vector<BasicTerm>& get_right_side() {
-            assert(is_two_sided());
+        /// get right side of (dis)equation 
+        [[nodiscard]] std::vector<BasicTerm>& get_right_side() {
+            assert(is_eq_or_ineq());
             return params[1];
         }
 
+        /// get right side of (dis)equation 
         [[nodiscard]] const std::vector<BasicTerm>& get_right_side() const {
-            assert(is_two_sided());
+            assert(is_eq_or_ineq());
             return params[1];
         }
 
+        /// set right side of (dis)equation 
         void set_left_side(const std::vector<BasicTerm> &new_left_side) {
-            assert(is_two_sided());
+            assert(is_eq_or_ineq());
             params[0] = new_left_side;
         }
 
+        /// set left side of (dis)equation 
         void set_left_side(std::vector<BasicTerm> &&new_left_side) {
-            assert(is_two_sided());
+            assert(is_eq_or_ineq());
             params[0] = std::move(new_left_side);
         }
 
+        /// set right side of (dis)equation 
         void set_right_side(const std::vector<BasicTerm> &new_right_side) {
-            assert(is_two_sided());
+            assert(is_eq_or_ineq());
             params[1] = new_right_side;
         }
 
+        /// set right side of (dis)equation 
         void set_right_side(std::vector<BasicTerm> &&new_right_side) {
-            assert(is_two_sided());
+            assert(is_eq_or_ineq());
             params[1] = std::move(new_right_side);
         }
 
-        std::set<BasicTerm> get_set() const {
+        /// get input of transducer
+        [[nodiscard]] std::vector<BasicTerm>& get_input() {
+            assert(is_transducer());
+            return params[0];
+        }
+
+        /// get input of transducer
+        [[nodiscard]] const std::vector<BasicTerm>& get_input() const {
+            assert(is_transducer());
+            return params[0];
+        }
+
+        /// get output of transducer
+        [[nodiscard]] std::vector<BasicTerm>& get_output() {
+            assert(is_transducer());
+            return params[1];
+        }
+
+        /// get output of transducer
+        [[nodiscard]] const std::vector<BasicTerm>& get_output() const {
+            assert(is_transducer());
+            return params[1];
+        }
+
+        /// set input of transducer
+        void set_input(const std::vector<BasicTerm> &new_input) {
+            assert(is_transducer());
+            params[0] = new_input;
+        }
+
+        /// set input of transducer
+        void set_input(std::vector<BasicTerm> &&new_input) {
+            assert(is_transducer());
+            params[0] = std::move(new_input);
+        }
+
+        /// set output of transducer
+        void set_output(const std::vector<BasicTerm> &new_output) {
+            assert(is_transducer());
+            params[1] = new_output;
+        }
+
+        /// set output of transducer
+        void set_output(std::vector<BasicTerm> &&new_output) {
+            assert(is_transducer());
+            params[1] = std::move(new_output);
+        }
+
+        /// get haystack of notcontains
+        [[nodiscard]] std::vector<BasicTerm>& get_haystack() {
+            assert(is_not_cont());
+            return params[0];
+        }
+
+        /// get haystack of notcontains
+        [[nodiscard]] const std::vector<BasicTerm>& get_haystack() const {
+            assert(is_not_cont());
+            return params[0];
+        }
+
+        /// get needle of notcontains
+        [[nodiscard]] std::vector<BasicTerm>& get_needle() {
+            assert(is_not_cont());
+            return params[1];
+        }
+
+        /// get needle of notcontains
+        [[nodiscard]] const std::vector<BasicTerm>& get_needle() const {
+            assert(is_not_cont());
+            return params[1];
+        }
+
+        /// set haystack of transducer
+        void set_haystack(const std::vector<BasicTerm> &new_haystack) {
+            assert(is_not_cont());
+            params[0] = new_haystack;
+        }
+
+        /// set haystack of transducer
+        void set_haystack(std::vector<BasicTerm> &&new_haystack) {
+            assert(is_not_cont());
+            params[0] = std::move(new_haystack);
+        }
+
+        /// set needle of transducer
+        void set_needle(const std::vector<BasicTerm> &new_needle) {
+            assert(is_not_cont());
+            params[1] = new_needle;
+        }
+
+        /// set needle of transducer
+        void set_needle(std::vector<BasicTerm> &&new_needle) {
+            assert(is_not_cont());
+            params[1] = std::move(new_needle);
+        }
+
+
+        /// get set of all variables/literals occuring in the predicate
+        [[nodiscard]] std::set<BasicTerm> get_set() const {
             std::set<BasicTerm> ret;
             for(const auto& side : this->params) {
                 for(const BasicTerm& t : side)
@@ -381,7 +502,8 @@ namespace smt::noodler {
             return ret;
         }
 
-        std::set<BasicTerm> get_set_of_param(std::vector<std::vector<BasicTerm>>::size_type index) const {
+        /// get set of all variables/literals occuring in the paramater at @p index
+        [[nodiscard]] std::set<BasicTerm> get_set_of_param(std::vector<std::vector<BasicTerm>>::size_type index) const {
             std::set<BasicTerm> ret;
             for(const BasicTerm& t : this->params[index]) {
                 ret.insert(t);
@@ -389,21 +511,47 @@ namespace smt::noodler {
             return ret;
         }
 
-        std::set<BasicTerm> get_left_set() const {
-            assert(is_two_sided());
+        /// get set ofleft side variables/literals of (dis)equation 
+        [[nodiscard]] std::set<BasicTerm> get_left_set() const {
+            assert(is_eq_or_ineq());
             std::set<BasicTerm> ret;
             for(const BasicTerm& t : this->params[0])
                 ret.insert(t);
             return ret;
         }
 
-        std::set<BasicTerm> get_right_set() const {
-            assert(is_two_sided());
+        /// get set of right side variables/literals of (dis)equation 
+        [[nodiscard]] std::set<BasicTerm> get_right_set() const {
+            assert(is_eq_or_ineq());
             std::set<BasicTerm> ret;
             for(const BasicTerm& t : this->params[1])
                 ret.insert(t);
             return ret;
         }
+
+        /// get set of input variables/literals of transducer
+        [[nodiscard]] std::set<BasicTerm> get_input_set() const {
+            assert(is_transducer());
+            std::set<BasicTerm> ret;
+            for(const BasicTerm& t : this->params[0])
+                ret.insert(t);
+            return ret;
+        }
+
+        /// get set of output variables/literals of transducer
+        [[nodiscard]] std::set<BasicTerm> get_output_set() const {
+            assert(is_transducer());
+            std::set<BasicTerm> ret;
+            for(const BasicTerm& t : this->params[1])
+                ret.insert(t);
+            return ret;
+        }
+
+        /// get set of only variables in the predicate
+        [[nodiscard]] std::set<BasicTerm> get_vars() const;
+
+        /// get set of only variables on @p side of (dis)equation
+        [[nodiscard]] std::set<BasicTerm> get_side_vars(EquationSideType side) const;
 
         /**
          * @brief Check if the predicate contains only constant strings.
@@ -451,16 +599,19 @@ namespace smt::noodler {
             return eq;
         }
 
+        /// get @p side of (dis)equation 
         std::vector<BasicTerm>& get_side(EquationSideType side);
 
+        /// get @p side of (dis)equation 
         [[nodiscard]] const std::vector<BasicTerm>& get_side(EquationSideType side) const;
 
+        /// get predicate with switched sides (for (dis)equations and transducers), transducers also invert
         [[nodiscard]] Predicate get_switched_sides_predicate() const {
             assert(is_two_sided());
             // for transducers we need to invert tapes, i.e., T(x,y) iff T^{-1}(y,x)
             if(is_transducer()) {
                 auto nft_inverse = std::make_shared<mata::nft::Nft>(mata::nft::invert_levels(*transducer));
-                return Predicate{ PredicateType::Transducer, { get_right_side(), get_left_side() }, nft_inverse };
+                return Predicate::create_transducer(nft_inverse, get_output(), get_input());
             }
             return Predicate{ type, { get_right_side(), get_left_side() } };
         }
@@ -516,20 +667,8 @@ namespace smt::noodler {
         }
 
         /**
-         * Get unique variables on both sides of an (in)equation.
-         * @return Variables in the (in)equation.
-         */
-        [[nodiscard]] std::set<BasicTerm> get_vars() const;
-
-        /**
-         * Get unique variables on a single @p side of an (in)equation.
-         * @param[in] side (In)Equation side to get variables from.
-         * @return Variables in the (in)equation on specified @p side.
-         */
-        [[nodiscard]] std::set<BasicTerm> get_side_vars(EquationSideType side) const;
-
-        /**
          * Decide whether the @p side contains multiple occurrences of a single variable (with a same name).
+         * 
          * @param side Side to check.
          * @return True if there are multiple occurrences of a single variable. False otherwise.
          */
@@ -638,31 +777,6 @@ namespace smt::noodler {
         os << predicate.to_string();
         return os;
     }
-
-    // static bool operator==(const Predicate& lhs, const Predicate& rhs) { return lhs.equals(rhs); }
-    // static bool operator!=(const Predicate& lhs, const Predicate& rhs) { return !(lhs == rhs); }
-    // static bool operator<(const Predicate& lhs, const Predicate& rhs) {
-    //     if (lhs.get_type() < rhs.get_type()) {
-    //         return true;
-    //     } else if (lhs.get_type() > rhs.get_type()) {
-    //         return false;
-    //     }
-
-    //     // Types are equal. Compare data.
-    //     if (lhs.get_params() < rhs.get_params()) {
-    //         return true;
-    //     } else if (lhs.get_params() > rhs.get_params()) {
-    //         return false;
-    //     }
-
-    //     // For transducer predicates we compare pointers (assuming linear memory model)
-    //     if (lhs.is_transducer()) {
-    //         // compare pointers
-    //         return lhs.get_transducer() < rhs.get_transducer();
-    //     }
-    //     return false;
-    // }
-    // static bool operator>(const Predicate& lhs, const Predicate& rhs) { return !(lhs < rhs) && lhs != rhs; }
 
     //----------------------------------------------------------------------------------------------------------------------------------
 
