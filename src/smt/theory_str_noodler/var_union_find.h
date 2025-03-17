@@ -44,6 +44,8 @@ namespace smt::noodler {
         obj_map<expr, obj_hashtable<expr>> un_find;
         arith_util& m_util_a;
 
+        std::map<expr*, int> key_to_value; // -1 means key is not a numeral
+
     public:
         var_union_find(arith_util& m_util_a) : un_find(), m_util_a(m_util_a) { }
 
@@ -61,6 +63,17 @@ namespace smt::noodler {
             } else {
                 found.insert(val);
                 this->un_find.insert(key, found);
+            }
+
+            // we remember the value of key now, because sometimes it happened that the expr* for key stopped being a valid expression in z3
+            // and if we did the following in get_equivalence_bt() we would get segfault
+            // TODO: this should be probably fixed by using var_union_find with the option to push/pop scope or something like that
+            // TODO: this bug might occur even for @p val, either map it now to variable or fix it trough scopes
+            rational rat;
+            if(this->m_util_a.is_numeral(key, rat)) {
+                key_to_value[key] = rat.get_int32();
+            } else {
+                key_to_value[key] = -1;
             }
         }
 
@@ -81,11 +94,7 @@ namespace smt::noodler {
             std::vector<std::set<BasicTerm>> ret;
             for(const auto& t : this->un_find) {
                 std::set<BasicTerm> st;
-                int len = -1;
-                rational val;
-                if(this->m_util_a.is_numeral(t.m_key, val)) {
-                    len = val.get_int32();
-                }
+                int len = key_to_value.at(t.m_key);
                 for (const auto& s : t.m_value) {
                     std::string var = to_app(s)->get_decl()->get_name().str();
                     BasicTerm bvar(BasicTermType::Variable, var);
