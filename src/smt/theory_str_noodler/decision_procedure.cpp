@@ -568,7 +568,7 @@ namespace smt::noodler {
 
         if (input_vars.empty()) {
             // emptiness means that on the input we have empty string, therefore, we do not do noodlification but instead apply the empty string on transducer and create new inclusion
-            mata::nfa::Nfa application_to_empty_string = mata::nft::project_to(transducer_to_process.get_transducer()->apply(AutAssignment::empty_string_automaton()), 1).to_nfa_move();
+            mata::nfa::Nfa application_to_empty_string = mata::nft::project_to(transducer_to_process.get_transducer()->apply(AutAssignment::empty_string_automaton(), 0), 1).to_nfa_move();
             
             if (application_to_empty_string.is_lang_empty()) {
                 // empty string is not accepted by transducer as input, this solving_state cannot lead to solution
@@ -600,8 +600,8 @@ namespace smt::noodler {
         }
 
         if (output_vars.empty()) {
-            // we do the same thing when epsilon is in output vars, however we need to take inverted transducer
-            mata::nfa::Nfa application_to_empty_string = mata::nft::project_to(mata::nft::invert_levels(*transducer_to_process.get_transducer()).apply(AutAssignment::empty_string_automaton()), 1).to_nfa_move();
+            // we do the same thing when epsilon is in output vars, however we apply on the output tape and project to input tape
+            mata::nfa::Nfa application_to_empty_string = mata::nft::project_to(transducer_to_process.get_transducer()->apply(AutAssignment::empty_string_automaton(), 1), 0).to_nfa_move();
             
             if (application_to_empty_string.is_lang_empty()) {
                 return;
@@ -829,6 +829,7 @@ namespace smt::noodler {
                 }
             }
             // TODO create parikh formula for transducer and add it to result
+            // TODO also connect with model generation
             util::throw_error("Getting formula for length vars in transducers is not implemented yet");
         }
 
@@ -1870,10 +1871,13 @@ namespace smt::noodler {
             tout << "Generating model for var " << var << "\n";
         );
 
+        if (var.is_literal()) {
+            return var.get_name();
+        }
+
         if (vars_whose_model_we_are_computing.contains(var)) {
             util::throw_error("There is cycle in inclusion graph, cannot produce model");
         }
-
         vars_whose_model_we_are_computing.insert(var);
 
         regex::Alphabet alph(solution.aut_ass.get_alphabet());
@@ -1891,10 +1895,10 @@ namespace smt::noodler {
                 return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
             }
 
-            Predicate inclusion_with_var_on_right_side;
-            if (solution.get_inclusion_with_var_on_right_side(var, inclusion_with_var_on_right_side)) {
-                // TODO check if inclusion_with_var_on_right_side lays on a cycle.
-                // If it is on a cycle, then we need to use (and implement) the horrible proof (righ now the following will never finish)
+            Predicate predicate_with_var_on_right_side;
+            if (solution.get_predicate_with_var_on_right_side(var, predicate_with_var_on_right_side)) {
+                // TODO check if predicate_with_var_on_right_side lays on a cycle.
+                // If it is on a cycle, then we need to use (and implement) the horrible proof.
                 // Right now if there is some cycle (checked using vars_whose_model_we_are_computing), we throw error.
 
                 // We need to compute the vars on the right side from the vars on the left
@@ -1902,19 +1906,31 @@ namespace smt::noodler {
                 //  - we then do "opposite noodlification" to get the values on the right side
 
                 zstring left_side_string;
-                for (const auto& var_on_left_side : inclusion_with_var_on_right_side.get_left_side()) {
-                    if (var_on_left_side.is_literal()) {
-                        left_side_string = left_side_string + var_on_left_side.get_name();
-                    } else {
-                        left_side_string = left_side_string + get_model(var_on_left_side, get_arith_model_of_var);
-                    }
+                for (const auto& var_on_left_side : predicate_with_var_on_right_side.get_left_side()) {
+                    left_side_string = left_side_string + get_model(var_on_left_side, get_arith_model_of_var);
                 }
+
+                // Transducers are simpler, because we assume they are of the form
+                //      left_side_string = T(var)
+                // Therefore we just need to get the language of possible inputs given the output is left_side_string
+                // and then return some words from intersection of this language and the language for var
+                if (predicate_with_var_on_right_side.is_transducer()) {
+                    SASSERT(predicate_with_var_on_right_side.get_input().size() == 1
+                                && predicate_with_var_on_right_side.get_input()[0] == var); // transducer should be simple => on the right (input) side there is only var
+                    // we get the possible inputs of transducer when the output is left_side_string
+                    mata::nfa::Nfa possible_inputs = mata::nft::project_to(predicate_with_var_on_right_side.get_transducer()->apply(AutAssignment::create_word_nfa(left_side_string), 1), 0).to_nfa_move();
+                    // the model of var is then some word from possible_inputs and the langauge of var
+                    mata::Word accepted_word = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word().value();
+                    return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
+                }
+
+                SASSERT(predicate_with_var_on_right_side.is_equation()); // is inclusion
                 if (left_side_string.empty()) {
-                    for (const auto &right_side_var : inclusion_with_var_on_right_side.get_right_side()) {
+                    for (const auto &right_side_var : predicate_with_var_on_right_side.get_right_side()) {
                         update_model_and_aut_ass(right_side_var, zstring());
                     }
                 } else {
-                    const auto& vars_on_right_side = inclusion_with_var_on_right_side.get_right_side(); // because inclusion is not on cycle, all variables on the right side must be different
+                    const auto& vars_on_right_side = predicate_with_var_on_right_side.get_right_side(); // because inclusion is not on cycle, all variables on the right side must be different
                     std::vector<std::shared_ptr<mata::nfa::Nfa>> automata_on_right_side;
                     for (const auto &right_side_var : vars_on_right_side) {
                         automata_on_right_side.push_back(solution.aut_ass.at(right_side_var));

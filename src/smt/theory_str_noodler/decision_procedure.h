@@ -290,15 +290,23 @@ namespace smt::noodler {
         }
 
         /**
-         * @brief Get any inclusion that has @p var on the right side and save it to @p found inclusion
+         * @brief Get any predicate that has @p var on the right side (for inclusions) or input (for transducers) and save it to @p found_predicate
          * 
-         * @return was such an inclusion found?
+         * @return was such a predicate found?
          */
-        bool get_inclusion_with_var_on_right_side(const BasicTerm& var, Predicate& found_inclusion) {
-            for (const Predicate &inclusion : inclusions) {
-                for (auto const &right_var : inclusion.get_right_set()) {
+        bool get_predicate_with_var_on_right_side(const BasicTerm& var, Predicate& found_predicate) {
+            for (const Predicate& inclusion : inclusions) {
+                for (auto const& right_var : inclusion.get_right_set()) {
                     if (right_var == var) {
-                        found_inclusion = inclusion;
+                        found_predicate = inclusion;
+                        return true;
+                    }
+                }
+            }
+            for (const Predicate& transducer : transducers) {
+                for (auto const& right_var : transducer.get_input()) {
+                    if (right_var == var) {
+                        found_predicate = transducer;
                         return true;
                     }
                 }
