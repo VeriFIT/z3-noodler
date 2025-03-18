@@ -333,6 +333,17 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         CHECK(proc.get_model(get_var('y'), {}) == zstring(""));
     }
 
+    SECTION("sat-emptiness-transducer2", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_transducer(transform_to_empty, "x", "y"));
+        init_ass[get_var('x')] = regex_to_nfa("a+");
+        init_ass[get_var('y')] = regex_to_nfa("(a|b)*");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        REQUIRE(proc.compute_next_solution() == lbool::l_true);
+        CHECK(proc.get_model(get_var('y'), {}) == zstring(""));
+    }
+
     SECTION("unsat-emptiness-transducer", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_transducer(transform_to_empty, "y", "x"));

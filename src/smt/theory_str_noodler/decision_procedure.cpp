@@ -1901,30 +1901,35 @@ namespace smt::noodler {
                 // If it is on a cycle, then we need to use (and implement) the horrible proof.
                 // Right now if there is some cycle (checked using vars_whose_model_we_are_computing), we throw error.
 
-                // We need to compute the vars on the right side from the vars on the left
+                // Transducers are simple, because we assume they are of the form
+                //      output_var = T(var)
+                // Therefore we just need to get the language of possible inputs given the output is left_side_string
+                // and then return some words from intersection of this language and the language for var
+                if (predicate_with_var_on_right_side.is_transducer()) {
+                    // transducer should be simple => there is one var in the input
+                    SASSERT(predicate_with_var_on_right_side.get_output().size() == 1);
+                    zstring output_var_model = get_model(predicate_with_var_on_right_side.get_output()[0], arith_model);
+
+                    // transducer should be simple => on the right (input) side there is only var
+                    SASSERT(predicate_with_var_on_right_side.get_input().size() == 1 && predicate_with_var_on_right_side.get_input()[0] == var);
+
+                    // we get the possible inputs of transducer when output is model of output_var
+                    mata::nfa::Nfa possible_inputs = mata::nft::project_to(predicate_with_var_on_right_side.get_transducer()->apply(AutAssignment::create_word_nfa(output_var_model), 1), 0).to_nfa_move();
+                    // the model of var is then some word from possible_inputs and the langauge of var
+                    mata::Word accepted_word = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word().value();
+                    return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
+                }
+
+                // For inclusions, we need to compute the vars on the right side from the vars on the left
                 //  - first we get the string model of the left side
                 //  - we then do "opposite noodlification" to get the values on the right side
+                SASSERT(predicate_with_var_on_right_side.is_equation()); // is inclusion
 
                 zstring left_side_string;
                 for (const auto& var_on_left_side : predicate_with_var_on_right_side.get_left_side()) {
                     left_side_string = left_side_string + get_model(var_on_left_side, arith_model);
                 }
 
-                // Transducers are simpler, because we assume they are of the form
-                //      left_side_string = T(var)
-                // Therefore we just need to get the language of possible inputs given the output is left_side_string
-                // and then return some words from intersection of this language and the language for var
-                if (predicate_with_var_on_right_side.is_transducer()) {
-                    SASSERT(predicate_with_var_on_right_side.get_input().size() == 1
-                                && predicate_with_var_on_right_side.get_input()[0] == var); // transducer should be simple => on the right (input) side there is only var
-                    // we get the possible inputs of transducer when the output is left_side_string
-                    mata::nfa::Nfa possible_inputs = mata::nft::project_to(predicate_with_var_on_right_side.get_transducer()->apply(AutAssignment::create_word_nfa(left_side_string), 1), 0).to_nfa_move();
-                    // the model of var is then some word from possible_inputs and the langauge of var
-                    mata::Word accepted_word = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word().value();
-                    return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
-                }
-
-                SASSERT(predicate_with_var_on_right_side.is_equation()); // is inclusion
                 if (left_side_string.empty()) {
                     for (const auto &right_side_var : predicate_with_var_on_right_side.get_right_side()) {
                         update_model_and_aut_ass(right_side_var, zstring());
