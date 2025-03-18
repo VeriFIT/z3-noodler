@@ -358,4 +358,38 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
         CHECK_THROWS_WITH(proc.get_lengths(), "Getting formula for length vars in transducers is not implemented yet"); // we throw error for lengths now, should change to CHECK_NOTHROW after we implement parikh
     }
+
+    SECTION("sat-simple-transducer-length2", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_transducer(identity, "x", "u"));
+        equalities.add_predicate(create_transducer(identity, "z", "x"));
+        equalities.add_predicate(create_transducer(identity, "y", "z"));
+        // equalities.add_predicate(create_equality("yx", "r"));
+        AutAssignment init_ass;
+        init_ass[get_var('x')] = regex_to_nfa("a*");
+        init_ass[get_var('u')] = regex_to_nfa("a*");
+        init_ass[get_var('y')] = regex_to_nfa("a*");
+        init_ass[get_var('z')] = regex_to_nfa("a*");
+        DecisionProcedureCUT proc(equalities, init_ass, { get_var('y'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        REQUIRE(proc.compute_next_solution() == lbool::l_true);
+        CHECK_THROWS_WITH(proc.get_lengths(), "Getting formula for length vars in transducers is not implemented yet"); // we throw error for lengths now, should change to CHECK_NOTHROW after we implement parikh
+    }
+
+    SECTION("sat-simple-transducer-length3", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_transducer(identity, "x", "u"));
+        equalities.add_predicate(create_transducer(identity, "z", "x"));
+        equalities.add_predicate(create_transducer(identity, "y", "z"));
+        // equalities.add_predicate(create_equality("yx", "r"));
+        AutAssignment init_ass;
+        init_ass[get_var('x')] = regex_to_nfa("a*");
+        init_ass[get_var('u')] = regex_to_nfa("a*");
+        init_ass[get_var('y')] = regex_to_nfa("a*");
+        init_ass[get_var('z')] = regex_to_nfa("a*");
+        DecisionProcedureCUT proc(equalities, init_ass, { get_var('y'),  get_var('x'),  get_var('z'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        REQUIRE(proc.compute_next_solution() == lbool::l_true);
+        CHECK_THROWS_WITH(proc.get_lengths(), "Getting formula for length vars in transducers is not implemented yet"); // we throw error for lengths now, should change to CHECK_NOTHROW after we implement parikh
+    }
 }
