@@ -785,25 +785,27 @@ namespace smt::noodler {
         // The second item of the pair gives us the vector of tapes, for the example is it {x,y,z,v,w}.
         std::function<std::pair<mata::nft::Nft,std::vector<BasicTerm>>(BasicTerm)> get_composed_trans_with_tapes;
         get_composed_trans_with_tapes = [&output_var_to_its_transducers, &get_composed_trans_with_tapes, this](BasicTerm output_var) {
-            const auto& transducers = output_var_to_its_transducers.at(output_var);
             // we start with a simple transducer representing the NFA for output_var (one tape with output_var)
             mata::nft::Nft final_trans{*this->solution.aut_ass.at(output_var)};
             std::vector<BasicTerm> vars_on_tapes{output_var};
 
-            for (std::vector<Predicate>::size_type i = 0; i < transducers.size(); ++i) {
-                // we get transducer output_var = Ti(input_var)
-                mata::nft::Nft invert_trans = mata::nft::invert_levels(*transducers[i].get_transducer()); // after inverting output var is level 0, input var is level 1
-                // we get recursively transducer input_var = Ti'(x1, x2, ...., xn) with vector vars_on_tapes_of_input_trans = {input_var, x1, x2, ..., xn}
-                auto [input_trans, vars_on_tapes_of_input_trans] = get_composed_trans_with_tapes(transducers[i].get_input()[0]);
-                SASSERT(!vars_on_tapes_of_input_trans.empty() && vars_on_tapes_of_input_trans[0] == transducers[i].get_input()[0]);
-                // we compose Ti and Ti' on input_var, getting transducer output_var = Ti''(input_var, x1, x2, ...., xn)
-                mata::nft::Nft composed_input = mata::nft::compose(invert_trans, input_trans, 1, 1, false); // TODO check if order of tapes in result is correct here
-                // we have a transducer output_var = T(y1, y2, ..., ym) computed from previous Tj's, j < i, and we compose here on output_var with Ti''
-                // getting transducer output_var = T'(y1, y2, ..., ym, input_var, x1, x2, ..., xn)
-                final_trans = mata::nft::compose(final_trans, composed_input, 0, 0, false); // TODO check if order of tapes in result is correct here
-                // we had vars_on_tapes = {output_var, y1, y2, ..., ym} we add to it vars_on_tapes_of_input_trans getting
-                //   {output_var, y1, y2, ..., ym, input_var, x1, x2, ..., xn}
-                vars_on_tapes.insert(vars_on_tapes.end(), vars_on_tapes_of_input_trans.begin(), vars_on_tapes_of_input_trans.end());
+            if (output_var_to_its_transducers.contains(output_var)) {
+                const auto& transducers = output_var_to_its_transducers.at(output_var);
+                for (std::vector<Predicate>::size_type i = 0; i < transducers.size(); ++i) {
+                    // we get transducer output_var = Ti(input_var)
+                    mata::nft::Nft invert_trans = mata::nft::invert_levels(*transducers[i].get_transducer()); // after inverting output var is level 0, input var is level 1
+                    // we get recursively transducer input_var = Ti'(x1, x2, ...., xn) with vector vars_on_tapes_of_input_trans = {input_var, x1, x2, ..., xn}
+                    auto [input_trans, vars_on_tapes_of_input_trans] = get_composed_trans_with_tapes(transducers[i].get_input()[0]);
+                    SASSERT(!vars_on_tapes_of_input_trans.empty() && vars_on_tapes_of_input_trans[0] == transducers[i].get_input()[0]);
+                    // we compose Ti and Ti' on input_var, getting transducer output_var = Ti''(input_var, x1, x2, ...., xn)
+                    mata::nft::Nft composed_input = mata::nft::compose(invert_trans, input_trans, 1, 0, false); // TODO check if order of tapes in result is correct here
+                    // we have a transducer output_var = T(y1, y2, ..., ym) computed from previous Tj's, j < i, and we compose here on output_var with Ti''
+                    // getting transducer output_var = T'(y1, y2, ..., ym, input_var, x1, x2, ..., xn)
+                    final_trans = mata::nft::compose(final_trans, composed_input, 0, 0, false); // TODO check if order of tapes in result is correct here
+                    // we had vars_on_tapes = {output_var, y1, y2, ..., ym} we add to it vars_on_tapes_of_input_trans getting
+                    //   {output_var, y1, y2, ..., ym, input_var, x1, x2, ..., xn}
+                    vars_on_tapes.insert(vars_on_tapes.end(), vars_on_tapes_of_input_trans.begin(), vars_on_tapes_of_input_trans.end());
+                }
             }
             return std::make_pair(final_trans, vars_on_tapes);
         };
