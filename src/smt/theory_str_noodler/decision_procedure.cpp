@@ -722,19 +722,21 @@ namespace smt::noodler {
             return {LenNode(LenFormulaType::TRUE), precision};
         }
 
+        // some formulas (lie the one for conversions) assumes that we have flattened substitution map
+        solution.flatten_substition_map();
+
+        // collect all variables that substitute some string_var of some conversion (we do it here
+        // because we need to know which variables are used in conversions for parikh image of variables
+        // in transducers)
+        std::tie(code_subst_vars, int_subst_vars) = get_vars_substituted_in_conversions();
+
         // start with formula for disequations
         std::vector<LenNode> conjuncts = disequations_len_formula_conjuncts;
 
         // add length formula from preprocessing
         conjuncts.push_back(preprocessing_len_formula);
 
-        // create length constraints from the solution, we only need to look at length sensitive vars
-        for (const BasicTerm &len_var : solution.length_sensitive_vars) {
-            conjuncts.push_back(solution.get_lengths(len_var));
-        }
-
-        // the following functions (getting formula for conversions) assume that we have flattened substitution map
-        solution.flatten_substition_map();
+        conjuncts.push_back(get_formula_for_len_vars());
 
         // add formula for conversions
         auto conv_form_with_precision = get_formula_for_conversions();
@@ -750,6 +752,94 @@ namespace smt::noodler {
         LenNode result(LenFormulaType::AND, conjuncts);
         STRACE("str", tout << "Final " << (precision == LenNodePrecision::PRECISE ? "precise" : "underapproximating") << " formula from get_lengths(): " << result << std::endl;);
         return {result, precision};
+    }
+
+    LenNode DecisionProcedure::get_formula_for_len_vars() {
+        LenNode result(LenFormulaType::AND);
+
+        // We collect transducers in which length variable occurs in the input (right) side (which also means it must
+        // occur also in the output). We do not need transducers where we have length variable only in the output, for
+        // any word in the output there exists some word in the input for the transducer.
+        // In output_var_to_its_transducers[x] we save the transducers where x is output and the transducer has length
+        // var in input. In length_input_vars we save all variables that are length and are input of some transducer.
+        std::map<BasicTerm, std::vector<Predicate>> output_var_to_its_transducers;
+        std::set<BasicTerm> length_input_vars;
+        for (const Predicate& trans : solution.transducers) {
+            // transducers in solution should be in simple form (one input, one output var)
+            SASSERT(trans.get_input().size() == 1);
+            SASSERT(trans.get_output().size() == 1);
+
+            BasicTerm input_var = trans.get_input()[0];
+            BasicTerm output_var = trans.get_output()[0];
+
+            if (solution.length_sensitive_vars.contains(input_var)) {
+                SASSERT(solution.length_sensitive_vars.contains(output_var)); // if input is length var, output must be too
+                output_var_to_its_transducers[output_var].push_back(trans);
+                length_input_vars.insert(input_var);
+            }
+        }
+
+        // This function creates one transducer for ouptut_var using all the transducers on input.
+        // For example, if we have transducers x = T1(y), y = T2(z), y = T3(v), v = T4(w) we will
+        // get a transducer x = T(y,z,v,w) that composes all these 4 transducers together.
+        // The second item of the pair gives us the vector of tapes, for the example is it {x,y,z,v,w}.
+        std::function<std::pair<mata::nft::Nft,std::vector<BasicTerm>>(BasicTerm)> get_composed_trans_with_tapes;
+        get_composed_trans_with_tapes = [&output_var_to_its_transducers, &get_composed_trans_with_tapes, this](BasicTerm output_var) {
+            const auto& transducers = output_var_to_its_transducers.at(output_var);
+            // we start with a simple transducer representing the NFA for output_var (one tape with output_var)
+            mata::nft::Nft final_trans{*this->solution.aut_ass.at(output_var)};
+            std::vector<BasicTerm> vars_on_tapes{output_var};
+
+            for (std::vector<Predicate>::size_type i = 0; i < transducers.size(); ++i) {
+                // we get transducer output_var = Ti(input_var)
+                mata::nft::Nft invert_trans = mata::nft::invert_levels(*transducers[i].get_transducer()); // after inverting output var is level 0, input var is level 1
+                // we get recursively transducer input_var = Ti'(x1, x2, ...., xn) with vector vars_on_tapes_of_input_trans = {input_var, x1, x2, ..., xn}
+                auto [input_trans, vars_on_tapes_of_input_trans] = get_composed_trans_with_tapes(transducers[i].get_input()[0]);
+                SASSERT(!vars_on_tapes_of_input_trans.empty() && vars_on_tapes_of_input_trans[0] == transducers[i].get_input()[0]);
+                // we compose Ti and Ti' on input_var, getting transducer output_var = Ti''(input_var, x1, x2, ...., xn)
+                mata::nft::Nft composed_input = mata::nft::compose(invert_trans, input_trans, 1, 1, false); // TODO check if order of tapes in result is correct here
+                // we have a transducer output_var = T(y1, y2, ..., ym) computed from previous Tj's, j < i, and we compose here on output_var with Ti''
+                // getting transducer output_var = T'(y1, y2, ..., ym, input_var, x1, x2, ..., xn)
+                final_trans = mata::nft::compose(final_trans, composed_input, 0, 0, false); // TODO check if order of tapes in result is correct here
+                // we had vars_on_tapes = {output_var, y1, y2, ..., ym} we add to it vars_on_tapes_of_input_trans getting
+                //   {output_var, y1, y2, ..., ym, input_var, x1, x2, ..., xn}
+                vars_on_tapes.insert(vars_on_tapes.end(), vars_on_tapes_of_input_trans.begin(), vars_on_tapes_of_input_trans.end());
+            }
+            return std::make_pair(final_trans, vars_on_tapes);
+        };
+
+        // We now find each output_var which is NOT an input var of some transducer, meaning they are at the end of
+        // inclusion graph and we create the composed transducer for them.
+        std::vector<std::pair<mata::nft::Nft,std::vector<BasicTerm>>> transducers_with_vars_on_tapes;
+        for (const auto& [output_var,transducers] : output_var_to_its_transducers) {
+            if (!length_input_vars.contains(output_var)) {
+                transducers_with_vars_on_tapes.push_back(get_composed_trans_with_tapes(output_var));
+            }
+        }
+
+        std::set<BasicTerm> vars_with_parikh;
+        for (const auto& [transducer, vars_on_tapes] : transducers_with_vars_on_tapes) {
+            for (const BasicTerm& var : vars_on_tapes) {
+                vars_with_parikh.insert(var);
+                if (code_subst_vars.contains(var) || int_subst_vars.contains(var)) {
+                    // TODO add support, probably these vars should not be replaced by one symbol in parikh + some support in conversion formula, we probably need to remember vars_with_parikh in DecisionProcedure and use it there
+                    util::throw_error("Conversions with transducers are not supported yet");
+                }
+            }
+            // TODO create parikh formula for transducer and add it to result
+            util::throw_error("Getting formula for length vars in transducers is not implemented yet");
+        }
+
+        // TODO connect the variables of parikh formula with conversions (or fail when var has parikh construction and is also used in conversions)
+
+        // create length constraints from the solution, we only need to look at length sensitive vars which do not have length based on parikh
+        for (const BasicTerm &len_var : solution.length_sensitive_vars) {
+            if (!vars_with_parikh.contains(len_var)) {
+                result.succ.push_back(solution.get_lengths(len_var));
+            }
+        }
+
+        return result;
     }
 
     std::pair<std::set<BasicTerm>,std::set<BasicTerm>> DecisionProcedure::get_vars_substituted_in_conversions() {
@@ -1243,9 +1333,6 @@ namespace smt::noodler {
         LenNode result(LenFormulaType::AND);
         LenNodePrecision res_precision = LenNodePrecision::PRECISE;
 
-        // collect all variables that substitute some string_var of some conversion
-        std::tie(code_subst_vars, int_subst_vars) = get_vars_substituted_in_conversions();
-
         // create formula for each variable substituting some string_var in some code conversion
         LenNode code_subst_formula = get_formula_for_code_subst_vars(code_subst_vars);
         if (!code_subst_formula.succ.empty()) {
@@ -1399,11 +1486,6 @@ namespace smt::noodler {
                     this->init_length_sensitive_vars.insert(var);
                 }
             }
-        }
-
-        if (has_transducers && !init_length_sensitive_vars.empty()) {
-            // we cannot handle length variables (and therefore conversions) and transducers together yet (TODO: add handling)
-            util::throw_error("Length variables/conversions and transducers cannot be handled together");
         }
 
         STRACE("str-dis",

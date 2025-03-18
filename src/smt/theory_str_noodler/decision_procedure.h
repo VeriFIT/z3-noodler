@@ -476,6 +476,10 @@ namespace smt::noodler {
         // keeps the length formulas from replace_disequality(), they need to hold for solution to be satisfiable (get_lengths should create conjunct from them)
         std::vector<LenNode> disequations_len_formula_conjuncts;
 
+        // see get_vars_substituted_in_conversions() for what these sets mean (used in get_length() and in model generation)
+        std::set<BasicTerm> code_subst_vars;
+        std::set<BasicTerm> int_subst_vars;
+
         const theory_str_noodler_params& m_params;
 
         /**
@@ -490,7 +494,22 @@ namespace smt::noodler {
         void process_transducer(const Predicate& transducer_to_process, SolvingState& solving_state);
 
         /**
+         * @brief Get the formula encoding lengths of variables based on solution
+         * 
+         * It creates parikh formula for length vars in transducers, for other length
+         * vars it either creates formula |x| = |x_1| + ... + |x_n| if
+         *   solution.subtitution_map[x] = x_1 ... x_n
+         * or it creates the formula from lasso construction of automaton
+         *   solution.aut_ass[x]
+         * 
+         * Assumes that code_subst_vars and int_subst_vars are computed already.
+         */
+        LenNode get_formula_for_len_vars();
+
+        /**
          * @brief Gets the formula encoding to_code/from_code/to_int/from_int conversions
+         * 
+         * Assumes that code_subst_vars and int_subst_vars are computed already.
          */
         std::pair<LenNode, LenNodePrecision> get_formula_for_conversions();
 
@@ -528,6 +547,7 @@ namespace smt::noodler {
          * Gets the pair of variable sets (code_subst_vars, int_subst_vars) where code_subst_vars
          * contains all vars s_i, such that there exists "c = to_code(s)" or "s = from_code(c)"
          * in conversions where s is substituted by s_1 ... s_i ... s_n in the solution.
+         * If s is not substituted (it maps to automaton), then it is added to code_subst_vars instead.
          * The set int_subst_vars is defined similarly, but for "i = to_int(s)" or "s = from_int(i)"
          * conversions.
          */
@@ -585,10 +605,6 @@ namespace smt::noodler {
 
         // inclusions that resulted from preprocessing, we use them to generate model (we can pretend that they were all already refined)
         std::vector<Predicate> inclusions_from_preprocessing;
-
-        // see get_vars_substituted_in_conversions() for what these sets mean, we save them so that we can use them in model generation
-        std::set<BasicTerm> code_subst_vars;
-        std::set<BasicTerm> int_subst_vars;
         
         bool is_model_initialized = false;
         /**
