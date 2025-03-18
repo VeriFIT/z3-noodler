@@ -1773,7 +1773,7 @@ namespace smt::noodler {
         return new_eqs;
     }
 
-    void DecisionProcedure::init_model(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    void DecisionProcedure::init_model(const std::map<BasicTerm,rational>& arith_model) {
         if (is_model_initialized) { return ;}
 
         // Move inclusions from inclusions_from_preprocessing to solution (and clear inclusions_from_preprocessing)
@@ -1792,7 +1792,7 @@ namespace smt::noodler {
             if (var.is_literal() || !solution.length_sensitive_vars.contains(var)) { continue; } // literals should have the correct language + we restrict only length vars
 
             // Restrict length
-            rational len = get_arith_model_of_var(var);
+            rational len = arith_model.at(var);
             mata::nfa::Nfa len_nfa = solution.aut_ass.sigma_automaton_of_length(len.get_unsigned());
             nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, len_nfa).trim());
 
@@ -1803,7 +1803,7 @@ namespace smt::noodler {
                     // so we directly set ""
                     update_model_and_aut_ass(var, zstring());
                 } else {
-                    rational to_int_value = get_arith_model_of_var(int_version_of(var));
+                    rational to_int_value = arith_model.at(int_version_of(var));
                     if (to_int_value == -1) {
                         // the language of var should contain only words containing some non-digit
                         mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
@@ -1822,7 +1822,7 @@ namespace smt::noodler {
 
             // Restrict code-conversion var
             if (code_subst_vars.contains(var)) {
-                rational to_code_value = get_arith_model_of_var(code_version_of(var));
+                rational to_code_value = arith_model.at(code_version_of(var));
                 if (to_code_value != -1) {
                     solution.aut_ass.add_symbol_from_dummy(to_code_value.get_unsigned());
                     update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
@@ -1860,8 +1860,8 @@ namespace smt::noodler {
         );
     }
 
-    zstring DecisionProcedure::get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
-        init_model(get_arith_model_of_var);
+    zstring DecisionProcedure::get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
+        init_model(arith_model);
 
         if (model_of_var.contains(var)) {
             return model_of_var.at(var);
@@ -1885,7 +1885,7 @@ namespace smt::noodler {
         if (solution.substitution_map.contains(var)) {
             zstring result;
             for (const BasicTerm& subs_var : solution.substitution_map.at(var)) {
-                result = result + get_model(subs_var, get_arith_model_of_var);
+                result = result + get_model(subs_var, arith_model);
             }
             return update_model_and_aut_ass(var, result);
         } else if (solution.aut_ass.contains(var)) {
@@ -1907,7 +1907,7 @@ namespace smt::noodler {
 
                 zstring left_side_string;
                 for (const auto& var_on_left_side : predicate_with_var_on_right_side.get_left_side()) {
-                    left_side_string = left_side_string + get_model(var_on_left_side, get_arith_model_of_var);
+                    left_side_string = left_side_string + get_model(var_on_left_side, arith_model);
                 }
 
                 // Transducers are simpler, because we assume they are of the form

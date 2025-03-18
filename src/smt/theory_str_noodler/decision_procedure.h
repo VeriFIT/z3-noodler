@@ -87,10 +87,10 @@ namespace smt::noodler {
         /**
          * @brief Get string model for the string variable @p var
          * 
-         * @param get_arith_model_of_var Returns either the length of a str variable or the value of the int variable in the model
+         * @param arith_model Returns either the length of a str variable or the value of the int variable in the model
          * @return the model for @p var 
          */
-        virtual zstring get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+        virtual zstring get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
             throw std::runtime_error("Unimplemented");
         }
 
@@ -618,9 +618,9 @@ namespace smt::noodler {
         /**
          * @brief Initialize model from solution
          * 
-         * @param get_arith_model_of_var Returns either the length of a str variable or the value of the int variable in the model
+         * @param arith_model Returns either the length of a str variable or the value of the int variable in the model
          */
-        void init_model(const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        void init_model(const std::map<BasicTerm,rational>& arith_model);
 
         // keeps already computed models
         std::map<BasicTerm,zstring> model_of_var;
@@ -691,7 +691,7 @@ namespace smt::noodler {
 
         std::vector<BasicTerm> get_len_vars_for_model(const BasicTerm& str_var) override;
 
-        zstring get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) override;
+        zstring get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) override;
 
         /**
          * @brief Get the length sensitive variables

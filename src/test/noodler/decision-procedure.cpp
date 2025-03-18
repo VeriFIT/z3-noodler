@@ -329,8 +329,8 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
-        CHECK(proc.get_model(get_var('x'), [](BasicTerm v) -> rational {return rational(unsigned(6089480654));}) == zstring("a"));
-        CHECK(proc.get_model(get_var('y'), [](BasicTerm v) -> rational {return rational(unsigned(6089480654));}) == zstring(""));
+        CHECK(proc.get_model(get_var('x'), {}) == zstring("a"));
+        CHECK(proc.get_model(get_var('y'), {}) == zstring(""));
     }
 
     SECTION("unsat-emptiness-transducer", "[nooodler]") {

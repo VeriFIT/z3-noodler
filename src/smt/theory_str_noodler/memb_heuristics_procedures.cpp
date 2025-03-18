@@ -52,7 +52,7 @@ namespace smt::noodler {
         return l_undef;
     }
 
-    zstring MembHeuristicProcedure::get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    zstring MembHeuristicProcedure::get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
         SASSERT(var == this->var);
 
         if (model.has_value()) {
@@ -169,7 +169,7 @@ namespace smt::noodler {
         return l_true;
     }
     
-    zstring MultMembHeuristicProcedure::get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    zstring MultMembHeuristicProcedure::get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
         STRACE("str-mult-memb-heur", tout << "getting model for " << var << std::endl;);
         return models.at(var);
     }

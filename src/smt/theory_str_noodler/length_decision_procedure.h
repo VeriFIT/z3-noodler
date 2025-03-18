@@ -219,71 +219,71 @@ namespace smt::noodler {
          * @brief Get model for variable from its automata assignment (respecting the computed length). 
          * 
          * @param var Variable
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          * @return zstring Word from automaton corresponding to @p var.
          */
-        zstring assign_aut_ass_var(const BasicTerm& var, const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        zstring assign_aut_ass_var(const BasicTerm& var, const std::map<BasicTerm,rational>& arith_model);
 
         /**
          * @brief Assign model for variable @p var s.t. it is not in the block system but it is in the 
          * substitution map.
          * 
          * @param var Variable from the substitution map for getting a model
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          * @return zstring Model of @p var
          */
-        zstring assign_subst_map_var(const BasicTerm& var, const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        zstring assign_subst_map_var(const BasicTerm& var, const std::map<BasicTerm,rational>& arith_model);
 
         /**
          * @brief Get skeleton from block represented by @p block_var for the mutli var @p multi_var.
          * 
          * @param block_var Block variable
          * @param multi_var Multi var
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          * @return std::vector<long> Skeleton
          */
-        std::vector<long> get_multivar_skeleton(const BasicTerm& block_var, const BasicTerm& multi_var, const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        std::vector<long> get_multivar_skeleton(const BasicTerm& block_var, const BasicTerm& multi_var, const std::map<BasicTerm,rational>& arith_model);
 
         /**
          * @brief Get model for the multi var @p multi_var.
          * 
          * @param multi_var Multi var
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          * @return zstring Model of @p multi_var
          */
-        zstring get_multivar_model(const BasicTerm& multi_var, const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        zstring get_multivar_model(const BasicTerm& multi_var, const std::map<BasicTerm,rational>& arith_model);
 
         /**
          * @brief Assign free variables. Variables that are free in the system (meaning that they are not in 
          * the block system neither in substitution map) are assigned according to their length.
          * 
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          */
-        void assign_free_vars(const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        void assign_free_vars(const std::map<BasicTerm,rational>& arith_model);
 
         /**
          * @brief Create models for variables in the substitution map (created in preprocessing).  
          * 
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          */
-        void assign_subst_map_vars(const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        void assign_subst_map_vars(const std::map<BasicTerm,rational>& arith_model);
 
         /**
          * @brief Assign model to multi var. So far we support only a single multi var (checked in the 
          * compute_next_solution).
          * 
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          */
-        void assign_multi_vars(const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        void assign_multi_vars(const std::map<BasicTerm,rational>& arith_model);
 
         /**
          * @brief Generate models for variable in the block given by @p block_var.
          * 
          * @param block_var Block var
          * @param block_model Block model to be set
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          */
-        void generate_block_models(const BasicTerm& block_var, BlockModel& block_model, const std::function<rational(BasicTerm)>& get_arith_model_of_var);
+        void generate_block_models(const BasicTerm& block_var, BlockModel& block_model, const std::map<BasicTerm,rational>& arith_model);
 
 
     public:
@@ -305,9 +305,9 @@ namespace smt::noodler {
         /**
          * @brief Compute model for each variable in the system. 
          * 
-         * @param get_arith_model_of_var Length model of variables
+         * @param arith_model Length model of variables
          */
-        void compute_model(const std::function<rational(BasicTerm)>& get_arith_model_of_var); 
+        void compute_model(const std::map<BasicTerm,rational>& arith_model); 
 
         /**
          * @brief Is the model initialized
@@ -420,10 +420,10 @@ namespace smt::noodler {
          * @brief Get string model based on integer constraints.
          * 
          * @param var Variable whose model is obtained.
-         * @param get_arith_model_of_var LIA model.
+         * @param arith_model LIA model.
          * @return zstring String model of @p var
          */
-        zstring get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) override;
+        zstring get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) override;
 
         /**
          * @brief Get length variables that are relevant for model of @p str_var. 

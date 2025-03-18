@@ -45,11 +45,8 @@ namespace smt::noodler {
                 STRACE("str-model", tout << "Arith model of " << needed_vars[i] << " is " << val << std::endl;);
                 var_to_arith_model[needed_vars[i]] = val;
             }
-            std::function<rational(BasicTerm)> get_arith_model_of_var = [&var_to_arith_model](BasicTerm var) -> rational {
-                return var_to_arith_model.at(var);
-            };
 
-            return th.m_util_s.str.mk_string(th.dec_proc->get_model(str_var, get_arith_model_of_var));
+            return th.m_util_s.str.mk_string(th.dec_proc->get_model(str_var, var_to_arith_model));
         }
     };
 

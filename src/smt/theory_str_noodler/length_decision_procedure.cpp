@@ -748,9 +748,9 @@ namespace smt::noodler {
         return true;
     }
 
-    zstring LengthDecisionProcedure::get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    zstring LengthDecisionProcedure::get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
         if(!this->len_model.is_initialized()) {
-            this->len_model.compute_model(get_arith_model_of_var);
+            this->len_model.compute_model(arith_model);
         }
         return this->len_model.get_var_model(var);
     }
@@ -798,9 +798,9 @@ namespace smt::noodler {
      * 
      * @param block_var Block var
      * @param block_model Block model to be set
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      */
-    void LengthProcModel::generate_block_models(const BasicTerm& block_var, BlockModel& block_model, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    void LengthProcModel::generate_block_models(const BasicTerm& block_var, BlockModel& block_model, const std::map<BasicTerm,rational>& arith_model) {
         // function storing str to solution_str from postion position
         auto update_res = [&](std::vector<unsigned>& solution_str, const zstring& str, int position) -> void {
             for(size_t i = 0; i < str.length(); i++) {
@@ -811,7 +811,7 @@ namespace smt::noodler {
         // if we already set the variable model --> continue with the stored model
         if(!this->model.contains(block_var)) {
             // create model for block_var, based on positions of all literals
-            rational total_length = get_arith_model_of_var(block_var);
+            rational total_length = arith_model.at(block_var);
             std::vector<unsigned> solution_str(total_length.get_int32());
             for(size_t i = 0; i < total_length; i++) {
                 solution_str[i] = 97; // a
@@ -822,13 +822,13 @@ namespace smt::noodler {
             if(this->multi_var_set.size() != 0) {
                 BasicTerm multi_var = *this->multi_var_set.begin();
                 zstring multi_var_model = this->model.at(multi_var);
-                int multi_var_pos = get_arith_model_of_var(begin_of(multi_var.get_name(), block_var.get_name())).get_int32();
+                int multi_var_pos = arith_model.at(begin_of(multi_var.get_name(), block_var.get_name())).get_int32();
                 update_res(solution_str, multi_var_model, multi_var_pos);
             }
             // filter literals and propagate them to the model of the block var
             for(const BasicTerm& bt : block_model.terms) {
                 if(bt.is_variable()) continue;
-                int lit_pos = get_arith_model_of_var(begin_of(bt.get_name(), block_var.get_name())).get_int32();
+                int lit_pos = arith_model.at(begin_of(bt.get_name(), block_var.get_name())).get_int32();
                 zstring lit_val = this->lit_conversion.at(bt.get_name()).get_name();
                 update_res(solution_str, lit_val, lit_pos);
             }
@@ -844,15 +844,15 @@ namespace smt::noodler {
             if(this->model.contains(bt)) continue;
 
             // for each variable computea the model from model of the block var
-            int var_pos = get_arith_model_of_var(begin_of(bt.get_name(), block_var.get_name())).get_int32();
-            int var_length = get_arith_model_of_var(bt).get_int32();
+            int var_pos = arith_model.at(begin_of(bt.get_name(), block_var.get_name())).get_int32();
+            int var_length = arith_model.at(bt).get_int32();
             zstring var_model = block_model.solution.extract(var_pos, var_length);
             this->model[bt] = var_model;
             // if we set a block variable, propagate the value to all variables in the block
             if(this->block_models.contains(bt)) {
                 // in the successor block, we need to keep the model for the block var, which was set in this block
                 // we propagate values to the remaining variables in the successor block
-                generate_block_models(bt, this->block_models[bt], get_arith_model_of_var);
+                generate_block_models(bt, this->block_models[bt], arith_model);
             }
         }
     }
@@ -862,12 +862,12 @@ namespace smt::noodler {
      * root blocks --> they are recursively propagated the the successsor/dependent blocks). (3) create models for variables in the 
      * substitution map (4) create models for remaining free variables.
      * 
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      */
-    void LengthProcModel::compute_model(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    void LengthProcModel::compute_model(const std::map<BasicTerm,rational>& arith_model) {
         this->model.clear();
 
-        assign_multi_vars(get_arith_model_of_var);
+        assign_multi_vars(arith_model);
 
         std::set<BasicTerm> block_vars {};
         // take all block variables
@@ -883,11 +883,11 @@ namespace smt::noodler {
         }
         // call a recursive procedure for abtaining model of block_var and all dependent blocks
         for(const BasicTerm& block_var : block_vars) {
-            generate_block_models(block_var, this->block_models[block_var], get_arith_model_of_var);
+            generate_block_models(block_var, this->block_models[block_var], arith_model);
         }
         // if there are variables with in the substittuion map with no model --> assign
-        assign_subst_map_vars(get_arith_model_of_var);
-        assign_free_vars(get_arith_model_of_var);
+        assign_subst_map_vars(arith_model);
+        assign_free_vars(arith_model);
     }
 
     /**
@@ -898,15 +898,15 @@ namespace smt::noodler {
      * is thrown (should not occur since after preprocessing we check if all variables in automata 
      * assignment have nonempty language).
      * 
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      */
-    void LengthProcModel::assign_free_vars(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    void LengthProcModel::assign_free_vars(const std::map<BasicTerm,rational>& arith_model) {
         for(const BasicTerm& var : this->length_vars) {
             // already assigned model --> skip
             if(this->model.contains(var)) continue;
             if(!this->aut_ass.contains(var)) continue;
 
-            rational total_length = get_arith_model_of_var(var);
+            rational total_length = arith_model.at(var);
             // intersection with automaton having 
             mata::nfa::Nfa sigma_length = this->aut_ass.sigma_automaton_of_length(total_length.get_int32());
             auto maybe_word = mata::nfa::intersection(sigma_length, *this->aut_ass.at(var)).get_word();
@@ -922,12 +922,12 @@ namespace smt::noodler {
     /**
      * @brief Create models for variables in the substitution map (created in preprocessing).  
      * 
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      */
-    void LengthProcModel::assign_subst_map_vars(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    void LengthProcModel::assign_subst_map_vars(const std::map<BasicTerm,rational>& arith_model) {
         for(const auto& [term, subst] : this->subst_map) {
             if(!term.is_variable()) continue;
-            this->model[term] = assign_subst_map_var(term, get_arith_model_of_var);
+            this->model[term] = assign_subst_map_var(term, arith_model);
         }
     }
 
@@ -935,11 +935,11 @@ namespace smt::noodler {
      * @brief Get model for variable from its automata assignment (respecting the computed length). 
      * 
      * @param var Variable
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      * @return zstring Word from automaton corresponding to @p var.
      */
-    zstring LengthProcModel::assign_aut_ass_var(const BasicTerm& var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
-        rational total_length = get_arith_model_of_var(var);
+    zstring LengthProcModel::assign_aut_ass_var(const BasicTerm& var, const std::map<BasicTerm,rational>& arith_model) {
+        rational total_length = arith_model.at(var);
         mata::nfa::Nfa sigma_length = this->aut_ass.sigma_automaton_of_length(total_length.get_int32());
         auto maybe_word = mata::nfa::intersection(sigma_length, *this->aut_ass.at(var)).get_word();
         if(!maybe_word.has_value()) {
@@ -959,10 +959,10 @@ namespace smt::noodler {
      * automaton is taken.
      * 
      * @param var Variable from the substitution map for getting a model
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      * @return zstring Model of @p var
      */
-    zstring LengthProcModel::assign_subst_map_var(const BasicTerm& var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    zstring LengthProcModel::assign_subst_map_var(const BasicTerm& var, const std::map<BasicTerm,rational>& arith_model) {
         Concat subst = this->subst_map.at(var);
         zstring res = "";
         for(const BasicTerm& term : subst) {
@@ -972,13 +972,13 @@ namespace smt::noodler {
             } else {
                 // if the term is in the substitution map -> recursive call
                 if(this->subst_map.contains(term)) {
-                    val = assign_subst_map_var(term, get_arith_model_of_var);
+                    val = assign_subst_map_var(term, arith_model);
                 // otherwise we take the already computed model
                 } else if(this->model.contains(term)) {
                     val = this->model.at(term);
                 // or it is a free variable not occurring in the system solved by the length procedure
                 } else {
-                    val = assign_aut_ass_var(term, get_arith_model_of_var);
+                    val = assign_aut_ass_var(term, arith_model);
                 }
             }
             res = res + val;
@@ -993,14 +993,14 @@ namespace smt::noodler {
      * are marked by -1. Since the multi var contains completely misaligned literals, the skeletons 
      * from each block are put together forming a model of the multi var.
      * 
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      */
-    void LengthProcModel::assign_multi_vars(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    void LengthProcModel::assign_multi_vars(const std::map<BasicTerm,rational>& arith_model) {
         if(this->multi_var_set.size() == 0) {
             return;
         }
         BasicTerm multi_var = *this->multi_var_set.begin();
-        this->model[multi_var] = get_multivar_model(multi_var, get_arith_model_of_var);
+        this->model[multi_var] = get_multivar_model(multi_var, arith_model);
     }
 
     /**
@@ -1010,11 +1010,11 @@ namespace smt::noodler {
      * 
      * @param block_var Block variable
      * @param multi_var Multi var
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      * @return std::vector<long> Skeleton
      */
-    std::vector<long> LengthProcModel::get_multivar_skeleton(const BasicTerm& block_var, const BasicTerm& multi_var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
-        rational total_length = get_arith_model_of_var(block_var);
+    std::vector<long> LengthProcModel::get_multivar_skeleton(const BasicTerm& block_var, const BasicTerm& multi_var, const std::map<BasicTerm,rational>& arith_model) {
+        rational total_length = arith_model.at(block_var);
         auto block_model = this->block_models.at(block_var);
 
         std::vector<long> solution_str(total_length.get_int32());
@@ -1024,15 +1024,15 @@ namespace smt::noodler {
         // propagate each literal to the solution of the block
         for(const BasicTerm& bt : block_model.terms) {
             if(bt.is_variable()) continue;
-            int lit_pos = get_arith_model_of_var(begin_of(bt.get_name(), block_var.get_name())).get_int32();
+            int lit_pos = arith_model.at(begin_of(bt.get_name(), block_var.get_name())).get_int32();
             zstring lit_val = this->lit_conversion.at(bt.get_name()).get_name();
             for(size_t i = lit_pos; i < lit_pos + lit_val.length(); i++) {
                 solution_str[i] = lit_val[i - lit_pos];
             }
         }
         // get skeleton for multivar
-        int var_pos = get_arith_model_of_var(begin_of(multi_var.get_name(), block_var.get_name())).get_int32();
-        int var_length = get_arith_model_of_var(multi_var).get_int32();
+        int var_pos = arith_model.at(begin_of(multi_var.get_name(), block_var.get_name())).get_int32();
+        int var_length = arith_model.at(multi_var).get_int32();
         return std::vector<long>(solution_str.begin()+var_pos, solution_str.begin()+var_pos+var_length);
     }
 
@@ -1041,14 +1041,14 @@ namespace smt::noodler {
      * var, get its skeleton and merge them together. 
      * 
      * @param multi_var Multi var
-     * @param get_arith_model_of_var Length model of variables
+     * @param arith_model Length model of variables
      * @return zstring Model of @p multi_var
      */
-    zstring LengthProcModel::get_multivar_model(const BasicTerm& multi_var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
-        std::vector<long> res_skeleton(get_arith_model_of_var(multi_var).get_int32());
+    zstring LengthProcModel::get_multivar_model(const BasicTerm& multi_var, const std::map<BasicTerm,rational>& arith_model) {
+        std::vector<long> res_skeleton(arith_model.at(multi_var).get_int32());
         for(const auto& [block_var, var_constr] : this->block_pool) {
             if(var_constr.get_vars().contains(multi_var)) {
-                std::vector<long> act_skeleton = get_multivar_skeleton(block_var, multi_var, get_arith_model_of_var);
+                std::vector<long> act_skeleton = get_multivar_skeleton(block_var, multi_var, arith_model);
                 // the vectors should have the same size
                 for(size_t i = 0; i < res_skeleton.size(); i++) {
                     if(act_skeleton[i] != -1) {
