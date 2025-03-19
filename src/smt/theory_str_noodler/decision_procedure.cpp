@@ -566,17 +566,30 @@ namespace smt::noodler {
         const std::vector<BasicTerm>& input_vars = transducer_to_process.get_input();
         const std::vector<BasicTerm>& output_vars = transducer_to_process.get_output();
 
-        if (input_vars.empty()) {
-            // emptiness means that on the input we have empty string, therefore, we do not do noodlification but instead apply the empty string on transducer and create new inclusion
-            mata::nfa::Nfa application_to_empty_string = transducer_to_process.get_transducer()->apply(mata::Word(), 0).to_nfa_move();
+        if (input_vars.empty() || output_vars.empty()) {
+            // If one side is empty, we can apply empty string on the tape connected with the empty side and replace the transducer with inclusion.
+            // For example, if we have
+            //     output_vars = T("")          or             "" = T(input_vars)
+            // we replace it with
+            //     output_vars ⊆ fresh_var      or      fresh_var ⊆ input_vars
+            // where the language of the fresh_var is the application of empty string on T (either on input or output, based on which side is empty).
+
+            bool input_is_empty = input_vars.empty();
+            mata::nft::Level level_of_empty_side = input_is_empty ? 0 : 1;
+
+            // we apply empty string to empty tape of transducer, getting the NFA for the nonempty side
+            mata::nfa::Nfa application_to_empty_string = transducer_to_process.get_transducer()->apply(mata::Word(), level_of_empty_side).to_nfa_move();
+            application_to_empty_string = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_empty_string.trim()));
             
             if (application_to_empty_string.is_lang_empty()) {
                 // empty string is not accepted by transducer as input, this solving_state cannot lead to solution
                 return;
             }
 
-            if (output_vars.empty()) {
-                // if also ouptut side is just empty string, then we can just check if the result of application contains it
+            const std::vector<BasicTerm>& non_empty_side = input_is_empty ? output_vars : input_vars;
+
+            if (non_empty_side.empty()) {
+                // if the non-empty side is actually also empty, then we can just check if the result of application contains epsilon
                 if (application_to_empty_string.is_in_lang({})) {
                     // if it does, we can continue with this solving_state, otherwise we keep it out of worklist as it will not lead to solution
                     worklist.push_front(solving_state);
@@ -584,40 +597,20 @@ namespace smt::noodler {
                 return;
             }
 
-            // we create new inclusion output_var ⊆ application_to_empty_string
-            if (mata::strings::is_lang_eps(application_to_empty_string)) {
-                // if the application leads to empty string again, the right side of inclusion is empty
-                solving_state.push_front_unique(solving_state.add_inclusion(output_vars, {}, false));
-            } else {
-                // otherwise, right side of inclusion must be application, we create fresh var for it
-                BasicTerm fresh_var = util::mk_noodler_var_fresh(std::string("output_") + std::to_string(noodlification_no));
+            // we create new inclusion, either output_var ⊆ application_to_empty_string or application_to_empty_string ⊆ input_vars
+            Predicate new_inclusion = input_is_empty ? Predicate::create_equation(non_empty_side, {}) : Predicate::create_equation({}, non_empty_side);
+            if (!mata::strings::is_lang_eps(application_to_empty_string)) {
+                // if the application does not lead to empty string we need to create a new var for empty side and replace it with its language set to application_to_empty_string
+                BasicTerm fresh_var = util::mk_noodler_var_fresh(std::string("emptysideapp_") + std::to_string(noodlification_no));
                 solving_state.aut_ass[fresh_var] = std::make_shared<mata::nfa::Nfa>(application_to_empty_string);
-                solving_state.push_front_unique(solving_state.add_inclusion(output_vars, {fresh_var}, false));
+                if (input_is_empty) {
+                    new_inclusion.set_input({fresh_var});
+                } else {
+                    new_inclusion.set_output({fresh_var});
+                }
             }
-
-            worklist.push_front(solving_state);
-            return;
-        }
-
-        if (output_vars.empty()) {
-            // we do the same thing when epsilon is in output vars, however we apply on the output tape
-            mata::nfa::Nfa application_to_empty_string = transducer_to_process.get_transducer()->apply(mata::Word(), 1).to_nfa_move();
-            
-            if (application_to_empty_string.is_lang_empty()) {
-                return;
-            }
-
-            // we create new inclusion application_to_empty_string ⊆ input_vars
-            if (mata::strings::is_lang_eps(application_to_empty_string)) {
-                // if the application leads to empty string again, the left side of inclusion is empty
-                solving_state.push_front_unique(solving_state.add_inclusion({}, input_vars, false));
-            } else {
-                // otherwise, left side of inclusion must be application, we create fresh var for it
-                BasicTerm fresh_var = util::mk_noodler_var_fresh(std::string("input_") + std::to_string(noodlification_no));
-                solving_state.aut_ass[fresh_var] = std::make_shared<mata::nfa::Nfa>(application_to_empty_string);
-                solving_state.push_front_unique(solving_state.add_inclusion({fresh_var}, input_vars, false));
-            }
-
+            solving_state.add_predicate(new_inclusion, false);
+            solving_state.push_front_unique(new_inclusion);
             worklist.push_front(solving_state);
             return;
         }
