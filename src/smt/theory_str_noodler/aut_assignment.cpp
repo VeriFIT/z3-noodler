@@ -216,9 +216,9 @@ namespace smt::noodler {
         }
     }
 
-    void AutAssignment::replace_dummy_with_new_symbol() {
+    std::optional<mata::Symbol> AutAssignment::replace_dummy_with_new_symbol() {
         if(alphabet.size() == 0) {
-            return;
+            return std::nullopt;
         }
         mata::Symbol new_symbol = regex::Alphabet(alphabet).get_unused_symbol();
         bool is_there_some_dummy = false;
@@ -226,6 +226,7 @@ namespace smt::noodler {
             for (mata::nfa::State state = 0; state < nfa->num_of_states(); ++state) {
                 if (!nfa->delta[state].empty()) { // if there is some transition from state
                     mata::nfa::StatePost& delta_from_state = nfa->delta.mutable_state_post(state); // then we can for sure get mutable transitions from state without side effect
+                    SASSERT(delta_from_state.back().symbol != mata::nfa::EPSILON);
                     if (delta_from_state.back().symbol == util::get_dummy_symbol()) { // dummy symbol should be largest (we do not have epsilons), so should be at the back
                         is_there_some_dummy = true;
                         mata::nfa::StateSet targets = delta_from_state.back().targets;
@@ -237,6 +238,9 @@ namespace smt::noodler {
         }
         if (is_there_some_dummy) {
             alphabet.insert(new_symbol);
+            return new_symbol;
+        } else {
+            return std::nullopt;
         }
     }
 }

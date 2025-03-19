@@ -452,6 +452,13 @@ namespace smt::noodler {
          * @return The newly created variable. 
          */
         BasicTerm add_fresh_var(std::shared_ptr<mata::nfa::Nfa> nfa, std::string var_prefix, bool is_length, bool optimize_literal);
+
+        /**
+         * @brief Replaces the dummy symbol in transducers by all symbols from @p replacements
+         * 
+         * If @p replacements is empty, it only deletes dummy symbols from transducers.
+         */
+        void replace_dummy_symbol_in_transducers_with(std::set<mata::Symbol> replacements);
     };
 
     class DecisionProcedure : public AbstractDecisionProcedure {

@@ -278,6 +278,27 @@ namespace smt::noodler {
         }
     }
 
+    void SolvingState::replace_dummy_symbol_in_transducers_with(std::set<mata::Symbol> replacements) {
+        for (const Predicate& trans : transducers) {
+            auto trans_ptr = trans.get_transducer();
+            for (mata::nfa::State state = 0; state < trans_ptr->num_of_states(); ++state) {
+                if (!trans_ptr->delta[state].empty()) { // if there is some transition from state
+                    mata::nfa::StatePost& delta_from_state = trans_ptr->delta.mutable_state_post(state); // then we can for sure get mutable transitions from state without side effect
+                    for (auto iter = delta_from_state.begin(); iter != delta_from_state.end(); ++iter) {
+                        if (iter->symbol == util::get_dummy_symbol()) {
+                            mata::nfa::StateSet targets = iter->targets;
+                            delta_from_state.erase(iter);
+                            for (mata::Symbol replacement : replacements) {
+                                trans_ptr->delta.add(state, replacement, targets); // this invalidates iter, but we are breaking from the loop anyway
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     lbool DecisionProcedure::compute_next_solution() {
         // iteratively select next state of solving that can lead to solution and
         // process one of the unprocessed nodes (or possibly find solution)
@@ -1780,6 +1801,8 @@ namespace smt::noodler {
         }
         inclusions_from_preprocessing.clear();
 
+        std::set<mata::Symbol> set_of_symbols_to_replace_dummy_symbol_with;
+
         // Restrict the languages in solution of length variables and code/int conversion variables by their models
         for (auto& [var, nfa] : solution.aut_ass) {
             if (var.is_literal() || !solution.length_sensitive_vars.contains(var)) { continue; } // literals should have the correct language + we restrict only length vars
@@ -1817,14 +1840,26 @@ namespace smt::noodler {
             if (code_subst_vars.contains(var)) {
                 rational to_code_value = arith_model.at(code_version_of(var));
                 if (to_code_value != -1) {
-                    solution.aut_ass.add_symbol_from_dummy(to_code_value.get_unsigned());
+                    mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
+                    if (!solution.aut_ass.get_alphabet().contains(to_code_value_as_symbol)) {
+                        // the code value is not a symbol of an alphabet, therefore it is "hidden" in a dummy symbol
+                        // we want to "unhide" it, and make it explicit
+                        set_of_symbols_to_replace_dummy_symbol_with.insert(to_code_value_as_symbol);
+                        solution.aut_ass.add_symbol_from_dummy(to_code_value.get_unsigned());
+                    }
                     update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
                 } // for the case to_code_value == -1 we shoulh have (str.len var) != 1, so we do not need to restrict the language, as it should have been already be restricted by lenght
             }
         }
 
-        // we remove dummy symbol from automata, so we do not have to work with it
-        solution.aut_ass.replace_dummy_with_new_symbol();
+        // we replace dummy symbol with a new symbol in automata, so we do not have to work with it
+        std::optional<mata::Symbol> symbol_replacing_dummy = solution.aut_ass.replace_dummy_with_new_symbol();
+        if (symbol_replacing_dummy.has_value()) {
+            set_of_symbols_to_replace_dummy_symbol_with.insert(symbol_replacing_dummy.value());
+        }
+
+        // we have to also replace dummy symbol in transducers
+        solution.replace_dummy_symbol_in_transducers_with(set_of_symbols_to_replace_dummy_symbol_with);
 
         is_model_initialized = true;
 
@@ -1833,6 +1868,14 @@ namespace smt::noodler {
             tout << "  Inclusions:" << std::endl;
             for (const auto& incl : solution.inclusions) {
                 tout << incl << std::endl;
+            }
+
+            tout << "  Transducers:" << std::endl;
+            for (const auto& tran : solution.transducers) {
+                tout << tran << std::endl;
+                if (is_trace_enabled("str-nfa")) {
+                    tout << *tran.get_transducer() << std::endl;
+                }
             }
 
             tout << "  Vars in aut ass" << std::endl;
@@ -1908,6 +1951,7 @@ namespace smt::noodler {
 
                     // we get the possible inputs of transducer when output is model of output_var
                     mata::nfa::Nfa possible_inputs = predicate_with_var_on_right_side.get_transducer()->apply(util::get_mata_word_zstring(output_var_model), 1).to_nfa_move();
+                    possible_inputs = mata::nfa::reduce(mata::nfa::remove_epsilon(possible_inputs.trim()));
                     // the model of var is then some word from possible_inputs and the langauge of var
                     mata::Word accepted_word = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word().value();
                     return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));

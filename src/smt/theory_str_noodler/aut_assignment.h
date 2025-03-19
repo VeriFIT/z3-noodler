@@ -200,8 +200,12 @@ namespace smt::noodler {
         /// @brief Add symbol @p s to alphabet and removes it from dummy symbol (i.e. adds transitions trough @p s in all automata if there is transition trough dummy symbol)
         void add_symbol_from_dummy(mata::Symbol s);
 
-        /// @brief Replace dummy symbol in all automata by a new symbol
-        void replace_dummy_with_new_symbol();
+        /**
+         * @brief Replace dummy symbol in all automata by a new symbol
+         * 
+         * @return The new symbol if there was some dummy symbol to replace
+         */
+        std::optional<mata::Symbol> replace_dummy_with_new_symbol();
 
         /**
          * @brief Is language complement of a finite language?
