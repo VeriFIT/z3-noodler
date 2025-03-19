@@ -568,7 +568,7 @@ namespace smt::noodler {
 
         if (input_vars.empty()) {
             // emptiness means that on the input we have empty string, therefore, we do not do noodlification but instead apply the empty string on transducer and create new inclusion
-            mata::nfa::Nfa application_to_empty_string = mata::nft::project_to(transducer_to_process.get_transducer()->apply(AutAssignment::empty_string_automaton(), 0), 1).to_nfa_move();
+            mata::nfa::Nfa application_to_empty_string = transducer_to_process.get_transducer()->apply(mata::Word(), 0).to_nfa_move();
             
             if (application_to_empty_string.is_lang_empty()) {
                 // empty string is not accepted by transducer as input, this solving_state cannot lead to solution
@@ -600,8 +600,8 @@ namespace smt::noodler {
         }
 
         if (output_vars.empty()) {
-            // we do the same thing when epsilon is in output vars, however we apply on the output tape and project to input tape
-            mata::nfa::Nfa application_to_empty_string = mata::nft::project_to(transducer_to_process.get_transducer()->apply(AutAssignment::empty_string_automaton(), 1), 0).to_nfa_move();
+            // we do the same thing when epsilon is in output vars, however we apply on the output tape
+            mata::nfa::Nfa application_to_empty_string = transducer_to_process.get_transducer()->apply(mata::Word(), 1).to_nfa_move();
             
             if (application_to_empty_string.is_lang_empty()) {
                 return;
@@ -1914,7 +1914,7 @@ namespace smt::noodler {
                     SASSERT(predicate_with_var_on_right_side.get_input().size() == 1 && predicate_with_var_on_right_side.get_input()[0] == var);
 
                     // we get the possible inputs of transducer when output is model of output_var
-                    mata::nfa::Nfa possible_inputs = mata::nft::project_to(predicate_with_var_on_right_side.get_transducer()->apply(AutAssignment::create_word_nfa(output_var_model), 1), 0).to_nfa_move();
+                    mata::nfa::Nfa possible_inputs = predicate_with_var_on_right_side.get_transducer()->apply(util::get_mata_word_zstring(output_var_model), 1).to_nfa_move();
                     // the model of var is then some word from possible_inputs and the langauge of var
                     mata::Word accepted_word = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word().value();
                     return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
