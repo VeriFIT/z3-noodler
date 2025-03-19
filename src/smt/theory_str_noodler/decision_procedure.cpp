@@ -625,9 +625,9 @@ namespace smt::noodler {
                 BasicTerm fresh_var = util::mk_noodler_var_fresh(std::string("emptysideapp_") + std::to_string(noodlification_no));
                 solving_state.aut_ass[fresh_var] = std::make_shared<mata::nfa::Nfa>(application_to_empty_string);
                 if (input_is_empty) {
-                    new_inclusion.set_input({fresh_var});
+                    new_inclusion.set_right_side({fresh_var});
                 } else {
-                    new_inclusion.set_output({fresh_var});
+                    new_inclusion.set_left_side({fresh_var});
                 }
             }
             solving_state.add_predicate(new_inclusion, false);
@@ -656,15 +656,13 @@ namespace smt::noodler {
 
             // we are doing similar things as in processing of inclusion, just with two types of vars (input/output) instead of one
             // and the result is also a set of simple transducers 
+            STRACE("str", tout << "Processing noodle" << std::endl;);
 
             SolvingState new_element = solving_state;
 
             std::vector<std::vector<BasicTerm>> input_vars_to_new_input_vars(input_vars_divisions.size());
             std::vector<std::vector<BasicTerm>> output_vars_to_new_output_vars(output_vars.size());
             for (unsigned i = 0; i < noodle.size(); ++i) {
-                STRACE("str", tout << "Processing noodle" << (is_trace_enabled("str-nfa") ? " with automata:" : "") << std::endl;);
-                STRACE("str-nfa", tout << "Transducer:\n" << *noodle[i].transducer;);
-
                 // TODO do not make new vars if we can replace them with one var
 
                 BasicTerm new_input_var = new_element.add_fresh_var(
@@ -674,7 +672,6 @@ namespace smt::noodler {
                                                             true
                                                         ); // xi
                 input_vars_to_new_input_vars[noodle[i].input_index].push_back(new_input_var);
-                STRACE("str-nfa", tout << new_input_var << std::endl << *noodle[i].input_aut;);
 
                 BasicTerm new_output_var = new_element.add_fresh_var(
                                                             noodle[i].output_aut, // we assign Ao to new_output_var
@@ -685,10 +682,17 @@ namespace smt::noodler {
                                                             true
                                                         ); // xo
                 output_vars_to_new_output_vars[noodle[i].output_index].push_back(new_output_var);
-                STRACE("str-nfa", tout << new_output_var << std::endl << *noodle[i].output_aut;);
 
                 // add the new transducer xo = T(xi)
-                new_element.add_transducer(noodle[i].transducer, {new_input_var}, {new_output_var}, false);
+                Predicate new_trans = new_element.add_transducer(noodle[i].transducer, {new_input_var}, {new_output_var}, false);
+                STRACE("str",
+                    tout << "New transducer: " << new_trans << std::endl;
+                    if (is_trace_enabled("str-nfa")) {
+                        tout << new_input_var << ":\n" << *noodle[i].input_aut
+                             << new_output_var << ":\n" << *noodle[i].output_aut
+                             << "transducer:\n" << *new_trans.get_transducer();
+                    }
+                );
             }
 
             std::vector<Predicate> input_inclusions = util::create_inclusions_from_multiple_sides(input_vars_to_new_input_vars, input_vars_divisions);
