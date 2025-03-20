@@ -19,7 +19,14 @@ namespace smt::noodler {
             SASSERT(predicate.is_transducer() || predicate.is_equation());
         }
 
+        /**
+         * @brief Get the predicate of this node (without reversing)
+         */
         [[nodiscard]] const Predicate& get_predicate() const { return node_predicate; }
+
+        /**
+         * @brief Get the "real" predicate represented by this node, taking into account whether it is reversed
+         */
         [[nodiscard]] Predicate get_real_predicate() const {
             if (!is_reversed()) {
                 return node_predicate;
@@ -30,7 +37,7 @@ namespace smt::noodler {
         [[nodiscard]] bool is_reversed() const { return reversed; }
 
         /**
-         * @brief Get the "real" left side of this node taking into account whether it is reversed
+         * @brief Get the "real" left side of this node, taking into account whether it is reversed
          */
         [[nodiscard]] const std::vector<BasicTerm>& get_real_left_side() const {
             if (node_predicate.is_transducer()) {
@@ -50,9 +57,8 @@ namespace smt::noodler {
             }
         }
 
-
         /**
-         * @brief Get the "real" right side of this node taking into account whether it is reversed
+         * @brief Get the "real" right side of this node, taking into account whether it is reversed
          */
         [[nodiscard]] const std::vector<BasicTerm>& get_real_right_side() const {
             if (node_predicate.is_transducer()) {
@@ -72,10 +78,16 @@ namespace smt::noodler {
             }
         }
 
+        /**
+         * @brief Checks if this node is reversion of @p other node
+         */
         [[nodiscard]] bool is_reverse_of(const FormulaGraphNode& other) const {
             return (node_predicate == other.node_predicate && reversed != other.reversed);
         }
 
+        /**
+         * @brief Get the reversed node of this node
+         */
         [[nodiscard]] FormulaGraphNode get_reversed() const {
             return FormulaGraphNode(get_predicate(), !reversed);
         }
