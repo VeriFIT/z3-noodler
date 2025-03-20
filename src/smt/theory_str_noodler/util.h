@@ -158,14 +158,6 @@ namespace smt::noodler::util {
     mata::Word get_mata_word_zstring(const zstring& word);
 
     /**
-     * @brief Checks if @p aut encodes literal, i.e., it accepts only one word that does not contain dummy symbol.
-     * 
-     * Works only if @p aut was trimmed and reduced by simulation (or determinized and minimized).
-     * The found literal is saved in @p found_literal.
-     */
-    bool aut_encodes_literal(const mata::nfa::Nfa& aut, zstring& found_literal);
-
-    /**
      * @brief Create a vector of inclusions of the form left_sides[i] ⊆ right_sides[i] for all i.
      * 
      * Assumes that @p left_sides and @p right_sides have the same size.

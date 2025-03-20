@@ -152,6 +152,14 @@ namespace smt::noodler {
          */
         static std::vector<interval_word> get_interval_words(const mata::nfa::Nfa& aut);
 
+        /**
+         * @brief Checks if @p aut encodes literal, i.e., it accepts only one word that does not contain dummy symbol.
+         * 
+         * Works only if @p aut was trimmed and reduced by simulation (or determinized and minimized).
+         * The found literal is saved in @p found_literal.
+         */
+       static bool aut_encodes_literal(const mata::nfa::Nfa& aut, zstring& found_literal);
+
         mata::nfa::Nfa get_automaton_concat(const std::vector<BasicTerm>& concat) const {
             mata::nfa::Nfa ret = mata::nfa::builder::create_empty_string_nfa();
             for(const BasicTerm& t : concat) {

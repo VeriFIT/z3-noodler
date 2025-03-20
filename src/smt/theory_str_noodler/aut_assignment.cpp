@@ -160,6 +160,30 @@ namespace smt::noodler {
         }
     }
 
+    bool AutAssignment::aut_encodes_literal(const mata::nfa::Nfa& aut, zstring& found_literal) {
+        // because aut is trimmed and reduced, the only way for it to accept exactly one word is if the automaton contains
+        // only one path in it (on which the word is)
+        if (aut.initial.size() != 1 || aut.final.size() != 1 || aut.num_of_states() != aut.delta.num_of_transitions() + 1) {
+            return false;
+        }
+        mata::Word word = {};
+        mata::nfa::State next_state = *aut.initial.begin();
+        while (!aut.final.contains(next_state)) {
+            const mata::nfa::StatePost& state_post = aut.delta[next_state];
+            // this test should be false for trimmed and reduced automaton, it is here as extra check if it is called with untrimmed or not reduced automaton
+            if (state_post.size() != 1) { return false; }
+            const mata::nfa::SymbolPost& symbol_post = *state_post.begin();
+            // this test should be false for trimmed and reduced automaton, it is here as extra check if it is called with untrimmed or not reduced automaton
+            if (symbol_post.num_of_targets() != 1) { return false; }
+            mata::Symbol symbol = symbol_post.symbol;
+            if (util::is_dummy_symbol(symbol)) { return false; } // dummy symbol cannot form a literal
+            word.push_back(symbol);
+            next_state = *symbol_post.targets.begin();
+        }
+        found_literal = zstring(word.size(), word.data());
+        return true;
+    }
+
     bool AutAssignment::is_flat(const BasicTerm& t) const {
         bool flat = true;
 
