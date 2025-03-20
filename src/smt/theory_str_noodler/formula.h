@@ -703,9 +703,7 @@ namespace smt::noodler {
 
         /**
          * @brief Strong equality. For the case of transducer predicates the transducers
-         * are compared for identity (not just the indentity of pointers). It is 
-         * necessary for the inclusion graph handling where we require get_switched_side
-         * (get_swithch_side(x)) == x (which is not true for pointer comparison).
+         * are compared for identity (not just the indentity of pointers).
          * 
          * @param other Other predicate
          * @return true Is strongly equal

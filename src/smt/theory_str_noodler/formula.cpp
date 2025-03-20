@@ -308,7 +308,7 @@ namespace smt::noodler {
                 if(!(params[0] == other.params[0] && params[1] == other.params[1])) {
                     return false;
                 }
-                // check if transducers have the same language
+                // check if transducers are identical (not just pointer equality)
                 return transducer->is_identical(*other.get_transducer());
             }
             if (is_two_sided()) {
