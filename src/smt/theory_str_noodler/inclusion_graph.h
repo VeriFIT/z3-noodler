@@ -29,6 +29,9 @@ namespace smt::noodler {
         }
         [[nodiscard]] bool is_reversed() const { return reversed; }
 
+        /**
+         * @brief Get the "real" left side of this node taking into account whether it is reversed
+         */
         [[nodiscard]] const std::vector<BasicTerm>& get_real_left_side() const {
             if (node_predicate.is_transducer()) {
                 // for trasnducer, left side is output
@@ -48,6 +51,9 @@ namespace smt::noodler {
         }
 
 
+        /**
+         * @brief Get the "real" right side of this node taking into account whether it is reversed
+         */
         [[nodiscard]] const std::vector<BasicTerm>& get_real_right_side() const {
             if (node_predicate.is_transducer()) {
                 // for predicate, right side is input
