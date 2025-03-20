@@ -287,11 +287,13 @@ namespace smt::noodler::util {
         mata::nfa::State next_state = *aut.initial.begin();
         while (!aut.final.contains(next_state)) {
             const mata::nfa::StatePost& state_post = aut.delta[next_state];
+            // this test should be false for trimmed and reduced automaton, it is here as extra check if it is called with untrimmed or not reduced automaton
             if (state_post.size() != 1) { return false; }
             const mata::nfa::SymbolPost& symbol_post = *state_post.begin();
+            // this test should be false for trimmed and reduced automaton, it is here as extra check if it is called with untrimmed or not reduced automaton
             if (symbol_post.num_of_targets() != 1) { return false; }
             mata::Symbol symbol = symbol_post.symbol;
-            if (is_dummy_symbol(symbol)) { return false; }
+            if (is_dummy_symbol(symbol)) { return false; } // dummy symbol cannot form a literal
             word.push_back(symbol);
             next_state = *symbol_post.targets.begin();
         }
