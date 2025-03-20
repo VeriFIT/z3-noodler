@@ -514,37 +514,38 @@ namespace smt::noodler {
         /// get set ofleft side variables/literals of (dis)equation 
         [[nodiscard]] std::set<BasicTerm> get_left_set() const {
             assert(is_eq_or_ineq());
-            std::set<BasicTerm> ret;
-            for(const BasicTerm& t : this->params[0])
-                ret.insert(t);
-            return ret;
+            return get_set_of_param(0);
         }
 
         /// get set of right side variables/literals of (dis)equation 
         [[nodiscard]] std::set<BasicTerm> get_right_set() const {
             assert(is_eq_or_ineq());
-            std::set<BasicTerm> ret;
-            for(const BasicTerm& t : this->params[1])
-                ret.insert(t);
-            return ret;
+            return get_set_of_param(1);
         }
 
         /// get set of input variables/literals of transducer
         [[nodiscard]] std::set<BasicTerm> get_input_set() const {
             assert(is_transducer());
-            std::set<BasicTerm> ret;
-            for(const BasicTerm& t : this->params[0])
-                ret.insert(t);
-            return ret;
+            return get_set_of_param(0);
         }
 
         /// get set of output variables/literals of transducer
         [[nodiscard]] std::set<BasicTerm> get_output_set() const {
             assert(is_transducer());
-            std::set<BasicTerm> ret;
-            for(const BasicTerm& t : this->params[1])
-                ret.insert(t);
-            return ret;
+            return get_set_of_param(1);
+        }
+
+        /// get set of haystack variables/literals of notcontains
+        [[nodiscard]] std::set<BasicTerm> get_haystack_set() const {
+            assert(is_not_cont());
+            return get_set_of_param(0);
+        }
+
+
+        /// get set of needle variables/literals of notcontains
+        [[nodiscard]] std::set<BasicTerm> get_needle_set() const {
+            assert(is_not_cont());
+            return get_set_of_param(1);
         }
 
         /// get set of only variables in the predicate
