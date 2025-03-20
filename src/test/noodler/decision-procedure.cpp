@@ -35,7 +35,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("unsat-simple", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("xy", "zu"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("a");
         init_ass[get_var('y')] = regex_to_nfa("a*");
         init_ass[get_var('z')] = regex_to_nfa("b");
@@ -48,7 +47,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("sat-simple", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("xy", "zu"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("a*");
         init_ass[get_var('y')] = regex_to_nfa("a*");
         init_ass[get_var('z')] = regex_to_nfa("a*");
@@ -73,7 +71,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("unsat-simple-length", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("xy", "zu"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("a");
         init_ass[get_var('y')] = regex_to_nfa("a*");
         init_ass[get_var('z')] = regex_to_nfa("b");
@@ -86,7 +83,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("sat-simple-length", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("xy", "zu"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("a*");
         init_ass[get_var('y')] = regex_to_nfa("a*");
         init_ass[get_var('z')] = regex_to_nfa("a*");
@@ -101,7 +97,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("sat-simple-length-substitution", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("xy", "zu"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("a");
         init_ass[get_var('y')] = regex_to_nfa("ab*");
         init_ass[get_var('z')] = regex_to_nfa("ab*");
@@ -250,7 +245,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("unsat-simple-non-chain-free", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("x", "xx"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("aa?b*");
         DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
@@ -260,7 +254,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("sat-simple-non-chain-free", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_equality("x", "xx"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("a*b*");
         DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
@@ -270,7 +263,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("unsat-simple-transducer", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_transducer(identity, "xy", "zu"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("a");
         init_ass[get_var('y')] = regex_to_nfa("a*");
         init_ass[get_var('z')] = regex_to_nfa("b");
@@ -283,7 +275,6 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     SECTION("sat-simple-transducer", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_transducer(identity, "xy", "zu"));
-        // equalities.add_predicate(create_equality("yx", "r"));
         init_ass[get_var('x')] = regex_to_nfa("a*");
         init_ass[get_var('y')] = regex_to_nfa("a*");
         init_ass[get_var('z')] = regex_to_nfa("a*");
