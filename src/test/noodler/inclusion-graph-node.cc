@@ -172,21 +172,6 @@ TEST_CASE("Inclusion graph", "[noodler]") {
         CHECK(graph.get_num_of_edges() == 2);
     }
 
-    // SECTION("x = xy twice") {
-    //     Predicate predicate{ PredicateType::Equation, { { x }, { x, y } } };
-    //     Predicate predicate{ PredicateType::Equation, { { x }, { x, y } } };
-
-    //     formula.add_predicate(predicate);
-    //     CHECK_THROWS(FormulaGraph::create_inclusion_graph(formula)); // Catch2 cannot catch failing assert.
-    // }
-
-    // SECTION("x = x") {
-    //     Predicate predicate{ PredicateType::Equation, { { x }, { x } } };
-
-    //     formula.add_predicate(predicate);
-    //     CHECK_THROWS(FormulaGraph::create_inclusion_graph(formula)); // Catch2 cannot catch failing assert.
-    // }
-
     SECTION("x=y && u = x") {
         Predicate predicate{ PredicateType::Equation, { { x }, { y } } };
         Predicate predicate2{ PredicateType::Equation, { { u }, { x } } };
@@ -259,14 +244,6 @@ TEST_CASE("Splitting graph", "[noodler]") {
         CHECK(graph.get_edges().begin()->first == *graph.get_edges().begin()->second.begin());
         CHECK((++graph.get_edges().begin())->first == *(++graph.get_edges().begin())->second.begin());
     }
-
-    // SECTION("xx=xx") {
-    //     Predicate predicate{ PredicateType::Equation, { { x, x }, {x, x} } };
-    //     CHECK(predicate.to_string() == "Equation: x x = x x");
-
-    //     formula.add_predicate(predicate);
-    //     CHECK_THROWS(FormulaGraph::create_simplified_splitting_graph(formula)); // Catch2 cannot catch failing assert.
-    // }
 
     SECTION("x=xy") {
         Predicate predicate{ PredicateType::Equation, { { x }, {x, y} } };
