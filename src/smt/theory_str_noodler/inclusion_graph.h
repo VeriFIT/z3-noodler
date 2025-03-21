@@ -93,28 +93,18 @@ namespace smt::noodler {
         }
 
         [[nodiscard]] std::string print() const {
-            // joining BasicTerm in the given vector with str
-            auto join = [&](const std::vector<BasicTerm>& vec, const std::string& str) -> std::string {
-                if(vec.empty()) return "";
-                std::string ret = vec[0].to_string();
-                for(size_t i = 1; i < vec.size(); i++) {
-                    ret += str + vec[i].to_string();
-                }
-                return ret;
-            };
-
             std::ostringstream output;
-            output << join(get_real_left_side(), " ");
+            output << get_real_left_side();
             if (node_predicate.is_equation()) {
                 // inclusion
-                output << " ⊆ " << join(get_real_right_side(), " ");
+                output << " ⊆ " << get_real_right_side();
             } else {
                 //transducer, we name them based on the raw pointer
                 output << " = T" << node_predicate.get_transducer().get();
                 if (is_reversed()) {
                     output << "^-1";
                 }
-                output << "(" << join(get_real_right_side(), " ") << ")";
+                output << "(" << get_real_right_side() << ")";
             }
             return output.str();
         }

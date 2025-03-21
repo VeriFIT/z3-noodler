@@ -132,6 +132,20 @@ namespace smt::noodler {
     }
     static bool operator>(const BasicTerm& lhs, const BasicTerm& rhs) { return !(lhs < rhs); }
 
+    [[nodiscard]] static std::string to_string(const std::vector<BasicTerm>& vec, const std::string& delimiter = " ") {
+        if(vec.empty()) return "";
+        std::string ret = vec[0].to_string();
+        for(size_t i = 1; i < vec.size(); i++) {
+            ret += delimiter + vec[i].to_string();
+        }
+        return ret;
+    }
+
+    static std::ostream& operator<<(std::ostream& os, const std::vector<BasicTerm>& vec) {
+        os << to_string(vec);
+        return os;
+    }
+
     //----------------------------------------------------------------------------------------------------------------------------------
 
     /**
