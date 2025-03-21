@@ -299,6 +299,103 @@ namespace smt::noodler {
         }
     }
 
+    std::string SolvingState::print_to_DOT() const {
+        auto escape_DOT_string = [](std::string string_to_escape) {
+            std::ostringstream res;
+            for (char c : string_to_escape) {
+                if (c == '\\' || c == '{' || c == '}' || c == '<' || c == '>' || c == '|' || c == '\"' || c == ' ') {
+                    res << '\\' << c;
+                } else {
+                    res << c;
+                }
+            }
+            return res.str();
+        };
+
+        auto print_predicate_to_DOT = [this,&escape_DOT_string](const Predicate& pred) {
+            std::ostringstream res;
+            if (pred.is_equation()) { // inclusion
+                res << escape_DOT_string(to_string(pred.get_left_side())) << "\\ ⊆\\ " << escape_DOT_string(to_string(pred.get_right_side()));
+            } else { //transducer
+                SASSERT(pred.is_transducer());
+                res << escape_DOT_string(to_string(pred.get_output())) << "\\ =\\ T" << pred.get_transducer().get() << "(" << escape_DOT_string(to_string(pred.get_input())) << ")";
+            }
+            if (is_predicate_on_cycle(pred)) {
+                res << "\\ :\\ oncycle";
+            }
+            return res.str();
+        };
+
+        auto print_predicate_container_to_DOT = [&print_predicate_to_DOT]<typename T>(T predicate_container) {
+            bool first = true;
+            std::ostringstream res;
+            for (const Predicate& pred : predicate_container) {
+                if (first) {
+                    first = false;
+                    res << print_predicate_to_DOT(pred);
+                } else {
+                    res << "\\n" << print_predicate_to_DOT(pred);
+                }
+            }
+            return res.str(); 
+        };
+
+
+        auto print_vars_to_DOT = [&escape_DOT_string](const std::vector<BasicTerm>& vars) {
+            bool first = true;
+            std::ostringstream res;
+            for (const BasicTerm& var : vars) {
+                if (first) {
+                    first = false;
+                    res << escape_DOT_string(var.to_string());
+                } else {
+                    res << "\\n" << escape_DOT_string(var.to_string());
+                }
+            }
+            return res.str(); 
+        };
+
+        std::ostringstream res;
+        res << DOT_name << "[label=\"" << print_predicate_container_to_DOT(inclusions);
+        if (!inclusions.empty() && !transducers.empty()) {
+            res << "\\n";
+        }
+        res << print_predicate_container_to_DOT(transducers) << "|" << print_predicate_container_to_DOT(predicates_to_process) << "|";
+
+        bool first = true;
+        for (const auto& [var,subst_vars] : substitution_map) {
+            if (first) {
+                first = false;
+                res << escape_DOT_string(var.to_string()) << "\\ -\\>\\ " << print_vars_to_DOT(subst_vars);
+            } else {
+                res << "\\n" << escape_DOT_string(var.to_string()) << "\\ -\\>\\ " << print_vars_to_DOT(subst_vars);
+            }
+        }
+        for (const BasicTerm& var : aut_ass.get_keys()) {
+            if (var.is_literal()) { continue; }
+            if (first) {
+                first = false;
+                res << escape_DOT_string(var.to_string()) << "\\ -\\>\\ NFA";
+            } else {
+                res << "\\n" << escape_DOT_string(var.to_string()) << "\\ -\\>\\ NFA";
+            }
+        }
+
+        res << "|";
+
+        first = true;
+        for (const BasicTerm& var : length_sensitive_vars) {
+            if (first) {
+                first = false;
+                res << escape_DOT_string(var.to_string());
+            } else {
+                res << "\\n" << escape_DOT_string(var.to_string());
+            }
+        }
+        res << "\"];";
+        return res.str();
+    }
+
     lbool DecisionProcedure::compute_next_solution() {
         // iteratively select next state of solving that can lead to solution and
         // process one of the unprocessed nodes (or possibly find solution)

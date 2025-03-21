@@ -227,7 +227,7 @@ namespace smt::noodler {
          * Checks whether @p predicate would be on cycle in the inclusion graph (can overapproximate
          * and say that predicate is on cycle even if it is not).
          */
-        bool is_predicate_on_cycle(const Predicate &predicate) {
+        bool is_predicate_on_cycle(const Predicate &predicate) const {
             return !predicates_not_on_cycle.contains(predicate);
         }
 
@@ -459,6 +459,9 @@ namespace smt::noodler {
          * If @p replacements is empty, it only deletes dummy symbols from transducers.
          */
         void replace_dummy_symbol_in_transducers_with(std::set<mata::Symbol> replacements);
+
+        std::string DOT_name;
+        std::string print_to_DOT() const;
     };
 
     class DecisionProcedure : public AbstractDecisionProcedure {
