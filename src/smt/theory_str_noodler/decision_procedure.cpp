@@ -356,7 +356,7 @@ namespace smt::noodler {
         };
 
         std::ostringstream res;
-        res << DOT_name << "[label=\"" << print_predicate_container_to_DOT(inclusions);
+        res << DOT_name << "[shape=record,label=\"" << print_predicate_container_to_DOT(inclusions);
         if (!inclusions.empty() && !transducers.empty()) {
             res << "\\n";
         }
@@ -404,8 +404,7 @@ namespace smt::noodler {
                            << "------------------------" << std::endl;);
 
         while (!worklist.empty()) {
-            SolvingState element_to_process = std::move(worklist.front());
-            worklist.pop_front();
+            SolvingState element_to_process = pop_from_worklist();
 
             if (element_to_process.predicates_to_process.empty()) {
                 // we found another solution, element_to_process contain the automata
@@ -428,6 +427,7 @@ namespace smt::noodler {
                         }
                     }
                 );
+                STRACE("str-noodle-dot", tout << solution.DOT_name << " [style=filled,fillcolor=\"aqua\"];\n";);
                 return l_true;
             }
 
@@ -445,6 +445,7 @@ namespace smt::noodler {
         }
 
         // there are no solving states left, which means nothing led to solution -> it must be unsatisfiable
+        STRACE("str-noodle-dot", tout << "}\n";);
         return l_false;
     }
 
@@ -502,13 +503,10 @@ namespace smt::noodler {
             // it is possible that some transducer become non-simple (one of its side becomes empty), we want to process these again
             solving_state.push_non_simple_transducers_to_processing();
 
-            if (!is_inclusion_to_process_on_cycle) {
-                // we push to front when the inclusion is not on cycle, because we want to get to the result as fast as possible
-                // and if there is no cycle, we do not need to do BFS, the algorithm should end
-                worklist.push_front(solving_state);
-            } else {
-                worklist.push_back(solving_state);
-            }
+            // we push to front when the inclusion is not on cycle, because we want to get to the result as fast as possible
+            // and if there is no cycle, we do not need to do BFS, the algorithm should end
+            push_to_worklist(std::move(solving_state), is_inclusion_to_process_on_cycle);
+
             return;
         }
         /********************************************************************************************************/
@@ -544,7 +542,7 @@ namespace smt::noodler {
                 // the inclusion holds, therefore we do not need to do noodlification and we can continue with this
                 // solving_state (we push to front and not back because we can just directly continue with next inclusion
                 // and we can possibly get to the result on the next step)
-                worklist.push_front(solving_state);
+                push_to_worklist(std::move(solving_state), false);
                 return;
             }
         }
@@ -646,14 +644,9 @@ namespace smt::noodler {
              */
             new_element.process_substituting_inclusions_from_left(left_side_inclusions, is_inclusion_to_process_on_cycle);
 
-            if (!is_inclusion_to_process_on_cycle) {
-                // we push to front when the inclusion is not on cycle, because we want to get to the result as fast as possible
-                // and if there is no cycle, we do not need to do BFS, the algorithm should end
-                worklist.push_front(new_element);
-            } else {
-                worklist.push_back(new_element);
-            }
-
+            // we push to front when the inclusion is not on cycle, because we want to get to the result as fast as possible
+            // and if there is no cycle, we do not need to do BFS, the algorithm should end
+            push_to_worklist(std::move(new_element), is_inclusion_to_process_on_cycle);
         }
 
         ++noodlification_no; // TODO: when to do this increment?? maybe noodlification_no should be part of SolvingState?
@@ -710,7 +703,7 @@ namespace smt::noodler {
                 // if the non-empty side is actually also empty, then we can just check if the result of application contains epsilon
                 if (application_to_empty_string.is_in_lang({})) {
                     // if it does, we can continue with this solving_state, otherwise we keep it out of worklist as it will not lead to solution
-                    worklist.push_front(solving_state);
+                    push_to_worklist(std::move(solving_state), false);
                 }
                 return;
             }
@@ -729,7 +722,7 @@ namespace smt::noodler {
             }
             solving_state.add_predicate(new_inclusion, false);
             solving_state.push_front_unique(new_inclusion);
-            worklist.push_front(solving_state);
+            push_to_worklist(std::move(solving_state), false);
             return;
         }
 
@@ -798,7 +791,7 @@ namespace smt::noodler {
             std::vector<Predicate> output_inclusions = util::create_inclusions_from_multiple_sides(output_vars_divisions, output_vars_to_new_output_vars);
             new_element.process_substituting_inclusions_from_left(output_inclusions, false);
 
-            worklist.push_front(new_element);
+            push_to_worklist(std::move(new_element), false);
         }
         ++noodlification_no; // TODO: when to do this increment?? maybe noodlification_no should be part of SolvingState?
     }
@@ -1648,7 +1641,9 @@ namespace smt::noodler {
             }
         }
 
-        worklist.push_back(init_solving_state);
+
+        STRACE("str-noodle-dot", tout << "digraph Procedure {\ninit[shape=none, label=\"\"]\n";);
+        push_to_worklist(std::move(init_solving_state), true);
     }
 
     lbool DecisionProcedure::preprocess(PreprocessType opt, const BasicTermEqiv &len_eq_vars) {
