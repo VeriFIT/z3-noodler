@@ -50,6 +50,19 @@ inline Predicate create_equality(const std::string& left_side, const std::string
     return Predicate(PredicateType::Equation, { left_side_vars, right_side_vars});
 }
 
+// variables have one char names
+inline Predicate create_transducer(const mata::nft::Nft& transducer, const std::string& input, const std::string& output) {
+    std::vector<BasicTerm> input_vars;
+    for (char var_name : input) {
+        input_vars.emplace_back(BasicTermType::Variable, std::string(1, var_name));
+    }
+    std::vector<BasicTerm> output_vars;
+    for (char var_name : output) {
+        output_vars.emplace_back(BasicTermType::Variable, std::string(1, var_name));
+    }
+    return Predicate(PredicateType::Transducer, { input_vars, output_vars}, std::make_shared<mata::nft::Nft>(transducer));
+}
+
 
 inline BasicTerm get_var(char var) {
     return { BasicTermType::Variable, std::string(1, var) };

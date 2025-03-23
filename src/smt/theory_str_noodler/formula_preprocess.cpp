@@ -487,8 +487,7 @@ namespace smt::noodler {
             for(const auto& k : sorted_map) { // in the order of their positions
                 right.push_back(k.second);
             }
-            new_pred = Predicate(PredicateType::Equation,
-                std::vector<Concat>({Concat({val1.term}), right}));
+            new_pred = Predicate::create_equation({val1.term}, right);
             return true;
         }
         return false;
@@ -508,9 +507,7 @@ namespace smt::noodler {
             VarNode val1 = *diff.first.begin();
             VarNode val2 = *diff.second.begin();
             if(val1.position == val2.position) {
-                new_pred = Predicate(PredicateType::Equation,
-                    std::vector<Concat>({Concat({val1.term}),
-                    std::vector<BasicTerm>({val2.term})}));
+                new_pred = Predicate::create_equation({val1.term}, {val2.term});
                 return true;
             }
         } else if(diff.first.size() == 1) {
@@ -583,7 +580,7 @@ namespace smt::noodler {
 
     /**
      * @brief Create concatenation graph. Oriented graph where each term is node and two terms
-     * (variable/litaral) t1 and t2 are connected (t1 -> t2) if t1.t2 occurs in some equation.
+     * (variable/litaral) t1 and t2 are connected (t1 -> t2) if t1.t2 occurs in some predicate.
      * Moreover each edge is labelled by number of occurrences of such concatenation in the formula.
      *
      * @return ConcatGraph of the formula.
@@ -624,9 +621,8 @@ namespace smt::noodler {
             Concat sub;
             // Get all occurrences of t
             std::set<VarNode> occurrs = this->formula.get_var_occurr(t);
-            // Get predicate of a first equation containing t; and side containing t
-            Predicate act_pred = this->formula.get_predicate(occurrs.begin()->pred_index);
-            Concat side = occurrs.begin()->position > 0 ? act_pred.get_right_side() : act_pred.get_left_side();
+            // Get side containing t in the first predicate containing t
+            Concat side = formula.get_side_of_var_node(*occurrs.begin());
 
             int start = std::abs(occurrs.begin()->position) - 1;
             for(size_t i = start; i < side.size(); i++) {
@@ -681,8 +677,9 @@ namespace smt::noodler {
                 BasicTerm fresh_var = util::mk_noodler_var_fresh("regular_seq");
                 this->formula.replace(pr.first, Concat({fresh_var}));
                 update_reg_constr(fresh_var, pr.first);
-                this->add_to_len_formula(Predicate(PredicateType::Equation, std::vector<Concat>({Concat({fresh_var}), pr.first})).get_formula_eq());
-                new_eqs.insert(Predicate(PredicateType::Equation, std::vector<Concat>({Concat({fresh_var}), pr.first})));
+                Predicate new_eq = Predicate::create_equation({fresh_var}, pr.first);
+                this->add_to_len_formula(new_eq.get_formula_eq());
+                new_eqs.insert(new_eq);
             }
         }
         for(const Predicate& eq : new_eqs) {
@@ -767,7 +764,7 @@ namespace smt::noodler {
             }
             this->formula.replace(Concat({t}), Concat());
             // add len constraint |X| = 0
-            this->add_to_len_formula(Predicate(PredicateType::Equation, {Concat({t}), Concat()}).get_formula_eq());
+            this->add_to_len_formula(Predicate::create_equation({t}, Concat()).get_formula_eq());
         }
         this->formula.clean_predicates();
 
@@ -822,10 +819,10 @@ namespace smt::noodler {
         for(size_t i = 0; i < gather_left.size(); i++) {
             for(size_t j = 0; j < gather_right.size(); j++) {
                 if(gather_left[i] == gather_right[j]) {
-                    res.insert(Predicate(PredicateType::Equation, std::vector<Concat>({
+                    res.insert(Predicate::create_equation(
                         Concat(it_left, left.begin()+i+1),
                         Concat(it_right, right.begin()+j+1)
-                    })));
+                    ));
                     it_left = left.begin()+i+1;
                     it_right = right.begin()+j+1;
                 }
@@ -839,10 +836,7 @@ namespace smt::noodler {
             left_rest.push_back(BasicTerm(BasicTermType::Literal, "")); // avoid empty side by putting there epsilon
         if(right_rest.empty())
             right_rest.push_back(BasicTerm(BasicTermType::Literal, "")); // avoid empty side by putting there epsilon
-        Predicate rest = Predicate(PredicateType::Equation, std::vector<Concat>({
-            left_rest,
-            right_rest
-        }));
+        Predicate rest = Predicate::create_equation(left_rest, right_rest);
         res.insert(rest);
     }
 
@@ -972,7 +966,7 @@ namespace smt::noodler {
                 if(pred.get_left_side()[0] == beg.second && right_side[0] == beg.first) {
                     // X = Y1 Y2 ...
                     Concat modif_side(right_side.begin()+1, right_side.end());
-                    pred = Predicate(PredicateType::Equation, std::vector<Concat>{pred.get_left_side(), modif_side} );
+                    pred = Predicate::create_equation(pred.get_left_side(), modif_side);
                     modif = true;
                     break;
                 }
@@ -980,7 +974,7 @@ namespace smt::noodler {
             right_side = pred.get_right_side();
             for(const auto& end : e_rem) {
                 if(pred.get_left_side()[0] == end.second && *(right_side.end()-1) == end.first) {
-                    pred = Predicate(PredicateType::Equation, std::vector<Concat>{pred.get_left_side(), Concat(right_side.begin(), right_side.end()-1)} );
+                    pred = Predicate::create_equation(pred.get_left_side(), Concat(right_side.begin(), right_side.end()-1));
                     modif = true;
                     break;
                 }
@@ -1235,7 +1229,7 @@ namespace smt::noodler {
                     if(t1 == t2) {
                         continue;
                     } else if(same_length(ec, t1, t2)) {
-                        Predicate new_pred(PredicateType::Equation, {Concat({t1}), Concat({t2})});
+                        Predicate new_pred = Predicate::create_equation({t1}, {t2});
                         new_preds.insert(new_pred);
                     } else {
                         break;
@@ -1249,7 +1243,7 @@ namespace smt::noodler {
                     if(t1 == t2) {
                         continue;
                     } else if(same_length(ec, t1, t2)) {
-                        Predicate new_pred(PredicateType::Equation, {Concat({t1}), Concat({t2})});
+                        Predicate new_pred = Predicate::create_equation({t1}, {t2});
                         new_preds.insert(new_pred);
                     } else {
                         break;
@@ -1329,7 +1323,7 @@ namespace smt::noodler {
                 BasicTerm fst = *a.second.begin();
                 for(const BasicTerm& dest : a.second) {
                     if(dest != fst) {
-                        this->formula.add_predicate(Predicate( PredicateType::Equation, {Concat{fst}, Concat{dest}}));
+                        this->formula.add_predicate(Predicate::create_equation({fst}, {dest}));
                     }
                 }
             }
@@ -1416,7 +1410,7 @@ namespace smt::noodler {
                 }
                 // i is the first mismatching index
                 if(c1.size() == i + 1) {
-                    Predicate new_pred = Predicate(PredicateType::Equation, { Concat{c1[i]}, Concat(c2.begin() + i, c2.end()) });
+                    Predicate new_pred = Predicate::create_equation({c1[i]}, Concat(c2.begin() + i, c2.end()));
                     this->formula.add_predicate(new_pred);
                     // pr1 is of the form  X = W1 W2 Y
                     // pr2 is of the form  X = W1 W2 W3 W4
@@ -1426,7 +1420,7 @@ namespace smt::noodler {
                         rem_ids.insert(pr2.first);
                     }
                 } else if (c2.size() == i + 1) {
-                    Predicate new_pred = Predicate(PredicateType::Equation, { Concat{c2[i]}, Concat(c1.begin() + i, c1.end()) });
+                    Predicate new_pred = Predicate::create_equation({c2[i]}, Concat(c1.begin() + i, c1.end()));
                     this->formula.add_predicate(new_pred);
                     // pr1 is of the form  X = W1 W2 W3 W4
                     // pr2 is of the form  X = W1 W2 Y
@@ -1481,7 +1475,7 @@ namespace smt::noodler {
                 }
                 // i is the first mismatching index
                 if(i == 0) {
-                    Predicate new_pred = Predicate(PredicateType::Equation, { Concat{c1[i]}, Concat(c2.begin(), c2.begin() + j + 1) });
+                    Predicate new_pred = Predicate::create_equation({c1[i]}, Concat(c2.begin(), c2.begin() + j + 1));
                     this->formula.add_predicate(new_pred);
                     // pr1 is of the form  X = Y W1 W2
                     // pr2 is of the form  X = W3 W4 W1 W2
@@ -1491,7 +1485,7 @@ namespace smt::noodler {
                         rem_ids.insert(pr2.first);
                     }
                 } else if (j == 0) {
-                    Predicate new_pred = Predicate(PredicateType::Equation, { Concat{c2[j]}, Concat(c1.begin(), c1.begin() + i + 1) });
+                    Predicate new_pred = Predicate::create_equation({c2[j]}, Concat(c1.begin(), c1.begin() + i + 1));
                     this->formula.add_predicate(new_pred);
                     // we can remove one of the original constraint because it is redundant (it can be restored by the new one)
                     // pr1 is of the form  X = W3 W4 W1 W2
@@ -1746,7 +1740,7 @@ namespace smt::noodler {
     bool FormulaPreprocessor::can_unify_not_contains() {
         for(const auto& [id, pred] : this->formula.get_predicates()) {
             if(!pred.is_not_cont()) continue;
-            if(can_unify_contain(pred.get_params()[0], pred.get_params()[1])) {
+            if(can_unify_contain(pred.get_haystack(), pred.get_needle())) {
                 return true;
             }
 
@@ -1765,28 +1759,28 @@ namespace smt::noodler {
         std::set<size_t> rem_ids;
         for(const auto& [id, pred] : this->formula.get_predicates()) {
             if(!pred.is_not_cont()) continue;
-            Concat left = pred.get_params()[0];
-            Concat right = pred.get_params()[1];
-            if(left.size() == 1 && right.size() == 1 && this->aut_ass.at(left[0])->delta.get_used_symbols() != mata::utils::OrdVector<mata::Symbol>({util::get_dummy_symbol()})) {
-                if(this->aut_ass.is_singleton(left[0]) && this->aut_ass.is_singleton(right[0])) {
-                    if(mata::nfa::are_equivalent(*this->aut_ass.at(left[0]), *this->aut_ass.at(right[0]))) {
+            Concat haystack = pred.get_haystack();
+            Concat needle = pred.get_needle();
+            if(haystack.size() == 1 && needle.size() == 1 && !this->aut_ass.at(haystack[0])->delta.get_used_symbols().contains(util::get_dummy_symbol())) {
+                if(this->aut_ass.is_singleton(haystack[0]) && this->aut_ass.is_singleton(needle[0])) {
+                    if(mata::nfa::are_equivalent(*this->aut_ass.at(haystack[0]), *this->aut_ass.at(needle[0]))) {
                         return false;
                     }
                 }
-                if(this->aut_ass.is_singleton(left[0]) && right[0].is_variable()) {
-                    mata::nfa::Nfa nfa_copy = *this->aut_ass.at(left[0]);
+                if(this->aut_ass.is_singleton(haystack[0]) && needle[0].is_variable()) {
+                    mata::nfa::Nfa nfa_copy = *this->aut_ass.at(haystack[0]);
                     for(unsigned i = 0; i < nfa_copy.num_of_states(); i++) {
                         nfa_copy.initial.insert(i);
                         nfa_copy.final.insert(i);
                     }
 
                     mata::nfa::Nfa complement = this->aut_ass.complement_aut(nfa_copy);
-                    this->aut_ass.restrict_lang(right[0], complement);
+                    this->aut_ass.restrict_lang(needle[0], complement);
                     rem_ids.insert(id);
                     continue;
                 }
             }
-            if(right.size() == 1 && this->aut_ass.is_epsilon(right[0])) {
+            if(needle.size() == 1 && this->aut_ass.is_epsilon(needle[0])) {
                 return false;
             }
         }

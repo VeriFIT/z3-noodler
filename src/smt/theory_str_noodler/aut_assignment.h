@@ -49,6 +49,10 @@ namespace smt::noodler {
             update_alphabet();
         };
 
+        static mata::nfa::Nfa empty_string_automaton() {
+            return mata::nfa::Nfa(1, {0}, {0});
+        }
+
         mata::nfa::Nfa sigma_star_automaton() const {
             mata::nfa::Nfa nfa{};
             nfa.initial = {0};
@@ -148,6 +152,14 @@ namespace smt::noodler {
          */
         static std::vector<interval_word> get_interval_words(const mata::nfa::Nfa& aut);
 
+        /**
+         * @brief Checks if @p aut encodes literal, i.e., it accepts only one word that does not contain dummy symbol.
+         * 
+         * Works only if @p aut was trimmed and reduced by simulation (or determinized and minimized).
+         * The found literal is saved in @p found_literal.
+         */
+       static bool aut_encodes_literal(const mata::nfa::Nfa& aut, zstring& found_literal);
+
         mata::nfa::Nfa get_automaton_concat(const std::vector<BasicTerm>& concat) const {
             mata::nfa::Nfa ret = mata::nfa::builder::create_empty_string_nfa();
             for(const BasicTerm& t : concat) {
@@ -196,8 +208,12 @@ namespace smt::noodler {
         /// @brief Add symbol @p s to alphabet and removes it from dummy symbol (i.e. adds transitions trough @p s in all automata if there is transition trough dummy symbol)
         void add_symbol_from_dummy(mata::Symbol s);
 
-        /// @brief Replace dummy symbol in all automata by a new symbol
-        void replace_dummy_with_new_symbol();
+        /**
+         * @brief Replace dummy symbol in all automata by a new symbol
+         * 
+         * @return The new symbol if there was some dummy symbol to replace
+         */
+        std::optional<mata::Symbol> replace_dummy_with_new_symbol();
 
         /**
          * @brief Is language complement of a finite language?

@@ -156,6 +156,13 @@ namespace smt::noodler::util {
      * @return mata::Word 
      */
     mata::Word get_mata_word_zstring(const zstring& word);
+
+    /**
+     * @brief Create a vector of inclusions of the form left_sides[i] ⊆ right_sides[i] for all i.
+     * 
+     * Assumes that @p left_sides and @p right_sides have the same size.
+     */
+    std::vector<Predicate> create_inclusions_from_multiple_sides(const std::vector<std::vector<BasicTerm>>& left_sides, const std::vector<std::vector<BasicTerm>>& right_sides);
 }
 
 size_t bin_search_leftmost(const std::vector<mata::nfa::State>& haystack, mata::nfa::State needle);

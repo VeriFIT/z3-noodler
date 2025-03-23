@@ -36,7 +36,7 @@ namespace smt::noodler {
             return {};
         }
 
-        zstring get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) override;
+        zstring get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) override;
 
         /**
          * @brief Get the length sensitive variables
@@ -66,7 +66,7 @@ namespace smt::noodler {
             return {};
         }
 
-        zstring get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) override;
+        zstring get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) override;
 
         /**
          * @brief Get the length sensitive variables

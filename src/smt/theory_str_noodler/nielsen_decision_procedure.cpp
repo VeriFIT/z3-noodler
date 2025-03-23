@@ -322,11 +322,11 @@ namespace smt::noodler {
                     break;
                 }
             }
-            std::vector<Concat> sides({
-                Concat(params[0].begin()+i, params[0].begin() + left + 1),
-                Concat(params[1].begin()+i, params[1].begin() + right + 1)
-            });
-            ret.add_predicate(Predicate(PredicateType::Equation, sides));
+            ret.add_predicate(
+                Predicate::create_equation(
+                    Concat(params[0].begin()+i, params[0].begin() + left + 1),
+                    Concat(params[1].begin()+i, params[1].begin() + right + 1)
+                ));
         }
         return ret;
     }
@@ -667,9 +667,9 @@ namespace smt::noodler {
         return false;
     }
 
-    zstring NielsenDecisionProcedure::get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    zstring NielsenDecisionProcedure::get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
         if(!this->model_handler.is_initialized()) {
-            this->model_handler.compute_model(get_arith_model_of_var);
+            this->model_handler.compute_model(arith_model);
         }
         return this->model_handler.get_var_model(var);
     }
@@ -711,9 +711,9 @@ namespace smt::noodler {
      * The assignments are stored in this->model.
      * 
      * @param generator Model generator
-     * @param get_arith_model_of_var LIA assignment of variables
+     * @param arith_model LIA assignment of variables
      */
-    void NielsenModel::generate_submodel(const ModelGenerator& generator, const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    void NielsenModel::generate_submodel(const ModelGenerator& generator, const std::map<BasicTerm,rational>& arith_model) {
         // assumed to be called after initialize_model()
         for(const ModelLabel& model_label : generator) {
             // we are processing rule x -> eps; all variables are already set to eps
@@ -733,7 +733,7 @@ namespace smt::noodler {
                 }
                 // repetite the string
                 if(model_label.repetition_var.is_variable()) {
-                    rational repetitions = get_arith_model_of_var(model_label.repetition_var);
+                    rational repetitions = arith_model.at(model_label.repetition_var);
                     zstring base = str_concat;
                     str_concat = "";
                     for(rational i = rational(0); i < repetitions; i++) {
@@ -745,10 +745,10 @@ namespace smt::noodler {
         }
     }
 
-    void NielsenModel::compute_model(const std::function<rational(BasicTerm)>& get_arith_model_of_var) {
+    void NielsenModel::compute_model(const std::map<BasicTerm,rational>& arith_model) {
         initialize_model();
         for(const ModelGenerator& gen : this->graph_generators) {
-            generate_submodel(gen, get_arith_model_of_var);
+            generate_submodel(gen, arith_model);
         }
     }
 

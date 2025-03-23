@@ -380,12 +380,7 @@ namespace smt::noodler::ca {
                     BasicTerm literal_handle = util::mk_noodler_var_fresh("literal");  // Unique suffix is added, no need to add anything to "literal"
                     literal_table.emplace(concat_term, literal_handle);
                     new_concat.push_back(literal_handle);
-
-                    // @Optimize: Maybe we could construct the automaton faster by a specialized construction since
-                    //            we know it is just a literal (no Kleene stars etc.)
-                    mata::nfa::Nfa aut;
-                    mata::parser::create_nfa(&aut, concat_term.get_name().encode());
-                    assignment[literal_handle] = std::make_shared<mata::nfa::Nfa>(aut);
+                    assignment[literal_handle] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(concat_term.get_name()));
                 }
             } else {
                 new_concat.push_back(concat_term);

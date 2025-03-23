@@ -12,110 +12,172 @@ namespace smt::noodler {
 
     //----------------------------------------------------------------------------------------------------------------------------------
 
-    class GraphNode {
+    class FormulaGraphNode {
     public:
-        GraphNode() = default;
-        explicit GraphNode(const Predicate& predicate) : node_predicate(predicate) {}
+        FormulaGraphNode() = delete;
+        explicit FormulaGraphNode(Predicate predicate, bool is_reversed = false) : node_predicate(predicate), reversed(is_reversed) {
+            SASSERT(predicate.is_transducer() || predicate.is_equation());
+        }
 
-        void set_predicate(const Predicate& predicate) { this->node_predicate = predicate; }
-        [[nodiscard]] Predicate& get_predicate() { return node_predicate; }
+        /**
+         * @brief Get the predicate of this node (without reversing)
+         */
         [[nodiscard]] const Predicate& get_predicate() const { return node_predicate; }
 
-        struct HashFunction {
-            size_t operator()(const GraphNode& graph_node) const {
-                return Predicate::HashFunction()(graph_node.node_predicate);
+        /**
+         * @brief Get the "real" predicate represented by this node, taking into account whether it is reversed
+         */
+        [[nodiscard]] Predicate get_real_predicate() const {
+            if (!is_reversed()) {
+                return node_predicate;
+            } else {
+                return node_predicate.get_switched_sides_predicate();
             }
-        };
-
-        [[nodiscard]] bool equals(const GraphNode& other) const {
-            return this->node_predicate.strong_equals(other.node_predicate);
         }
+        [[nodiscard]] bool is_reversed() const { return reversed; }
+
+        /**
+         * @brief Get the "real" left side of this node, taking into account whether it is reversed
+         */
+        [[nodiscard]] const std::vector<BasicTerm>& get_real_left_side() const {
+            if (node_predicate.is_transducer()) {
+                // for trasnducer, left side is output
+                if (!is_reversed()) {
+                    return node_predicate.get_output();
+                } else {
+                    return node_predicate.get_input();
+                }
+            } else {
+                // for inclusions, left side is left side
+                if (!is_reversed()) {
+                    return node_predicate.get_left_side();
+                } else {
+                    return node_predicate.get_right_side();
+                }
+            }
+        }
+
+        /**
+         * @brief Get the "real" right side of this node, taking into account whether it is reversed
+         */
+        [[nodiscard]] const std::vector<BasicTerm>& get_real_right_side() const {
+            if (node_predicate.is_transducer()) {
+                // for predicate, right side is input
+                if (!is_reversed()) {
+                    return node_predicate.get_input();
+                } else {
+                    return node_predicate.get_output();
+                }
+            } else  {
+                // for inclusions, right side is right side
+                if (!is_reversed()) {
+                    return node_predicate.get_right_side();
+                } else {
+                    return node_predicate.get_left_side();
+                }
+            }
+        }
+
+        /**
+         * @brief Checks if this node is reversion of @p other node
+         */
+        [[nodiscard]] bool is_reverse_of(const FormulaGraphNode& other) const {
+            return (node_predicate == other.node_predicate && reversed != other.reversed);
+        }
+
+        /**
+         * @brief Get the reversed node of this node
+         */
+        [[nodiscard]] FormulaGraphNode get_reversed() const {
+            return FormulaGraphNode(get_predicate(), !reversed);
+        }
+
+        [[nodiscard]] std::string print() const {
+            // joining BasicTerm in the given vector with str
+            auto join = [&](const std::vector<BasicTerm>& vec, const std::string& str) -> std::string {
+                if(vec.empty()) return "";
+                std::string ret = vec[0].to_string();
+                for(size_t i = 1; i < vec.size(); i++) {
+                    ret += str + vec[i].to_string();
+                }
+                return ret;
+            };
+
+            std::ostringstream output;
+            output << join(get_real_left_side(), " ");
+            if (node_predicate.is_equation()) {
+                // inclusion
+                output << " ⊆ " << join(get_real_right_side(), " ");
+            } else {
+                //transducer, we name them based on the raw pointer
+                output << " = T" << node_predicate.get_transducer().get();
+                if (is_reversed()) {
+                    output << "^-1";
+                }
+                output << "(" << join(get_real_right_side(), " ") << ")";
+            }
+            return output.str();
+        }
+
+        auto operator<=>(const FormulaGraphNode& other) const = default;
 
     private:
         Predicate node_predicate;
+        bool reversed = false;
+    }; // Class FormulaGraphNode.
 
-        // TODO: Add additional attributes such as cost, etc.
-    }; // Class GraphNode.
-
-    static bool operator==(const GraphNode& lhs, const GraphNode& rhs) { return lhs.equals(rhs); }
-    static bool operator!=(const GraphNode& lhs, const GraphNode& rhs) { return !(lhs == rhs); }
-    static bool operator<(const GraphNode& lhs, const GraphNode& rhs) {
-        if (lhs.get_predicate() < rhs.get_predicate()) {
-            return true;
-        }
-        return false;
-    }
-    static bool operator>(const GraphNode& lhs, const GraphNode& rhs) { return !(lhs < rhs); }
-
-    //----------------------------------------------------------------------------------------------------------------------------------
-
-
-    class Graph {
+    class FormulaGraph {
     public:
-        using Nodes = std::unordered_set<std::shared_ptr<GraphNode>>;
-        using Edges = std::unordered_map<std::shared_ptr<GraphNode>, Nodes>;
+        using Nodes = std::vector<FormulaGraphNode>;
+        using NodeSet = std::set<FormulaGraphNode>;
+        using Edges = std::map<FormulaGraphNode,NodeSet>;
     private:
         Nodes nodes;
         Edges edges;
         Edges inverse_edges;
-        static const Nodes empty_nodes;
+        static const NodeSet empty_nodes;
         // set of nodes that are NOT on some cycle
         // it is guaranteed to be correct ONLY after creating inclusion graph???
-        std::unordered_set<std::shared_ptr<GraphNode>> nodes_not_on_cycle;
-
-        void remove_edge_from_edges(std::shared_ptr<GraphNode> source, std::shared_ptr<GraphNode> target) {
-            if (edges.count(source) == 0) {
-                return;
-            }
-
-            Nodes &source_edges = edges.at(source);
-            source_edges.erase(target);
-            if (source_edges.empty()) {
-                edges.erase(source);
-            }
-        }
-
-        void remove_edge_from_inverse_edges(std::shared_ptr<GraphNode> source, std::shared_ptr<GraphNode> target) {
-            if (inverse_edges.count(target) == 0) {
-                return;
-            }
-
-            Nodes &target_edges = inverse_edges.at(target);
-            target_edges.erase(source);
-            if (target_edges.empty()) {
-                inverse_edges.erase(target);
-            }
-        }
+        NodeSet nodes_not_on_cycle;
 
     public:
 
         const Nodes& get_nodes() const { return nodes; }
 
-        void add_edge(std::shared_ptr<GraphNode> source, std::shared_ptr<GraphNode> target) {
+        bool contains_node(const FormulaGraphNode& node) const {
+            for (const FormulaGraphNode& node_of_graph : nodes) {
+                if (node == node_of_graph) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void add_edge(const FormulaGraphNode& source, const FormulaGraphNode& target) {
             edges[source].insert(target);
             inverse_edges[target].insert(source);
         }
 
-        void remove_edge(std::shared_ptr<GraphNode> source, std::shared_ptr<GraphNode> target) {
-            remove_edge_from_edges(source, target);
-            remove_edge_from_inverse_edges(source, target);
+        void remove_edge(const FormulaGraphNode& source, const FormulaGraphNode& target) {
+            edges[source].erase(target);
+            inverse_edges[target].erase(source);
         }
 
-        void remove_edges_from(std::shared_ptr<GraphNode> source) {
-            for (const auto &target : edges[source]) {
-                remove_edge_from_inverse_edges(source, target);
+        void remove_edges_from(const FormulaGraphNode& source) {
+            for (const FormulaGraphNode& target : get_edges_from(source)) {
+                inverse_edges[target].erase(source);
             }
             edges.erase(source);
         }
 
-        void remove_edges_to(std::shared_ptr<GraphNode> target) {
-            for (auto& source: get_edges_to(target)) {
-                remove_edge_from_edges(source, target);
+        void remove_edges_to(const FormulaGraphNode& target) {
+            for (const FormulaGraphNode& source : get_edges_to(target)) {
+                edges[source].erase(target);
             }
             inverse_edges.erase(target);
         }
 
-        void remove_edges_with(std::shared_ptr<GraphNode> node) {
+        void remove_edges_with(const FormulaGraphNode& node) {
             remove_edges_from(node);
             remove_edges_to(node);
         }
@@ -135,56 +197,51 @@ namespace smt::noodler {
 
         const Edges& get_edges() const { return edges; }
 
-        const Nodes& get_edges_from(std::shared_ptr<GraphNode> source) {
-            if (edges.count(source) != 0) {
+        const NodeSet& get_edges_from(const FormulaGraphNode& source) const {
+            SASSERT(contains_node(source));
+            if (edges.contains(source)) {
                 return edges.at(source);
             } else {
                 return empty_nodes;
             }
         }
 
-        const Nodes& get_edges_to(std::shared_ptr<GraphNode> target) const {
-            if (inverse_edges.count(target) != 0) {
+        const NodeSet& get_edges_to(const FormulaGraphNode& target) const {
+            SASSERT(contains_node(target));
+            if (inverse_edges.contains(target)) {
                 return inverse_edges.at(target);
             } else {
                 return empty_nodes;
             }
         }
 
-        std::shared_ptr<GraphNode> get_node(const Predicate& predicate) {
-            auto node = std::find_if(nodes.begin(), nodes.end(), [&predicate](const std::shared_ptr<GraphNode> &el){ return (el->get_predicate().strong_equals(predicate));});
-            if (node == nodes.end()) { return nullptr; }
-            return *node;
+        /**
+         * @brief Adds node with @p predicate to graph (even if a node with such predicate exists in graph).
+         * 
+         * @return The node that was added 
+         */
+        const FormulaGraphNode& add_node(const Predicate& predicate, bool is_reversed = false) {
+            nodes.push_back(FormulaGraphNode(predicate, is_reversed));
+            return nodes.back();
         }
 
         /**
-         * @brief adds node with predicate to graph (even if a node with such predicate exists in graph)
-         *
-         * @return the newly added node
+         * @brief Removes node from the graph
+         * 
+         * Invalidates iterator in nodes.
          */
-        std::shared_ptr<GraphNode> add_node(const Predicate& predicate) {
-            // TODO check if added node already does not exists??? by calling get_node?
-            std::shared_ptr<GraphNode> new_node = std::make_shared<GraphNode>(predicate);
-            nodes.insert(new_node);
-            return new_node;
-        }
-
-        /**
-         * @brief adds node with predicate to graph (even if a node with such predicate exists in graph)
-         *
-         * @return the newly added node
-         */
-        std::shared_ptr<GraphNode> add_node(const std::vector<BasicTerm> &left_side, const std::vector<BasicTerm> &right_side) {
-            return add_node(Predicate(PredicateType::Equation, std::vector<std::vector<BasicTerm>> {left_side, right_side}));
-        }
-
-        void remove_node(const std::shared_ptr<GraphNode> node) {
+        void remove_node(const FormulaGraphNode& node) {
             remove_edges_with(node);
-            nodes.erase(node);
+            for (auto iter = nodes.begin(); iter != nodes.end(); ++iter) {
+                if (*iter == node) {
+                    nodes.erase(iter);
+                    return;
+                }
+            }
         }
 
-        bool is_on_cycle(const std::shared_ptr<GraphNode> &node) {
-            assert(nodes.count(node) > 0);
+        bool is_on_cycle(const FormulaGraphNode& node) const {
+            SASSERT(contains_node(node));
             return (nodes_not_on_cycle.count(node) == 0);
         }
 
@@ -197,8 +254,8 @@ namespace smt::noodler {
             return this->nodes.size() != this->nodes_not_on_cycle.size();
         }
 
-        void set_is_on_cycle(const std::shared_ptr<GraphNode> &node, bool is_on_cycle) {
-            assert(nodes.count(node) > 0);
+        void set_is_on_cycle(const FormulaGraphNode& node, bool is_on_cycle) {
+            SASSERT(contains_node(node));
             if (!is_on_cycle) {
                 nodes_not_on_cycle.insert(node);
             }
@@ -207,28 +264,44 @@ namespace smt::noodler {
         // adds edges so that inclusions x and y where left side of x shares variable with right side of y have edge from x to y
         void add_inclusion_graph_edges();
 
-        // makes a deep copy of the garph, i.e. returned graph is semantically same as this graph, but the pointers to nodes are different
-        Graph deep_copy() const;
-        // node_mapping - maps pointers of this graph into pointers of the returned graph (i.e. the same inclusion is mapped to the same inclusion)
-        Graph deep_copy(std::unordered_map<std::shared_ptr<GraphNode>, std::shared_ptr<GraphNode>> &node_mapping) const;
+        /**
+         * @brief Create a simplified splitting graph for @p formula
+         * 
+         * The set of nodes will have the same order as the predicates in the formula
+         * where reversed node will always follow the normal one.
+         * 
+         * Assumes that formula does not contain same equalities (with swapped sides).
+         * 
+          * @param formula must contain only equations and transducers
+          * @return splitting graph
+          */
+        static FormulaGraph create_simplified_splitting_graph(const Formula& formula);
 
-        // substitutes all vars in left/right sides in nodes based on the substitution_map and merge nodes that become same
-        // assumes that there are no edges in the graph
-        // in out_deleted_nodes there will be nodes that were deleted, because of merging
-        void substitute_vars(const std::unordered_map<BasicTerm, std::vector<BasicTerm>> &substitution_map, std::unordered_set<std::shared_ptr<GraphNode>> &out_deleted_nodes);
+        /**
+         * @brief Create an inclusion graph from splitting graph
+         */
+        static FormulaGraph create_inclusion_graph(FormulaGraph& simplified_splitting_graph);
 
-        // all these assume that formula does not contain same equalities
-        static Graph create_inclusion_graph(const Formula& formula);
-        static Graph create_inclusion_graph(const Formula& formula, std::deque<std::shared_ptr<GraphNode>> &out_node_order);
-        static Graph create_simplified_splitting_graph(const Formula& formula);
-        static Graph create_inclusion_graph(Graph& simplified_splitting_graph, std::deque<std::shared_ptr<GraphNode>> &out_node_order);
+
+        /**
+         * @brief Create an inclusion graph for @p formula
+         * 
+         * The set of nodes will be ordered compatible with the topological
+         * order of the strongly connected components.
+         * 
+         * Assumes that formula does not contain same equalities (with swapped sides).
+         * 
+         * @param formula must contain only equations and transducers
+         * @return the inclusion graph 
+         */
+        static FormulaGraph create_inclusion_graph(const Formula& formula);
 
         /**
          * Print the inclusion graph in a DOT format.
          * @param output_stream Stream to print the graph to.
          */
         void print_to_dot(std::ostream &output_stream) const;
-    }; // Class Graph.
+    }; // Class FormulaGraph.
 }
 
 

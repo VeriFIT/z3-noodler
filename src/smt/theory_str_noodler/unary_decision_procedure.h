@@ -40,10 +40,10 @@ namespace smt::noodler {
          * generated as a^n, where n is LIA length model of @p var. 
          * 
          * @param var Variable
-         * @param get_arith_model_of_var Length assignment to variables
+         * @param arith_model Length assignment to variables
          * @return zstring String assignment
          */
-        zstring get_model(BasicTerm var, const std::function<rational(BasicTerm)>& get_arith_model_of_var) override;
+        zstring get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) override;
     };
 }
 

@@ -190,13 +190,18 @@ namespace smt::noodler {
     //----------------------------------------------------------------------------------------------------------------------------------
 
     /**
-     * @brief Representation of a variable in an equation. Var is the variable name, eq_index
-     * is the equation index, and position represents the position of the variable in the equation.
-     * Negative value means left side, positive right side.
+     * @brief Representation of a variable/literal in a predicate
      */
     struct VarNode {
-        BasicTerm term;
-        size_t pred_index;
+        BasicTerm term; /// variable or literal
+        size_t pred_index; /// index of predicate in which term occurs
+        /**
+         * @brief Position of term in the predicate with index pred_index
+         * 
+         * The absolute value denotes the position of the side (starting with 1 not 0),
+         * where negative values means it occurs in params[0] (left side for (dis)eqautions)
+         * and positive means in params[1] (right side for (dis)equations)
+         */
         int position;
 
         VarNode(BasicTerm term, const size_t eq_index, const int position): term{ std::move(term) }, pred_index{ eq_index }, position{ position } {}
@@ -209,24 +214,23 @@ namespace smt::noodler {
             return term == other.term && pred_index == other.pred_index && position == other.position;
         }
 
+        bool operator<(const VarNode& other) const {
+            if(position == other.position) {
+                if(pred_index == other.pred_index) {
+                    if(term == other.term) return false;
+                    return term < other.term;
+                }
+                return pred_index < other.pred_index;
+            }
+            return position < other.position;
+        }
+
         std::string to_string() const {
             std::string ret;
             ret += "( " + term.to_string() + ";" + std::to_string(pred_index) + ";" + std::to_string(position) + ")";
             return ret;
         };
     };
-
-    inline bool operator<(const VarNode& lhs, const VarNode& rhs) {
-        if(lhs.position == rhs.position) {
-            if(lhs.pred_index == rhs.pred_index) {
-                if(lhs.term == rhs.term) return false;
-                return lhs.term < rhs.term;
-            }
-            return lhs.pred_index < rhs.pred_index;
-        }
-        return lhs.position < rhs.position;
-    }
-
     //----------------------------------------------------------------------------------------------------------------------------------
 
     using VarMap = std::map<BasicTerm, std::set<VarNode>>;
@@ -268,6 +272,15 @@ namespace smt::noodler {
 
         std::set<VarNode> get_var_positions(const Predicate& pred, size_t index, bool incl_lit=false) const;
         void update_var_positions_side(const std::vector<BasicTerm>& side, std::set<VarNode>& res, size_t index, bool incl_lit=false, int mult=1) const;
+
+        /// Returns the side of the predicate denoted by the position of @p var_node
+        const Concat& get_side_of_var_node(const VarNode& var_node) const {
+            if (var_node.position > 0) {
+                return get_predicate(var_node.pred_index).get_params()[1];
+            } else {
+                return get_predicate(var_node.pred_index).get_params()[0];
+            }
+        }
 
         bool single_occurr(const std::set<BasicTerm>& items) const;
         bool is_side_regular(const Predicate& p, Predicate& out) const;
