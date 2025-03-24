@@ -1669,6 +1669,8 @@ namespace smt::noodler {
             return l_false;
         }
 
+        prep_handler.simplify_transducers();
+
         // So-far just lightweight preprocessing
         prep_handler.remove_trivial();
         prep_handler.reduce_diseqalities();

@@ -1732,6 +1732,91 @@ namespace smt::noodler {
         STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
     }
 
+    void FormulaPreprocessor::simplify_transducers() {
+        STRACE("str-prep", tout << "Preprocessing step - simplify_transducers\n";);
+
+        auto is_var_usable_to_simplify_transducer = [this](const BasicTerm& var, size_t output_transducer_id, size_t& other_pred_id) {
+            const auto& occurences = this->formula.get_var_occurr(var);
+            if (occurences.size() != 2) { return false; } // var must occur exactly once in output_transducer and once in the found pred
+            auto it = occurences.begin();
+            other_pred_id = it->pred_index;
+            if (other_pred_id == output_transducer_id) {
+                ++it;
+                other_pred_id = it->pred_index;
+                if (other_pred_id == output_transducer_id) { return false; } // var cannot occur twice in same transducer
+            }
+            return true;
+            // bool found_var_in_some_predicate = false;
+            // for (const auto& pred : this->formula.get_predicates()) {
+            //     if (pred.second.contains(var)) {
+            //         if (found_var_in_some_predicate) { return false; } // var can be only in one transducer
+            //         if (!pred.second.is_transducer()) { return false; } // var can only be in a transducer
+            //         if (pred.second.get_input_set().contains(var)) { return false; } // var must be only in output
+
+            //         found_var_in_some_predicate = true;
+            //         const std::vector<BasicTerm>& output = pred.second.get_output();
+            //         if (output.size() != 1) { return false; } // var must be the only output
+            //         if (output[0] != var) { return false; } // var must be the output
+            //         found_transducer_id = pred.first;
+            //     }
+            // }
+            // return found_var_in_some_predicate;
+        };
+
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (const auto& pred : this->formula.get_predicates()) {
+                if (!pred.second.is_transducer()) { continue; }
+                const std::vector<BasicTerm>& output = pred.second.get_output();
+                if (output.size() == 1) {
+                    BasicTerm output_var = output[0];
+                    if (this->len_variables.contains(output_var)) { continue; }
+                    size_t replacing_pred_id;
+                    if (is_var_usable_to_simplify_transducer(output_var, pred.first, replacing_pred_id)) {
+                        const Predicate& replacing_pred = this->formula.get_predicate(replacing_pred_id);
+
+                        if (replacing_pred.is_transducer()) {
+                            const std::vector<BasicTerm>& input = replacing_pred.get_input();
+                            if (input.size() != 1) { continue; } // var must be the only output
+                            if (input[0] != output_var) { continue; } // var must be the output
+                            // the new transducer is composed by intersecting on output_var, i.e. on input tape of replacing_pred with output tape of pred
+                            mata::nft::Nft new_transducer{ mata::nft::compose(*replacing_pred.get_transducer(), *pred.second.get_transducer(), 0, 1) };
+                            this->formula.add_predicate(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(new_transducer), pred.second.get_input(), replacing_pred.get_output()));
+                            this->formula.remove_predicate(pred.first);
+                            this->formula.remove_predicate(replacing_pred_id);
+                            changed = true;
+                            break;
+                        } else if (replacing_pred.is_equation()) {
+                            if (replacing_pred.get_right_side().size() == 1 && replacing_pred.get_right_side()[0] == output_var) {
+                                this->formula.add_predicate(Predicate::create_transducer(pred.second.get_transducer(), pred.second.get_input(), replacing_pred.get_left_side()));
+                                this->formula.remove_predicate(pred.first);
+                                this->formula.remove_predicate(replacing_pred_id);
+                                changed = true;
+                                break;
+                            } else if (replacing_pred.get_left_side().size() == 1 && replacing_pred.get_left_side()[0] == output_var) {
+                                this->formula.add_predicate(Predicate::create_transducer(pred.second.get_transducer(), pred.second.get_input(), replacing_pred.get_right_side()));
+                                this->formula.remove_predicate(pred.first);
+                                this->formula.remove_predicate(replacing_pred_id);
+                                changed = true;
+                                break;
+                            }
+                        }
+
+                        // assert(replacing_transducer.get_output().size() == 1 && replacing_transducer.get_output()[0] == input_var);
+                        // mata::nft::Nft new_transducer{ mata::nft::compose(*replacing_transducer.get_transducer(), *pred.second.get_transducer(), 0, 1) };
+                        // this->formula.add_predicate(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(new_transducer), replacing_transducer.get_input(), pred.second.get_output()));
+                        // this->formula.remove_predicate(pred.first);
+                        // this->formula.remove_predicate(replacing_transducer_id);
+                        // changed = true;
+                        // break;
+                    }
+                }
+            }
+        }
+        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+    }
+
     /**
      * @brief Check if it is possible to unify L and R for not(contains(L,R)).
      * 
@@ -1858,7 +1943,7 @@ namespace smt::noodler {
         for (const auto& len_var : len_variables) {
             res << " " << len_var;
         }
-        res << "Current conversion vars:";
+        res << "\nCurrent conversion vars:";
         for (const auto& conv_var : conversion_vars) {
             res << " " << conv_var;
         }

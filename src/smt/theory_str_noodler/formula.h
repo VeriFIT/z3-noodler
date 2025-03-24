@@ -568,6 +568,16 @@ namespace smt::noodler {
         /// get set of only variables on @p side of (dis)equation
         [[nodiscard]] std::set<BasicTerm> get_side_vars(EquationSideType side) const;
 
+        /// check if the predicate contains @p bt
+        [[nodiscard]] bool contains(const BasicTerm& bt) const {
+            for (const std::vector<BasicTerm>& param : params) {
+                for (const BasicTerm& bt_in_param : param) {
+                    if (bt_in_param == bt) { return true; }
+                }
+            }
+            return false;
+        }
+
         /**
          * @brief Check if the predicate contains only constant strings.
          */
