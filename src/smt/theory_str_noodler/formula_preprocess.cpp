@@ -1782,6 +1782,7 @@ namespace smt::noodler {
                             if (input[0] != output_var) { continue; } // var must be the output
                             // the new transducer is composed by intersecting on output_var, i.e. on input tape of replacing_pred with output tape of pred
                             mata::nft::Nft new_transducer{ mata::nft::compose(*replacing_pred.get_transducer(), *pred.second.get_transducer(), 0, 1) };
+                            new_transducer = mata::nft::reduce(mata::nft::remove_epsilon(new_transducer).trim()).trim();
                             this->formula.add_predicate(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(new_transducer), pred.second.get_input(), replacing_pred.get_output()));
                             this->formula.remove_predicate(pred.first);
                             this->formula.remove_predicate(replacing_pred_id);
