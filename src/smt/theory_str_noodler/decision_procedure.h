@@ -227,7 +227,7 @@ namespace smt::noodler {
          * Checks whether @p predicate would be on cycle in the inclusion graph (can overapproximate
          * and say that predicate is on cycle even if it is not).
          */
-        bool is_predicate_on_cycle(const Predicate &predicate) {
+        bool is_predicate_on_cycle(const Predicate &predicate) const {
             return !predicates_not_on_cycle.contains(predicate);
         }
 
@@ -237,15 +237,15 @@ namespace smt::noodler {
          * @param predicate Predicate to add
          * @param is_on_cycle Whether the predicate would be on cycle in the inclusion graph (if not sure, set to true)
          */
-        void add_predicate(const Predicate &predicate, bool is_on_cycle = true) {
-            if (predicate.is_equation()) { // inclusion
-                inclusions.insert(predicate);
-            } else {
-                SASSERT(predicate.is_transducer());
-                transducers.insert(predicate);
-            }
+        void add_predicate(Predicate predicate, bool is_on_cycle = true) {
             if (!is_on_cycle) {
                 predicates_not_on_cycle.insert(predicate);
+            }
+            if (predicate.is_equation()) { // inclusion
+                inclusions.insert(std::move(predicate));
+            } else {
+                SASSERT(predicate.is_transducer());
+                transducers.insert(std::move(predicate));
             }
         }
 
@@ -459,6 +459,15 @@ namespace smt::noodler {
          * If @p replacements is empty, it only deletes dummy symbols from transducers.
          */
         void replace_dummy_symbol_in_transducers_with(std::set<mata::Symbol> replacements);
+
+        std::string DOT_name = "init";
+        std::string set_new_DOT_name() {
+            static size_t DOT_name_counter = 0;
+            DOT_name = std::string("SolvingState") + std::to_string(DOT_name_counter);
+            ++DOT_name_counter;
+            return DOT_name;
+        }
+        std::string print_to_DOT() const;
     };
 
     class DecisionProcedure : public AbstractDecisionProcedure {
@@ -507,6 +516,26 @@ namespace smt::noodler {
 
         void process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state);
         void process_transducer(const Predicate& transducer_to_process, SolvingState& solving_state);
+
+        void push_to_worklist(SolvingState solving_state, bool to_back) {
+            std::string old_DOT_name = solving_state.DOT_name;
+            solving_state.set_new_DOT_name();
+            STRACE("str-noodle-dot", tout << solving_state.print_to_DOT() << std::endl << old_DOT_name << " -> " << solving_state.DOT_name << ";\n");
+            if (to_back) {
+                worklist.push_back(std::move(solving_state));
+            } else {
+                worklist.push_front(std::move(solving_state));
+            }
+        }
+
+        unsigned num_of_popped_elements = 0;
+        SolvingState pop_from_worklist() {
+            SolvingState element_to_process = std::move(worklist.front());
+            worklist.pop_front();
+            STRACE("str-noodle-dot", tout << element_to_process.DOT_name << " -> " << element_to_process.DOT_name << " [penwidth=0,dir=none,label=" << num_of_popped_elements << "];\n";);
+            ++num_of_popped_elements;
+            return element_to_process;
+        }
 
         /**
          * @brief Get the formula encoding lengths of variables based on solution

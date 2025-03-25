@@ -262,44 +262,19 @@ namespace smt::noodler {
     }
 
     std::string Predicate::to_string() const {
-
-        // joining BasicTerm in the given vector with str
-        auto join = [&](const std::vector<BasicTerm>& vec, const std::string& str) -> std::string {
-            if(vec.empty()) return "";
-            std::string ret = vec[0].to_string();
-            for(size_t i = 1; i < vec.size(); i++) {
-                ret += str + vec[i].to_string();
-            }
-            return ret;
-        };
-
-        switch (type) {
-            case PredicateType::Equation: {
-                std::string result{ "Equation: " };
-                result += join(get_left_side(), " ") + " = " + join(get_right_side(), " ");
-                return result;
-            }
-
-            case PredicateType::Inequation: {
-                std::string result{ "Inequation: " };
-                result += join(get_left_side(), " ") + " != " + join(get_right_side(), " ");
-                return result;
-            }
-
-            case PredicateType::NotContains: {
-                std::string result{ "Notcontains: " };
-                result += join(params[0], " ") + " , " + join(params[1], " ");
-                return result;
-            }
-
-            case PredicateType::Transducer: {
-                std::stringstream result;
-                result << "Transducer: " << join(params[1], " ") << " = T" << transducer << "(" << join(params[0], " ") << ")";
-                return result.str();
-            }
+        std::stringstream result;
+        if (is_equation()) {
+            result << "Equation: " << get_left_side() << " = " << get_right_side();
+        } else if (is_inequation()) {
+            result << "Inequation: " << get_left_side() << " != " << get_right_side();
+        } else if (is_not_cont()) {
+            result << "Notcontains: " << get_haystack() << ", " << get_needle();
+        } else if (is_transducer()) {
+            result << "Transducer: " << get_output() << " = T" << transducer << "(" << get_input() << ")";
+        } else {
+            util::throw_error("Unhandled predicate type passed as 'this' to to_string().");
         }
-
-        throw std::runtime_error("Unhandled predicate type passed as 'this' to to_string().");
+        return result.str();
     }
 
     bool Predicate::strong_equals(const Predicate& other) const {
