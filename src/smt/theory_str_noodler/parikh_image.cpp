@@ -1396,4 +1396,32 @@ namespace smt::noodler::parikh {
     LenNode ParikhImageNotContTag::get_offset_var() const {
         return this->offset_var;
     }
+
+    LenNode ParikhImageTransducer::compute_parikh_image() {
+        this->tape_len.clear();
+        LenNode parikhStruct = ParikhImage::compute_parikh_image();
+        LenNode len_formula(LenFormulaType::AND);
+
+        std::vector<LenNode> sum_tapes(this->nft.num_of_levels, LenNode(LenFormulaType::PLUS));
+
+        for(const auto& [trans, var] : get_trans_vars()) {
+            // skip epsilons
+            if(std::get<1>(trans) == mata::nft::EPSILON) {
+                continue;
+            }
+            auto srclvl = this->nft.levels[std::get<0>(trans)];
+            sum_tapes[srclvl].succ.push_back(var);
+        }
+
+        for(size_t i = 0; i < sum_tapes.size(); i++) {
+            this->tape_len.push_back(util::mk_noodler_var_fresh("tape_len"));
+            len_formula.succ.push_back({
+                LenFormulaType::EQ, { this->tape_len[i], sum_tapes[i] }
+            });
+        }
+
+        return LenNode{
+            LenFormulaType::AND, { parikhStruct, len_formula }
+        };
+    }
 }

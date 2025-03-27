@@ -11,6 +11,7 @@
 #include <compare>
 
 #include <mata/nfa/nfa.hh>
+#include <mata/nft/nft.hh>
 #include <mata/nfa/strings.hh>
 #include <mata/nfa/builder.hh>
 
@@ -351,6 +352,34 @@ public:
     LenNode get_not_cont_formula(const Predicate& not_cont);
     LenNode get_offset_var() const;
     LenNode existentially_quantify_all_parikh_vars(LenNode& formula);
+};
+
+/**
+ * @brief Parikh image computation for transducers.
+ * 
+ * This class extends the ParikhImage class to handle transducers (NFTs).
+ * It computes the Parikh image of a transducer, which includes tracking
+ * the lengths of the output tape in addition to the input transitions.
+ */
+class ParikhImageTransducer : public ParikhImage {
+
+private: 
+    mata::nft::Nft nft; ///< The non-deterministic finite transducer (NFT) being analyzed.
+    std::vector<BasicTerm> tape_len {}; ///< Variables representing the lengths of the output tape.
+
+public:
+    /**
+     * @brief Construct a ParikhImageTransducer object.
+     * 
+     * Initializes the ParikhImageTransducer with a given NFT. The underlying NFA
+     * representation of the NFT is used for Parikh image computation.
+     * 
+     * @param nft The non-deterministic finite transducer to analyze.
+     */
+    ParikhImageTransducer(const mata::nft::Nft& nft) 
+        : ParikhImage(nft.to_nfa_copy()), nft(nft) { }
+
+    LenNode compute_parikh_image() override;
 };
 
 }
