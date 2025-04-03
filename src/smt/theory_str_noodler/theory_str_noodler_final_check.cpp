@@ -37,6 +37,7 @@ namespace smt::noodler {
 
         if (last_run_was_sat) {
             // if we returned previously sat, then we should always return sat (final_check_eh should not be called again, but for some reason Z3 calls it)
+            TRACE("str", tout << "Last run was sat on scope level " << scope_with_last_run_was_sat << "\n";);
             if (m_params.m_produce_models) {
                 // we need to add previous axioms, so that z3 arith solver returns correct model
                 add_axiom(sat_length_formula);
@@ -93,6 +94,7 @@ namespace smt::noodler {
             lbool result = run_loop_protection();
             if(result == l_true && !m_params.m_produce_models) { // if we want to produce model, we need the exact solution in dec_proc, so we need to run procedure again
                 last_run_was_sat = true;
+                scope_with_last_run_was_sat = m_scope_level;
                 return FC_DONE;
             } else if (result == l_false) {
                 return FC_CONTINUE;
@@ -1091,6 +1093,7 @@ namespace smt::noodler {
 
     void theory_str_noodler::sat_handling(expr_ref length_formula) {
         last_run_was_sat = true;
+        scope_with_last_run_was_sat = m_scope_level;
         if (m_params.m_produce_models) {
             // If we want to produce models, we would like to limit the lengths more significantly,
             // so that Z3 arith solver does not give us some large numbers (for example it can give 60000
