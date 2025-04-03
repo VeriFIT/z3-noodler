@@ -1424,4 +1424,18 @@ namespace smt::noodler::parikh {
             LenFormulaType::AND, { parikhStruct, len_formula }
         };
     }
+
+    LenNode ParikhImageTransducer::compute_parikh_image_vars(const std::vector<BasicTerm>& tape_vars) {
+        LenNode pi = compute_parikh_image();
+        assert(tape_vars.size() == this->tape_len.size());
+
+        LenNode res(LenFormulaType::AND);
+        for(size_t i = 0; i < tape_vars.size(); i++) {
+            res.succ.push_back({
+                LenFormulaType::EQ, {tape_vars[i], this->tape_len[i]}
+            });
+        }
+        res.succ.push_back(pi);
+        return res;
+    }
 }

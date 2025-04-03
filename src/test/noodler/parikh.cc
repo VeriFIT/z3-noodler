@@ -1051,4 +1051,17 @@ TEST_CASE("Transducers :: simple lengths", "[noodler]") {
         expr_ref result = len_node_to_expr(m, ctx, formula);
         check_lia_model(m, result, {{"tape_len!n4", "2"}, {"tape_len!n5", "1"}});
     }
+
+    SECTION("Simple transducer 3; explicit vars") {
+        mata::nft::Nft nft3{2};
+        nft3.initial = {0};
+        nft3.final = {1};
+        nft3.insert_word_by_parts(0, { {'a', 'b'}, {'b'} } , 1);
+
+        ParikhImageTransducer pi(nft3);
+        LenNode formula = pi.compute_parikh_image_vars({ BasicTerm(BasicTermType::Variable, "x1"), BasicTerm(BasicTermType::Variable, "x2") });
+
+        expr_ref result = len_node_to_expr(m, ctx, formula);
+        check_lia_model(m, result, {{"x1", "2"}, {"x2", "1"}});
+    }
 }

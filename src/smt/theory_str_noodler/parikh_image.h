@@ -379,6 +379,27 @@ public:
     ParikhImageTransducer(const mata::nft::Nft& nft) 
         : ParikhImage(nft.to_nfa_copy()), nft(nft) { }
 
+    /**
+     * @brief Compute the Parikh image of the transducer with tape length variables.
+     * 
+     * This method extends the Parikh image computation to include constraints 
+     * for the lengths of the output tape. It binds the tape length variables 
+     * to the computed tape lengths for each level of the transducer.
+     * 
+     * @param tape_vars Variables representing the lengths of the output tape.
+     * @return LenNode Formula representing the Parikh image with tape length constraints.
+     */
+    LenNode compute_parikh_image_vars(const std::vector<BasicTerm>& tape_vars);
+
+    /**
+     * @brief Compute the Parikh image of the transducer.
+     * 
+     * This method computes the Parikh image of the transducer, including constraints 
+     * for the lengths of the output tape. It calculates the tape lengths for each 
+     * level of the transducer and generates a formula representing the Parikh image.
+     * 
+     * @return LenNode Formula representing the Parikh image of the transducer.
+     */
     LenNode compute_parikh_image() override;
 };
 
