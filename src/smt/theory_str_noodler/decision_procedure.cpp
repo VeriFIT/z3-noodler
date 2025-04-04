@@ -907,9 +907,11 @@ namespace smt::noodler {
                     SASSERT(!vars_on_tapes_of_input_trans.empty() && vars_on_tapes_of_input_trans[0] == transducers[i].get_input()[0]);
                     // we compose Ti and Ti' on input_var, getting transducer output_var = Ti''(input_var, x1, x2, ...., xn)
                     mata::nft::Nft composed_input = mata::nft::compose(invert_trans, input_trans, 1, 0, false); // TODO check if order of tapes in result is correct here
+                    composed_input = mata::nft::invert_levels(composed_input);
                     // we have a transducer output_var = T(y1, y2, ..., ym) computed from previous Tj's, j < i, and we compose here on output_var with Ti''
                     // getting transducer output_var = T'(y1, y2, ..., ym, input_var, x1, x2, ..., xn)
-                    final_trans = mata::nft::compose(final_trans, composed_input, 0, 0, false); // TODO check if order of tapes in result is correct here
+                    final_trans = mata::nft::compose(composed_input, final_trans, composed_input.num_of_levels-1, 0, false); // TODO check if order of tapes in result is correct here
+                    for (size_t i = 0; i < composed_input.num_of_levels-1; ++i) { final_trans = mata::nft::invert_levels(final_trans); }
                     // we had vars_on_tapes = {output_var, y1, y2, ..., ym} we add to it vars_on_tapes_of_input_trans getting
                     //   {output_var, y1, y2, ..., ym, input_var, x1, x2, ..., xn}
                     vars_on_tapes.insert(vars_on_tapes.end(), vars_on_tapes_of_input_trans.begin(), vars_on_tapes_of_input_trans.end());
@@ -939,8 +941,9 @@ namespace smt::noodler {
 
             mata::nft::Nft transducer_reduced = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
 
+            STRACE("str-parikh", tout << "Formula for transducer of size " << transducer_reduced.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
             LenNode parikh_of_transducer = parikh::ParikhImageTransducer(transducer_reduced).compute_parikh_image_vars(vars_on_tapes);
-            STRACE("str-parikh", tout << "Formula for transducer of size " << transducer_reduced.num_of_states() << " with variables " << vars_on_tapes << " is: " << parikh_of_transducer << "\n";);
+            STRACE("str-parikh", tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer);
         }
 
