@@ -649,6 +649,9 @@ namespace smt::noodler {
 
         // inclusions that resulted from preprocessing, we use them to generate model (we can pretend that they were all already refined)
         std::vector<Predicate> inclusions_from_preprocessing;
+
+        // length vars that occur as input/output of some transducer formula
+        std::set<BasicTerm> length_vars_with_transducers;
         
         bool is_model_initialized = false;
         /**
