@@ -353,6 +353,7 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { get_var('x'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
+<<<<<<< HEAD
         auto [formula, precision] = proc.get_lengths();
         REQUIRE(precision == LenNodePrecision::PRECISE);
         CHECK(check_lia_sat(formula) == l_true);
@@ -361,6 +362,9 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         CHECK(check_lia_sat(formula) == l_true);
         formula.succ.back().type = LenFormulaType::NEQ;
         CHECK(check_lia_sat(formula) == l_false);
+=======
+        CHECK_NOTHROW(proc.get_lengths());
+>>>>>>> a93af758203bd161102f6828d66abc7db8469c97
     }
 
     SECTION("sat-simple-transducer-length2", "[nooodler]") {
@@ -375,6 +379,7 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { get_var('y'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
+<<<<<<< HEAD
         auto [formula, precision] = proc.get_lengths();
         REQUIRE(precision == LenNodePrecision::PRECISE);
         CHECK(check_lia_sat(formula) == l_true);
@@ -383,6 +388,9 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         CHECK(check_lia_sat(formula) == l_true);
         formula.succ.back().type = LenFormulaType::NEQ;
         CHECK(check_lia_sat(formula) == l_false);
+=======
+        CHECK_NOTHROW(proc.get_lengths());
+>>>>>>> a93af758203bd161102f6828d66abc7db8469c97
     }
 
     SECTION("sat-simple-transducer-length3", "[nooodler]") {
@@ -397,6 +405,7 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { get_var('y'),  get_var('x'),  get_var('z'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
+<<<<<<< HEAD
         auto [formula, precision] = proc.get_lengths();
         REQUIRE(precision == LenNodePrecision::PRECISE);
         CHECK(check_lia_sat(formula) == l_true);
@@ -405,6 +414,9 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         CHECK(check_lia_sat(formula) == l_true);
         formula.succ.back().type = LenFormulaType::NEQ;
         CHECK(check_lia_sat(formula) == l_false);
+=======
+        CHECK_NOTHROW(proc.get_lengths());
+>>>>>>> a93af758203bd161102f6828d66abc7db8469c97
     }
 
     SECTION("sat-simple-transducer-length4", "[nooodler]") {
@@ -419,6 +431,7 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { get_var('y'),  get_var('x'),  get_var('z'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
+<<<<<<< HEAD
         auto [formula, precision] = proc.get_lengths();
         REQUIRE(precision == LenNodePrecision::PRECISE);
         CHECK(check_lia_sat(formula) == l_true);
@@ -431,5 +444,8 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         CHECK(check_lia_sat(formula) == l_false);
         formula.succ.back().type = LenFormulaType::EQ;
         CHECK(check_lia_sat(formula) == l_true);
+=======
+        CHECK_NOTHROW(proc.get_lengths());
+>>>>>>> a93af758203bd161102f6828d66abc7db8469c97
     }
 }
