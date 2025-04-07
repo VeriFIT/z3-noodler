@@ -2,15 +2,6 @@
 #include "smt/theory_str_noodler/expr_solver.h"
 #include "test_utils.h"
 
-
-#include "ast/rewriter/arith_rewriter.h"
-#include "ast/bv_decl_plugin.h"
-#include "ast/ast_pp.h"
-#include "ast/reg_decl_plugins.h"
-#include "ast/rewriter/th_rewriter.h"
-#include "model/model.h"
-#include "parsers/smt2/smt2parser.h"
-
 using namespace smt::noodler;
 using namespace smt::noodler::parikh;
 using namespace smt::noodler::ca;
@@ -949,69 +940,13 @@ TEST_CASE("Disequations :: check assert_register_values", "[noodler]") {
     check_register_stores_for_level(3, tag_automaton, formula_generator, register_values_formula.succ[3]);
 }
 
-/**
- * Verifies that a given Z3 formula is satisfiable and matches the expected assignments.
- * 
- * @param m The AST manager used for managing Z3 expressions.
- * @param formula The Z3 formula to be checked.
- * @param assgn A map of variable names to their expected values in the model.
- */
-void check_lia_model(ast_manager& m, expr* formula, const std::map<std::string, std::string>& assgn) {
-    smt_params str_params{};
-    int_expr_solver solver(m, str_params);
-
-    // Check if the formula is satisfiable
-    REQUIRE(solver.check_sat(formula) == l_true);
-
-    model_ref mdl;
-    solver.m_kernel.get_model(mdl);
-    unsigned num = mdl->get_num_constants();
-
-    // Iterate through the model's constants and verify assignments
-    for (unsigned i = 0; i < num; i++) {
-        func_decl * c = mdl->get_constant(i);
-        expr * c_i    = mdl->get_const_interp(c);
-
-        auto it = assgn.find(c->get_name().str());
-        if(it != assgn.end()) {
-            std::ostringstream buffer;
-            buffer << mk_pp(c_i, m);
-            // Ensure the model's value matches the expected assignment
-            REQUIRE(it->second == buffer.str());
-        }
-    }
-}
-
-/**
- * Converts a LenNode formula into a Z3 expression.
- * 
- * @param m The AST manager used for managing Z3 expressions.
- * @param ctx The command context for parsing SMT-LIB2 formulas.
- * @param formula The LenNode formula to be converted.
- * @return A Z3 expression representing the given LenNode formula.
- */
-expr_ref len_node_to_expr(ast_manager& m, cmd_context& ctx, const LenNode& formula) {
-    expr_ref result(m);
-    std::ostringstream buffer;
-
-    // Serialize the LenNode formula into SMT-LIB2 format
-    write_len_formula_as_smt2(formula, buffer);
-
-    std::istringstream is(buffer.str());
-    // Parse the SMT-LIB2 formula into the Z3 context
-    REQUIRE(parse_smt2_commands(ctx, is));
-    REQUIRE(!ctx.assertions().empty());
-
-    // Retrieve the parsed formula as an expr_ref
-    result = ctx.assertions().get(0);
-    return result;
-}
-
 TEST_CASE("Transducers :: simple lengths", "[noodler]") {
    
     ast_manager m;
     reg_decl_plugins(m);
     cmd_context ctx(false, &m);
+    std::ostringstream trash;
+    ctx.set_regular_stream(trash);
 
     SECTION("Simple transducer 1") {
         mata::nft::Nft nft1{2};

@@ -8,6 +8,13 @@
 #include "smt/theory_str_noodler/decision_procedure.h"
 #include "smt/theory_str_noodler/theory_str_noodler.h"
 #include "ast/reg_decl_plugins.h"
+#include "ast/rewriter/arith_rewriter.h"
+#include "ast/bv_decl_plugin.h"
+#include "ast/ast_pp.h"
+#include "ast/reg_decl_plugins.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "model/model.h"
+#include "parsers/smt2/smt2parser.h"
 
 #ifndef Z3_TEST_UTILS_H
 #define Z3_TEST_UTILS_H
@@ -83,6 +90,75 @@ inline std::map<BasicTerm, expr_ref> create_var_map(const std::unordered_set<Bas
     }
 
     return ret;
+}
+
+/**
+ * Verifies that a given Z3 formula is satisfiable and matches the expected assignments.
+ * 
+ * @param m The AST manager used for managing Z3 expressions.
+ * @param formula The Z3 formula to be checked.
+ * @param assgn A map of variable names to their expected values in the model.
+ */
+inline void check_lia_model(ast_manager& m, expr* formula, const std::map<std::string, std::string>& assgn) {
+    smt_params str_params{};
+    int_expr_solver solver(m, str_params);
+
+    // Check if the formula is satisfiable
+    REQUIRE(solver.check_sat(formula) == l_true);
+
+    model_ref mdl;
+    solver.m_kernel.get_model(mdl);
+    unsigned num = mdl->get_num_constants();
+
+    // Iterate through the model's constants and verify assignments
+    for (unsigned i = 0; i < num; i++) {
+        func_decl * c = mdl->get_constant(i);
+        expr * c_i    = mdl->get_const_interp(c);
+
+        auto it = assgn.find(c->get_name().str());
+        if(it != assgn.end()) {
+            std::ostringstream buffer;
+            buffer << mk_pp(c_i, m);
+            // Ensure the model's value matches the expected assignment
+            REQUIRE(it->second == buffer.str());
+        }
+    }
+}
+
+/**
+ * Converts a LenNode formula into a Z3 expression.
+ * 
+ * @param m The AST manager used for managing Z3 expressions.
+ * @param ctx The command context for parsing SMT-LIB2 formulas.
+ * @param formula The LenNode formula to be converted.
+ * @return A Z3 expression representing the given LenNode formula.
+ */
+inline expr_ref len_node_to_expr(ast_manager& m, cmd_context& ctx, const LenNode& formula) {
+    expr_ref result(m);
+    std::ostringstream buffer;
+
+    // Serialize the LenNode formula into SMT-LIB2 format
+    write_len_formula_as_smt2(formula, buffer);
+
+    std::istringstream is(buffer.str());
+    // Parse the SMT-LIB2 formula into the Z3 context
+    REQUIRE(parse_smt2_commands(ctx, is));
+    REQUIRE(!ctx.assertions().empty());
+
+    // Retrieve the parsed formula as an expr_ref
+    result = ctx.assertions().get(0);
+    return result;
+}
+
+inline lbool check_lia_sat(const LenNode& formula) {
+    ast_manager ast_m;
+    reg_decl_plugins(ast_m);
+    cmd_context cmd_ctx(false, &ast_m);
+    std::ostringstream trash;
+    cmd_ctx.set_regular_stream(trash);
+    smt_params str_params{};
+    int_expr_solver solver(ast_m, str_params);
+    return solver.check_sat(len_node_to_expr(ast_m, cmd_ctx, formula));
 }
 
 #endif //Z3_TEST_UTILS_H
