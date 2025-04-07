@@ -11,6 +11,7 @@
 #include <compare>
 
 #include <mata/nfa/nfa.hh>
+#include <mata/nft/nft.hh>
 #include <mata/nfa/strings.hh>
 #include <mata/nfa/builder.hh>
 
@@ -351,6 +352,55 @@ public:
     LenNode get_not_cont_formula(const Predicate& not_cont);
     LenNode get_offset_var() const;
     LenNode existentially_quantify_all_parikh_vars(LenNode& formula);
+};
+
+/**
+ * @brief Parikh image computation for transducers.
+ * 
+ * This class extends the ParikhImage class to handle transducers (NFTs).
+ * It computes the Parikh image of a transducer, which includes tracking
+ * the lengths of the output tape in addition to the input transitions.
+ */
+class ParikhImageTransducer : public ParikhImage {
+
+private: 
+    mata::nft::Nft nft; ///< The non-deterministic finite transducer (NFT) being analyzed.
+    std::vector<BasicTerm> tape_len {}; ///< Variables representing the lengths of the output tape.
+
+public:
+    /**
+     * @brief Construct a ParikhImageTransducer object.
+     * 
+     * Initializes the ParikhImageTransducer with a given NFT. The underlying NFA
+     * representation of the NFT is used for Parikh image computation.
+     * 
+     * @param nft The non-deterministic finite transducer to analyze.
+     */
+    ParikhImageTransducer(const mata::nft::Nft& nft) 
+        : ParikhImage(nft.to_nfa_copy()), nft(nft) { }
+
+    /**
+     * @brief Compute the Parikh image of the transducer with tape length variables.
+     * 
+     * This method extends the Parikh image computation to include constraints 
+     * for the lengths of the output tape. It binds the tape length variables 
+     * to the computed tape lengths for each level of the transducer.
+     * 
+     * @param tape_vars Variables representing the lengths of the output tape.
+     * @return LenNode Formula representing the Parikh image with tape length constraints.
+     */
+    LenNode compute_parikh_image_vars(const std::vector<BasicTerm>& tape_vars);
+
+    /**
+     * @brief Compute the Parikh image of the transducer.
+     * 
+     * This method computes the Parikh image of the transducer, including constraints 
+     * for the lengths of the output tape. It calculates the tape lengths for each 
+     * level of the transducer and generates a formula representing the Parikh image.
+     * 
+     * @return LenNode Formula representing the Parikh image of the transducer.
+     */
+    LenNode compute_parikh_image() override;
 };
 
 }

@@ -353,7 +353,14 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { get_var('x'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
-        CHECK_THROWS_WITH(proc.get_lengths(), "Getting formula for length vars in transducers is not implemented yet"); // we throw error for lengths now, should change to CHECK_NOTHROW after we implement parikh
+        auto [formula, precision] = proc.get_lengths();
+        REQUIRE(precision == LenNodePrecision::PRECISE);
+        CHECK(check_lia_sat(formula) == l_true);
+        REQUIRE(formula.type == LenFormulaType::AND);
+        formula.succ.push_back(LenNode{LenFormulaType::EQ, {get_var('x'), get_var('u')}});
+        CHECK(check_lia_sat(formula) == l_true);
+        formula.succ.back().type = LenFormulaType::NEQ;
+        CHECK(check_lia_sat(formula) == l_false);
     }
 
     SECTION("sat-simple-transducer-length2", "[nooodler]") {
@@ -368,7 +375,14 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { get_var('y'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
-        CHECK_THROWS_WITH(proc.get_lengths(), "Getting formula for length vars in transducers is not implemented yet"); // we throw error for lengths now, should change to CHECK_NOTHROW after we implement parikh
+        auto [formula, precision] = proc.get_lengths();
+        REQUIRE(precision == LenNodePrecision::PRECISE);
+        CHECK(check_lia_sat(formula) == l_true);
+        REQUIRE(formula.type == LenFormulaType::AND);
+        formula.succ.push_back(LenNode{LenFormulaType::EQ, {get_var('y'), get_var('u')}});
+        CHECK(check_lia_sat(formula) == l_true);
+        formula.succ.back().type = LenFormulaType::NEQ;
+        CHECK(check_lia_sat(formula) == l_false);
     }
 
     SECTION("sat-simple-transducer-length3", "[nooodler]") {
@@ -383,7 +397,14 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { get_var('y'),  get_var('x'),  get_var('z'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
-        CHECK_THROWS_WITH(proc.get_lengths(), "Getting formula for length vars in transducers is not implemented yet"); // we throw error for lengths now, should change to CHECK_NOTHROW after we implement parikh
+        auto [formula, precision] = proc.get_lengths();
+        REQUIRE(precision == LenNodePrecision::PRECISE);
+        CHECK(check_lia_sat(formula) == l_true);
+        REQUIRE(formula.type == LenFormulaType::AND);
+        formula.succ.push_back(LenNode{LenFormulaType::EQ, {get_var('y'), get_var('u')}});
+        CHECK(check_lia_sat(formula) == l_true);
+        formula.succ.back().type = LenFormulaType::NEQ;
+        CHECK(check_lia_sat(formula) == l_false);
     }
 
     SECTION("sat-simple-transducer-length4", "[nooodler]") {
@@ -398,6 +419,17 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         DecisionProcedureCUT proc(equalities, init_ass, { get_var('y'),  get_var('x'),  get_var('z'), get_var('u') }, m, m_util_s, m_util_a, {}, noodler_params);
         proc.init_computation();
         REQUIRE(proc.compute_next_solution() == lbool::l_true);
-        CHECK_THROWS_WITH(proc.get_lengths(), "Getting formula for length vars in transducers is not implemented yet"); // we throw error for lengths now, should change to CHECK_NOTHROW after we implement parikh
+        auto [formula, precision] = proc.get_lengths();
+        REQUIRE(precision == LenNodePrecision::PRECISE);
+        CHECK(check_lia_sat(formula) == l_true);
+        REQUIRE(formula.type == LenFormulaType::AND);
+        formula.succ.push_back(LenNode{LenFormulaType::EQ, {LenNode{LenFormulaType::PLUS, {get_var('y'), get_var('y')}}, get_var('u')}});
+        CHECK(check_lia_sat(formula) == l_true);
+        formula.succ.back().type = LenFormulaType::NEQ;
+        CHECK(check_lia_sat(formula) == l_false);
+        formula.succ.back().succ[1] = get_var('z');
+        CHECK(check_lia_sat(formula) == l_false);
+        formula.succ.back().type = LenFormulaType::EQ;
+        CHECK(check_lia_sat(formula) == l_true);
     }
 }

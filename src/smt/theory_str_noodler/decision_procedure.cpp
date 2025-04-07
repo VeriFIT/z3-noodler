@@ -907,9 +907,11 @@ namespace smt::noodler {
                     SASSERT(!vars_on_tapes_of_input_trans.empty() && vars_on_tapes_of_input_trans[0] == transducers[i].get_input()[0]);
                     // we compose Ti and Ti' on input_var, getting transducer output_var = Ti''(input_var, x1, x2, ...., xn)
                     mata::nft::Nft composed_input = mata::nft::compose(invert_trans, input_trans, 1, 0, false); // TODO check if order of tapes in result is correct here
+                    composed_input = mata::nft::invert_levels(composed_input);
                     // we have a transducer output_var = T(y1, y2, ..., ym) computed from previous Tj's, j < i, and we compose here on output_var with Ti''
                     // getting transducer output_var = T'(y1, y2, ..., ym, input_var, x1, x2, ..., xn)
-                    final_trans = mata::nft::compose(final_trans, composed_input, 0, 0, false); // TODO check if order of tapes in result is correct here
+                    final_trans = mata::nft::compose(composed_input, final_trans, composed_input.num_of_levels-1, 0, false); // TODO check if order of tapes in result is correct here
+                    for (size_t i = 0; i < composed_input.num_of_levels-1; ++i) { final_trans = mata::nft::invert_levels(final_trans); }
                     // we had vars_on_tapes = {output_var, y1, y2, ..., ym} we add to it vars_on_tapes_of_input_trans getting
                     //   {output_var, y1, y2, ..., ym, input_var, x1, x2, ..., xn}
                     vars_on_tapes.insert(vars_on_tapes.end(), vars_on_tapes_of_input_trans.begin(), vars_on_tapes_of_input_trans.end());
@@ -927,25 +929,27 @@ namespace smt::noodler {
             }
         }
 
-        std::set<BasicTerm> vars_with_parikh;
+        length_vars_with_transducers = {};
         for (const auto& [transducer, vars_on_tapes] : transducers_with_vars_on_tapes) {
             for (const BasicTerm& var : vars_on_tapes) {
-                vars_with_parikh.insert(var);
+                length_vars_with_transducers.insert(var);
                 if (code_subst_vars.contains(var) || int_subst_vars.contains(var)) {
-                    // TODO add support, probably these vars should not be replaced by one symbol in parikh + some support in conversion formula, we probably need to remember vars_with_parikh in DecisionProcedure and use it there
+                    // TODO add support, probably these vars should not be replaced by one symbol in parikh + some support in conversion formula, use length_vars_with_transducers there?
                     util::throw_error("Conversions with transducers are not supported yet");
                 }
             }
-            // TODO create parikh formula for transducer and add it to result
-            // TODO also connect with model generation
-            util::throw_error("Getting formula for length vars in transducers is not implemented yet");
-        }
 
-        // TODO connect the variables of parikh formula with conversions (or fail when var has parikh construction and is also used in conversions)
+            mata::nft::Nft transducer_reduced = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
+
+            STRACE("str-parikh", tout << "Formula for transducer of size " << transducer_reduced.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
+            LenNode parikh_of_transducer = parikh::ParikhImageTransducer(transducer_reduced).compute_parikh_image_vars(vars_on_tapes);
+            STRACE("str-parikh", tout << parikh_of_transducer << "\n";);
+            result.succ.push_back(parikh_of_transducer);
+        }
 
         // create length constraints from the solution, we only need to look at length sensitive vars which do not have length based on parikh
         for (const BasicTerm &len_var : solution.length_sensitive_vars) {
-            if (!vars_with_parikh.contains(len_var)) {
+            if (!length_vars_with_transducers.contains(len_var)) {
                 result.succ.push_back(solution.get_lengths(len_var));
             }
         }
@@ -2097,6 +2101,11 @@ namespace smt::noodler {
     }
 
     std::vector<BasicTerm> DecisionProcedure::get_len_vars_for_model(const BasicTerm& str_var) {
+        if (!length_vars_with_transducers.empty()) {
+            // TODO we need to add handling for these vars, we need all the vars from parikh representing the number of each symbol etc.
+            util::throw_error("We cannot produce models of length variables in transducers yet");
+        }
+
         // we always need (for initialization) all len_vars that are in aut_ass, so we ignore str_var
         std::vector<BasicTerm> needed_vars;
         for (const BasicTerm& len_var : solution.length_sensitive_vars) {
