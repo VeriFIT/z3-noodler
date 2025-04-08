@@ -827,21 +827,59 @@ namespace smt::noodler::regex {
             std::string var_name = to_app(rpl)->get_decl()->get_name().str();
             BasicTerm result_var(BasicTermType::Variable, var_name);
 
-            auto get_transducer = [&mata_alph](std::variant<zstring,mata::nfa::Nfa>& find, zstring& replace) {
-                mata::nft::Nft result = std::holds_alternative<zstring>(find) ?
-                                            mata::nft::strings::replace_reluctant_literal(util::get_mata_word_zstring(std::get<zstring>(find)), util::get_mata_word_zstring(replace), mata_alph)
-                                          : mata::nft::strings::replace_reluctant_regex(std::get<mata::nfa::Nfa>(find), util::get_mata_word_zstring(replace), mata_alph);
-                return mata::nft::reduce(mata::nft::remove_epsilon(result).trim()).trim();
-            };
 
             // iterate backwards and construct transducer representing the replace operations
             auto backward_iterator = find_and_replace.rbegin();
-            mata::nft::Nft transducer = get_transducer(backward_iterator->first, backward_iterator->second);
-            ++backward_iterator;
-            while (backward_iterator != find_and_replace.rend()) {
-                transducer = mata::nft::compose(transducer, get_transducer(backward_iterator->first, backward_iterator->second), 1, 0);
+            auto backward_iterator_end = find_and_replace.rend();
+            auto get_next_transducer = [&mata_alph,&backward_iterator,&backward_iterator_end]() {
+                std::set<unsigned> keys;
+                std::set<unsigned> values;
+                std::map<unsigned, mata::Word> replacing_map;
+                while (backward_iterator != backward_iterator_end && std::holds_alternative<zstring>(backward_iterator->first)) {
+                    zstring find = std::get<zstring>(backward_iterator->first);
+                    if (find.length() != 1 || keys.contains(find[0]) || values.contains(find[0])) break;
+                    keys.insert(find[0]);
+                    for (unsigned c : backward_iterator->second) { values.insert(c); }
+                    replacing_map[find[0]] = util::get_mata_word_zstring(backward_iterator->second);
+                    ++backward_iterator;
+                }
+
+                if (!keys.empty()) {
+                    mata::nft::Nft result{1, {0}, {0}};
+                    for (mata::Symbol symbol : mata_alph->get_alphabet_symbols()) {
+                        if (keys.contains(symbol)) {
+                            mata::Word replace = replacing_map[symbol];
+                            if (replace.size() == 0) {
+                                result.add_transition(0, {symbol, mata::nft::EPSILON}, 0);
+                            } else if (replace.size() == 1) {
+                                result.add_transition(0, {symbol, replace[0]}, 0);
+                            } else {
+                                mata::nft::State next_state = result.add_transition(0, {symbol, replace[0]});
+                                for (size_t i = 1; i < replace.size()-1; ++i) {
+                                    next_state = result.add_transition(next_state, {mata::nft::EPSILON, replace[i]});
+                                }
+                                result.add_transition(next_state, {mata::nft::EPSILON, replace[replace.size()-1]}, 0);
+                            }
+                        } else {
+                            result.add_transition(0, {symbol, symbol}, 0);
+                        }
+                    }
+                    return result;
+                } else {
+                    auto& find = backward_iterator->first;
+                    zstring& replace = backward_iterator->second;
+                    mata::nft::Nft result = std::holds_alternative<zstring>(find) ?
+                                                mata::nft::strings::replace_reluctant_literal(util::get_mata_word_zstring(std::get<zstring>(find)), util::get_mata_word_zstring(replace), mata_alph)
+                                              : mata::nft::strings::replace_reluctant_regex(std::get<mata::nfa::Nfa>(find), util::get_mata_word_zstring(replace), mata_alph);
+                    ++backward_iterator;
+                    return mata::nft::reduce(mata::nft::remove_epsilon(result).trim()).trim();
+                }
+            };
+
+            mata::nft::Nft transducer = get_next_transducer();
+            while (backward_iterator != backward_iterator_end) {
+                transducer = mata::nft::compose(transducer, get_next_transducer(), 1, 0);
                 transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
-                ++backward_iterator;
             }
 
             transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var}));
