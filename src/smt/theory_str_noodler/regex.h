@@ -161,7 +161,7 @@ namespace smt::noodler::regex {
      * @brief Gather transducer constraint (replace_all, replace_re_all) from a concatenation. Recursively applies also on 
      * nested calls of replace_all, replace_re_all.
      * 
-     * @param ex Concatenation of string terms.
+     * @param ex Expression to gather replaces from.
      * @param m AST manager
      * @param m_util_s Seq util for AST.
      * @param pred_replace Replacement of predicate and functions
@@ -169,7 +169,7 @@ namespace smt::noodler::regex {
      * @param mata_alph Mata alphabet containing symbols from the current instance
      * @param[out] transducer_preds Newly created transducer constraints
      */
-    void gather_transducer_constraints(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, 
+    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, 
         std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds);
 
 }

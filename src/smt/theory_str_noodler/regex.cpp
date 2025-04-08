@@ -761,7 +761,7 @@ namespace smt::noodler::regex {
             const auto child{ regex->get_arg(0) };
             SASSERT(is_app(child));
             return get_model_from_regex(to_app(child), m_util_s); // we just return one iteration
-        } else if(m_util_s.str.is_string(regex)) { // Handle string literal.
+        } else if (m_util_s.str.is_string(regex)) { // Handle string literal.
             SASSERT(regex->get_num_parameters() == 1);
             return regex->get_parameter(0).get_zstring();
         } else {
@@ -769,37 +769,34 @@ namespace smt::noodler::regex {
         }
     }
 
-    void gather_transducer_constraints(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds) {
-        if(m_util_s.str.is_string(ex) || util::is_variable(ex)) { // Handle string literals.
+    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds) {
+        if (m_util_s.str.is_string(ex) || util::is_variable(ex)) { // Handle string literals.
             return;
         }
 
-        if(!m_util_s.str.is_concat(ex)) {
-            expr* rpl = pred_replace.find(ex); // dies if it is not found
-            // so-far we handle just replace_all
-            expr * a1 = nullptr, *a2 = nullptr, *a3 = nullptr;
+        expr * a1 = nullptr, *a2 = nullptr, *a3 = nullptr;
+
+        if (m_util_s.str.is_concat(ex, a1, a2)) {
+            gather_transducer_constraints(to_app(a1), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+            gather_transducer_constraints(to_app(a2), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+            return;
+        }
+
+        expr* rpl = pred_replace.find(ex); // dies if it is not found
+
+        // collect all nested replace_all and replace_re_all and keep their arguments as pairs
+        // in find_and_replace (where find can be either zstring for replace_all or NFA for 
+        // replace_re_all)
+        std::vector<std::pair<std::variant<zstring,mata::nfa::Nfa>,zstring>> find_and_replace;
+        while (true) {
             if (m_util_s.str.is_replace_all(ex, a1, a2, a3)) {
                 zstring find, replace;
                 if(!m_util_s.str.is_string(a2, find) || !m_util_s.str.is_string(a3, replace)) {
                     util::throw_error("only replace_all with concrete find&replace is supported");
                 }
 
-                // recursively call on nested parameters
-                gather_transducer_constraints(to_app(a1), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
-                // collect and replace replace_all argument with a concatenation of basic terms
-                std::vector<BasicTerm> side {};
-                util::collect_terms(to_app(a1), m, m_util_s, pred_replace, var_name, side);
-
-                // result of the replace_all
-                std::string var = to_app(rpl)->get_decl()->get_name().str();
-                BasicTerm bvar(BasicTermType::Variable, var);
-
-                // transducer corresponding to replace_all
-                mata::nft::Nft nft = mata::nft::strings::replace_reluctant_literal(util::get_mata_word_zstring(find), util::get_mata_word_zstring(replace), mata_alph);
-
-                transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(nft), side, {bvar}));
-
-            // replace_re_all
+                find_and_replace.emplace_back(find, replace);
+                ex = to_app(a1);
             } else if (m_util_s.str.is_replace_re_all(ex, a1, a2, a3)) {
                 zstring replace;
                 if(!m_util_s.str.is_string(a3, replace)) {
@@ -812,30 +809,44 @@ namespace smt::noodler::regex {
                 Alphabet alph(syms);
                 mata::nfa::Nfa find_nfa = conv_to_nfa(to_app(a2), m_util_s, m, alph);
 
-                // recursively call on nested parameters
-                gather_transducer_constraints(to_app(a1), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
-                // collect and replace replace_all argument with a concatenation of basic terms
-                std::vector<BasicTerm> side {};
-                util::collect_terms(to_app(a1), m, m_util_s, pred_replace, var_name, side);
-
-                // result of the replace_all
-                std::string var = to_app(rpl)->get_decl()->get_name().str();
-                BasicTerm bvar(BasicTermType::Variable, var);
-
-                // transducer corresponding to replace_all
-                mata::nft::Nft nft = mata::nft::strings::replace_reluctant_regex(find_nfa, util::get_mata_word_zstring(replace), mata_alph);
-
-                transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(nft), side, {bvar}));
+                find_and_replace.emplace_back(find_nfa, replace);
+                ex = to_app(a1);
+            } else {
+                break;
             }
-            return;
         }
 
-        SASSERT(ex->get_num_args() == 2);
-        app *a_x = to_app(ex->get_arg(0));
-        app *a_y = to_app(ex->get_arg(1));
-        gather_transducer_constraints(a_x, m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
-        gather_transducer_constraints(a_y, m, m_util_s, pred_replace, var_name, mata_alph,transducer_preds);
+        if (!find_and_replace.empty()) {
+            // recursively call on nested parameters
+            gather_transducer_constraints(ex, m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+            // collect and replace replace_all argument with a concatenation of basic terms
+            std::vector<BasicTerm> side {};
+            util::collect_terms(ex, m, m_util_s, pred_replace, var_name, side);
 
+            // result of the replace_all
+            std::string var_name = to_app(rpl)->get_decl()->get_name().str();
+            BasicTerm result_var(BasicTermType::Variable, var_name);
+
+            auto get_transducer = [&mata_alph](std::variant<zstring,mata::nfa::Nfa>& find, zstring& replace) {
+                mata::nft::Nft result = std::holds_alternative<zstring>(find) ?
+                                            mata::nft::strings::replace_reluctant_literal(util::get_mata_word_zstring(std::get<zstring>(find)), util::get_mata_word_zstring(replace), mata_alph)
+                                          : mata::nft::strings::replace_reluctant_regex(std::get<mata::nfa::Nfa>(find), util::get_mata_word_zstring(replace), mata_alph);
+                return mata::nft::reduce(mata::nft::remove_epsilon(result).trim()).trim();
+            };
+
+            // iterate backwards and construct transducer representing the replace operations
+            auto backward_iterator = find_and_replace.rbegin();
+            mata::nft::Nft transducer = get_transducer(backward_iterator->first, backward_iterator->second);
+            ++backward_iterator;
+            while (backward_iterator != find_and_replace.rend()) {
+                transducer = mata::nft::compose(transducer, get_transducer(backward_iterator->first, backward_iterator->second), 1, 0);
+                transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
+                ++backward_iterator;
+            }
+
+            transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var}));
+            return;
+        }
     }
 
 }
