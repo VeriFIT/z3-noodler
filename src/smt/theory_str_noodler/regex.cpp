@@ -921,7 +921,7 @@ namespace smt::noodler::regex {
                 }
 
                 if (backward_iterator != backward_iterator_old) {
-                    return prefix_tree.create_transducer(mata_alph);
+                    return mata::nft::reduce(prefix_tree.create_transducer(mata_alph)).trim();
                 } else {
                     auto& find = backward_iterator->first;
                     zstring& replace = backward_iterator->second;
@@ -942,7 +942,14 @@ namespace smt::noodler::regex {
                 }
             );
             while (backward_iterator != backward_iterator_end) {
-                transducer = mata::nft::compose(transducer, get_next_transducer(), 1, 0);
+                mata::nft::Nft next_transducer = get_next_transducer();
+                STRACE("str-gather_transducer_constraints",
+                    tout << "Size of next NFT " << transducer.num_of_states() << "\n";
+                    if (is_trace_enabled("str-nfa")) {
+                        tout << transducer.print_to_dot(true);
+                    }
+                );
+                transducer = mata::nft::compose(transducer, next_transducer, 1, 0);
                 transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
                 STRACE("str-gather_transducer_constraints",
                     tout << "Size of composed NFT " << transducer.num_of_states() << "\n";
