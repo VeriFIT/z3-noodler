@@ -770,7 +770,7 @@ namespace smt::noodler::regex {
     }
 
     bool ReplaceAllPrefixTree::add_find(const zstring& find, const zstring& replace) {
-        if (find.length() == 0 || find_prefixes.contains(find)) {
+        if (find.length() == 0) {
             return false;
         }
         for (unsigned find_char : find) {
@@ -779,11 +779,11 @@ namespace smt::noodler::regex {
             }
         }
 
-        zstring prefix;
         mata::nfa::State cur_state = 0;
         for (unsigned find_char : find) {
-            prefix = prefix + find_char;
-            find_prefixes.insert(prefix);
+            if (prefix_automaton.final[cur_state]) {
+                return false;
+            }
             auto next_state_it = prefix_automaton.delta[cur_state].find(find_char);
             if (next_state_it != prefix_automaton.delta[cur_state].end()) {
                 SASSERT(next_state_it->targets.size() == 1);
@@ -794,13 +794,15 @@ namespace smt::noodler::regex {
                 cur_state = next_state;
             }
         }
-        prefix_automaton.final.insert(cur_state);
-        replacing_map[cur_state] = util::get_mata_word_zstring(replace);
 
-        for (unsigned replace_char : replace) {
-            replace_chars.insert(replace_char);
+        if (!prefix_automaton.final[cur_state]) {
+            prefix_automaton.final.insert(cur_state);
+            replacing_map[cur_state] = util::get_mata_word_zstring(replace);
+
+            for (unsigned replace_char : replace) {
+                replace_chars.insert(replace_char);
+            }
         }
-
 
         return true;
     }
@@ -910,10 +912,10 @@ namespace smt::noodler::regex {
                 auto& find = backward_iterator->first;
                 zstring& replace = backward_iterator->second;
                 ReplaceAllPrefixTree prefix_tree;
-                while (backward_iterator != backward_iterator_end && std::holds_alternative<zstring>(backward_iterator->first)) {
-                    if (prefix_tree.add_find(std::get<zstring>(find), replace)) {
+                while (backward_iterator != backward_iterator_end
+                    && std::holds_alternative<zstring>(backward_iterator->first)
+                    && prefix_tree.add_find(std::get<zstring>(find), replace)) {
                         ++backward_iterator;
-                    }
                 }
 
                 if (backward_iterator != backward_iterator_old) {
@@ -929,12 +931,16 @@ namespace smt::noodler::regex {
             };
 
             mata::nft::Nft transducer = get_next_transducer();
+            STRACE("str-gather_transducer_constraints", tout << "Size of first NFT " << transducer.num_of_states() << "\n";);
             while (backward_iterator != backward_iterator_end) {
                 transducer = mata::nft::compose(transducer, get_next_transducer(), 1, 0);
                 transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
+                STRACE("str-gather_transducer_constraints", tout << "Size of composed NFT " << transducer.num_of_states() << "\n";);
             }
 
-            transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var}));
+            Predicate predicate_transducer = Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var});
+            STRACE("str-gather_transducer_constraints", tout << predicate_transducer << "\n";);
+            transducer_preds.push_back(predicate_transducer);
             return;
         }
     }

@@ -158,7 +158,6 @@ namespace smt::noodler::regex {
     zstring get_model_from_regex(const app *regex, const seq_util& m_util_s);
 
     class ReplaceAllPrefixTree {
-        std::set<zstring> find_prefixes;
         std::set<unsigned> replace_chars;
         mata::nfa::Nfa prefix_automaton{1,{0}};
         std::map<mata::nfa::State, mata::Word> replacing_map;
