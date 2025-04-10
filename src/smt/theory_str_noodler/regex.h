@@ -157,6 +157,18 @@ namespace smt::noodler::regex {
      */
     zstring get_model_from_regex(const app *regex, const seq_util& m_util_s);
 
+    class ReplaceAllPrefixTree {
+        std::set<zstring> find_prefixes;
+        std::set<unsigned> replace_chars;
+        mata::nfa::Nfa prefix_automaton{1,{0}};
+        std::map<mata::nfa::State, mata::Word> replacing_map;
+
+    public:
+        ReplaceAllPrefixTree() = default;
+        bool add_find(const zstring& find, const zstring& replace);
+        mata::nft::Nft create_transducer(mata::Alphabet* mata_alph);
+    };
+
     /**
      * @brief Gather transducer constraint (replace_all, replace_re_all) from a concatenation. Recursively applies also on 
      * nested calls of replace_all, replace_re_all.
