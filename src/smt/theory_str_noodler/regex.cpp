@@ -816,29 +816,32 @@ namespace smt::noodler::regex {
             auto [word, prefix_state, result_state] = worklist.front();
             worklist.pop();
             for (mata::Symbol symbol : mata_alph->get_alphabet_symbols()) {
-                mata::Word next_word = word;
-                next_word.push_back(symbol);
                 auto symbol_transition_it = prefix_automaton.delta[prefix_state].find(symbol);
                 if (symbol_transition_it != prefix_automaton.delta[prefix_state].end()) {
                     SASSERT(symbol_transition_it->targets.size() == 1);
                     mata::nfa::State next_prefix_state = symbol_transition_it->targets.front();
                     if (prefix_automaton.final[next_prefix_state]) {
-                        mata::Word replacing_word = replacing_map[next_prefix_state];
-                        mata::nft::State next_state = result.add_transition(result_state, {symbol, replacing_word[0]});
-                        for (size_t i = 1; i < replacing_word.size()-1; ++i) {
-                            next_state = result.add_transition(next_state, {mata::nft::EPSILON, replacing_word[i]});
-                        }
-                        result.add_transition(next_state, {mata::nft::EPSILON, replacing_word[replacing_word.size()-1]}, 0);
+                        word = replacing_map[next_prefix_state];
                     } else {
                         mata::nft::State next_result_state = result.add_transition(result_state, {symbol, mata::nft::EPSILON});
-                        worklist.push({next_word, next_prefix_state, next_result_state});
+                        word.push_back(symbol);
+                        worklist.push({word, next_prefix_state, next_result_state});
+                        continue;
                     }
                 } else {
-                    mata::nft::State next_state = result.add_transition(result_state, {symbol, next_word[0]});
-                    for (size_t i = 1; i < next_word.size()-1; ++i) {
-                        next_state = result.add_transition(next_state, {mata::nft::EPSILON, next_word[i]});
+                    word.push_back(symbol);
+                }
+
+                if (word.empty()) {
+                    result.add_transition(result_state, {symbol, mata::nft::EPSILON}, 0);
+                } else if (word.size() == 1) {
+                    result.add_transition(result_state, {symbol, word[0]}, 0);
+                } else {
+                    mata::nft::State next_state = result.add_transition(result_state, {symbol, word[0]});
+                    for (size_t i = 1; i < word.size()-1; ++i) {
+                        next_state = result.add_transition(next_state, {mata::nft::EPSILON, word[i]});
                     }
-                    result.add_transition(next_state, {mata::nft::EPSILON, next_word[next_word.size()-1]}, 0);
+                    result.add_transition(next_state, {mata::nft::EPSILON, word[word.size()-1]}, 0);
                 }
             }
         }
