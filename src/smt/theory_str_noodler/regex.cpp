@@ -944,9 +944,9 @@ namespace smt::noodler::regex {
             while (backward_iterator != backward_iterator_end) {
                 mata::nft::Nft next_transducer = get_next_transducer();
                 STRACE("str-gather_transducer_constraints",
-                    tout << "Size of next NFT " << transducer.num_of_states() << "\n";
+                    tout << "Size of next NFT " << next_transducer.num_of_states() << "\n";
                     if (is_trace_enabled("str-nfa")) {
-                        tout << transducer.print_to_dot(true);
+                        tout << next_transducer.print_to_dot(true);
                     }
                 );
                 transducer = mata::nft::compose(transducer, next_transducer, 1, 0);
