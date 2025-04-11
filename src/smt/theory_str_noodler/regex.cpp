@@ -125,7 +125,19 @@ namespace smt::noodler::regex {
 
     [[nodiscard]] Nfa conv_to_nfa(const app *expression, const seq_util& m_util_s, const ast_manager& m,
                                   const Alphabet& alphabet, bool determinize, bool make_complement) {
-        // to simluate recursive calls of conv_to_nfa on arguments of expression, we use postorder
+
+        if (m_util_s.str.is_string_term(expression)) {
+            zstring result;
+            if (m_util_s.str.is_string(expression, result)) {
+                return AutAssignment::create_word_nfa(result);
+            } else {
+                util::throw_error("We can convert to NFA only string literals");
+            }
+        }
+
+        SASSERT(m_util_s.is_re(const_cast<app*>(expression)));
+
+        // to simulate recursive calls of conv_to_nfa on arguments of expression, we use postorder
         // traversal of the ast for expression
         std::stack<std::pair<const app*, bool>> postorder_stack;
         postorder_stack.push({expression, false});
@@ -156,6 +168,10 @@ namespace smt::noodler::regex {
                         results_stack.pop();
                     }
                 }
+
+                STRACE("str-create_nfa",
+                    tout << "--------------" << "Creating NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "\n";
+                );
 
                 // create the resulting NFA for cur_expr
                 Nfa result{};
