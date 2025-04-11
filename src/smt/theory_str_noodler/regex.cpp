@@ -125,6 +125,8 @@ namespace smt::noodler::regex {
 
     [[nodiscard]] Nfa conv_to_nfa(const app *expression, const seq_util& m_util_s, const ast_manager& m,
                                   const Alphabet& alphabet, bool determinize, bool make_complement) {
+        // to simluate recursive calls of conv_to_nfa on arguments of expression, we use postorder
+        // traversal of the ast for expression
         std::stack<std::pair<const app*, bool>> postorder_stack;
         postorder_stack.push({expression, false});
         std::stack<std::pair<const app*, mata::nfa::Nfa>> results_stack;
@@ -132,22 +134,21 @@ namespace smt::noodler::regex {
             auto [cur_expr, visited] = postorder_stack.top();
             postorder_stack.pop();
 
-            if (!visited) {
+            if (!visited) { // we have not visited cur_expr -> we need to process children first
                 postorder_stack.push({cur_expr, true});
                 for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
                     expr* arg = cur_expr->get_arg(arg_idx);
-                    if (m_util_s.is_re(arg)) {
+                    if (m_util_s.is_re(arg)) { // we only process childrens representing regexes
                         SASSERT(is_app(arg));
                         postorder_stack.push({to_app(arg), false});
                     }
                 }
-            } else {
-                Nfa result{};
+            } else { // we already visited cur_expr -> the NFAs for its children should be on results_stack
+                // we collect the NFAs for the children
                 std::vector<mata::nfa::Nfa> arg_nfas;
-
                 for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
                     expr* arg = cur_expr->get_arg(arg_idx);
-                    if (m_util_s.is_re(arg)) {
+                    if (m_util_s.is_re(arg)) { // only childrens representing regexes
                         SASSERT(!results_stack.empty());
                         auto& [arg_expr, arg_nfa] = results_stack.top();
                         SASSERT(arg == arg_expr);
@@ -156,6 +157,8 @@ namespace smt::noodler::regex {
                     }
                 }
 
+                // create the resulting NFA for cur_expr
+                Nfa result{};
                 if (m_util_s.re.is_to_re(cur_expr)) { // Handle conversion of to regex function call.
                     SASSERT(cur_expr->get_num_args() == 1);
                     // Assume that expression inside re.to_re() function is a string of characters.
@@ -177,8 +180,12 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_complement(cur_expr)) { // Handle complement.
                     SASSERT(cur_expr->get_num_args() == 1);
                     result = std::move(arg_nfas.at(0));
-                    // According to make_complement, we do complement at the end, so we just invert it
-                    make_complement = !make_complement;
+                    if (cur_expr == expression) { // if we are processing root
+                        // According to make_complement, we do complement at the end, so we just invert it
+                        make_complement = !make_complement;
+                    } else {
+                        result = mata::nfa::complement(result, alphabet.mata_alphabet, {{"algorithm", "classical"}});
+                    }
                 } else if (m_util_s.re.is_derivative(cur_expr)) { // Handle derivative.
                     util::throw_error("derivative is unsupported");
                 } else if (m_util_s.re.is_diff(cur_expr)) { // Handle diff.
@@ -353,35 +360,40 @@ namespace smt::noodler::regex {
                     );
                     result = mata::nfa::reduce(result);
                 }
-                if(determinize) {
-                    STRACE("str-create_nfa-reduce", 
-                        tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be minimized" << "---------------" << std::endl;
-                        tout << result;
-                    );
-                    result = mata::nfa::minimize(result);
-                }
 
                 STRACE("str-create_nfa",
                     tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "---------------" << std::endl;
                     tout << result;
                 );
 
-                // Whether to create complement of the final automaton.
-                // Warning: is_complement assumes we do the following, so if you to change this, go check is_complement first
-                if (make_complement) {
-                    STRACE("str-create_nfa", tout << "Complemented NFA:" << std::endl;);
-                    result = mata::nfa::complement(result, alphabet.mata_alphabet, { 
-                        {"algorithm", "classical"}, 
-                        //{"minimize", "true"} // it seems that minimizing during complement causes more TOs in benchmarks
-                        });
-                    STRACE("str-create_nfa", tout << result;);
-                }
-
                 results_stack.push({cur_expr, result});
             }
         }
+
         SASSERT(results_stack.size() == 1);
-        return results_stack.top().second;
+        SASSERT(results_stack.top().first == expression);
+
+        mata::nfa::Nfa final_result = std::move(results_stack.top().second);
+
+        if(determinize && !make_complement) { // if we need to complement, we will determinize anyway
+            STRACE("str-create_nfa-reduce", 
+                tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(expression), const_cast<ast_manager&>(m)) << " that is going to be minimized" << "---------------" << std::endl;
+                tout << final_result;
+            );
+            final_result = mata::nfa::minimize(final_result);
+        }
+
+        // Whether to create complement of the final automaton.
+        if (make_complement) {
+            STRACE("str-create_nfa", tout << "Complemented NFA:" << std::endl;);
+            final_result = mata::nfa::complement(final_result, alphabet.mata_alphabet, { 
+                {"algorithm", "classical"}, 
+                //{"minimize", "true"} // it seems that minimizing during complement causes more TOs in benchmarks
+                });
+        }
+
+        STRACE("str-create_nfa", tout << final_result;);
+        return final_result;
     }
 
     [[nodiscard]] RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s) {
