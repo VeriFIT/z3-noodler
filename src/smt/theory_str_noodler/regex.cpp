@@ -779,6 +779,8 @@ namespace smt::noodler::regex {
             }
         }
 
+        // TODO I should check that find does not contains same chars multiple times
+
         mata::nfa::State cur_state = 0;
         for (unsigned find_char : find) {
             if (prefix_automaton.final[cur_state]) {
