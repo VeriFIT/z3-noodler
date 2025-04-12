@@ -141,30 +141,37 @@ namespace smt::noodler::regex {
         // traversal of the ast for expression
         std::stack<std::pair<const app*, bool>> postorder_stack;
         postorder_stack.push({expression, false});
-        std::stack<std::pair<const app*, mata::nfa::Nfa>> results_stack;
+        std::stack<mata::nfa::Nfa> results_stack;
+        std::map<const app*, unsigned> num_of_regex_arguments; // only for concatenation for now
         while (!postorder_stack.empty()) {
             auto [cur_expr, visited] = postorder_stack.top();
             postorder_stack.pop();
 
             if (!visited) { // we have not visited cur_expr -> we need to process children first
                 postorder_stack.push({cur_expr, true});
-                for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
-                    expr* arg = cur_expr->get_arg(arg_idx);
-                    if (m_util_s.is_re(arg)) { // we only process childrens representing regexes
-                        SASSERT(is_app(arg));
-                        postorder_stack.push({to_app(arg), false});
+                ptr_vector<expr> concatenation_args;
+                if (!m_util_s.re.is_concat(cur_expr, concatenation_args)) {
+                    for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
+                        expr* arg = cur_expr->get_arg(arg_idx);
+                        if (m_util_s.is_re(arg)) { // we only process childrens representing regexes
+                            concatenation_args.push_back(arg);
+                        }
                     }
+                }
+                num_of_regex_arguments[cur_expr] = concatenation_args.size();
+                for (expr* arg : concatenation_args) {
+                    SASSERT(is_app(arg));
+                    postorder_stack.push({to_app(arg), false});
                 }
             } else { // we already visited cur_expr -> the NFAs for its children should be on results_stack
                 // we collect the NFAs for the children
                 std::vector<mata::nfa::Nfa> arg_nfas;
-                for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
+                unsigned num_of_regex_arguments_of_cur_expr = num_of_regex_arguments.at(cur_expr);
+                for (unsigned arg_idx = 0; arg_idx < num_of_regex_arguments_of_cur_expr; ++arg_idx) {
                     expr* arg = cur_expr->get_arg(arg_idx);
                     if (m_util_s.is_re(arg)) { // only childrens representing regexes
                         SASSERT(!results_stack.empty());
-                        auto& [arg_expr, arg_nfa] = results_stack.top();
-                        SASSERT(arg == arg_expr);
-                        arg_nfas.push_back(std::move(arg_nfa));
+                        arg_nfas.push_back(std::move(results_stack.top()));
                         results_stack.pop();
                     }
                 }
@@ -184,17 +191,17 @@ namespace smt::noodler::regex {
                     }
                     result = AutAssignment::create_word_nfa(arg_string);
                 } else if (m_util_s.re.is_concat(cur_expr)) { // Handle regex concatenation.
-                    SASSERT(cur_expr->get_num_args() > 0);
+                    SASSERT(num_of_regex_arguments_of_cur_expr > 0);
                     result = std::move(arg_nfas.at(0));
-                    for (unsigned int i = 1; i < cur_expr->get_num_args(); ++i) {
+                    for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
                         result.concatenate(arg_nfas.at(i));
                         arg_nfas[i].clear();
-                        result.trim();
                     }
+                    result.trim();
                 } else if (m_util_s.re.is_antimirov_union(cur_expr)) { // Handle Antimirov union.
                     util::throw_error("antimirov union is unsupported");
                 } else if (m_util_s.re.is_complement(cur_expr)) { // Handle complement.
-                    SASSERT(cur_expr->get_num_args() == 1);
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
                     if (cur_expr == expression) { // if we are processing root
                         // According to make_complement, we do complement at the end, so we just invert it
@@ -230,10 +237,23 @@ namespace smt::noodler::regex {
                         result.delta.add(0, symbol, 0);
                     }
                 } else if (m_util_s.re.is_intersection(cur_expr)) { // Handle intersection.
-                    SASSERT(cur_expr->get_num_args() > 0);
+                    SASSERT(num_of_regex_arguments_of_cur_expr > 0);
                     result = std::move(arg_nfas.at(0));
-                    for (unsigned int i = 1; i < cur_expr->get_num_args(); ++i) {
-                        result = mata::nfa::intersection(result, arg_nfas.at(i));
+                    if (result.num_of_states() >= RED_BOUND) {
+                        // first argument was not reduced if it is larger than RED_BOUND, however,
+                        // intersection is expensive and it is (probably) better to reduce
+                        // the arguments of intersection
+                        result = mata::nfa::reduce(result);
+                    }
+                    for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
+                        mata::nfa::Nfa next_arg = std::move(arg_nfas.at(i));
+                        if (next_arg.num_of_states() >= RED_BOUND) {
+                            // next_arg was not reduced if it is larger than RED_BOUND, however,
+                            // intersection is expensive and it is (probably) better to reduce
+                            // the arguments of intersection
+                            next_arg = mata::nfa::reduce(next_arg);
+                        }
+                        result = mata::nfa::intersection(result, next_arg);
                     }
                 } else if (m_util_s.re.is_loop(cur_expr)) { // Handle loop.
                     unsigned low, high;
@@ -309,7 +329,7 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_of_pred(cur_expr)) { // Handle of predicate.
                     util::throw_error("of predicate is unsupported");
                 } else if (m_util_s.re.is_opt(cur_expr)) { // Handle optional.
-                    SASSERT(cur_expr->get_num_args() == 1);
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
                     result.unify_initial();
                     for (const auto& initial : result.initial) {
@@ -334,11 +354,11 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_reverse(cur_expr)) { // Handle reverse.
                     util::throw_error("reverse is unsupported");
                 } else if (m_util_s.re.is_union(cur_expr)) { // Handle union (= or; A|B).
-                    SASSERT(cur_expr->get_num_args() == 2);
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 2);
                     result = std::move(arg_nfas.at(0));
                     result.unite_nondet_with(arg_nfas.at(1));
                 } else if (m_util_s.re.is_star(cur_expr)) { // Handle star iteration.
-                    SASSERT(cur_expr->get_num_args() == 1);
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
                     for (const auto& final : result.final) {
                         for (const auto& initial : result.initial) {
@@ -353,7 +373,7 @@ namespace smt::noodler::regex {
                     result.final.insert(new_state);
 
                 } else if (m_util_s.re.is_plus(cur_expr)) { // Handle positive iteration.
-                    SASSERT(cur_expr->get_num_args() == 1);
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
                     for (const auto& final : result.final) {
                         for (const auto& initial : result.initial) {
@@ -382,14 +402,13 @@ namespace smt::noodler::regex {
                     tout << result;
                 );
 
-                results_stack.push({cur_expr, result});
+                results_stack.push(std::move(result));
             }
         }
 
         SASSERT(results_stack.size() == 1);
-        SASSERT(results_stack.top().first == expression);
 
-        mata::nfa::Nfa final_result = std::move(results_stack.top().second);
+        mata::nfa::Nfa final_result = std::move(results_stack.top());
 
         if(determinize && !make_complement) { // if we need to complement, we will determinize anyway
             STRACE("str-create_nfa-reduce", 
