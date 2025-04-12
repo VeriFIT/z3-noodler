@@ -149,7 +149,7 @@ namespace smt::noodler::regex {
 
             if (!visited) { // we have not visited cur_expr -> we need to process children first
                 postorder_stack.push({cur_expr, true});
-                ptr_vector<expr> concatenation_args;
+                ptr_vector<expr const> concatenation_args;
                 if (!m_util_s.re.is_concat(cur_expr, concatenation_args)) {
                     for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
                         expr* arg = cur_expr->get_arg(arg_idx);
@@ -159,7 +159,7 @@ namespace smt::noodler::regex {
                     }
                 }
                 num_of_regex_arguments[cur_expr] = concatenation_args.size();
-                for (expr* arg : concatenation_args) {
+                for (expr const* arg : concatenation_args) {
                     SASSERT(is_app(arg));
                     postorder_stack.push({to_app(arg), false});
                 }
