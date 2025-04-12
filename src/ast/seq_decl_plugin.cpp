@@ -1121,11 +1121,11 @@ unsigned seq_util::rex::max_length(expr* r) const {
     return UINT_MAX;
 }
 
-bool seq_util::rex::is_concat(expr const* e, ptr_vector<expr const>& es) const {
+bool seq_util::rex::is_concat(expr* e, ptr_vector<expr>& es) const {
     if (!is_concat(e)) { return false; }
     
     expr *e1, *e2;
-    ptr_vector<expr const> todo;
+    ptr_vector<expr> todo;
     todo.push_back(e);
 
     while (!todo.empty()) {

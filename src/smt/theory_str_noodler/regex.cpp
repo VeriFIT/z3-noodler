@@ -123,7 +123,7 @@ namespace smt::noodler::regex {
         }
     }
 
-    [[nodiscard]] Nfa conv_to_nfa(const app *expression, const seq_util& m_util_s, const ast_manager& m,
+    [[nodiscard]] Nfa conv_to_nfa(app *expression, const seq_util& m_util_s, const ast_manager& m,
                                   const Alphabet& alphabet, bool determinize, bool make_complement) {
 
         if (m_util_s.str.is_string_term(expression)) {
@@ -135,21 +135,21 @@ namespace smt::noodler::regex {
             }
         }
 
-        SASSERT(m_util_s.is_re(const_cast<app*>(expression)));
+        SASSERT(m_util_s.is_re(expression));
 
         // to simulate recursive calls of conv_to_nfa on arguments of expression, we use postorder
         // traversal of the ast for expression
-        std::stack<std::pair<const app*, bool>> postorder_stack;
+        std::stack<std::pair<app*, bool>> postorder_stack;
         postorder_stack.push({expression, false});
         std::stack<mata::nfa::Nfa> results_stack;
-        std::map<const app*, unsigned> num_of_regex_arguments; // only for concatenation for now
+        std::map<app*, unsigned> num_of_regex_arguments;
         while (!postorder_stack.empty()) {
             auto [cur_expr, visited] = postorder_stack.top();
             postorder_stack.pop();
 
             if (!visited) { // we have not visited cur_expr -> we need to process children first
                 postorder_stack.push({cur_expr, true});
-                ptr_vector<expr const> concatenation_args;
+                ptr_vector<expr> concatenation_args;
                 if (!m_util_s.re.is_concat(cur_expr, concatenation_args)) {
                     for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
                         expr* arg = cur_expr->get_arg(arg_idx);
@@ -159,7 +159,7 @@ namespace smt::noodler::regex {
                     }
                 }
                 num_of_regex_arguments[cur_expr] = concatenation_args.size();
-                for (expr const* arg : concatenation_args) {
+                for (expr* arg : concatenation_args) {
                     SASSERT(is_app(arg));
                     postorder_stack.push({to_app(arg), false});
                 }
@@ -168,12 +168,9 @@ namespace smt::noodler::regex {
                 std::vector<mata::nfa::Nfa> arg_nfas;
                 unsigned num_of_regex_arguments_of_cur_expr = num_of_regex_arguments.at(cur_expr);
                 for (unsigned arg_idx = 0; arg_idx < num_of_regex_arguments_of_cur_expr; ++arg_idx) {
-                    expr* arg = cur_expr->get_arg(arg_idx);
-                    if (m_util_s.is_re(arg)) { // only childrens representing regexes
-                        SASSERT(!results_stack.empty());
-                        arg_nfas.push_back(std::move(results_stack.top()));
-                        results_stack.pop();
-                    }
+                    SASSERT(!results_stack.empty());
+                    arg_nfas.push_back(std::move(results_stack.top()));
+                    results_stack.pop();
                 }
 
                 STRACE("str-create_nfa",
