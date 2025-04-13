@@ -773,44 +773,59 @@ namespace smt::noodler::regex {
         if (find.length() == 0) {
             return false;
         }
+        std::set<unsigned> find_chars;
         for (unsigned find_char : find) {
-            if (replace_chars.contains(find_char)) {
+            if (replace_chars.contains(find_char) || find_chars.contains(find_char)) {
+                // find shares some char with some previous replace
+                // or it contains the same char twice
                 return false;
             }
+            find_chars.insert(find_char);
         }
 
-        // TODO I should check that find does not contains same chars multiple times
-
+        // add find to the prefix tree
         mata::nfa::State cur_state = 0;
+        bool is_find_prefix_of_some_previous_find = true;
         for (unsigned find_char : find) {
-            if (prefix_automaton.final[cur_state]) {
-                return false;
-            }
             auto next_state_it = prefix_automaton.delta[cur_state].find(find_char);
             if (next_state_it != prefix_automaton.delta[cur_state].end()) {
                 SASSERT(next_state_it->targets.size() == 1);
                 cur_state = next_state_it->targets.front();
             } else {
+                is_find_prefix_of_some_previous_find = false; // find cannot be a prefix of some previous find as we are creating a new path in the prefix tree
                 mata::nfa::State next_state = prefix_automaton.add_state();
                 prefix_automaton.delta.add(cur_state, find_char, next_state);
                 cur_state = next_state;
             }
         }
 
-        if (!prefix_automaton.final[cur_state]) {
+        if (!is_find_prefix_of_some_previous_find) {
             prefix_automaton.final.insert(cur_state);
             replacing_map[cur_state] = util::get_mata_word_zstring(replace);
 
             for (unsigned replace_char : replace) {
                 replace_chars.insert(replace_char);
             }
-        }
 
-        return true;
+            return true;
+        } else {
+            if (prefix_automaton.final[cur_state]) {
+                // even though the current find is a prefix of some previous find
+                // it is not a problem, because they are the same, so this replace_all
+                // would basically be a noop (as the previous replace_all would be applied)
+                // so we can return true, as we added this replace_all (noop) to this prefix tree
+                return true;
+            } else {
+                return false;
+            }
+        }
     }
 
     mata::nft::Nft ReplaceAllPrefixTree::create_transducer(mata::Alphabet* mata_alph) {
+        // we will basically construct a product of prefix tree with identity transducer, but
+        // for the matched finds in the prefix tree, we replace them with their corresponding replaces
         mata::nft::Nft result{1, {0}, {0}};
+        // contains pairs (w, p, q) where p is a state of the prefix tree, w is the word on the path to p and q is the state of result
         std::queue<std::tuple<mata::Word,mata::nfa::State,mata::nft::State>> worklist;
         worklist.push({mata::Word(), 0, 0});
 
@@ -818,33 +833,45 @@ namespace smt::noodler::regex {
             const auto [word, prefix_state, result_state] = worklist.front();
             worklist.pop();
             for (mata::Symbol symbol : mata_alph->get_alphabet_symbols()) {
-                mata::Word next_word = word;
+                mata::Word replacing_word; // if we will be replacing, this is the word by which we are replacing
                 auto symbol_transition_it = prefix_automaton.delta[prefix_state].find(symbol);
                 if (symbol_transition_it != prefix_automaton.delta[prefix_state].end()) {
+                    // symbol is in the prefix tree
                     SASSERT(symbol_transition_it->targets.size() == 1);
                     mata::nfa::State next_prefix_state = symbol_transition_it->targets.front();
                     if (prefix_automaton.final[next_prefix_state]) {
-                        next_word = replacing_map[next_prefix_state];
+                        // if the next state is final, we want to add the replacement to result
+                        replacing_word = replacing_map[next_prefix_state];
                     } else {
+                        // otherwise we just move to the next state of the prefix tree
                         mata::nft::State next_result_state = result.add_transition(result_state, {symbol, mata::nft::EPSILON});
+                        mata::Word next_word = word;
                         next_word.push_back(symbol);
                         worklist.push({next_word, next_prefix_state, next_result_state});
                         continue;
                     }
                 } else {
-                    next_word.push_back(symbol);
+                    // symbol is not in the prefix tree, so the word we have just read in the prefix tree should stay the same,
+                    // i.e. we will do idenity
+                    replacing_word = word;
+                    replacing_word.push_back(symbol);
                 }
 
-                if (next_word.empty()) {
+                if (replacing_word.empty()) {
+                    // we are replacing with epsilon, so we just read the current symbol and return to accepting state
                     result.add_transition(result_state, {symbol, mata::nft::EPSILON}, 0);
-                } else if (next_word.size() == 1) {
-                    result.add_transition(result_state, {symbol, next_word[0]}, 0);
+                } else if (replacing_word.size() == 1) {
+                    // replacing by just one symbol means that we put it out while reading the current symbol
+                    result.add_transition(result_state, {symbol, replacing_word[0]}, 0);
                 } else {
-                    mata::nft::State next_state = result.add_transition(result_state, {symbol, next_word[0]});
-                    for (size_t i = 1; i < next_word.size()-1; ++i) {
-                        next_state = result.add_transition(next_state, {mata::nft::EPSILON, next_word[i]});
+                    // we need to replace by a longer word, so first we read current symbol while putting out the first symbol of replace
+                    mata::nft::State next_state = result.add_transition(result_state, {symbol, replacing_word[0]});
+                    // and then just put out the rest while on the input we take epsilon
+                    for (size_t i = 1; i < replacing_word.size()-1; ++i) {
+                        next_state = result.add_transition(next_state, {mata::nft::EPSILON, replacing_word[i]});
                     }
-                    result.add_transition(next_state, {mata::nft::EPSILON, next_word[next_word.size()-1]}, 0);
+                    // the last transition needs to go back to the final state
+                    result.add_transition(next_state, {mata::nft::EPSILON, replacing_word[replacing_word.size()-1]}, 0);
                 }
             }
         }
