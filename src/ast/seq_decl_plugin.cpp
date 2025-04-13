@@ -1121,6 +1121,27 @@ unsigned seq_util::rex::max_length(expr* r) const {
     return UINT_MAX;
 }
 
+bool seq_util::rex::is_concat(expr* e, ptr_vector<expr>& es) const {
+    if (!is_concat(e)) { return false; }
+    
+    expr *e1, *e2;
+    ptr_vector<expr> todo;
+    todo.push_back(e);
+
+    while (!todo.empty()) {
+        e = todo.back();
+        todo.pop_back();
+        if (is_concat(e, e1, e2)) {
+            todo.push_back(e2);
+            todo.push_back(e1);
+        } else {
+            es.push_back(e);
+        }
+    }
+
+    return true;
+}
+
 /**
    \brief determine if \c n is a range regular expression where the lower and upper bounds
    are given by single characters.

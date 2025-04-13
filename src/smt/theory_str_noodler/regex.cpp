@@ -123,248 +123,309 @@ namespace smt::noodler::regex {
         }
     }
 
-    [[nodiscard]] Nfa conv_to_nfa(const app *expression, const seq_util& m_util_s, const ast_manager& m,
+    [[nodiscard]] Nfa conv_to_nfa(app *expression, const seq_util& m_util_s, const ast_manager& m,
                                   const Alphabet& alphabet, bool determinize, bool make_complement) {
-        Nfa nfa{};
 
-        if (m_util_s.re.is_to_re(expression)) { // Handle conversion of to regex function call.
-            SASSERT(expression->get_num_args() == 1);
-            const auto arg{ expression->get_arg(0) };
-            // Assume that expression inside re.to_re() function is a string of characters.
-            if (!m_util_s.str.is_string(arg)) { // if to_re has something other than string literal
-                util::throw_error("we support only string literals in str.to_re");
-            }
-            nfa = conv_to_nfa(to_app(arg), m_util_s, m, alphabet, determinize);
-        } else if (m_util_s.re.is_concat(expression)) { // Handle regex concatenation.
-            SASSERT(expression->get_num_args() > 0);
-            nfa = conv_to_nfa(to_app(expression->get_arg(0)), m_util_s, m, alphabet);
-            for (unsigned int i = 1; i < expression->get_num_args(); ++i) {
-                nfa.concatenate(conv_to_nfa(to_app(expression->get_arg(i)), m_util_s, m, alphabet, determinize));
-                nfa.trim();
-            }
-        } else if (m_util_s.re.is_antimirov_union(expression)) { // Handle Antimirov union.
-            util::throw_error("antimirov union is unsupported");
-        } else if (m_util_s.re.is_complement(expression)) { // Handle complement.
-            SASSERT(expression->get_num_args() == 1);
-            const auto child{ expression->get_arg(0) };
-            SASSERT(is_app(child));
-            nfa = conv_to_nfa(to_app(child), m_util_s, m, alphabet, determinize);
-            // According to make_complement, we do complement at the end, so we just invert it
-            make_complement = !make_complement;
-        } else if (m_util_s.re.is_derivative(expression)) { // Handle derivative.
-            util::throw_error("derivative is unsupported");
-        } else if (m_util_s.re.is_diff(expression)) { // Handle diff.
-            util::throw_error("regex difference is unsupported");
-        } else if (m_util_s.re.is_dot_plus(expression)) { // Handle dot plus.
-            nfa.initial.insert(0);
-            nfa.final.insert(1);
-            for (const auto& symbol : alphabet.alphabet) {
-                nfa.delta.add(0, symbol, 1);
-                nfa.delta.add(1, symbol, 1);
-            }
-        } else if (m_util_s.re.is_empty(expression)) { // Handle empty language.
-            // Do nothing, as nfa is initialized empty
-        } else if (m_util_s.re.is_epsilon(expression)) { // Handle epsilon.
-            nfa = mata::nfa::builder::create_empty_string_nfa();
-        } else if (m_util_s.re.is_full_char(expression)) { // Handle full char (single occurrence of any string symbol, '.').
-            nfa.initial.insert(0);
-            nfa.final.insert(1);
-            for (const auto& symbol : alphabet.alphabet) {
-                nfa.delta.add(0, symbol, 1);
-            }
-        } else if (m_util_s.re.is_full_seq(expression)) {
-            nfa.initial.insert(0);
-            nfa.final.insert(0);
-            for (const auto& symbol : alphabet.alphabet) {
-                nfa.delta.add(0, symbol, 0);
-            }
-        } else if (m_util_s.re.is_intersection(expression)) { // Handle intersection.
-            SASSERT(expression->get_num_args() > 0);
-            nfa = conv_to_nfa(to_app(expression->get_arg(0)), m_util_s, m, alphabet, determinize);
-            for (unsigned int i = 1; i < expression->get_num_args(); ++i) {
-                nfa = mata::nfa::intersection(nfa, conv_to_nfa(to_app(expression->get_arg(i)), m_util_s, m, alphabet, determinize));
-            }
-        } else if (m_util_s.re.is_loop(expression)) { // Handle loop.
-            unsigned low, high;
-            expr *body;
-            bool is_high_set = false;
-            if (m_util_s.re.is_loop(expression, body, low, high)) {
-                is_high_set = true;
-            } else if (m_util_s.re.is_loop(expression, body, low)) {
-                is_high_set = false;
+        if (m_util_s.str.is_string_term(expression)) {
+            zstring result;
+            if (m_util_s.str.is_string(expression, result)) {
+                return AutAssignment::create_word_nfa(result);
             } else {
-                util::throw_error("loop should contain at least lower bound");
+                util::throw_error("We can convert to NFA only string literals");
             }
+        }
 
-            Nfa body_nfa = conv_to_nfa(to_app(body), m_util_s, m, alphabet, determinize);
+        SASSERT(m_util_s.is_re(expression));
 
-            if (body_nfa.is_lang_empty()) {
-                // for the case that body of the loop represents empty language...
-                if (low == 0) {
-                    // ...we either return empty string if we have \emptyset{0,h}
-                    nfa = mata::nfa::builder::create_empty_string_nfa();
-                } else {
-                    // ... or empty language
-                    nfa = std::move(body_nfa);
-                }
-            } else if(body_nfa.is_universal(alphabet.mata_alphabet)) {
-                nfa = std::move(body_nfa);
-            } else {
-                body_nfa.unify_final();
-                body_nfa.unify_initial();
+        // to simulate recursive calls of conv_to_nfa on arguments of expression, we use postorder
+        // traversal of the ast for expression
+        std::stack<std::pair<app*, bool>> postorder_stack;
+        postorder_stack.push({expression, false});
+        std::stack<mata::nfa::Nfa> results_stack;
+        std::map<app*, unsigned> num_of_regex_arguments;
+        while (!postorder_stack.empty()) {
+            auto [cur_expr, visited] = postorder_stack.top();
+            postorder_stack.pop();
 
-                body_nfa = mata::nfa::reduce(body_nfa);
-                nfa = mata::nfa::builder::create_empty_string_nfa();
-             
-                if(low >= LOOP_BOUND) {
-                    nfa = create_large_concat(body_nfa, low);
-                } else {
-                    // we need to repeat body_nfa at least low times
-                    for (unsigned i = 0; i < low; ++i) {
-                        nfa.concatenate(body_nfa);
-                        nfa.trim();
-                    }
-                }
-
-                // we will now either repeat body_nfa high-low times (if is_high_set) or
-                // unlimited times (if it is not set), but we have to accept after each loop,
-                // so we add an empty word into body_nfa
-                mata::nfa::State new_state = body_nfa.add_state();
-                body_nfa.initial.insert(new_state);
-                body_nfa.final.insert(new_state);
-
-                body_nfa.unify_initial();
-                body_nfa = mata::nfa::reduce(body_nfa);
-
-                if (is_high_set) {
-                    // if high is set, we repeat body_nfa another high-low times
-                    for (unsigned i = 0; i < high - low; ++i) {
-                        nfa.concatenate(body_nfa);
-                        nfa.trim();
-                    }
-                } else {
-                    // if high is not set, we can repeat body_nfa unlimited more times
-                    // so we do star operation on body_nfa and add it to end of nfa
-                    for (const auto& final : body_nfa.final) {
-                        for (const auto& initial : body_nfa.initial) {
-                            body_nfa.delta.add(final, mata::nfa::EPSILON, initial);
+            if (!visited) { // we have not visited cur_expr -> we need to process children first
+                postorder_stack.push({cur_expr, true});
+                ptr_vector<expr> concatenation_args;
+                if (!m_util_s.re.is_concat(cur_expr, concatenation_args)) {
+                    for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
+                        expr* arg = cur_expr->get_arg(arg_idx);
+                        if (m_util_s.is_re(arg)) { // we only process childrens representing regexes
+                            concatenation_args.push_back(arg);
                         }
                     }
-                    nfa = mata::nfa::concatenate(nfa, body_nfa, true);
-                    nfa = mata::nfa::remove_epsilon(nfa);
                 }
-            }
-
-        } else if (m_util_s.re.is_of_pred(expression)) { // Handle of predicate.
-            util::throw_error("of predicate is unsupported");
-        } else if (m_util_s.re.is_opt(expression)) { // Handle optional.
-            SASSERT(expression->get_num_args() == 1);
-            const auto child{ expression->get_arg(0) };
-            SASSERT(is_app(child));
-            nfa = conv_to_nfa(to_app(child), m_util_s, m, alphabet, determinize);
-            nfa.unify_initial();
-            for (const auto& initial : nfa.initial) {
-                nfa.final.insert(initial);
-            }
-        } else if (m_util_s.re.is_range(expression)) { // Handle range.
-            SASSERT(expression->get_num_args() == 2);
-            const auto range_begin{ expression->get_arg(0) };
-            const auto range_end{ expression->get_arg(1) };
-            SASSERT(is_app(range_begin));
-            SASSERT(is_app(range_end));
-            const auto range_begin_value{ to_app(range_begin)->get_parameter(0).get_zstring()[0] };
-            const auto range_end_value{ to_app(range_end)->get_parameter(0).get_zstring()[0] };
-
-            nfa.initial.insert(0);
-            nfa.final.insert(1);
-            auto current_value{ range_begin_value };
-            while (current_value <= range_end_value) {
-                nfa.delta.add(0, current_value, 1);
-                ++current_value;
-            }
-        } else if (m_util_s.re.is_reverse(expression)) { // Handle reverse.
-            util::throw_error("reverse is unsupported");
-        } else if (m_util_s.re.is_union(expression)) { // Handle union (= or; A|B).
-            SASSERT(expression->get_num_args() == 2);
-            const auto left{ expression->get_arg(0) };
-            const auto right{ expression->get_arg(1) };
-            SASSERT(is_app(left));
-            SASSERT(is_app(right));
-            
-            mata::nfa::Nfa aut1 {conv_to_nfa(to_app(left), m_util_s, m, alphabet, determinize)};
-            mata::nfa::Nfa aut2 {conv_to_nfa(to_app(right), m_util_s, m, alphabet, determinize)};
-            nfa = mata::nfa::union_nondet(aut1, aut2);
-            
-        } else if (m_util_s.re.is_star(expression)) { // Handle star iteration.
-            SASSERT(expression->get_num_args() == 1);
-            const auto child{ expression->get_arg(0) };
-            SASSERT(is_app(child));
-            nfa = conv_to_nfa(to_app(child), m_util_s, m, alphabet, determinize);
-            for (const auto& final : nfa.final) {
-                for (const auto& initial : nfa.initial) {
-                    nfa.delta.add(final, mata::nfa::EPSILON, initial);
+                num_of_regex_arguments[cur_expr] = concatenation_args.size();
+                for (expr* arg : concatenation_args) {
+                    SASSERT(is_app(arg));
+                    postorder_stack.push({to_app(arg), false});
                 }
-            }
-            nfa.remove_epsilon();
-
-            // Make new initial final in order to accept empty string as is required by kleene-star.
-            mata::nfa::State new_state = nfa.add_state();
-            nfa.initial.insert(new_state);
-            nfa.final.insert(new_state);
-
-        } else if (m_util_s.re.is_plus(expression)) { // Handle positive iteration.
-            SASSERT(expression->get_num_args() == 1);
-            const auto child{ expression->get_arg(0) };
-            SASSERT(is_app(child));
-            nfa = conv_to_nfa(to_app(child), m_util_s, m, alphabet);
-            for (const auto& final : nfa.final) {
-                for (const auto& initial : nfa.initial) {
-                    nfa.delta.add(final, mata::nfa::EPSILON, initial);
+            } else { // we already visited cur_expr -> the NFAs for its children should be on results_stack
+                // we collect the NFAs for the children
+                std::vector<mata::nfa::Nfa> arg_nfas;
+                unsigned num_of_regex_arguments_of_cur_expr = num_of_regex_arguments.at(cur_expr);
+                for (unsigned arg_idx = 0; arg_idx < num_of_regex_arguments_of_cur_expr; ++arg_idx) {
+                    SASSERT(!results_stack.empty());
+                    arg_nfas.push_back(std::move(results_stack.top()));
+                    results_stack.pop();
                 }
+
+                STRACE("str-create_nfa",
+                    tout << "--------------" << "Creating NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "\n";
+                );
+
+                // create the resulting NFA for cur_expr
+                Nfa result{};
+                if (m_util_s.re.is_to_re(cur_expr)) { // Handle conversion of to regex function call.
+                    SASSERT(cur_expr->get_num_args() == 1);
+                    // Assume that expression inside re.to_re() function is a string of characters.
+                    zstring arg_string;
+                    if (!m_util_s.str.is_string(cur_expr->get_arg(0), arg_string)) { // if to_re has something other than string literal
+                        util::throw_error("we support only string literals in str.to_re");
+                    }
+                    result = AutAssignment::create_word_nfa(arg_string);
+                } else if (m_util_s.re.is_concat(cur_expr)) { // Handle regex concatenation.
+                    SASSERT(num_of_regex_arguments_of_cur_expr > 0);
+                    result = std::move(arg_nfas.at(0));
+                    for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
+                        result.concatenate(arg_nfas.at(i));
+                        arg_nfas[i].clear();
+                    }
+                    result.trim();
+                } else if (m_util_s.re.is_antimirov_union(cur_expr)) { // Handle Antimirov union.
+                    util::throw_error("antimirov union is unsupported");
+                } else if (m_util_s.re.is_complement(cur_expr)) { // Handle complement.
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfas.at(0));
+                    if (cur_expr == expression) { // if we are processing root
+                        // According to make_complement, we do complement at the end, so we just invert it
+                        make_complement = !make_complement;
+                    } else {
+                        result = mata::nfa::complement(result, alphabet.mata_alphabet, {{"algorithm", "classical"}});
+                    }
+                } else if (m_util_s.re.is_derivative(cur_expr)) { // Handle derivative.
+                    util::throw_error("derivative is unsupported");
+                } else if (m_util_s.re.is_diff(cur_expr)) { // Handle diff.
+                    util::throw_error("regex difference is unsupported");
+                } else if (m_util_s.re.is_dot_plus(cur_expr)) { // Handle dot plus.
+                    result.initial.insert(0);
+                    result.final.insert(1);
+                    for (const auto& symbol : alphabet.alphabet) {
+                        result.delta.add(0, symbol, 1);
+                        result.delta.add(1, symbol, 1);
+                    }
+                } else if (m_util_s.re.is_empty(cur_expr)) { // Handle empty language.
+                    // Do nothing, as nfa is initialized empty
+                } else if (m_util_s.re.is_epsilon(cur_expr)) { // Handle epsilon.
+                    result = mata::nfa::builder::create_empty_string_nfa();
+                } else if (m_util_s.re.is_full_char(cur_expr)) { // Handle full char (single occurrence of any string symbol, '.').
+                    result.initial.insert(0);
+                    result.final.insert(1);
+                    for (const auto& symbol : alphabet.alphabet) {
+                        result.delta.add(0, symbol, 1);
+                    }
+                } else if (m_util_s.re.is_full_seq(cur_expr)) {
+                    result.initial.insert(0);
+                    result.final.insert(0);
+                    for (const auto& symbol : alphabet.alphabet) {
+                        result.delta.add(0, symbol, 0);
+                    }
+                } else if (m_util_s.re.is_intersection(cur_expr)) { // Handle intersection.
+                    SASSERT(num_of_regex_arguments_of_cur_expr > 0);
+                    result = std::move(arg_nfas.at(0));
+                    if (result.num_of_states() >= RED_BOUND) {
+                        // first argument was not reduced if it is larger than RED_BOUND, however,
+                        // intersection is expensive and it is (probably) better to reduce
+                        // the arguments of intersection
+                        result = mata::nfa::reduce(result);
+                    }
+                    for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
+                        mata::nfa::Nfa next_arg = std::move(arg_nfas.at(i));
+                        if (next_arg.num_of_states() >= RED_BOUND) {
+                            // next_arg was not reduced if it is larger than RED_BOUND, however,
+                            // intersection is expensive and it is (probably) better to reduce
+                            // the arguments of intersection
+                            next_arg = mata::nfa::reduce(next_arg);
+                        }
+                        result = mata::nfa::intersection(result, next_arg);
+                    }
+                } else if (m_util_s.re.is_loop(cur_expr)) { // Handle loop.
+                    unsigned low, high;
+                    expr *body;
+                    bool is_high_set = false;
+                    if (m_util_s.re.is_loop(cur_expr, body, low, high)) {
+                        is_high_set = true;
+                    } else if (m_util_s.re.is_loop(cur_expr, body, low)) {
+                        is_high_set = false;
+                    } else {
+                        util::throw_error("loop should contain at least lower bound");
+                    }
+
+                    Nfa body_nfa = std::move(arg_nfas.at(0));
+
+                    if (body_nfa.is_lang_empty()) {
+                        // for the case that body of the loop represents empty language...
+                        if (low == 0) {
+                            // ...we either return empty string if we have \emptyset{0,h}
+                            result = mata::nfa::builder::create_empty_string_nfa();
+                        } else {
+                            // ... or empty language
+                            result = std::move(body_nfa);
+                        }
+                    } else if(body_nfa.is_universal(alphabet.mata_alphabet)) {
+                        result = std::move(body_nfa);
+                    } else {
+                        body_nfa.unify_final();
+                        body_nfa.unify_initial();
+
+                        body_nfa = mata::nfa::reduce(body_nfa);
+                        result = mata::nfa::builder::create_empty_string_nfa();
+                    
+                        if(low >= LOOP_BOUND) {
+                            result = create_large_concat(body_nfa, low);
+                        } else {
+                            // we need to repeat body_nfa at least low times
+                            for (unsigned i = 0; i < low; ++i) {
+                                result.concatenate(body_nfa);
+                                result.trim();
+                            }
+                        }
+
+                        // we will now either repeat body_nfa high-low times (if is_high_set) or
+                        // unlimited times (if it is not set), but we have to accept after each loop,
+                        // so we add an empty word into body_nfa
+                        mata::nfa::State new_state = body_nfa.add_state();
+                        body_nfa.initial.insert(new_state);
+                        body_nfa.final.insert(new_state);
+
+                        body_nfa.unify_initial();
+                        body_nfa = mata::nfa::reduce(body_nfa);
+
+                        if (is_high_set) {
+                            // if high is set, we repeat body_nfa another high-low times
+                            for (unsigned i = 0; i < high - low; ++i) {
+                                result.concatenate(body_nfa);
+                                result.trim();
+                            }
+                        } else {
+                            // if high is not set, we can repeat body_nfa unlimited more times
+                            // so we do star operation on body_nfa and add it to end of nfa
+                            for (const auto& final : body_nfa.final) {
+                                for (const auto& initial : body_nfa.initial) {
+                                    body_nfa.delta.add(final, mata::nfa::EPSILON, initial);
+                                }
+                            }
+                            result = mata::nfa::concatenate(result, body_nfa, true);
+                            result = mata::nfa::remove_epsilon(result);
+                        }
+                    }
+
+                } else if (m_util_s.re.is_of_pred(cur_expr)) { // Handle of predicate.
+                    util::throw_error("of predicate is unsupported");
+                } else if (m_util_s.re.is_opt(cur_expr)) { // Handle optional.
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfas.at(0));
+                    result.unify_initial();
+                    for (const auto& initial : result.initial) {
+                        result.final.insert(initial);
+                    }
+                } else if (m_util_s.re.is_range(cur_expr)) { // Handle range.
+                    SASSERT(cur_expr->get_num_args() == 2);
+                    const auto range_begin{ cur_expr->get_arg(0) };
+                    const auto range_end{ cur_expr->get_arg(1) };
+                    SASSERT(is_app(range_begin));
+                    SASSERT(is_app(range_end));
+                    const auto range_begin_value{ to_app(range_begin)->get_parameter(0).get_zstring()[0] };
+                    const auto range_end_value{ to_app(range_end)->get_parameter(0).get_zstring()[0] };
+
+                    result.initial.insert(0);
+                    result.final.insert(1);
+                    auto current_value{ range_begin_value };
+                    while (current_value <= range_end_value) {
+                        result.delta.add(0, current_value, 1);
+                        ++current_value;
+                    }
+                } else if (m_util_s.re.is_reverse(cur_expr)) { // Handle reverse.
+                    util::throw_error("reverse is unsupported");
+                } else if (m_util_s.re.is_union(cur_expr)) { // Handle union (= or; A|B).
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 2);
+                    result = std::move(arg_nfas.at(0));
+                    result.unite_nondet_with(arg_nfas.at(1));
+                } else if (m_util_s.re.is_star(cur_expr)) { // Handle star iteration.
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfas.at(0));
+                    for (const auto& final : result.final) {
+                        for (const auto& initial : result.initial) {
+                            result.delta.add(final, mata::nfa::EPSILON, initial);
+                        }
+                    }
+                    result.remove_epsilon();
+
+                    // Make new initial final in order to accept empty string as is required by kleene-star.
+                    mata::nfa::State new_state = result.add_state();
+                    result.initial.insert(new_state);
+                    result.final.insert(new_state);
+
+                } else if (m_util_s.re.is_plus(cur_expr)) { // Handle positive iteration.
+                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfas.at(0));
+                    for (const auto& final : result.final) {
+                        for (const auto& initial : result.initial) {
+                            result.delta.add(final, mata::nfa::EPSILON, initial);
+                        }
+                    }
+                    result.remove_epsilon();
+                } else if(util::is_variable(cur_expr)) { // Handle variable.
+                    util::throw_error("variable in regexes are unsupported");
+                } else {
+                    util::throw_error("unsupported operation in regex");
+                }
+
+                // intermediate automata reduction
+                // if the automaton is too big --> skip it. The computation of the simulation would be too expensive.
+                if(result.num_of_states() < RED_BOUND) {
+                    STRACE("str-create_nfa-reduce", 
+                        tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
+                        tout << result;
+                    );
+                    result = mata::nfa::reduce(result);
+                }
+
+                STRACE("str-create_nfa",
+                    tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "---------------" << std::endl;
+                    tout << result;
+                );
+
+                results_stack.push(std::move(result));
             }
-            nfa.remove_epsilon();
-        } else if(m_util_s.str.is_string(expression)) { // Handle string literal.
-            SASSERT(expression->get_num_parameters() == 1);
-            nfa = AutAssignment::create_word_nfa(expression->get_parameter(0).get_zstring());
-        } else if(util::is_variable(expression)) { // Handle variable.
-            util::throw_error("variable in regexes are unsupported");
-        } else {
-            util::throw_error("unsupported operation in regex");
         }
 
-        // intermediate automata reduction
-        // if the automaton is too big --> skip it. The computation of the simulation would be too expensive.
-        if(nfa.num_of_states() < RED_BOUND) {
-            STRACE("str-create_nfa-reduce", 
-                tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(expression), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
-                tout << nfa;
-            );
-            nfa = mata::nfa::reduce(nfa);
-        }
-        if(determinize) {
+        SASSERT(results_stack.size() == 1);
+
+        mata::nfa::Nfa final_result = std::move(results_stack.top());
+
+        if(determinize && !make_complement) { // if we need to complement, we will determinize anyway
             STRACE("str-create_nfa-reduce", 
                 tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(expression), const_cast<ast_manager&>(m)) << " that is going to be minimized" << "---------------" << std::endl;
-                tout << nfa;
+                tout << final_result;
             );
-            nfa = mata::nfa::minimize(nfa);
+            final_result = mata::nfa::minimize(final_result);
         }
 
-        STRACE("str-create_nfa",
-            tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(expression), const_cast<ast_manager&>(m)) << "---------------" << std::endl;
-            tout << nfa;
-        );
-
         // Whether to create complement of the final automaton.
-        // Warning: is_complement assumes we do the following, so if you to change this, go check is_complement first
         if (make_complement) {
             STRACE("str-create_nfa", tout << "Complemented NFA:" << std::endl;);
-            nfa = mata::nfa::complement(nfa, alphabet.mata_alphabet, { 
+            final_result = mata::nfa::complement(final_result, alphabet.mata_alphabet, { 
                 {"algorithm", "classical"}, 
                 //{"minimize", "true"} // it seems that minimizing during complement causes more TOs in benchmarks
                 });
-            STRACE("str-create_nfa", tout << nfa;);
         }
-        return nfa;
+
+        STRACE("str-create_nfa", tout << final_result;);
+        return final_result;
     }
 
     [[nodiscard]] RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s) {

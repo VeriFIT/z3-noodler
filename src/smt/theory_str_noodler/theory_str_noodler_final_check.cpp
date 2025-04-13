@@ -697,7 +697,15 @@ namespace smt::noodler {
             mata::nfa::Nfa nfa2 = regex::conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
 
             // check if NFAs are equivalent (if we have equation) or not (if we have disequation)
-            bool are_equiv = mata::nfa::are_equivalent(nfa1, nfa2);
+            bool are_equiv;
+            // for the case that one side is empty, we just need to check if the other automaton is empty
+            if (nfa1.num_of_states() == 0) {
+                are_equiv = nfa2.is_lang_empty();
+            } else if (nfa2.num_of_states() == 0) {
+                are_equiv = nfa1.is_lang_empty();
+            } else {
+                are_equiv = mata::nfa::are_equivalent(nfa1, nfa2);
+            }
             if ((is_equation && !are_equiv) || (!is_equation && are_equiv)) {
                 // the language (dis)equation does not hold => block it and return
                 app_ref lang_eq(m.mk_eq(left_side, right_side), m);

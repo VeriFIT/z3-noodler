@@ -539,6 +539,7 @@ public:
 
         bool is_to_re(expr const* n)    const { return is_app_of(n, m_fid, OP_SEQ_TO_RE); }
         bool is_concat(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_CONCAT); }
+        bool is_concat(expr* e, ptr_vector<expr>& es) const;
         bool is_union(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_UNION); }
         bool is_intersection(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_INTERSECT); }
         bool is_diff(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_DIFF); }
