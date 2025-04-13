@@ -157,11 +157,55 @@ namespace smt::noodler::regex {
      */
     zstring get_model_from_regex(const app *regex, const seq_util& m_util_s);
 
+    /// Prefix tree for multiple replace_all applications so that we can construct transducer simultaneously
+    class ReplaceAllPrefixTree {
+        std::set<unsigned> replace_chars; /// the chars occuring in the replace strings of replace_all operations
+        mata::nfa::Nfa prefix_automaton{1,{0}}; /// the prefix "tree" for find strings of replace_all operations (each find string will be a word of this automaton)
+        std::map<mata::nfa::State, mata::Word> replacing_map; /// maps final states of prefix_automaton that represent find strings to their corresponding replace strings
+
+    public:
+        ReplaceAllPrefixTree() = default;
+        /**
+         * @brief Add another replace_all application
+         * 
+         * It also checks if this application can be added to existing ones by some
+         * simple heuristics:
+         *      - @p find cannot contain some character which is in the replace string of
+         *        some previous replace_all application, as the replaced string could be
+         *        possibly matched by @p find (for example the first replace_all replaces
+         *        "a" with "bc" and the next one would replace "cd" with "d", so we would
+         *        need to for the word "ad" to get "bd" which would not happen in simultaneous
+         *        replacing)
+         *      - @p find cannot contain some character twice or more times as the created
+         *        transducer matches only, it cannot "start matching" while it is being
+         *        matched (for example matching "aab" on "aaab" would not work)
+         *      - @p find cannot be a prefix of the find string of some previous replace_all
+         *        operation (for example if we had "ab" is replaced with "c" and then we
+         *        would want replace_all where "a" is replaced with "d", the simultaneous
+         *        replacing would always replace "a" first, which is incorrect, "ab" should
+         *        be replaced)
+         * If it cannot be added, the function returns false and you should get the transducer.
+         * 
+         * @param find the string whose every occurence we want to replace
+         * @param replace what to replace with
+         * @return true If the replace_all application is added to this prefix tree
+         */
+        bool add_find(const zstring& find, const zstring& replace);
+
+        /**
+         * @brief Creates a transducer replacing all added finds by their replaces simultaneously
+         * 
+         * @param mata_alph The alphabet used for creating the transducer
+         * @return The simultaneous transducer
+         */
+        mata::nft::Nft create_transducer(mata::Alphabet* mata_alph);
+    };
+
     /**
      * @brief Gather transducer constraint (replace_all, replace_re_all) from a concatenation. Recursively applies also on 
      * nested calls of replace_all, replace_re_all.
      * 
-     * @param ex Concatenation of string terms.
+     * @param ex Expression to gather replaces from.
      * @param m AST manager
      * @param m_util_s Seq util for AST.
      * @param pred_replace Replacement of predicate and functions
@@ -169,7 +213,7 @@ namespace smt::noodler::regex {
      * @param mata_alph Mata alphabet containing symbols from the current instance
      * @param[out] transducer_preds Newly created transducer constraints
      */
-    void gather_transducer_constraints(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, 
+    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, 
         std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds);
 
 }

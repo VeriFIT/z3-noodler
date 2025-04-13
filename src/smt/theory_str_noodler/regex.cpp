@@ -761,7 +761,7 @@ namespace smt::noodler::regex {
             const auto child{ regex->get_arg(0) };
             SASSERT(is_app(child));
             return get_model_from_regex(to_app(child), m_util_s); // we just return one iteration
-        } else if(m_util_s.str.is_string(regex)) { // Handle string literal.
+        } else if (m_util_s.str.is_string(regex)) { // Handle string literal.
             SASSERT(regex->get_num_parameters() == 1);
             return regex->get_parameter(0).get_zstring();
         } else {
@@ -769,37 +769,143 @@ namespace smt::noodler::regex {
         }
     }
 
-    void gather_transducer_constraints(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds) {
-        if(m_util_s.str.is_string(ex) || util::is_variable(ex)) { // Handle string literals.
+    bool ReplaceAllPrefixTree::add_find(const zstring& find, const zstring& replace) {
+        if (find.length() == 0) {
+            return false;
+        }
+        std::set<unsigned> find_chars;
+        for (unsigned find_char : find) {
+            if (replace_chars.contains(find_char) || find_chars.contains(find_char)) {
+                // find shares some char with some previous replace
+                // or it contains the same char twice
+                return false;
+            }
+            find_chars.insert(find_char);
+        }
+
+        // add find to the prefix tree
+        mata::nfa::State cur_state = 0;
+        bool is_find_prefix_of_some_previous_find = true;
+        for (unsigned find_char : find) {
+            auto next_state_it = prefix_automaton.delta[cur_state].find(find_char);
+            if (next_state_it != prefix_automaton.delta[cur_state].end()) {
+                SASSERT(next_state_it->targets.size() == 1);
+                cur_state = next_state_it->targets.front();
+            } else {
+                is_find_prefix_of_some_previous_find = false; // find cannot be a prefix of some previous find as we are creating a new path in the prefix tree
+                mata::nfa::State next_state = prefix_automaton.add_state();
+                prefix_automaton.delta.add(cur_state, find_char, next_state);
+                cur_state = next_state;
+            }
+        }
+
+        if (!is_find_prefix_of_some_previous_find) {
+            prefix_automaton.final.insert(cur_state);
+            replacing_map[cur_state] = util::get_mata_word_zstring(replace);
+
+            for (unsigned replace_char : replace) {
+                replace_chars.insert(replace_char);
+            }
+
+            return true;
+        } else {
+            if (prefix_automaton.final[cur_state]) {
+                // even though the current find is a prefix of some previous find
+                // it is not a problem, because they are the same, so this replace_all
+                // would basically be a noop (as the previous replace_all would be applied)
+                // so we can return true, as we added this replace_all (noop) to this prefix tree
+                return true;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    mata::nft::Nft ReplaceAllPrefixTree::create_transducer(mata::Alphabet* mata_alph) {
+        // we will basically construct a product of prefix tree with identity transducer, but
+        // for the matched finds in the prefix tree, we replace them with their corresponding replaces
+        mata::nft::Nft result{1, {0}, {0}};
+        // contains pairs (w, p, q) where p is a state of the prefix tree, w is the word on the path to p and q is the state of result
+        std::queue<std::tuple<mata::Word,mata::nfa::State,mata::nft::State>> worklist;
+        worklist.push({mata::Word(), 0, 0});
+
+        while (!worklist.empty()) {
+            const auto [word, prefix_state, result_state] = worklist.front();
+            worklist.pop();
+            for (mata::Symbol symbol : mata_alph->get_alphabet_symbols()) {
+                mata::Word replacing_word; // if we will be replacing, this is the word by which we are replacing
+                auto symbol_transition_it = prefix_automaton.delta[prefix_state].find(symbol);
+                if (symbol_transition_it != prefix_automaton.delta[prefix_state].end()) {
+                    // symbol is in the prefix tree
+                    SASSERT(symbol_transition_it->targets.size() == 1);
+                    mata::nfa::State next_prefix_state = symbol_transition_it->targets.front();
+                    if (prefix_automaton.final[next_prefix_state]) {
+                        // if the next state is final, we want to add the replacement to result
+                        replacing_word = replacing_map[next_prefix_state];
+                    } else {
+                        // otherwise we just move to the next state of the prefix tree
+                        mata::nft::State next_result_state = result.add_transition(result_state, {symbol, mata::nft::EPSILON});
+                        mata::Word next_word = word;
+                        next_word.push_back(symbol);
+                        worklist.push({next_word, next_prefix_state, next_result_state});
+                        continue;
+                    }
+                } else {
+                    // symbol is not in the prefix tree, so the word we have just read in the prefix tree should stay the same,
+                    // i.e. we will do idenity
+                    replacing_word = word;
+                    replacing_word.push_back(symbol);
+                }
+
+                if (replacing_word.empty()) {
+                    // we are replacing with epsilon, so we just read the current symbol and return to accepting state
+                    result.add_transition(result_state, {symbol, mata::nft::EPSILON}, 0);
+                } else if (replacing_word.size() == 1) {
+                    // replacing by just one symbol means that we put it out while reading the current symbol
+                    result.add_transition(result_state, {symbol, replacing_word[0]}, 0);
+                } else {
+                    // we need to replace by a longer word, so first we read current symbol while putting out the first symbol of replace
+                    mata::nft::State next_state = result.add_transition(result_state, {symbol, replacing_word[0]});
+                    // and then just put out the rest while on the input we take epsilon
+                    for (size_t i = 1; i < replacing_word.size()-1; ++i) {
+                        next_state = result.add_transition(next_state, {mata::nft::EPSILON, replacing_word[i]});
+                    }
+                    // the last transition needs to go back to the final state
+                    result.add_transition(next_state, {mata::nft::EPSILON, replacing_word[replacing_word.size()-1]}, 0);
+                }
+            }
+        }
+        return result;
+    }
+
+    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds) {
+        if (m_util_s.str.is_string(ex) || util::is_variable(ex)) { // Handle string literals.
             return;
         }
 
-        if(!m_util_s.str.is_concat(ex)) {
-            expr* rpl = pred_replace.find(ex); // dies if it is not found
-            // so-far we handle just replace_all
-            expr * a1 = nullptr, *a2 = nullptr, *a3 = nullptr;
+        expr * a1 = nullptr, *a2 = nullptr, *a3 = nullptr;
+
+        if (m_util_s.str.is_concat(ex, a1, a2)) {
+            gather_transducer_constraints(to_app(a1), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+            gather_transducer_constraints(to_app(a2), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+            return;
+        }
+
+        expr* rpl = pred_replace.find(ex); // dies if it is not found
+
+        // collect all nested replace_all and replace_re_all and keep their arguments as pairs
+        // in find_and_replace (where find can be either zstring for replace_all or NFA for 
+        // replace_re_all)
+        std::vector<std::pair<std::variant<zstring,mata::nfa::Nfa>,zstring>> find_and_replace;
+        while (true) {
             if (m_util_s.str.is_replace_all(ex, a1, a2, a3)) {
                 zstring find, replace;
                 if(!m_util_s.str.is_string(a2, find) || !m_util_s.str.is_string(a3, replace)) {
                     util::throw_error("only replace_all with concrete find&replace is supported");
                 }
 
-                // recursively call on nested parameters
-                gather_transducer_constraints(to_app(a1), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
-                // collect and replace replace_all argument with a concatenation of basic terms
-                std::vector<BasicTerm> side {};
-                util::collect_terms(to_app(a1), m, m_util_s, pred_replace, var_name, side);
-
-                // result of the replace_all
-                std::string var = to_app(rpl)->get_decl()->get_name().str();
-                BasicTerm bvar(BasicTermType::Variable, var);
-
-                // transducer corresponding to replace_all
-                mata::nft::Nft nft = mata::nft::strings::replace_reluctant_literal(util::get_mata_word_zstring(find), util::get_mata_word_zstring(replace), mata_alph);
-
-                transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(nft), side, {bvar}));
-
-            // replace_re_all
+                find_and_replace.emplace_back(find, replace);
+                ex = to_app(a1);
             } else if (m_util_s.str.is_replace_re_all(ex, a1, a2, a3)) {
                 zstring replace;
                 if(!m_util_s.str.is_string(a3, replace)) {
@@ -812,30 +918,81 @@ namespace smt::noodler::regex {
                 Alphabet alph(syms);
                 mata::nfa::Nfa find_nfa = conv_to_nfa(to_app(a2), m_util_s, m, alph);
 
-                // recursively call on nested parameters
-                gather_transducer_constraints(to_app(a1), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
-                // collect and replace replace_all argument with a concatenation of basic terms
-                std::vector<BasicTerm> side {};
-                util::collect_terms(to_app(a1), m, m_util_s, pred_replace, var_name, side);
-
-                // result of the replace_all
-                std::string var = to_app(rpl)->get_decl()->get_name().str();
-                BasicTerm bvar(BasicTermType::Variable, var);
-
-                // transducer corresponding to replace_all
-                mata::nft::Nft nft = mata::nft::strings::replace_reluctant_regex(find_nfa, util::get_mata_word_zstring(replace), mata_alph);
-
-                transducer_preds.push_back(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(nft), side, {bvar}));
+                find_and_replace.emplace_back(find_nfa, replace);
+                ex = to_app(a1);
+            } else {
+                break;
             }
-            return;
         }
 
-        SASSERT(ex->get_num_args() == 2);
-        app *a_x = to_app(ex->get_arg(0));
-        app *a_y = to_app(ex->get_arg(1));
-        gather_transducer_constraints(a_x, m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
-        gather_transducer_constraints(a_y, m, m_util_s, pred_replace, var_name, mata_alph,transducer_preds);
+        if (!find_and_replace.empty()) {
+            // recursively call on nested parameters
+            gather_transducer_constraints(ex, m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+            // collect and replace replace_(re)_all argument with a concatenation of basic terms
+            std::vector<BasicTerm> side {};
+            util::collect_terms(ex, m, m_util_s, pred_replace, var_name, side);
 
+            // result of the replace_all
+            std::string var_name = to_app(rpl)->get_decl()->get_name().str();
+            BasicTerm result_var(BasicTermType::Variable, var_name);
+
+
+            // iterate backwards and construct transducer representing the replace operations
+            auto backward_iterator = find_and_replace.rbegin();
+            auto backward_iterator_end = find_and_replace.rend();
+            auto get_next_transducer = [&mata_alph,&backward_iterator,&backward_iterator_end]() {
+                auto backward_iterator_old = backward_iterator;
+                ReplaceAllPrefixTree prefix_tree;
+                while (backward_iterator != backward_iterator_end
+                    && std::holds_alternative<zstring>(backward_iterator->first)
+                    && prefix_tree.add_find(std::get<zstring>(backward_iterator->first), backward_iterator->second)) {
+                        ++backward_iterator;
+                }
+
+                if (backward_iterator != backward_iterator_old) {
+                    return mata::nft::reduce(prefix_tree.create_transducer(mata_alph)).trim();
+                } else {
+                    auto& find = backward_iterator->first;
+                    zstring& replace = backward_iterator->second;
+                    SASSERT(backward_iterator != backward_iterator_end);
+                    mata::nft::Nft result = std::holds_alternative<zstring>(find) ?
+                                                mata::nft::strings::replace_reluctant_literal(util::get_mata_word_zstring(std::get<zstring>(find)), util::get_mata_word_zstring(replace), mata_alph)
+                                              : mata::nft::strings::replace_reluctant_regex(std::get<mata::nfa::Nfa>(find), util::get_mata_word_zstring(replace), mata_alph);
+                    ++backward_iterator;
+                    return mata::nft::reduce(mata::nft::remove_epsilon(result).trim()).trim();
+                }
+            };
+
+            mata::nft::Nft transducer = get_next_transducer();
+            STRACE("str-gather_transducer_constraints",
+                tout << "Size of first NFT " << transducer.num_of_states() << "\n";
+                if (is_trace_enabled("str-nfa")) {
+                    tout << transducer.print_to_dot(true);
+                }
+            );
+            while (backward_iterator != backward_iterator_end) {
+                mata::nft::Nft next_transducer = get_next_transducer();
+                STRACE("str-gather_transducer_constraints",
+                    tout << "Size of next NFT " << next_transducer.num_of_states() << "\n";
+                    if (is_trace_enabled("str-nfa")) {
+                        tout << next_transducer.print_to_dot(true);
+                    }
+                );
+                transducer = mata::nft::compose(transducer, next_transducer, 1, 0);
+                transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
+                STRACE("str-gather_transducer_constraints",
+                    tout << "Size of composed NFT " << transducer.num_of_states() << "\n";
+                    if (is_trace_enabled("str-nfa")) {
+                        tout << transducer.print_to_dot(true);
+                    }
+                );
+            }
+
+            Predicate predicate_transducer = Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var});
+            STRACE("str-gather_transducer_constraints", tout << predicate_transducer << "\n";);
+            transducer_preds.push_back(predicate_transducer);
+            return;
+        }
     }
 
 }
