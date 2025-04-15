@@ -15,6 +15,7 @@
 #include <mata/nfa/strings.hh>
 #include <mata/nfa/builder.hh>
 
+#include "util.h"
 #include "formula.h"
 #include "counter_automaton.h"
 #include "aut_assignment.h"

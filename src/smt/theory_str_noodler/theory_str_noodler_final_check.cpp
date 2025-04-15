@@ -1,6 +1,6 @@
 #include <mata/nfa/builder.hh>
+#include "theory_str_noodler.h"
 #include "formula.h"
-#include "smt/theory_str_noodler/theory_str_noodler.h"
 #include "memb_heuristics_procedures.h"
 
 namespace smt::noodler {
@@ -602,7 +602,7 @@ namespace smt::noodler {
                 // This variable already has some regular constraints. Hence, we create an intersection of the new one
                 //  with the previously existing.
                 aut_ass_it->second = std::make_shared<mata::nfa::Nfa>(
-                        mata::nfa::reduce(mata::nfa::intersection(nfa, *aut_ass_it->second)));
+                        AutAssignment::reduce_nfa(mata::nfa::intersection(nfa, *aut_ass_it->second)));
 
             } else { // We create a regular constraint for the current variable for the first time.
                 aut_assignment[term] = std::make_shared<mata::nfa::Nfa>(std::forward<mata::nfa::Nfa>(std::move(nfa)));

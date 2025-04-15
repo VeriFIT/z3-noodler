@@ -1,11 +1,11 @@
 #include <cassert>
 
-#include "util/z3_exception.h"
-
 #include "regex.h"
 #include "theory_str_noodler.h"
 #include "inclusion_graph.h"
 #include "aut_assignment.h"
+
+#include "util/z3_exception.h"
 
 namespace {
     using mata::nfa::Nfa;
@@ -240,7 +240,7 @@ namespace smt::noodler::regex {
                         // first argument was not reduced if it is larger than RED_BOUND, however,
                         // intersection is expensive and it is (probably) better to reduce
                         // the arguments of intersection
-                        result = mata::nfa::reduce(result);
+                        result = AutAssignment::reduce_nfa(result);
                     }
                     for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
                         mata::nfa::Nfa next_arg = std::move(arg_nfas.at(i));
@@ -248,7 +248,7 @@ namespace smt::noodler::regex {
                             // next_arg was not reduced if it is larger than RED_BOUND, however,
                             // intersection is expensive and it is (probably) better to reduce
                             // the arguments of intersection
-                            next_arg = mata::nfa::reduce(next_arg);
+                            next_arg = AutAssignment::reduce_nfa(next_arg);
                         }
                         result = mata::nfa::intersection(result, next_arg);
                     }
@@ -281,7 +281,7 @@ namespace smt::noodler::regex {
                         body_nfa.unify_final();
                         body_nfa.unify_initial();
 
-                        body_nfa = mata::nfa::reduce(body_nfa);
+                        body_nfa = AutAssignment::reduce_nfa(body_nfa);
                         result = mata::nfa::builder::create_empty_string_nfa();
                     
                         if(low >= LOOP_BOUND) {
@@ -302,7 +302,7 @@ namespace smt::noodler::regex {
                         body_nfa.final.insert(new_state);
 
                         body_nfa.unify_initial();
-                        body_nfa = mata::nfa::reduce(body_nfa);
+                        body_nfa = AutAssignment::reduce_nfa(body_nfa);
 
                         if (is_high_set) {
                             // if high is set, we repeat body_nfa another high-low times
@@ -391,7 +391,7 @@ namespace smt::noodler::regex {
                         tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
                         tout << result;
                     );
-                    result = mata::nfa::reduce(result);
+                    result = AutAssignment::reduce_nfa(result);
                 }
 
                 STRACE("str-create_nfa",

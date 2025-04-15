@@ -288,7 +288,7 @@ namespace smt::noodler {
             mata::nfa::Nfa inters = mata::nfa::intersection(*(iter->second), concat);
             inters.trim();
             if(this->m_params.m_preprocess_red) {
-                this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(inters));
+                this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(AutAssignment::reduce_nfa(inters));
             } else {
                 this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(inters);
             }     
@@ -1105,7 +1105,7 @@ namespace smt::noodler {
                 mata::nfa::Nfa word_aut = AutAssignment::create_word_nfa(pr.first.get_name());
                 mata::nfa::Nfa inters = mata::nfa::intersection(*(pr.second), word_aut);
                 inters.trim();
-                this->aut_ass[pr.first] = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(inters));
+                this->aut_ass[pr.first] = std::make_shared<mata::nfa::Nfa>(AutAssignment::reduce_nfa(inters));
             }
         }
         STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
@@ -1723,8 +1723,8 @@ namespace smt::noodler {
         mata::nfa::Nfa only_digits_aut = AutAssignment::digit_automaton();
 
         for (const auto& conv : conversions) {
-            if ((conv.type == ConversionType::TO_CODE && mata::nfa::reduce(mata::nfa::intersection(sigma_aut,       *aut_ass.at(conv.string_var))).is_lang_empty()) ||
-                (conv.type == ConversionType::TO_INT  && mata::nfa::reduce(mata::nfa::intersection(only_digits_aut, *aut_ass.at(conv.string_var))).is_lang_empty()))
+            if ((conv.type == ConversionType::TO_CODE && AutAssignment::reduce_nfa(mata::nfa::intersection(sigma_aut,       *aut_ass.at(conv.string_var))).is_lang_empty()) ||
+                (conv.type == ConversionType::TO_INT  && AutAssignment::reduce_nfa(mata::nfa::intersection(only_digits_aut, *aut_ass.at(conv.string_var))).is_lang_empty()))
                 {
                     len_formula.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{conv.int_var, -1});
                 }

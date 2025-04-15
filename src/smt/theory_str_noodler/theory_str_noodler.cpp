@@ -8,6 +8,10 @@ Eternal glory to Yu-Fang.
 #include <iostream>
 #include <cmath>
 
+#include "decision_procedure.h"
+#include "theory_str_noodler.h"
+#include "memb_heuristics_procedures.h"
+
 #include "ast/ast_pp.h"
 #include "smt/smt_context.h"
 #include "smt/theory_lra.h"
@@ -15,10 +19,6 @@ Eternal glory to Yu-Fang.
 #include "smt/smt_context.h"
 #include "ast/seq_decl_plugin.h"
 #include "ast/reg_decl_plugins.h"
-
-#include "decision_procedure.h"
-#include "theory_str_noodler.h"
-#include "memb_heuristics_procedures.h"
 
 namespace smt::noodler {
 

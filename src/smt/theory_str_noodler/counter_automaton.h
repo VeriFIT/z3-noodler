@@ -14,8 +14,8 @@
 #include <mata/nfa/strings.hh>
 #include <mata/nfa/builder.hh>
 
-#include "formula.h"
 #include "util.h"
+#include "formula.h"
 
 /**
  * Exapands to two if statements terminating the function containing the macro early.

@@ -16,6 +16,7 @@ Author:
 Revision History:
 
 --*/
+#include "smt/theory_str_noodler/theory_str_noodler.h"
 #include "smt/smt_context.h"
 #include "smt/smt_setup.h"
 #include "ast/static_features.h"
@@ -41,7 +42,6 @@ Revision History:
 #include "smt/theory_fpa.h"
 #include "smt/theory_str.h"
 #include "smt/theory_polymorphism.h"
-#include "smt/theory_str_noodler/theory_str_noodler.h"
 
 namespace smt {
 

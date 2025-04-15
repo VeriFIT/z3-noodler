@@ -1,5 +1,5 @@
-#include "inclusion_graph.h"
 #include "util.h"
+#include "inclusion_graph.h"
 
 namespace {
     using namespace smt::noodler;

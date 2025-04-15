@@ -1,8 +1,8 @@
-#include "smt/smt_context.h"
-#include "smt/smt_model_generator.h"
-
 #include "theory_str_noodler.h"
 #include "decision_procedure.h"
+
+#include "smt/smt_context.h"
+#include "smt/smt_model_generator.h"
 
 namespace smt::noodler {
     /// @brief Class for model generation of string variables that are in decision procedure dec_proc
