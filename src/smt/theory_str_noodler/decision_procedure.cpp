@@ -577,7 +577,7 @@ namespace smt::noodler {
          **/
         auto noodles = mata::strings::seg_nfa::noodlify_for_equation(left_side_automata,
                                                                     right_side_automata,
-                                                                    mata::nfa::ReductionAlgorithm::SIMULATION);
+                                                                    AutAssignment::REDUCTION_ALGORITHM);
 
         for (const auto &noodle : noodles) {
             STRACE("str", tout << "Processing noodle" << (is_trace_enabled("str-nfa") ? " with automata:" : "") << std::endl;);
@@ -740,7 +740,7 @@ namespace smt::noodler {
         std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(),
                                                                                                                         input_vars_automata,
                                                                                                                         output_vars_automata,
-                                                                                                                        mata::nfa::ReductionAlgorithm::SIMULATION
+                                                                                                                        AutAssignment::REDUCTION_ALGORITHM
                                                                                                                     );
         for (const auto& noodle : noodles) {
             // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
