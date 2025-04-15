@@ -50,7 +50,7 @@ namespace smt::noodler {
             update_alphabet();
         };
 
-        static const mata::nfa::ReductionAlgorithm REDUCTION_ALGORITHM = mata::nfa::ReductionAlgorithm::SIMULATION;
+        static const mata::nfa::ReductionAlgorithm REDUCTION_ALGORITHM = mata::nfa::ReductionAlgorithm::RESIDUAL_WITH;
 
         static mata::nfa::Nfa reduce_nfa(const mata::nfa::Nfa& aut) {
             mata::nfa::Nfa result = mata::nfa::reduce(aut, nullptr, REDUCTION_ALGORITHM);
