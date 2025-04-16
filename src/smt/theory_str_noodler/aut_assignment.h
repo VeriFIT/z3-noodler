@@ -53,7 +53,9 @@ namespace smt::noodler {
         static const mata::nfa::ReductionAlgorithm REDUCTION_ALGORITHM = mata::nfa::ReductionAlgorithm::SIMULATION;
 
         static mata::nfa::Nfa reduce_nfa(const mata::nfa::Nfa& aut) {
+            STRACE("str-reduce_nfa", tout << "NFA to be reduced:\n" << aut);
             mata::nfa::Nfa result = mata::nfa::reduce(aut, nullptr, REDUCTION_ALGORITHM);
+            STRACE("str-reduce_nfa", tout << "reduced NFA:\n" << result);
             return result;
         }
 
