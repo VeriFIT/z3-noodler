@@ -655,7 +655,7 @@ namespace smt::noodler {
         // Underapproximate if it contains inequations
         for (const auto& [term, aut] : current_ass) {
             // we skip sigma_star automata
-            if(current_ass.are_quivalent(term, sigma_star)) continue;
+            if(current_ass.are_equivalent(term, sigma_star)) continue;
             if (prep_handler.get_aut_assignment().is_co_finite(term)) {
                 prep_handler.underapprox_var_language(term);
                 this->precision = LenNodePrecision::UNDERAPPROX;
@@ -725,10 +725,11 @@ namespace smt::noodler {
             }
         }
 
+        mata::nfa::Nfa sigma_star = init_aut_ass.sigma_star_automaton();
         for (const BasicTerm& t : form.get_vars()) {
             // t has language of sigma*
-            if(init_aut_ass.at(t)->num_of_states() <= 1) {
-                    continue;
+            if(init_aut_ass.are_equivalent(t, sigma_star)) {
+                continue;
             }
 
             // t is co-finite (we can underapproximate it)

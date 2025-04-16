@@ -254,7 +254,7 @@ namespace smt::noodler {
          * @param aut NFA to be compared
          * @return true <-> L(t) = L(aut)
          */
-        bool are_quivalent(const BasicTerm& t, const mata::nfa::Nfa& aut) const {
+        bool are_equivalent(const BasicTerm& t, const mata::nfa::Nfa& aut) const {
             return mata::nfa::are_equivalent(*this->at(t), aut);
         }
 
