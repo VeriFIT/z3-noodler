@@ -1517,14 +1517,26 @@ namespace smt::noodler {
         axiomatized_persist_terms.insert(e);
 
         ast_manager &m = get_manager();
-        expr *s = nullptr, *i = nullptr, *l = nullptr;
-        VERIFY(m_util_s.str.is_replace_all(e, s, i, l));
+        expr *what = nullptr, *find = nullptr, *replace = nullptr;
+        VERIFY(m_util_s.str.is_replace_all(e, what, find, replace));
 
         expr_ref v = mk_str_var_fresh("replace_all");
         // create equation for propagating length constraints
         // tmp = replace_all(...) => |tmp| = |replace_all(...)|
         add_axiom({mk_eq(v, e, false)});
-        this->predicate_replace.insert(e, v.get());  
+        this->predicate_replace.insert(e, v.get());
+
+        if (m_util_s.str.is_string(find) && m_util_s.str.is_string(replace)) {
+            expr_ref full_seq{ m_util_s.re.mk_full_seq(nullptr), m };
+            expr_ref contains_find{ m_util_s.re.mk_concat(full_seq, m_util_s.re.mk_concat(m_util_s.re.mk_to_re(find), full_seq)), m };
+            expr_ref contains_replace{ m_util_s.re.mk_concat(full_seq, m_util_s.re.mk_concat(m_util_s.re.mk_to_re(replace), full_seq)), m };
+            literal cntwf = mk_literal(m_util_s.re.mk_in_re(what, contains_find));
+            literal cntef = mk_literal(m_util_s.re.mk_in_re(e, contains_find));
+            literal cnter = mk_literal(m_util_s.re.mk_in_re(e, contains_replace));
+            add_axiom({~cntwf, ~cntef});
+            add_axiom({~cntwf, cnter});
+            add_axiom({cntwf, ~cntef});
+        }
     }
 
     /**
