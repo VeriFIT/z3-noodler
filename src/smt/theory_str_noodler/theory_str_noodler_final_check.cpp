@@ -504,11 +504,6 @@ namespace smt::noodler {
         }
 
         for (const auto &we: this->m_word_eq_todo_rel) {
-            // ignore trivial equations obtained from axiomatization of 
-            // transducer constraints, e.g., tmp = replace_all(...)
-            if(is_tmp_transducer_eq(ctx.mk_eq_atom(we.first, we.second))) {
-                continue;
-            }
             Predicate inst = this->conv_eq_pred(ctx.mk_eq_atom(we.first, we.second));
             // gather transducer constraints occurring in the concatenation
             regex::gather_transducer_constraints(to_app(we.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
