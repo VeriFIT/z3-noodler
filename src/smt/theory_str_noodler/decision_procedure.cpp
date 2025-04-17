@@ -1671,6 +1671,7 @@ namespace smt::noodler {
 
         // So-far just lightweight preprocessing
         prep_handler.remove_trivial();
+        prep_handler.reduce_transducers();
         prep_handler.reduce_diseqalities();
         if (opt == PreprocessType::UNDERAPPROX) {
             prep_handler.underapprox_languages();

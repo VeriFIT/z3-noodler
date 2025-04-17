@@ -1623,6 +1623,33 @@ namespace smt::noodler {
         STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
     }
 
+    void FormulaPreprocessor::reduce_transducers() {
+        STRACE("str-prep", tout << "Preprocessing step - reduce_transducers\n";);
+        std::set<size_t> rem_ids;
+
+        for (const auto& pred : this->formula.get_predicates()) {
+            if (!pred.second.is_transducer()) { continue; }
+            const std::vector<BasicTerm>& output = pred.second.get_output();
+            const std::vector<BasicTerm>& input = pred.second.get_input();
+            if (output.size() == 1 && input.size() == 1) {
+                const BasicTerm& output_var = output[0];
+                const BasicTerm& input_var = input[0];
+                if (output_var.is_variable() && this->formula.get_var_occurr(output_var).size() == 1) {
+                    this->aut_ass[input_var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(pred.second.get_transducer()->apply(*this->aut_ass.at(output_var), 1).to_nfa_move(), *this->aut_ass.at(input_var)));
+                    rem_ids.insert(pred.first);
+                } else if (input_var.is_variable() && this->formula.get_var_occurr(input_var).size() == 1) {
+                    this->aut_ass[output_var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(pred.second.get_transducer()->apply(*this->aut_ass.at(input_var), 1).to_nfa_move(), *this->aut_ass.at(output_var)));
+                    rem_ids.insert(pred.first);
+                }
+            }
+        }
+
+        for(const size_t & i : rem_ids) {
+            this->formula.remove_predicate(i);
+        }
+        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+    }
+
     /**
      * @brief Heuristicaly check if @p con1 and @p con2 can be unified, meaning that if we replace 
      * variables with their replacements, can we get that @p con1  == @p con2 ? 
