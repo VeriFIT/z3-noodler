@@ -196,7 +196,7 @@ namespace smt::noodler {
 
 
         // There is only one symbol in the equation. The system is SAT iff lengths are SAT
-        if(m_params.m_try_unary_proc && symbols_in_formula.size() == 2 && !contains_word_disequations && !contains_conversions && !contains_transducers && this->m_not_contains_todo_rel.size() == 0 && this->m_membership_todo_rel.empty()) { // dummy symbol + 1
+        if(m_params.m_try_unary_proc && symbols_in_formula.size() == 2 && !contains_conversions && !contains_transducers && this->m_not_contains_todo_rel.size() == 0 && UnaryDecisionProcedure::is_suitable(instance, aut_assignment)) { // dummy symbol + 1
             lbool result = run_length_sat(instance, aut_assignment, init_length_sensitive_vars, conversions);
             if(result == l_true) {
                 return FC_DONE;
@@ -1086,7 +1086,7 @@ namespace smt::noodler {
                                 std::vector<TermConversion> conversions) {
 
         dec_proc = std::make_shared<UnaryDecisionProcedure>(instance, aut_ass, m_params);
-        expr_ref lengths(m.mk_true(), m); // it is assumed that lenght formulas from equations were added in new_eq_eh, so we can just have 'true'
+        expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first); // it is assumed that lenght formulas from equations were added in new_eq_eh, so we can just have 'true'
         this->statistics.at("unary").num_start++;
         this->statistics.at("unary").num_finish++;
         if(check_len_sat(lengths, nullptr) == l_false) {

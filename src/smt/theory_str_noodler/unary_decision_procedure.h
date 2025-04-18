@@ -2,6 +2,7 @@
 #define _NOODLER_UNARY_PROCEDURE_H_
 
 #include "decision_procedure.h"
+#include "formula.h"
 #include "regex.h"
 
 namespace smt::noodler {
@@ -18,10 +19,11 @@ namespace smt::noodler {
         Formula formula;
         const theory_str_noodler_params& m_params;
         mata::Symbol symbol;
+        AutAssignment aut_ass;
 
     public:
         UnaryDecisionProcedure(const Formula& equations, const AutAssignment& init_aut_ass, const theory_str_noodler_params& par)
-            : formula(equations), m_params(par) {
+            : formula(equations), m_params(par), aut_ass(init_aut_ass) {
 
             auto alph = init_aut_ass.get_alphabet();
             alph.erase(util::get_dummy_symbol());
@@ -33,6 +35,40 @@ namespace smt::noodler {
 
         std::vector<BasicTerm> get_len_vars_for_model(const BasicTerm& str_var) override {
             return {str_var};
+        }
+
+        std::pair<LenNode, LenNodePrecision> get_lengths() override {
+            LenNode ln(LenFormulaType::AND);
+            ln.succ.push_back(LenNode(LenFormulaType::TRUE));
+
+            for(const BasicTerm& bt : this->formula.get_vars()) {
+                ln.succ.push_back(this->aut_ass.get_lengths(bt));
+            }
+            for(const Predicate& pr : this->formula.get_predicates()) {
+                if(pr.is_equation()) {
+                    continue;
+                }
+                ln.succ.push_back(pr.get_formula_eq());
+            }
+            return {ln, LenNodePrecision::PRECISE};
+        }
+
+        static bool is_suitable(const Formula& formula, const AutAssignment& init_aut_ass) {
+            if(init_aut_ass.get_alphabet().size() != 2) {
+                return false;
+            }
+            if(formula.contains_pred_type(PredicateType::Transducer) || formula.contains_pred_type(PredicateType::NotContains)) {
+                return false;
+            }
+            if(formula.contains_pred_type(PredicateType::Inequation)) {
+                for(const BasicTerm& bt : formula.get_vars()) {
+                    auto used_symbols = init_aut_ass.at(bt)->delta.get_used_symbols();
+                    if(used_symbols.size() != 1 || util::is_dummy_symbol(used_symbols.back())) {
+                        return false;
+                    } 
+                }
+            }
+            return true;
         }
 
         /**
