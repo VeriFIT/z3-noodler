@@ -363,25 +363,21 @@ namespace smt::noodler {
 
         /// get left side of (dis)equation 
         [[nodiscard]] std::vector<BasicTerm>& get_left_side() {
-            assert(is_eq_or_ineq());
             return params[0];
         }
 
         /// get left side of (dis)equation 
         [[nodiscard]] const std::vector<BasicTerm>& get_left_side() const {
-            assert(is_eq_or_ineq());
             return params[0];
         }
 
         /// get right side of (dis)equation 
         [[nodiscard]] std::vector<BasicTerm>& get_right_side() {
-            assert(is_eq_or_ineq());
             return params[1];
         }
 
         /// get right side of (dis)equation 
         [[nodiscard]] const std::vector<BasicTerm>& get_right_side() const {
-            assert(is_eq_or_ineq());
             return params[1];
         }
 

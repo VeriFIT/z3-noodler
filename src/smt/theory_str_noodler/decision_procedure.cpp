@@ -1562,7 +1562,7 @@ namespace smt::noodler {
 
         STRACE("str", tout << "CA-DISEQS (original): " << std::endl << this->not_contains.to_string() << std::endl;);
         STRACE("str", tout << "CA-DISEQS (substituted): " << std::endl << proj_not_cont.to_string() << std::endl;);
-        return ca::get_lia_for_not_contains(proj_not_cont, this->solution.aut_ass, this->m_params.m_ca_constr);
+        return ca::get_lia_for_not_contains(proj_not_cont, this->solution.aut_ass, true);
     }
 
     /**
@@ -1596,15 +1596,12 @@ namespace smt::noodler {
             }
         }
 
-        // we set all variables in not contains as length
-        if(this->m_params.m_ca_constr) {
-            if (has_transducers) {
-                util::throw_error("Transducers cannot be used with counter automata solving"); // TODO: is this true?
-            }
-            for(const Predicate& nt : this->not_contains.get_predicates()) {
-                for(const BasicTerm& var : nt.get_vars()) {
-                    this->init_length_sensitive_vars.insert(var);
-                }
+        if (has_transducers && this->not_contains.get_predicates().size() > 0) {
+            util::throw_error("Transducers cannot be used with counter automata solving"); // TODO: is this true?
+        }
+        for(const Predicate& nt : this->not_contains.get_predicates()) {
+            for(const BasicTerm& var : nt.get_vars()) {
+                this->init_length_sensitive_vars.insert(var);
             }
         }
 
