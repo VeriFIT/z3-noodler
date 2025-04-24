@@ -41,7 +41,7 @@ namespace smt::noodler {
             LenNode ln(LenFormulaType::AND);
             ln.succ.push_back(LenNode(LenFormulaType::TRUE));
 
-            for(const BasicTerm& bt : this->formula.get_vars()) {
+            for(const BasicTerm& bt : this->aut_ass.get_keys()) {
                 ln.succ.push_back(this->aut_ass.get_lengths(bt));
             }
             for(const Predicate& pr : this->formula.get_predicates()) {
