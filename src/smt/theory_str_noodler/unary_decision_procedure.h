@@ -60,13 +60,11 @@ namespace smt::noodler {
             if(formula.contains_pred_type(PredicateType::Transducer) || formula.contains_pred_type(PredicateType::NotContains)) {
                 return false;
             }
-            if(formula.contains_pred_type(PredicateType::Inequation)) {
-                for(const BasicTerm& bt : formula.get_vars()) {
-                    auto used_symbols = init_aut_ass.at(bt)->delta.get_used_symbols();
-                    if(used_symbols.size() != 1 || util::is_dummy_symbol(used_symbols.back())) {
-                        return false;
-                    } 
-                }
+            for(const BasicTerm& bt : formula.get_vars()) {
+                auto used_symbols = init_aut_ass.at(bt)->delta.get_used_symbols();
+                if(used_symbols.size() != 1 || util::is_dummy_symbol(used_symbols.back())) {
+                    return false;
+                } 
             }
             return true;
         }
