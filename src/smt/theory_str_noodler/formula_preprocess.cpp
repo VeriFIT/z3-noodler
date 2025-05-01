@@ -1634,13 +1634,14 @@ namespace smt::noodler {
             if (output.size() == 1 && input.size() == 1) {
                 const BasicTerm& output_var = output[0];
                 const BasicTerm& input_var = input[0];
-                // TODO add to model shit so we can generate model for these variables
                 if (output_var.is_variable() && this->formula.get_var_occurr(output_var).size() == 1 && !this->len_variables.contains(output_var)) {
                     this->aut_ass[input_var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(pred.second.get_transducer()->apply(*this->aut_ass.at(output_var), 1).to_nfa_move(), *this->aut_ass.at(input_var)));
                     rem_ids.insert(pred.first);
+                    removed_inclusions_for_model.push_back(Predicate::create_transducer(pred.second.get_transducer(), {output_var}, {input_var}));
                 } else if (input_var.is_variable() && this->formula.get_var_occurr(input_var).size() == 1 && !this->len_variables.contains(input_var)) {
                     this->aut_ass[output_var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(pred.second.get_transducer()->apply(*this->aut_ass.at(input_var), 0).to_nfa_move(), *this->aut_ass.at(output_var)));
                     rem_ids.insert(pred.first);
+                    removed_inclusions_for_model.push_back(pred.second);
                 }
             }
         }

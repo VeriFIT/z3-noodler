@@ -1901,9 +1901,10 @@ namespace smt::noodler {
         // occurs only once only in this inclusion, so they should belong to chain-free fragment
         //  => they are not on a cycle (important for model generation, we want to generate the
         //     model of vars on the right side from the left side)
+        // TODO inclusions_from_preprocessing can also contain simple transducers (of the form x=T(y) where x is refined,
+        // by T(y) and y does not occur anywhere else), we should probably change the name
         for (const Predicate& incl : inclusions_from_preprocessing) {
-            solution.inclusions.insert(incl);
-            solution.predicates_not_on_cycle.insert(incl);
+            solution.add_predicate(incl, false);
         }
         inclusions_from_preprocessing.clear();
 
