@@ -1639,7 +1639,7 @@ namespace smt::noodler {
                     this->aut_ass[input_var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(pred.second.get_transducer()->apply(*this->aut_ass.at(output_var), 1).to_nfa_move(), *this->aut_ass.at(input_var)));
                     rem_ids.insert(pred.first);
                 } else if (input_var.is_variable() && this->formula.get_var_occurr(input_var).size() == 1 && !this->len_variables.contains(input_var)) {
-                    this->aut_ass[output_var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(pred.second.get_transducer()->apply(*this->aut_ass.at(input_var), 1).to_nfa_move(), *this->aut_ass.at(output_var)));
+                    this->aut_ass[output_var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(pred.second.get_transducer()->apply(*this->aut_ass.at(input_var), 0).to_nfa_move(), *this->aut_ass.at(output_var)));
                     rem_ids.insert(pred.first);
                 }
             }
@@ -1886,7 +1886,7 @@ namespace smt::noodler {
         for (const auto& len_var : len_variables) {
             res << " " << len_var;
         }
-        res << "Current conversion vars:";
+        res << "\nCurrent conversion vars:";
         for (const auto& conv_var : conversion_vars) {
             res << " " << conv_var;
         }
