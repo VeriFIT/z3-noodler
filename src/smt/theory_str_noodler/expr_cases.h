@@ -95,7 +95,7 @@ bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m
  * @param[out] num Number on the opposite side
  * @return true <-> if of the particular form.
  */
-bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& len_arg, rational& num);
+bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num);
 
 /**
  * @brief Check if the expression @p e is of the form len(x) <= num.
@@ -108,7 +108,7 @@ bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_ut
  * @param[out] num Number on the opposite side of the comparison
  * @return true <-> if of the particular form.
  */
-bool is_len_num_leq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& len_arg, rational& num);
+bool is_len_num_leq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num);
 
 /**
  * @brief Check if the formula @p e contains a quantifier.

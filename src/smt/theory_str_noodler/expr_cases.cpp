@@ -71,27 +71,61 @@ bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m
     return false;
 }
 
-bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& len_arg, rational& num) {
+bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_vars_concat) {
+    expr *arg = nullptr;
+    if (m_util_s.str.is_length(e, arg)) {
+        len_vars_concat = expr_ref(arg, m);
+        return true;
+    } else if (m_util_a.is_add(e)) {
+        expr_ref argref(m);
+        arg = to_app(e)->get_arg(0);
+        if (is_sum_of_lens(arg, m, m_util_s, m_util_a, argref)) {
+            len_vars_concat = expr_ref(argref, m);
+        } else {
+            return false;
+        }
+
+        for (int i = 1; i < to_app(e)->get_num_args(); ++i) {
+            if (is_sum_of_lens(arg, m, m_util_s, m_util_a, argref)) {
+                len_vars_concat = expr_ref(m_util_s.str.mk_concat(len_vars_concat, argref), m);
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num) {
     expr* left = nullptr, *right = nullptr;
     if(m.is_eq(e, left, right)) {
-        if(m_util_a.is_numeral(left, num) && m_util_s.str.is_length(right, len_arg)) {
-            return true;
+        expr* non_num_side;
+        if (m_util_a.is_numeral(left, num)) {
+            non_num_side = right;
+        } else if (m_util_a.is_numeral(right, num)) {
+            non_num_side = left;
+        } else {
+            return false;
         }
-        if(m_util_a.is_numeral(right, num) && m_util_s.str.is_length(left, len_arg)) {
+
+        std::cout << mk_pp(non_num_side, m) << "\n";
+
+        if (is_sum_of_lens(non_num_side, m, m_util_s, m_util_a, len_arg)) {
             return true;
         }
     }
     return false;
 }
 
-bool is_len_num_leq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& len_arg, rational& num) {
+bool is_len_num_leq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num) {
     expr* left = nullptr, *right = nullptr, *e_not = nullptr;
     if(m_util_a.is_le(e, left, right)) {
-        if(m_util_a.is_numeral(right, num) && m_util_s.str.is_length(left, len_arg)) {
+        if(m_util_a.is_numeral(right, num) && is_sum_of_lens(left, m, m_util_s, m_util_a, len_arg)) {
             return true;
         }
     } else if(m.is_not(e, e_not) && m_util_a.is_ge(e_not, left, right)) {
-        if(m_util_a.is_numeral(right, num) && m_util_s.str.is_length(left, len_arg)) {
+        if(m_util_a.is_numeral(right, num) && is_sum_of_lens(left, m, m_util_s, m_util_a, len_arg)) {
             num--;
             return true;
         }

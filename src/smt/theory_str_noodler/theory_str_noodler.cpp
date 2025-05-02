@@ -2119,15 +2119,11 @@ namespace smt::noodler {
         // big automata in the decision procedure.
         const int MAX_NUM = 64; 
         rational val;
-        expr* len_arg = nullptr;
+        expr_ref len_arg(m);
         if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val.is_nonneg() && val < MAX_NUM && val > 0) {
-            expr_ref re(m);
-            for(int i = 0; i < val; i++) {
-                if(re == nullptr) {
-                    re = m_util_s.re.mk_full_char(nullptr);
-                } else {
-                    re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
-                }  
+            expr_ref re(m_util_s.re.mk_full_char(nullptr), m);
+            for(rational i{1}; i < val; i++) {
+                re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
             }
             expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
             add_axiom({~mk_literal(ex), mk_literal(in_re)});
