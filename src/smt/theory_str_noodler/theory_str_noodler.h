@@ -221,7 +221,7 @@ namespace smt::noodler {
         /**
          * @brief Add special axioms for length (in)equations.
          */
-        void add_len_num_axioms();
+        bool add_len_num_axioms(expr* ex);
 
         /**
          * @brief Get concatenation of e1 and e2
