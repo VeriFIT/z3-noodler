@@ -702,7 +702,7 @@ namespace smt::noodler {
              std::unordered_set<BasicTerm> init_length_sensitive_vars,
              const theory_str_noodler_params &par,
              std::vector<TermConversion> conversions
-        ) : init_length_sensitive_vars(init_length_sensitive_vars),
+        ) : init_length_sensitive_vars(),
             formula(formula),
             init_aut_ass(init_aut_ass),
             conversions(conversions),
