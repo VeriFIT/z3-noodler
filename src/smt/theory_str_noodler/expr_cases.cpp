@@ -117,19 +117,34 @@ bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_ut
     return false;
 }
 
-bool is_len_num_leq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num) {
-    expr* left = nullptr, *right = nullptr, *e_not = nullptr;
-    if(m_util_a.is_le(e, left, right)) {
-        if(m_util_a.is_numeral(right, num) && is_sum_of_lens(left, m, m_util_s, m_util_a, len_arg)) {
-            return true;
-        }
-    } else if(m.is_not(e, e_not) && m_util_a.is_ge(e_not, left, right)) {
-        if(m_util_a.is_numeral(right, num) && is_sum_of_lens(left, m, m_util_s, m_util_a, len_arg)) {
-            num--;
-            return true;
-        }
+bool is_len_num_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num, bool& num_is_larger) {
+    expr* less = nullptr, *more = nullptr, *e_not = nullptr;
+    bool strictly_less;
+    if (m_util_a.is_lt(e, less, more) || (m.is_not(e, e_not) && m_util_a.is_ge(e_not, less, more)) ||
+        m_util_a.is_gt(e, more, less) || (m.is_not(e, e_not) && m_util_a.is_le(e_not, more, less))) {
+        strictly_less = true;
+    } else if (m_util_a.is_le(e, less, more) || (m.is_not(e, e_not) && m_util_a.is_gt(e_not, less, more)) ||
+               m_util_a.is_ge(e, more, less) || (m.is_not(e, e_not) && m_util_a.is_lt(e_not, more, less))) {
+        strictly_less = false;
+    } else {
+        return false;
     }
-    return false;
+    
+    if (m_util_a.is_numeral(more, num) && is_sum_of_lens(less, m, m_util_s, m_util_a, len_arg)) {
+        if (strictly_less) {
+            --num;
+        }
+        num_is_larger = true;
+        return true;
+    } else if (m_util_a.is_numeral(less, num) && is_sum_of_lens(more, m, m_util_s, m_util_a, len_arg)) {
+        if (strictly_less) {
+            ++num;
+        }
+        num_is_larger = false;
+        return true;
+    } else {
+        return false;
+    }
 }
 
 bool is_indexof_at(expr * index_param, expr* index_str, ast_manager& m, seq_util& m_util_s) {

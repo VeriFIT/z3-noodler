@@ -108,7 +108,7 @@ bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_ut
  * @param[out] num Number on the opposite side of the comparison
  * @return true <-> if of the particular form.
  */
-bool is_len_num_leq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num);
+bool is_len_num_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num, bool& num_is_larger);
 
 /**
  * @brief Check if the formula @p e contains a quantifier.
