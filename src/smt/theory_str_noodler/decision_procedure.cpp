@@ -1739,6 +1739,8 @@ namespace smt::noodler {
 
         prep_handler.conversions_validity(conversions);
 
+        prep_handler.simplify_not_contains_to_equations();
+
         // try to replace the not contains predicates (so-far we replace it by regular constraints)
         if(!prep_handler.replace_not_contains() || prep_handler.can_unify_not_contains()) {
             return l_false;

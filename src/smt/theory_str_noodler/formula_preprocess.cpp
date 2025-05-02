@@ -1756,6 +1756,7 @@ namespace smt::noodler {
      * @return false if a not(contains) is unsatisfiable 
      */
     bool FormulaPreprocessor::replace_not_contains() {
+        STRACE("str-prep", tout << "Preprocessing step - replace_not_contains\n";);
         std::set<size_t> rem_ids;
         for(const auto& [id, pred] : this->formula.get_predicates()) {
             if(!pred.is_not_cont()) continue;
@@ -1788,7 +1789,48 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
+        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
         return true;
+    }
+
+    void FormulaPreprocessor::simplify_not_contains_to_equations() {
+        STRACE("str-prep", tout << "Preprocessing step - simplify_not_contains_to_equations\n";);
+        bool something_changed = true;
+        while (something_changed) {
+            something_changed = false;
+            for(const auto& [id, pred] : this->formula.get_predicates()) {
+                if(!pred.is_not_cont()) continue;
+                Concat needle = pred.get_needle();
+                if (needle.size() != 1) continue;
+                BasicTerm needle_var = needle[0];
+                if (needle_var.is_variable() && !len_variables.contains(needle_var) && !conversion_vars.contains(needle_var)) {
+                    bool occurs_only_in_not_contains_as_needle = true;
+                    std::set<size_t> rem_ids;
+                    std::vector<BasicTerm> haystacks;
+                    for (const auto& occur : this->formula.get_var_occurr(needle_var)) {
+                        const Predicate& pred = this->formula.get_predicate(occur.pred_index);
+                        if (!pred.is_not_cont() || pred.get_needle().size() != 1 || occur.position != 1) {
+                            occurs_only_in_not_contains_as_needle = false;
+                            break;
+                        }
+                        for (BasicTerm haystack_var : pred.get_haystack()) {
+                            haystacks.emplace_back(haystack_var);
+                        }
+                        rem_ids.insert(occur.pred_index);
+                    }
+                    if (occurs_only_in_not_contains_as_needle && this->aut_ass.are_equivalent(needle_var, aut_ass.sigma_star_automaton())) {
+                        for(const size_t & i : rem_ids) {
+                            this->formula.remove_predicate(i);
+                        }
+                        haystacks.emplace_back(BasicTermType::Literal, zstring(*this->aut_ass.get_alphabet().begin()));
+                        this->removed_inclusions_for_model.push_back(Predicate::create_equation(haystacks, {needle_var}));
+                        something_changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
     }
 
     /**

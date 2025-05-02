@@ -427,6 +427,8 @@ namespace smt::noodler {
          */
         bool replace_not_contains();
 
+        void simplify_not_contains_to_equations();
+
         /**
          * @brief Replace all occurrences of find with replace. Warning: do not modify the automata assignment.
          *
