@@ -86,6 +86,7 @@ bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_u
         }
 
         for (int i = 1; i < to_app(e)->get_num_args(); ++i) {
+            arg = to_app(e)->get_arg(i);
             if (is_sum_of_lens(arg, m, m_util_s, m_util_a, argref)) {
                 len_vars_concat = expr_ref(m_util_s.str.mk_concat(len_vars_concat, argref), m);
             } else {
@@ -108,8 +109,6 @@ bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_ut
         } else {
             return false;
         }
-
-        std::cout << mk_pp(non_num_side, m) << "\n";
 
         if (is_sum_of_lens(non_num_side, m, m_util_s, m_util_a, len_arg)) {
             return true;
