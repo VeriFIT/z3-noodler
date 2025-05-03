@@ -1824,18 +1824,20 @@ namespace smt::noodler {
             for(const auto& [id, pred] : this->formula.get_predicates()) {
                 if(!pred.is_not_cont()) continue;
                 Concat needle = pred.get_needle();
-                if (needle.size() != 1) continue;
-                BasicTerm needle_var = needle[0];
+                if (needle.size() != 1) continue; // needle must be only one variable x
+                BasicTerm needle_var = needle[0]; // the variable x
                 if (needle_var.is_variable() && !len_variables.contains(needle_var) && !conversion_vars.contains(needle_var)) {
                     bool occurs_only_in_not_contains_as_needle = true;
-                    std::set<size_t> rem_ids;
-                    std::vector<BasicTerm> haystacks;
+                    std::set<size_t> rem_ids; // the not contains in which x occurs as needle
+                    std::vector<BasicTerm> haystacks; // we will collect the concatenation u1.u2.u3...uN here
                     for (const auto& occur : this->formula.get_var_occurr(needle_var)) {
                         const Predicate& pred = this->formula.get_predicate(occur.pred_index);
+                        // check if x occurs only as needle in not contains
                         if (!pred.is_not_cont() || pred.get_needle().size() != 1 || occur.position != 1) {
                             occurs_only_in_not_contains_as_needle = false;
                             break;
                         }
+                        // add the haystack (ui) to the concatenation haystacks
                         for (BasicTerm haystack_var : pred.get_haystack()) {
                             haystacks.emplace_back(haystack_var);
                         }
@@ -1845,7 +1847,9 @@ namespace smt::noodler {
                         for(const size_t & i : rem_ids) {
                             this->formula.remove_predicate(i);
                         }
+                        // add 'a' (some literal) to the end of haystacks
                         haystacks.emplace_back(BasicTermType::Literal, zstring(*this->aut_ass.get_alphabet().begin()));
+                        // add the inclusion u1.u2.u3...uN.'a' ⊆ x to removed_inclusions_for_model
                         this->removed_inclusions_for_model.push_back(Predicate::create_equation(haystacks, {needle_var}));
                         something_changed = true;
                         break;
