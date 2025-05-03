@@ -1801,6 +1801,21 @@ namespace smt::noodler {
         return true;
     }
 
+    /**
+     * Remove not contains predicates that are of the form:
+     * x notin u1
+     * x notin u2
+     * x notin u3
+     * ....
+     * x notin uN
+     * where x is non-length/conversion variable which accepts everything and it occurs only
+     * in these not contains and only on the left (so it does not occur in any of ui).
+     * 
+     * Because it does not occurs anywhere else in the formula, we can always find a word that is
+     * not in any of ui. More spefically, we can take x = u1.u2.u3...uN.'a' where 'a' is some literal.
+     * 
+     * We keep the inclusion u1.u2.u3...uN.'a' ⊆ x for model generation.
+     */
     void FormulaPreprocessor::simplify_not_contains_to_equations() {
         STRACE("str-prep", tout << "Preprocessing step - simplify_not_contains_to_equations\n";);
         bool something_changed = true;
