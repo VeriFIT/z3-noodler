@@ -693,8 +693,10 @@ namespace smt::noodler {
             return l_false;
         }
 
-        // reduce automata of only neccessary variables
-        prep_handler.reduce_languages();
+        if (!this->init_aut_ass.is_sat()) {
+            // some automaton in the assignment is empty => we won't find solution
+            return l_false;
+        }
 
         STRACE("str",
             tout << " - formula after preprocess:\n";
