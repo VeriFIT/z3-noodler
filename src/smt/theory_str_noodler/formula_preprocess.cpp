@@ -1113,7 +1113,7 @@ namespace smt::noodler {
 
     void FormulaPreprocessor::reduce_languages() {
         for (auto& [var, aut] : this->aut_ass) {
-            if (len_variables.contains(var) || conversion_vars.contains(var) || !this->formula.var_occurs(var)) {
+            if (len_variables.contains(var) || conversion_vars.contains(var) || this->formula.var_occurs(var)) {
                 aut = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(*aut));
             }
         }
