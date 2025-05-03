@@ -2125,8 +2125,10 @@ namespace smt::noodler {
             if (val < 0) {
                 add_axiom({~mk_literal(ex)});
             } else if (val == 0) {
-                expr_ref empty_string(m_util_s.str.mk_string(zstring()), m);
-                add_axiom({~mk_literal(ex), mk_literal(m.mk_eq(len_arg, empty_string))});
+                // this didn't work for some reason, it resulted in some unknowns even though decision procedure finished
+                // expr_ref empty_string(m_util_s.str.mk_string(zstring()), m);
+                // add_axiom({~mk_literal(ex), mk_literal(m.mk_eq(len_arg, empty_string))});
+                return false;
             } else {
                 expr_ref re(m_util_s.re.mk_full_char(nullptr), m);
                 for(rational i{1}; i < val; i++) {
@@ -2144,10 +2146,11 @@ namespace smt::noodler {
                 // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger than minus number -> it is useless
             } else if (val == 0) {
                 if (val_is_larger) {
-                    expr_ref empty_string(m_util_s.str.mk_string(zstring()), m);
-                    add_axiom({~mk_literal(ex), mk_literal(m.mk_eq(len_arg, empty_string))});
+                    // expr_ref empty_string(m_util_s.str.mk_string(zstring()), m);
+                    // add_axiom({~mk_literal(ex), mk_literal(m.mk_eq(len_arg, empty_string))});
+                    return false;
                 }
-                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger than 0 -> it is useless
+                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger or equal than 0 -> it is useless
             } else {
                 expr_ref re(
                     val_is_larger ? 
