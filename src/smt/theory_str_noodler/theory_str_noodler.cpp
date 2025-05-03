@@ -2121,23 +2121,43 @@ namespace smt::noodler {
         rational val;
         bool val_is_larger;
         expr_ref len_arg(m);
-        if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val.is_nonneg() && val < MAX_NUM && val > 0) {
-            expr_ref re(m_util_s.re.mk_full_char(nullptr), m);
-            for(rational i{1}; i < val; i++) {
-                re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
+        if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val < MAX_NUM) {
+            if (val < 0) {
+                add_axiom({~mk_literal(ex)});
+            } else if (val == 0) {
+                expr_ref empty_string(m_util_s.str.mk_string(zstring()), m);
+                add_axiom({~mk_literal(ex), mk_literal(m.mk_eq(len_arg, empty_string))});
+            } else {
+                expr_ref re(m_util_s.re.mk_full_char(nullptr), m);
+                for(rational i{1}; i < val; i++) {
+                    re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
+                }
+                expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
+                add_axiom({~mk_literal(ex), mk_literal(in_re)});
             }
-            expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
-            add_axiom({~mk_literal(ex), mk_literal(in_re)});
             return true;
-        } else if(expr_cases::is_len_num_leq_or_geq(ex, m, m_util_s, m_util_a, len_arg, val, val_is_larger) && val.is_nonneg() && val < MAX_NUM && val > 0) {
-            expr_ref re(
-                val_is_larger ? 
-                    m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
-                    m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(val)),
-                m
-            );
-            expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
-            add_axiom({~mk_literal(ex), mk_literal(in_re)});
+        } else if(expr_cases::is_len_num_leq_or_geq(ex, m, m_util_s, m_util_a, len_arg, val, val_is_larger) && val < MAX_NUM) {
+            if (val < 0) {
+                if (val_is_larger) {
+                    add_axiom({~mk_literal(ex)});
+                }
+                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger than minus number -> it is useless
+            } else if (val == 0) {
+                if (val_is_larger) {
+                    expr_ref empty_string(m_util_s.str.mk_string(zstring()), m);
+                    add_axiom({~mk_literal(ex), mk_literal(m.mk_eq(len_arg, empty_string))});
+                }
+                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger than 0 -> it is useless
+            } else {
+                expr_ref re(
+                    val_is_larger ? 
+                        m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
+                        m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(val)),
+                    m
+                );
+                expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
+                add_axiom({~mk_literal(ex), mk_literal(in_re)});
+            }
             return true;
         }
         return false;
