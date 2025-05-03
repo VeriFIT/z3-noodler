@@ -1746,6 +1746,13 @@ namespace smt::noodler {
             return l_false;
         }
 
+        if(prep_handler.contains_unsat_eqs_or_diseqs()) {
+            return l_false;
+        }
+
+        // reduce automata of only neccessary variables
+        prep_handler.reduce_languages();
+
          // Refresh the instance
         this->formula = prep_handler.get_modified_formula();
         this->init_aut_ass = prep_handler.get_aut_assignment();
@@ -1761,14 +1768,6 @@ namespace smt::noodler {
 
         // extract not contains predicate to a separate container
         this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
-
-        if(this->formula.get_predicates().size() > 0) {
-            this->init_aut_ass.reduce(); // reduce all automata in the automata assignment
-        }
-
-        if(prep_handler.contains_unsat_eqs_or_diseqs()) {
-            return l_false;
-        }
 
         STRACE("str-nfa", tout << "Automata after preprocessing" << std::endl << init_aut_ass.print());
         STRACE("str", tout << "Lenght formula from preprocessing:" << preprocessing_len_formula << std::endl);
@@ -1793,8 +1792,7 @@ namespace smt::noodler {
             this->solution = SolvingState(this->init_aut_ass, {}, {}, {}, {}, this->init_length_sensitive_vars, {});
             return l_true;
         } else {
-            // preprocessing was not able to solve it, we at least reduce the size of created automata
-            this->init_aut_ass.reduce();
+            // preprocessing was not able to solve it
             return l_undef;
         }
     }

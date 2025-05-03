@@ -261,6 +261,7 @@ namespace smt::noodler {
         std::string to_string() const;
 
         const std::set<VarNode>& get_var_occurr(const BasicTerm& var) const { return this->varmap.at(var); };
+        bool var_occurs(const BasicTerm& var) const { return (this->varmap.contains(var) && this->varmap.at(var).size() > 0); };
         const Predicate& get_predicate(size_t index) const { return this->predicates.at(index); };
         const std::map<size_t, Predicate>& get_predicates() const { return this->predicates; };
         const std::set<Predicate>& get_predicates_set() const { return this->allpreds; };
@@ -407,6 +408,8 @@ namespace smt::noodler {
 
         void underapprox_var_language(const BasicTerm& var);
         void refine_languages();
+        void reduce_languages();
+
         void reduce_diseqalities();
 
         bool contains_unsat_literals();
