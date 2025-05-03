@@ -891,6 +891,8 @@ namespace smt::noodler::regex {
             return;
         }
 
+        STRACE("str-gather_transducer_constraints", tout << "Gather transducer for " << mk_pp(ex,m) << "\n";);
+
         // check if we have not constructed this transducer already 
         expr* rpl = pred_replace.find(ex); // dies if it is not found
         BasicTerm result_var(BasicTermType::Variable, to_app(rpl)->get_decl()->get_name().str());
@@ -935,6 +937,7 @@ namespace smt::noodler::regex {
         if (!find_and_replace.empty()) {
             // recursively call on nested parameters
             gather_transducer_constraints(ex, m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+
             // collect and replace replace_(re)_all argument with a concatenation of basic terms
             std::vector<BasicTerm> side {};
             util::collect_terms(ex, m, m_util_s, pred_replace, var_name, side);
