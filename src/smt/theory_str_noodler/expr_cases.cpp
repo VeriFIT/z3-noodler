@@ -74,13 +74,15 @@ bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m
 bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_vars_concat) {
     expr *arg = nullptr, *arg2;
     expr_ref argref(m);
-    if (m_util_s.str.is_length(e, arg)) {
+    if (m_util_s.str.is_length(e, arg)) { // str.len(x), we return x
         len_vars_concat = expr_ref(arg, m);
         return true;
     } else if (m_util_a.is_mul(e, arg, arg2)) {
+        // check if of the form N*str.len(x), where N is a positive number
         rational val;
         if (((m_util_a.is_numeral(arg, val) && is_sum_of_lens(arg2, m, m_util_s, m_util_a, argref)) ||
              (m_util_a.is_numeral(arg2, val) && is_sum_of_lens(arg, m, m_util_s, m_util_a, argref))) && val > 0) {
+            // we return concatenation xxxx...x, with x being N times in the concatenation
             len_vars_concat = argref;
             for (rational i{1}; i < val; ++i) {
                 len_vars_concat = expr_ref(m_util_s.str.mk_concat(len_vars_concat, argref), m);
@@ -90,6 +92,7 @@ bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_u
             return false;
         }
     } else if (m_util_a.is_add(e)) {
+        // check if it a summation of str.len (using recursion)
         arg = to_app(e)->get_arg(0);
         if (is_sum_of_lens(arg, m, m_util_s, m_util_a, argref)) {
             len_vars_concat = argref;

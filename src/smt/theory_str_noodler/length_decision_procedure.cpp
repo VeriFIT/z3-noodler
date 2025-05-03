@@ -694,7 +694,7 @@ namespace smt::noodler {
         }
 
         // reduce automata of only neccessary variables
-        prep_handler.reduce_languages();
+        prep_handler.reduce_automata();
 
         STRACE("str",
             tout << " - formula after preprocess:\n";

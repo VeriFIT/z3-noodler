@@ -408,7 +408,9 @@ namespace smt::noodler {
 
         void underapprox_var_language(const BasicTerm& var);
         void refine_languages();
-        void reduce_languages();
+
+        /// @brief Reduces automata in aut_ass for only variables that are needed (length, conversion vars or occur in the formula)
+        void reduce_automata();
 
         void reduce_diseqalities();
 

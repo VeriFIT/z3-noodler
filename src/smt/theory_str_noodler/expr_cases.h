@@ -85,27 +85,42 @@ bool is_indexof_at(expr * index_param, expr* index_str, ast_manager& m, seq_util
 bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_int_arg, rational& num);
 
 /**
- * @brief Check if the expression @p e is of the form len(x) = num (or num = len(x)) where num is a number.
+ * @brief Checks if the expression @p e is of the form N1*len(x1) + N2*len(x2) + ... with each Ni > 0. 
+ * 
+ * @param e Expression to be checked.
+ * @param m Ast manager
+ * @param m_util_s string ast util
+ * @param m_util_a arith ast util
+ * @param[out] len_vars_concat Concatenation of arguments in lens, where each xi occurs Ni times in the concatenation.
+ * @return true <-> if of the particular form 
+ */
+bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_vars_concat);
+
+/**
+ * @brief Check if the expression @p e is of the form N1*len(x1) + N2*len(x2) + ... = num (or swapped) where num is a constant number.
  * 
  * @param e Expression to be checked
  * @param m Ast manager
  * @param m_util_s string ast util
  * @param m_util_a arith ast util
- * @param[out] len_arg Argument of len (x)
+ * @param[out] len_arg Concatenation of arguments x1, x2, ... in len() functions, where each xi occurs Ni times in the concatenation.
  * @param[out] num Number on the opposite side
  * @return true <-> if of the particular form.
  */
 bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num);
 
 /**
- * @brief Check if the expression @p e is of the form len(x) <= num.
+ * @brief Check if the expression @p e is of the form N1*len(x1) + N2*len(x2) + ... <= num with each Ni > 0 and num a constant number.
+ * 
+ * Can check all directions <, <=, >, >=, with possible negation in front.
  * 
  * @param e Expression to be checked
  * @param m Ast manager
  * @param m_util_s string ast util
  * @param m_util_a arith ast util
- * @param[out] len_arg Argument of len (x)
- * @param[out] num Number on the opposite side of the comparison
+ * @param[out] len_arg Concatenation of arguments x1, x2, ... in len() functions, where each xi occurs Ni times in the concatenation.
+ * @param[out] num Number on the opposite side of the comparison (for < and >, it is incremented/decremented so that it represents <= or >=)
+ * @param[out] num_is_larger Whether num is on the side representing larger part (i.e. it is true if we have the form "... <= num")
  * @return true <-> if of the particular form.
  */
 bool is_len_num_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num, bool& num_is_larger);

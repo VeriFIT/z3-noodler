@@ -1111,7 +1111,7 @@ namespace smt::noodler {
         STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
     }
 
-    void FormulaPreprocessor::reduce_languages() {
+    void FormulaPreprocessor::reduce_automata() {
         for (auto& [var, aut] : this->aut_ass) {
             if (len_variables.contains(var) || conversion_vars.contains(var) || this->formula.var_occurs(var)) {
                 aut = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(*aut));
@@ -1908,7 +1908,7 @@ namespace smt::noodler {
         for (const auto& len_var : len_variables) {
             res << " " << len_var;
         }
-        res << "Current conversion vars:";
+        res << "\nCurrent conversion vars:";
         for (const auto& conv_var : conversion_vars) {
             res << " " << conv_var;
         }

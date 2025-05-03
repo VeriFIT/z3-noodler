@@ -2112,6 +2112,8 @@ namespace smt::noodler {
      * @brief Add special axioms for length (in)equations. In particular
      * - for (len s) == 10 create (len s) == 10 -> s \in \Sigma^10
      * - for (len s) <= 10 create (len s) <= 10 -> s \in re.loop(0, 10)
+     * - for 10 <= (len s) create 10 <= (len s) -> s \in re.loop(10, \inf)
+     * (len s) can be potentially any LIA formula where the "variables" are length constraints and there is no minus
      */
     bool theory_str_noodler::add_len_num_axioms(expr* ex) {
         // number bound for the conversion of length constraints into regex constraints.

@@ -1751,7 +1751,7 @@ namespace smt::noodler {
         }
 
         // reduce automata of only neccessary variables
-        prep_handler.reduce_languages();
+        prep_handler.reduce_automata();
 
          // Refresh the instance
         this->formula = prep_handler.get_modified_formula();
