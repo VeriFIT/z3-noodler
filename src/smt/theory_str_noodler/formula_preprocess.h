@@ -407,6 +407,8 @@ namespace smt::noodler {
 
         void underapprox_var_language(const BasicTerm& var);
         void refine_languages();
+        void reduce_languages();
+
         void reduce_diseqalities();
 
         bool contains_unsat_literals();

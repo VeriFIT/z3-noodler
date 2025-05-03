@@ -1111,6 +1111,14 @@ namespace smt::noodler {
         STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
     }
 
+    void FormulaPreprocessor::reduce_languages() {
+        for (auto& [var, aut] : this->aut_ass) {
+            if (len_variables.contains(var) || conversion_vars.contains(var) || this->formula.get_var_occurr(var).size() > 0) {
+                aut = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(*aut));
+            }
+        }
+    }
+
     /**
      * @brief Skip irrelevant word equations. Assume that the original formula is length-satisfiable.
      * 
