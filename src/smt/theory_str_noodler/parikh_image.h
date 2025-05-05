@@ -377,7 +377,7 @@ public:
      * 
      * @param nft The non-deterministic finite transducer to analyze.
      */
-    ParikhImageTransducer(const mata::nft::Nft& nft, std::vector<BasicTerm> tape_vars, std::vector<BasicTerm> vars_that_need_symbol_mapping = {}) 
+    ParikhImageTransducer(const mata::nft::Nft& nft, std::vector<BasicTerm> tape_vars, std::set<BasicTerm> vars_that_need_symbol_mapping = {}) 
         : ParikhImage(nft.to_nfa_copy()), nft(nft), tape_vars(tape_vars), vars_that_need_symbol_mapping(vars_that_need_symbol_mapping) {
             SASSERT(nft.num_of_levels == tape_vars.size());
         }
