@@ -403,6 +403,11 @@ namespace smt::noodler {
             params[1] = new_right_side;
         }
 
+        /// general get_param(int) for arbitrary predicate type
+        [[nodiscard]] const std::vector<BasicTerm>& get_param(size_t param) const {
+            return this->params[param];
+        }
+
         /// set right side of (dis)equation 
         void set_right_side(std::vector<BasicTerm> &&new_right_side) {
             assert(is_eq_or_ineq());

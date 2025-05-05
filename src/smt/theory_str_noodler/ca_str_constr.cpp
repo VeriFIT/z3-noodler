@@ -390,8 +390,8 @@ namespace smt::noodler::ca {
     }
 
     Predicate replace_literals_in_predicate(const Predicate& predicate, std::map<BasicTerm, BasicTerm>& literal_table, AutAssignment& aut_assignment) {
-        std::vector<BasicTerm> new_lhs = replace_literals_in_concat(predicate.get_left_side(), literal_table, aut_assignment);
-        std::vector<BasicTerm> new_rhs = replace_literals_in_concat(predicate.get_right_side(), literal_table, aut_assignment);
+        std::vector<BasicTerm> new_lhs = replace_literals_in_concat(predicate.get_haystack(), literal_table, aut_assignment);
+        std::vector<BasicTerm> new_rhs = replace_literals_in_concat(predicate.get_needle(), literal_table, aut_assignment);
         Predicate new_predicate(predicate.get_type(), {new_lhs, new_rhs});
         return new_predicate;
     }
@@ -594,13 +594,13 @@ namespace smt::noodler::ca {
 
         std::map<BasicTerm, std::set<mata::Word>> rhs_var_words;
         for (const Predicate& not_contains : not_contains_predicates) {
-            if (not_contains.get_right_side().size() > 1) {
+            if (not_contains.get_needle().size() > 1) {
                 STRACE("str-not-contains", tout << "* Cannot apply heuristics for finite side not-contains - we do not support more than 1 variable on RHS. Problematic predicate: \n  - " << not_contains << std::endl; );
                 can_apply_heuristic = false;
                 break;
             }
 
-            const BasicTerm& rhs_var = not_contains.get_right_side().at(0);
+            const BasicTerm& rhs_var = not_contains.get_needle().at(0);
             std::shared_ptr<mata::nfa::Nfa> rhs_var_automaton = aut_assignment.at(rhs_var);
 
             bool is_finite = rhs_var_automaton->is_acyclic();
@@ -633,10 +633,10 @@ namespace smt::noodler::ca {
 
         std::map<BasicTerm, SharedPredicates> predicates_sharing_rhs_var;
         for (const auto& not_contains : not_contains_predicates) {
-            const BasicTerm& rhs_var = not_contains.get_right_side().at(0);
+            const BasicTerm& rhs_var = not_contains.get_needle().at(0);
             SharedPredicates& shared_predicates_info = predicates_sharing_rhs_var[rhs_var];
             shared_predicates_info.predicates.push_back(&not_contains);
-            for (const BasicTerm& lhs_var : not_contains.get_left_side()) {
+            for (const BasicTerm& lhs_var : not_contains.get_haystack()) {
                 shared_predicates_info.all_lhs_variables.insert(lhs_var);
             }
         }
@@ -713,8 +713,8 @@ namespace smt::noodler::ca {
 
         for (const Predicate& not_contains : not_contains_predicates) {
             // We could just get a set of all variables in the predicate, but I guess that are needless extra allocations
-            used_variables.insert(not_contains.get_left_side().begin(), not_contains.get_left_side().end());
-            used_variables.insert(not_contains.get_right_side().begin(), not_contains.get_right_side().end());
+            used_variables.insert(not_contains.get_haystack().begin(), not_contains.get_haystack().end());
+            used_variables.insert(not_contains.get_needle().begin(), not_contains.get_needle().end());
         }
 
         LenNode variable_lengths_are_correct (LenFormulaType::TRUE, {});
@@ -734,11 +734,11 @@ namespace smt::noodler::ca {
         for (const Predicate& not_contains : not_contains_predicates) {
             LenNode rhs_minus_lhs_lengths (LenFormulaType::PLUS, {});
 
-            for (const BasicTerm& rhs_var : not_contains.get_right_side()) {
+            for (const BasicTerm& rhs_var : not_contains.get_needle()) {
                 rhs_minus_lhs_lengths.succ.push_back(rhs_var);
             }
 
-            for (const BasicTerm& lhs_var : not_contains.get_left_side()) {
+            for (const BasicTerm& lhs_var : not_contains.get_haystack()) {
                 LenNode minus_lhs_var (LenFormulaType::MINUS, {lhs_var});
                 rhs_minus_lhs_lengths.succ.push_back(minus_lhs_var);
             }
