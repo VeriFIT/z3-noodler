@@ -365,7 +365,8 @@ class ParikhImageTransducer : public ParikhImage {
 
 private: 
     mata::nft::Nft nft; ///< The non-deterministic finite transducer (NFT) being analyzed.
-    std::vector<BasicTerm> tape_len {}; ///< Variables representing the lengths of the output tape.
+    std::vector<BasicTerm> tape_vars {}; ///< Variables representing the lengths of the output tape.
+    std::set<BasicTerm> vars_that_need_symbol_mapping {}; ///< Variables for which we will compute also 
 
 public:
     /**
@@ -376,20 +377,10 @@ public:
      * 
      * @param nft The non-deterministic finite transducer to analyze.
      */
-    ParikhImageTransducer(const mata::nft::Nft& nft) 
-        : ParikhImage(nft.to_nfa_copy()), nft(nft) { }
-
-    /**
-     * @brief Compute the Parikh image of the transducer with tape length variables.
-     * 
-     * This method extends the Parikh image computation to include constraints 
-     * for the lengths of the output tape. It binds the tape length variables 
-     * to the computed tape lengths for each level of the transducer.
-     * 
-     * @param tape_vars Variables representing the lengths of the output tape.
-     * @return LenNode Formula representing the Parikh image with tape length constraints.
-     */
-    LenNode compute_parikh_image_vars(const std::vector<BasicTerm>& tape_vars);
+    ParikhImageTransducer(const mata::nft::Nft& nft, std::vector<BasicTerm> tape_vars, std::vector<BasicTerm> vars_that_need_symbol_mapping = {}) 
+        : ParikhImage(nft.to_nfa_copy()), nft(nft), tape_vars(tape_vars), vars_that_need_symbol_mapping(vars_that_need_symbol_mapping) {
+            SASSERT(nft.num_of_levels() == tape_vars.size());
+        }
 
     /**
      * @brief Compute the Parikh image of the transducer.
