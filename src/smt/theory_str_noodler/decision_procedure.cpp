@@ -947,7 +947,7 @@ namespace smt::noodler {
             mata::nft::Nft transducer_reduced = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
 
             STRACE("str-parikh", tout << "Formula for transducer of size " << transducer_reduced.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
-            LenNode parikh_of_transducer = parikh::ParikhImageTransducer{transducer_reduced, vars_on_tapes}.compute_parikh_image_vars();
+            LenNode parikh_of_transducer = parikh::ParikhImageTransducer{transducer_reduced, vars_on_tapes}.compute_parikh_image();
             STRACE("str-parikh", tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer);
         }
