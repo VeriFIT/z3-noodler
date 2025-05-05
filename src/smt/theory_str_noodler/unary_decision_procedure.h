@@ -37,6 +37,14 @@ namespace smt::noodler {
             return {str_var};
         }
 
+        /**
+         * @brief Get the length constraints for the unary system of equations.
+         *
+         * This method constructs a formula representing the length constraints for the unary system of equations.
+         * It includes the lengths of variables and any additional constraints from the predicates in the formula.
+         *
+         * @return A pair containing the length formula and its precision.
+         */
         std::pair<LenNode, LenNodePrecision> get_lengths() override {
             LenNode ln(LenFormulaType::AND);
             ln.succ.push_back(LenNode(LenFormulaType::TRUE));
@@ -47,12 +55,32 @@ namespace smt::noodler {
             for(const Predicate& pr : this->formula.get_predicates()) {
                 if(pr.is_equation()) {
                     continue;
+                } else if(pr.is_inequation()) {
+                    // add |LHS| != |RHS| (for equations it is not necessary to add because it was
+                    // already added during the axiom saturation before). 
+                    ln.succ.push_back(pr.get_formula_eq());
+                } else {
+                    UNREACHABLE();
                 }
-                ln.succ.push_back(pr.get_formula_eq());
+                
             }
             return {ln, LenNodePrecision::PRECISE};
         }
 
+        /**
+         * @brief Check if the unary decision procedure is suitable for the given formula and automaton assignment.
+         *
+         * This method verifies whether the formula and automaton assignment meet the requirements for the unary decision procedure.
+         * It checks the alphabet size, predicate types, and constraints on variables.
+         * 
+         * The unary procedure should work for 
+         * (i) equations where all variables are \Sigma^*
+         * (ii) equations+disequations where all languages are over the same singleton alphabet
+         *
+         * @param formula The formula to check.
+         * @param init_aut_ass The initial automaton assignment.
+         * @return True if the unary decision procedure is suitable, false otherwise.
+         */
         static bool is_suitable(const Formula& formula, const AutAssignment& init_aut_ass) {
             if(init_aut_ass.get_alphabet().size() != 2) {
                 return false;
