@@ -308,8 +308,8 @@ namespace smt::noodler::parikh {
         // create formula OR( mismatch(i,j) where i is position of left of diseq and j is position of right of diseq )
         LenNode mismatch(LenFormulaType::OR);
 
-        for(size_t i = 0; i < diseq.get_left_side().size(); i++) {
-            for (size_t j = 0; j < diseq.get_right_side().size(); j++) {
+        for(size_t i = 0; i < diseq.get_param(0).size(); i++) {
+            for (size_t j = 0; j < diseq.get_param(1).size(); j++) {
                 mismatch.succ.push_back(get_mismatch_formula(i, j, diseq));
             }
         }
@@ -567,8 +567,8 @@ namespace smt::noodler::parikh {
     LenNode ParikhImageDiseqTag::get_mismatch_formula(size_t left_mismatch_pos, size_t right_mismatch_pos, const Predicate& diseq, const LenNode& rhs_offset) {
         // labels of the <P> symbols
         int label_left = 1, label_right = 2;
-        BasicTerm var_left  = diseq.get_left_side()[left_mismatch_pos];
-        BasicTerm var_right = diseq.get_right_side()[right_mismatch_pos];
+        BasicTerm var_left  = diseq.get_param(0)[left_mismatch_pos];
+        BasicTerm var_right = diseq.get_param(1)[right_mismatch_pos];
 
         auto left_var_order_pos  = std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_left);
         auto right_var_order_pos = std::find(this->ca.var_order.begin(), this->ca.var_order.end(), var_right);
@@ -581,10 +581,10 @@ namespace smt::noodler::parikh {
             label_right = 1;
         }
 
-        auto [lhs_mismatch_pos_expr, lhs_position_inside_var] = express_mismatch_position(diseq.get_left_side(), left_mismatch_pos, label_left);
+        auto [lhs_mismatch_pos_expr, lhs_position_inside_var] = express_mismatch_position(diseq.get_param(0), left_mismatch_pos, label_left);
         if (lhs_mismatch_pos_expr.type == LenFormulaType::FALSE) return lhs_mismatch_pos_expr;
 
-        auto [rhs_mismatch_pos_expr, rhs_position_inside_var] = express_mismatch_position(diseq.get_right_side(), right_mismatch_pos, label_right, &rhs_offset);
+        auto [rhs_mismatch_pos_expr, rhs_position_inside_var] = express_mismatch_position(diseq.get_param(1), right_mismatch_pos, label_right, &rhs_offset);
         if (rhs_mismatch_pos_expr.type == LenFormulaType::FALSE) return rhs_mismatch_pos_expr;
 
         LenNode lhs_register_stores_cnt = count_register_stores_for_var_and_side(var_left, label_left);
@@ -1046,8 +1046,8 @@ namespace smt::noodler::parikh {
 
         std::set<BasicTerm> all_vars;
         for (auto& diseq : this->predicates) {
-            all_vars.insert(diseq.get_left_side().begin(), diseq.get_left_side().end());
-            all_vars.insert(diseq.get_right_side().begin(), diseq.get_right_side().end());
+            all_vars.insert(diseq.get_param(0).begin(), diseq.get_param(0).end());
+            all_vars.insert(diseq.get_param(1).begin(), diseq.get_param(1).end());
         }
 
         for (const BasicTerm& var : all_vars) {
@@ -1142,13 +1142,13 @@ namespace smt::noodler::parikh {
 
         LenNode disjunction_across_all_var_pairs(LenFormulaType::OR, {});
 
-        for (size_t left_var_idx = 0; left_var_idx < disequation.get_left_side().size(); left_var_idx++) {
+        for (size_t left_var_idx = 0; left_var_idx < disequation.get_param(0).size(); left_var_idx++) {
             for (size_t right_var_idx = 0; right_var_idx < disequation.get_right_side().size(); right_var_idx++) {
                 // Sum up all <L, x> that preceed the left_var_idx and right_var_idx
-                LenNode lhs_mismatch_pos_sum = express_string_length_preceding_supposed_mismatch(disequation.get_left_side(), left_var_idx);
+                LenNode lhs_mismatch_pos_sum = express_string_length_preceding_supposed_mismatch(disequation.get_param(0), left_var_idx);
                 LenNode rhs_mismatch_pos_sum = express_string_length_preceding_supposed_mismatch(disequation.get_right_side(), right_var_idx);
 
-                const BasicTerm& left_var  = disequation.get_left_side().at(left_var_idx);
+                const BasicTerm& left_var  = disequation.get_param(0).at(left_var_idx);
                 const BasicTerm& right_var = disequation.get_right_side().at(right_var_idx);
 
                 const auto& [left_mismatch_pos_var, right_mismatch_pos_var] = this->mismatch_pos_inside_vars_per_diseq.at(predicate_idx);
