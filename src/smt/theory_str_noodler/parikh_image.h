@@ -366,9 +366,16 @@ class ParikhImageTransducer : public ParikhImage {
 private: 
     mata::nft::Nft nft; ///< The non-deterministic finite transducer (NFT) being analyzed.
     std::vector<BasicTerm> tape_vars {}; ///< Variables representing the lengths of the output tape.
-    std::set<BasicTerm> vars_that_need_symbol_mapping {}; ///< Variables for which we will compute also 
+    std::set<BasicTerm> vars_that_need_symbol_mapping {}; ///< Variables for which we will compute also the symbol mapping
 
+    std::map<BasicTerm, std::set<mata::Symbol>> tape_var_used_symbols;
 public:
+    BasicTerm get_tape_var_for_symbol_mapping(const BasicTerm& tape_var, mata::Symbol symbol) const {
+        return BasicTerm{ BasicTermType::Variable, zstring(tape_var.get_name() + "!symbolmappingfor" + zstring(rational(symbol))) };
+    }
+
+    const std::map<BasicTerm, std::set<mata::Symbol>>& get_tape_var_used_symbols() const { return tape_var_used_symbols; }
+
     /**
      * @brief Construct a ParikhImageTransducer object.
      * 

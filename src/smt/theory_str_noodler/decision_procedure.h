@@ -504,6 +504,8 @@ namespace smt::noodler {
         std::set<BasicTerm> code_subst_vars;
         std::set<BasicTerm> int_subst_vars;
 
+        std::set<BasicTerm> code_subst_vars_handled_by_parikh;
+
         const theory_str_noodler_params& m_params;
 
         /**

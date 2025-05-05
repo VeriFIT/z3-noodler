@@ -938,18 +938,77 @@ namespace smt::noodler {
         for (const auto& [transducer, vars_on_tapes] : transducers_with_vars_on_tapes) {
             for (const BasicTerm& var : vars_on_tapes) {
                 length_vars_with_transducers.insert(var);
-                if (code_subst_vars.contains(var) || int_subst_vars.contains(var)) {
+                if (int_subst_vars.contains(var)) {
                     // TODO add support, probably these vars should not be replaced by one symbol in parikh + some support in conversion formula, use length_vars_with_transducers there?
-                    util::throw_error("Conversions with transducers are not supported yet");
+                    util::throw_error("Integer conversions with transducers are not supported yet");
                 }
             }
 
             mata::nft::Nft transducer_reduced = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
 
             STRACE("str-parikh", tout << "Formula for transducer of size " << transducer_reduced.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
-            LenNode parikh_of_transducer = parikh::ParikhImageTransducer{transducer_reduced, vars_on_tapes}.compute_parikh_image();
+            parikh::ParikhImageTransducer parikh_transducer{transducer_reduced, vars_on_tapes};
+            LenNode parikh_of_transducer = parikh_transducer.compute_parikh_image();
             STRACE("str-parikh", tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer);
+
+            // TO CODE SHIT
+            bool is_there_code_conversion_with_dummy_symbol = false;
+            BasicTerm code_point_of_dummy_symbol = util::mk_noodler_var_fresh("dummy_symbol_in_transduers");
+            for (const BasicTerm& var : vars_on_tapes) {
+                if (code_subst_vars.contains(var)) {
+                    if (parikh_transducer.get_tape_var_used_symbols().contains(var)) {
+                        // non_char_case = (|var| != 1 && code_version_of(var) == -1)
+                        LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{var, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1}} });
+            
+                        // char_case = (|var| == 1 && code_version_of(var) is code point of one of the symbols based on parikh)
+                        LenNode char_case(LenFormulaType::AND, { {LenFormulaType::EQ, std::vector<LenNode>{var, 1}}, /* code_version_of(var) is code point of one of the symbols based on parikh */ });
+            
+                        // the rest is just computing 'code_version_of(var) is code point of one of the symbols based on parikh'
+
+                        for (mata::Symbol s : parikh_transducer.get_tape_var_used_symbols().at(var)) {
+                            // var for representing how many times s is in var
+                            BasicTerm num_of_s_in_var = parikh_transducer.get_tape_var_for_symbol_mapping(var, s);
+                            // num_of_s_in_var != 1
+                            LenNode num_of_s_in_var_is_one{ LenFormulaType::NEQ, std::vector<LenNode>{num_of_s_in_var, 1} };
+
+                            LenNode code_version_is_equal_to_s(LenFormulaType::EQ, {code_version_of(var)});
+                            if (!util::is_dummy_symbol(s)) {
+                                // code_version_of(var) == s
+                                code_version_is_equal_to_s.succ.push_back(s);
+                            } else {
+                                is_there_code_conversion_with_dummy_symbol = true;
+                                // code_version_of(var) == code_point_of_dummy_symbol
+                                code_version_is_equal_to_s.succ.push_back(code_point_of_dummy_symbol);
+                            }
+                            // (num_of_s_in_var == 1) => (code_version_of(var) == s)
+                            char_case.succ.push_back({LenFormulaType::OR, {num_of_s_in_var_is_one, code_version_is_equal_to_s}});
+                        }
+
+                        result.succ.emplace_back(LenFormulaType::OR, std::vector<LenNode>{
+                            non_char_case,
+                            char_case
+                        });
+                    } else {
+                        result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1});
+                    }
+                }
+            }
+
+            if (is_there_code_conversion_with_dummy_symbol) {
+                // if there is dummy symbol, then code_point_of_dummy_symbol can be code point of any char, except those in the alphabet
+
+                // code_point_of_dummy_symbol is valid code_point: (0 <= code_point_of_dummy_symbol <= max_char)
+                result.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{0, code_point_of_dummy_symbol});
+                result.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{code_point_of_dummy_symbol, zstring::max_char()});
+
+                // code_point_of_dummy_symbol is not equal to code point of some symbol in the alphabet
+                for (mata::Symbol s : solution.aut_ass.get_alphabet()) {
+                    if (!util::is_dummy_symbol(s)) {
+                        result.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{code_point_of_dummy_symbol, s});
+                    }
+                }
+            }
         }
 
         // create length constraints from the solution, we only need to look at length sensitive vars which do not have length based on parikh
@@ -996,6 +1055,8 @@ namespace smt::noodler {
         // for each code substituting variable c, create the formula
         //   (|c| != 1 && code_version_of(c) == -1) || (|c| == 1 && code_version_of(c) is code point of one of the chars in the language of automaton for c)
         for (const BasicTerm& c : code_subst_vars) {
+            if (length_vars_with_transducers.contains(c)) { continue; }
+
             // non_char_case = (|c| != 1 && code_version_of(c) == -1)
             LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{c, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(c),-1}} });
 
@@ -1917,6 +1978,9 @@ namespace smt::noodler {
 
             // Restrict int-conversion var
             if (int_subst_vars.contains(var)) {
+                if (length_vars_with_transducers.contains(var)) {
+                    util::throw_error("We cannot produce models of integer conversions with transducers yet");
+                }
                 if (len == 0) {
                     // to_int_value(var) != -1 for len==0 (see get_formula_for_int_subst_vars())
                     // so we directly set ""
@@ -1941,6 +2005,9 @@ namespace smt::noodler {
 
             // Restrict code-conversion var
             if (code_subst_vars.contains(var)) {
+                if (length_vars_with_transducers.contains(var)) {
+                    util::throw_error("We cannot produce models of code-point conversions with transducers yet");
+                }
                 rational to_code_value = arith_model.at(code_version_of(var));
                 if (to_code_value != -1) {
                     mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
@@ -2104,11 +2171,6 @@ namespace smt::noodler {
     }
 
     std::vector<BasicTerm> DecisionProcedure::get_len_vars_for_model(const BasicTerm& str_var) {
-        if (!length_vars_with_transducers.empty()) {
-            // TODO we need to add handling for these vars, we need all the vars from parikh representing the number of each symbol etc.
-            util::throw_error("We cannot produce models of length variables in transducers yet");
-        }
-
         // we always need (for initialization) all len_vars that are in aut_ass, so we ignore str_var
         std::vector<BasicTerm> needed_vars;
         for (const BasicTerm& len_var : solution.length_sensitive_vars) {
