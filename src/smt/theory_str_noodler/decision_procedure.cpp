@@ -950,10 +950,34 @@ namespace smt::noodler {
                 }
             }
 
-            mata::nft::Nft transducer_reduced = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
+            // STRACE("str-parikh", tout << transducer;);
+            mata::nft::Nft one_symbol_transducer{transducer.num_of_states(), transducer.initial, transducer.final, transducer.levels, transducer.num_of_levels};
+            for (mata::nfa::State source_state = 0; source_state < transducer.delta.num_of_states(); ++source_state) {
+                // STRACE("str-parikh", tout << "Processing state " << source_state << "\n" << one_symbol_transducer;);
+                mata::nfa::StatePost& state_post_of_new_source_state = one_symbol_transducer.delta.mutable_state_post(source_state);
+                if (code_subst_vars.contains(vars_on_tapes[transducer.levels[source_state]])) {
+                    state_post_of_new_source_state = transducer.delta[source_state];
+                } else {
+                    mata::nfa::SymbolPost new_transition{0};
+                    for (const mata::nfa::SymbolPost& symbol_post : transducer.delta[source_state]) {
+                        if (symbol_post.symbol == mata::nft::EPSILON) {
+                            state_post_of_new_source_state.insert(symbol_post);
+                        } else {
+                            new_transition.targets.insert(symbol_post.targets);
+                        }
+                    }
+                    if (!new_transition.targets.empty()) {
+                        state_post_of_new_source_state.insert(new_transition);
+                    }
+                }
+            }
+            
 
-            STRACE("str-parikh", tout << "Formula for transducer of size " << transducer_reduced.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
-            parikh::ParikhImageTransducer parikh_transducer{transducer_reduced, vars_on_tapes, code_subst_vars};
+            // STRACE("str-parikh", tout << one_symbol_transducer;);
+            one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(one_symbol_transducer).trim()).trim();
+
+            STRACE("str-parikh", tout << "Formula for transducer of size " << one_symbol_transducer.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
+            parikh::ParikhImageTransducer parikh_transducer{one_symbol_transducer, vars_on_tapes, code_subst_vars};
             LenNode parikh_of_transducer = parikh_transducer.compute_parikh_image();
             STRACE("str-parikh", tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer);
