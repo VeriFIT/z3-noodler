@@ -950,10 +950,11 @@ namespace smt::noodler {
                 }
             }
 
-            // STRACE("str-parikh", tout << transducer;);
+            // we only need the length dependency between variables given by the transducers, therefore we can replace all symbols in the transducer by one symbol
+            // except for code-point variables, for these we need exact value (but still dependency of this variable on other non-code-point variables is only
+            // trough lengths)
             mata::nft::Nft one_symbol_transducer{transducer.num_of_states(), transducer.initial, transducer.final, transducer.levels, transducer.num_of_levels};
             for (mata::nfa::State source_state = 0; source_state < transducer.delta.num_of_states(); ++source_state) {
-                // STRACE("str-parikh", tout << "Processing state " << source_state << "\n" << one_symbol_transducer;);
                 mata::nfa::StatePost& state_post_of_new_source_state = one_symbol_transducer.delta.mutable_state_post(source_state);
                 if (code_subst_vars.contains(vars_on_tapes[transducer.levels[source_state]])) {
                     state_post_of_new_source_state = transducer.delta[source_state];
