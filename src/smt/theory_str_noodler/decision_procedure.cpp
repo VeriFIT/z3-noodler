@@ -847,6 +847,10 @@ namespace smt::noodler {
         // add length formula from preprocessing
         conjuncts.push_back(preprocessing_len_formula);
 
+        // compute formula for vars in transducers (lengths and code-point conversions)
+        conjuncts.push_back(get_formula_for_len_vars());
+
+        // formula for encoding lengths
         conjuncts.push_back(get_formula_for_len_vars());
 
         // add formula for conversions
@@ -865,8 +869,11 @@ namespace smt::noodler {
         return {result, precision};
     }
 
-    LenNode DecisionProcedure::get_formula_for_len_vars() {
+    LenNode DecisionProcedure::get_formula_for_transducers() {
         LenNode result(LenFormulaType::AND);
+
+        length_vars_with_transducers = {};
+        code_subst_vars_handled_by_parikh = {};
 
         // We collect transducers in which length variable occurs in the input (right) side (which also means it must
         // occur also in the output). We do not need transducers where we have length variable only in the output, for
@@ -934,12 +941,11 @@ namespace smt::noodler {
             }
         }
 
-        length_vars_with_transducers = {};
         for (const auto& [transducer, vars_on_tapes] : transducers_with_vars_on_tapes) {
             for (const BasicTerm& var : vars_on_tapes) {
                 length_vars_with_transducers.insert(var);
                 if (int_subst_vars.contains(var)) {
-                    // TODO add support, probably these vars should not be replaced by one symbol in parikh + some support in conversion formula, use length_vars_with_transducers there?
+                    // TODO add support (pretty hard, we need to remember the order of selected transitions by parikh)
                     util::throw_error("Integer conversions with transducers are not supported yet");
                 }
             }
@@ -952,17 +958,32 @@ namespace smt::noodler {
             STRACE("str-parikh", tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer);
 
-            // TO CODE SHIT
-            bool is_there_code_conversion_with_dummy_symbol = false;
+            // Handle code-point vars that occur in this transducer
+            // A dummy symbol (that represent all symbols that are not in the alphabet) occuring in this transducer should have always
+            // the same value, therefore, if we have more than one code-point var, we need to share this value. For this, we will use
+            // the variable code_point_of_dummy_symbol, and with is_there_code_conversion_with_dummy_symbol, we know whether we actually
+            // need this variable.
+            bool is_there_code_conversion_with_dummy_symbol = false; // whether there is some code-point var that can be a dummy symbol
             BasicTerm code_point_of_dummy_symbol = util::mk_noodler_var_fresh("dummy_symbol_in_transduers");
             for (const BasicTerm& var : vars_on_tapes) {
                 if (code_subst_vars.contains(var)) {
                     code_subst_vars_handled_by_parikh.insert(var);
-                    if (parikh_transducer.get_tape_var_used_symbols().contains(var)) {
-                        // non_char_case = (|var| != 1 && code_version_of(var) == -1)
+                    if (!parikh_transducer.get_tape_var_used_symbols().contains(var)) {
+                        // if we are here, this means there is no non-epsilon transition for this var in the transducer,
+                        // |var| == 0 (this is encoded in parikh) which means that code_version_of(var) == -1
+                        result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1});
+                    } else {
+                        // If we are here, parikh_transducer.get_tape_var_used_symbols().at(var) contains all symbols
+                        // that are on some transition in the transducer for this var. Therefore we need to create for
+                        // each such symbol s the forula that says
+                        //    "(|var| == 1 and s occurs in var) => code_version_of(var) == s"
+
+                        // We first encode the formula that var is not one symbol
+                        // (|var| != 1 && code_version_of(var) == -1)
                         LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{var, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1}} });
-            
-                        // char_case = (|var| == 1 && code_version_of(var) is code point of one of the symbols based on parikh)
+
+                        // We now continue with the case that |var| ==1
+                        // (|var| == 1 && code_version_of(var) is code point of one of the symbols based on parikh)
                         LenNode char_case(LenFormulaType::AND, { {LenFormulaType::EQ, std::vector<LenNode>{var, 1}}, /* code_version_of(var) is code point of one of the symbols based on parikh */ });
             
                         // the rest is just computing 'code_version_of(var) is code point of one of the symbols based on parikh'
@@ -982,7 +1003,8 @@ namespace smt::noodler {
                                 // code_version_of(var) == code_point_of_dummy_symbol
                                 code_version_is_equal_to_s.succ.push_back(code_point_of_dummy_symbol);
                             }
-                            // (num_of_s_in_var == 1) => (code_version_of(var) == s)
+                            // (num_of_s_in_var == 1) => (code_version_of(var) == s), i.e.
+                            // (num_of_s_in_var != 1) || (code_version_of(var) == s)
                             char_case.succ.push_back({LenFormulaType::OR, {num_of_s_in_var_is_one, code_version_is_equal_to_s}});
                         }
 
@@ -990,8 +1012,6 @@ namespace smt::noodler {
                             non_char_case,
                             char_case
                         });
-                    } else {
-                        result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1});
                     }
                     STRACE("str-parikh-tocode", tout << "tocode parikh formula for " << var << ": " << result.succ.back() << "\n";);
                 }
@@ -1013,7 +1033,10 @@ namespace smt::noodler {
                 }
             }
         }
+    }
 
+    LenNode DecisionProcedure::get_formula_for_len_vars() {
+        LenNode result(LenFormulaType::AND);
         // create length constraints from the solution, we only need to look at length sensitive vars which do not have length based on parikh
         for (const BasicTerm &len_var : solution.length_sensitive_vars) {
             if (!length_vars_with_transducers.contains(len_var)) {
