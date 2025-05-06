@@ -947,7 +947,7 @@ namespace smt::noodler {
             mata::nft::Nft transducer_reduced = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
 
             STRACE("str-parikh", tout << "Formula for transducer of size " << transducer_reduced.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
-            parikh::ParikhImageTransducer parikh_transducer{transducer_reduced, vars_on_tapes};
+            parikh::ParikhImageTransducer parikh_transducer{transducer_reduced, vars_on_tapes, code_subst_vars};
             LenNode parikh_of_transducer = parikh_transducer.compute_parikh_image();
             STRACE("str-parikh", tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer);
@@ -957,6 +957,7 @@ namespace smt::noodler {
             BasicTerm code_point_of_dummy_symbol = util::mk_noodler_var_fresh("dummy_symbol_in_transduers");
             for (const BasicTerm& var : vars_on_tapes) {
                 if (code_subst_vars.contains(var)) {
+                    code_subst_vars_handled_by_parikh.insert(var);
                     if (parikh_transducer.get_tape_var_used_symbols().contains(var)) {
                         // non_char_case = (|var| != 1 && code_version_of(var) == -1)
                         LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{var, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1}} });
@@ -992,11 +993,13 @@ namespace smt::noodler {
                     } else {
                         result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1});
                     }
+                    STRACE("str-parikh-tocode", tout << "tocode parikh formula for " << var << ": " << result.succ.back() << "\n";);
                 }
             }
 
             if (is_there_code_conversion_with_dummy_symbol) {
-                // if there is dummy symbol, then code_point_of_dummy_symbol can be code point of any char, except those in the alphabet
+                STRACE("str-parikh-tocode", tout << "tocode parikh dummy symbol is needed\n";);
+                // if there is dummy symbol, then we need to restrict code_point_of_dummy_symbol so that it is a code point of any char, except those in the alphabet
 
                 // code_point_of_dummy_symbol is valid code_point: (0 <= code_point_of_dummy_symbol <= max_char)
                 result.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{0, code_point_of_dummy_symbol});
@@ -1055,7 +1058,7 @@ namespace smt::noodler {
         // for each code substituting variable c, create the formula
         //   (|c| != 1 && code_version_of(c) == -1) || (|c| == 1 && code_version_of(c) is code point of one of the chars in the language of automaton for c)
         for (const BasicTerm& c : code_subst_vars) {
-            if (length_vars_with_transducers.contains(c)) { continue; }
+            if (code_subst_vars_handled_by_parikh.contains(c)) { continue; }
 
             // non_char_case = (|c| != 1 && code_version_of(c) == -1)
             LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{c, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(c),-1}} });
