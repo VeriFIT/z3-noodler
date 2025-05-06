@@ -1033,6 +1033,8 @@ namespace smt::noodler {
                 }
             }
         }
+
+        return result;
     }
 
     LenNode DecisionProcedure::get_formula_for_len_vars() {
