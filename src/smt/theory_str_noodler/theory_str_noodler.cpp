@@ -2120,50 +2120,52 @@ namespace smt::noodler {
         // For higher values this conversion could not be beneficial as we would work with 
         // big automata in the decision procedure.
         const int MAX_NUM = 64; 
+        const unsigned MAX_VARS = 2;
         rational val;
         bool val_is_larger;
-        expr_ref len_arg(m);
+        expr_ref_vector len_arg(m);
         if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val < MAX_NUM) {
             if (val < 0) {
                 add_axiom({~mk_literal(ex)});
+                return true;
             } else if (val == 0) {
-                // this didn't work for some reason, it resulted in some unknowns even though decision procedure finished
-                // expr_ref empty_string(m_util_s.str.mk_string(zstring()), m);
-                // add_axiom({~mk_literal(ex), mk_literal(m.mk_eq(len_arg, empty_string))});
+                // we know that concatenation of vars in len_arg must be empty string,
+                // but it doesn't work for some reason, it resulted in some unknowns
+                // even though decision procedure finished, so we better give up
                 return false;
-            } else {
+            } else if (len_arg.size() <= MAX_VARS) {
                 expr_ref re(m_util_s.re.mk_full_char(nullptr), m);
                 for(rational i{1}; i < val; i++) {
                     re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
                 }
-                expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
+                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
                 add_axiom({~mk_literal(ex), mk_literal(in_re)});
+                return true;
             }
-            return true;
         } else if(expr_cases::is_len_num_leq_or_geq(ex, m, m_util_s, m_util_a, len_arg, val, val_is_larger) && val < MAX_NUM) {
             if (val < 0) {
                 if (val_is_larger) {
                     add_axiom({~mk_literal(ex)});
                 }
                 // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger than minus number -> it is useless
+                return true;
             } else if (val == 0) {
                 if (val_is_larger) {
-                    // expr_ref empty_string(m_util_s.str.mk_string(zstring()), m);
-                    // add_axiom({~mk_literal(ex), mk_literal(m.mk_eq(len_arg, empty_string))});
                     return false;
                 }
                 // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger or equal than 0 -> it is useless
-            } else {
+                return true;
+            } else if (len_arg.size() <= MAX_VARS) {
                 expr_ref re(
                     val_is_larger ? 
                         m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
                         m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(val)),
                     m
                 );
-                expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
+                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
                 add_axiom({~mk_literal(ex), mk_literal(in_re)});
+                return true;
             }
-            return true;
         }
         return false;
     }

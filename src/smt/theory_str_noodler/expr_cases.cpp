@@ -71,11 +71,11 @@ bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m
     return false;
 }
 
-bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_vars_concat) {
+bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref_vector& len_vars) {
     expr *arg = nullptr, *arg2;
-    expr_ref argref(m);
+    expr_ref_vector argref(m);
     if (m_util_s.str.is_length(e, arg)) { // str.len(x), we return x
-        len_vars_concat = expr_ref(arg, m);
+        len_vars.push_back(arg);
         return true;
     } else if (m_util_a.is_mul(e, arg, arg2)) {
         // check if of the form N*str.len(x), where N is a positive number
@@ -83,9 +83,10 @@ bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_u
         if (((m_util_a.is_numeral(arg, val) && is_sum_of_lens(arg2, m, m_util_s, m_util_a, argref)) ||
              (m_util_a.is_numeral(arg2, val) && is_sum_of_lens(arg, m, m_util_s, m_util_a, argref))) && val > 0) {
             // we return concatenation xxxx...x, with x being N times in the concatenation
-            len_vars_concat = argref;
-            for (rational i{1}; i < val; ++i) {
-                len_vars_concat = expr_ref(m_util_s.str.mk_concat(len_vars_concat, argref), m);
+            for (rational i{0}; i < val; ++i) {
+                for (expr* var : argref) {
+                    len_vars.push_back(var);
+                }
             }
             return true;
         } else {
@@ -93,17 +94,12 @@ bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_u
         }
     } else if (m_util_a.is_add(e)) {
         // check if it a summation of str.len (using recursion)
-        arg = to_app(e)->get_arg(0);
-        if (is_sum_of_lens(arg, m, m_util_s, m_util_a, argref)) {
-            len_vars_concat = argref;
-        } else {
-            return false;
-        }
-
         for (unsigned i = 1; i < to_app(e)->get_num_args(); ++i) {
             arg = to_app(e)->get_arg(i);
             if (is_sum_of_lens(arg, m, m_util_s, m_util_a, argref)) {
-                len_vars_concat = expr_ref(m_util_s.str.mk_concat(len_vars_concat, argref), m);
+                for (expr* var : argref) {
+                    len_vars.push_back(var);
+                }
             } else {
                 return false;
             }
@@ -113,7 +109,7 @@ bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_u
     return false;
 }
 
-bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num) {
+bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref_vector& len_arg, rational& num) {
     expr* left = nullptr, *right = nullptr;
     if(m.is_eq(e, left, right)) {
         expr* non_num_side;
@@ -132,7 +128,7 @@ bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_ut
     return false;
 }
 
-bool is_len_num_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref& len_arg, rational& num, bool& num_is_larger) {
+bool is_len_num_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref_vector& len_arg, rational& num, bool& num_is_larger) {
     STRACE("str-is_len_num_leq_or_geq", tout << mk_pp(e, m) << std::endl;);
     expr* less = nullptr, *more = nullptr, *e_not = nullptr;
     bool strictly_less;
