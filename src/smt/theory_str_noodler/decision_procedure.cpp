@@ -848,7 +848,7 @@ namespace smt::noodler {
         conjuncts.push_back(preprocessing_len_formula);
 
         // compute formula for vars in transducers (lengths and code-point conversions)
-        conjuncts.push_back(get_formula_for_len_vars());
+        conjuncts.push_back(get_formula_for_transducers());
 
         // formula for encoding lengths
         conjuncts.push_back(get_formula_for_len_vars());
