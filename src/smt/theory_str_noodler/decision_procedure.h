@@ -661,6 +661,8 @@ namespace smt::noodler {
 
         // inclusions that resulted from preprocessing, we use them to generate model (we can pretend that they were all already refined)
         std::vector<Predicate> inclusions_from_preprocessing;
+
+        std::vector<std::pair<mata::nft::Nft,std::vector<BasicTerm>>> transducers_with_vars_on_tapes;
         
         bool is_model_initialized = false;
         /**
@@ -683,6 +685,7 @@ namespace smt::noodler {
          * @return the computed model 
          */
         zstring update_model_and_aut_ass(BasicTerm var, zstring computed_model) {
+            SASSERT(!model_of_var.contains(var) || model_of_var.at(var) == computed_model);
             model_of_var[var] = computed_model;
             if (solution.aut_ass.contains(var)) {
                 solution.aut_ass[var] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(computed_model));

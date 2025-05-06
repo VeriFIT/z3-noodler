@@ -280,22 +280,7 @@ namespace smt::noodler {
 
     void SolvingState::replace_dummy_symbol_in_transducers_with(std::set<mata::Symbol> replacements) {
         for (const Predicate& trans : transducers) {
-            auto trans_ptr = trans.get_transducer();
-            for (mata::nfa::State state = 0; state < trans_ptr->num_of_states(); ++state) {
-                if (!trans_ptr->delta[state].empty()) { // if there is some transition from state
-                    mata::nfa::StatePost& delta_from_state = trans_ptr->delta.mutable_state_post(state); // then we can for sure get mutable transitions from state without side effect
-                    for (auto iter = delta_from_state.begin(); iter != delta_from_state.end(); ++iter) {
-                        if (iter->symbol == util::get_dummy_symbol()) {
-                            mata::nfa::StateSet targets = iter->targets;
-                            delta_from_state.erase(iter);
-                            for (mata::Symbol replacement : replacements) {
-                                trans_ptr->delta.add(state, replacement, targets); // this invalidates iter, but we are breaking from the loop anyway
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
+            util::replace_dummy_symbol_in_transducer_with(*trans.get_transducer(), replacements);
         }
     }
 
@@ -874,6 +859,7 @@ namespace smt::noodler {
 
         length_vars_with_transducers = {};
         code_subst_vars_handled_by_parikh = {};
+        transducers_with_vars_on_tapes = {};
 
         // We collect transducers in which length variable occurs in the input (right) side (which also means it must
         // occur also in the output). We do not need transducers where we have length variable only in the output, for
@@ -882,18 +868,22 @@ namespace smt::noodler {
         // var in input. In length_input_vars we save all variables that are length and are input of some transducer.
         std::map<BasicTerm, std::vector<Predicate>> output_var_to_its_transducers;
         std::set<BasicTerm> length_input_vars;
-        for (const Predicate& trans : solution.transducers) {
+        for (auto trans_iter = solution.transducers.begin(); trans_iter != solution.transducers.end();) {
             // transducers in solution should be in simple form (one input, one output var)
-            SASSERT(trans.get_input().size() == 1);
-            SASSERT(trans.get_output().size() == 1);
+            SASSERT(trans_iter->get_input().size() == 1);
+            SASSERT(trans_iter->get_output().size() == 1);
 
-            BasicTerm input_var = trans.get_input()[0];
-            BasicTerm output_var = trans.get_output()[0];
+            BasicTerm input_var = trans_iter->get_input()[0];
+            BasicTerm output_var = trans_iter->get_output()[0];
 
             if (solution.length_sensitive_vars.contains(input_var)) {
                 SASSERT(solution.length_sensitive_vars.contains(output_var)); // if input is length var, output must be too
-                output_var_to_its_transducers[output_var].push_back(trans);
+                output_var_to_its_transducers[output_var].push_back(*trans_iter);
                 length_input_vars.insert(input_var);
+                // we can remove the transducer, as we will be creating one big transducer from it (which then will be used in model generation)
+                trans_iter = solution.transducers.erase(trans_iter);
+            } else {
+                ++trans_iter;
             }
         }
 
@@ -934,7 +924,6 @@ namespace smt::noodler {
 
         // We now find each output_var which is NOT an input var of some transducer, meaning they are at the end of
         // inclusion graph and we create the composed transducer for them.
-        std::vector<std::pair<mata::nft::Nft,std::vector<BasicTerm>>> transducers_with_vars_on_tapes;
         for (const auto& [output_var,transducers] : output_var_to_its_transducers) {
             if (!length_input_vars.contains(output_var)) {
                 transducers_with_vars_on_tapes.push_back(get_composed_trans_with_tapes(output_var));
@@ -2022,7 +2011,8 @@ namespace smt::noodler {
 
         // Restrict the languages in solution of length variables and code/int conversion variables by their models
         for (auto& [var, nfa] : solution.aut_ass) {
-            if (var.is_literal() || !solution.length_sensitive_vars.contains(var)) { continue; } // literals should have the correct language + we restrict only length vars
+            // literals should have the correct language + we process only length vars
+            if (var.is_literal() || !solution.length_sensitive_vars.contains(var)) { continue; }
 
             // Restrict length
             rational len = arith_model.at(var);
@@ -2031,9 +2021,6 @@ namespace smt::noodler {
 
             // Restrict int-conversion var
             if (int_subst_vars.contains(var)) {
-                if (length_vars_with_transducers.contains(var)) {
-                    util::throw_error("We cannot produce models of integer conversions with transducers yet");
-                }
                 if (len == 0) {
                     // to_int_value(var) != -1 for len==0 (see get_formula_for_int_subst_vars())
                     // so we directly set ""
@@ -2058,9 +2045,6 @@ namespace smt::noodler {
 
             // Restrict code-conversion var
             if (code_subst_vars.contains(var)) {
-                if (length_vars_with_transducers.contains(var)) {
-                    util::throw_error("We cannot produce models of code-point conversions with transducers yet");
-                }
                 rational to_code_value = arith_model.at(code_version_of(var));
                 if (to_code_value != -1) {
                     mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
@@ -2071,7 +2055,7 @@ namespace smt::noodler {
                         solution.aut_ass.add_symbol_from_dummy(to_code_value.get_unsigned());
                     }
                     update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
-                } // for the case to_code_value == -1 we shoulh have (str.len var) != 1, so we do not need to restrict the language, as it should have been already be restricted by lenght
+                } // for the case to_code_value == -1 we should have (str.len var) != 1, so we do not need to restrict the language, as it should have been already be restricted by length
             }
         }
 
@@ -2079,6 +2063,39 @@ namespace smt::noodler {
         std::optional<mata::Symbol> symbol_replacing_dummy = solution.aut_ass.replace_dummy_with_new_symbol();
         if (symbol_replacing_dummy.has_value()) {
             set_of_symbols_to_replace_dummy_symbol_with.insert(symbol_replacing_dummy.value());
+        }
+
+        // TODO the following is very inefficient and will probably be slow
+        for (auto& [transducer, tape_vars] : transducers_with_vars_on_tapes) {
+            util::replace_dummy_symbol_in_transducer_with(transducer, set_of_symbols_to_replace_dummy_symbol_with);
+            STRACE("str-model-transducer",
+                tout << "Constructing model for vars:";
+                for (const BasicTerm& var : tape_vars) {
+                    tout << " " << var;
+                }
+                if (is_trace_enabled("str-model-nfa")) {
+                    tout << " and for transducer:\n" << transducer.print_to_dot(true, true);
+                }
+                tout << "\n";
+            );
+            for (size_t tape_num = 0; tape_num < tape_vars.size(); ++tape_num) {
+                transducer = transducer.apply(*solution.aut_ass.at(tape_vars[tape_num]), tape_num, false);
+            }
+            mata::Word accepting_word = transducer.get_word(true).value();
+            STRACE("str-model-transducer",
+                tout << "Getting model of vars with combined word " << zstring(accepting_word.size(), accepting_word.data()) << "\n";
+            );
+            std::vector<mata::Word> words_for_tape_vars{tape_vars.size()};
+            size_t current_tape_var = 0;
+            for (unsigned current_symbol : accepting_word) {
+                if (current_symbol != mata::nft::EPSILON) {
+                    words_for_tape_vars[current_tape_var].push_back(current_symbol);
+                }
+                current_tape_var = (current_tape_var+1) % tape_vars.size();
+            }
+            for (size_t tape_num = 0; tape_num < tape_vars.size(); ++tape_num) {
+                update_model_and_aut_ass(tape_vars[tape_num], regex::Alphabet{solution.aut_ass.get_alphabet()}.get_string_from_mata_word(words_for_tape_vars[tape_num]));
+            }
         }
 
         // we have to also replace dummy symbol in transducers
