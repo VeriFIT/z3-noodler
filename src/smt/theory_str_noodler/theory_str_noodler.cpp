@@ -2120,7 +2120,7 @@ namespace smt::noodler {
         // For higher values this conversion could not be beneficial as we would work with 
         // big automata in the decision procedure.
         const int MAX_NUM = 64; 
-        const unsigned MAX_VARS = 3;
+        const unsigned MAX_VARS = 4;
         rational val;
         bool val_is_larger;
         expr_ref_vector len_arg(m);
