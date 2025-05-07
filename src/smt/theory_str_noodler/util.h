@@ -165,6 +165,8 @@ namespace smt::noodler::util {
     std::vector<Predicate> create_inclusions_from_multiple_sides(const std::vector<std::vector<BasicTerm>>& left_sides, const std::vector<std::vector<BasicTerm>>& right_sides);
 
     void replace_dummy_symbol_in_transducer_with(mata::nft::Nft& transducer, const std::set<mata::Symbol>& symbols_to_replace_with);
+
+    bool is_concatenation_of_literals(const std::vector<BasicTerm>& concatenation, zstring& literal);
 }
 
 #endif

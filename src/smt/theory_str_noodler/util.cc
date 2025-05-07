@@ -325,4 +325,16 @@ namespace smt::noodler::util {
             }
         }
     }
+
+    bool is_concatenation_of_literals(const std::vector<BasicTerm>& concatenation, zstring& literal) {
+        literal.reset();
+        for (const BasicTerm& bt : concatenation) {
+            if (bt.is_literal()) {
+                literal += bt.get_name();
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
 }

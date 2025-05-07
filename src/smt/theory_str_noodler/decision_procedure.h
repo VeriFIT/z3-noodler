@@ -217,7 +217,7 @@ namespace smt::noodler {
          */
         void push_non_simple_transducers_to_processing() {
             for (const Predicate &transducer : transducers) {
-                if (transducer.get_input().size() != 1 || transducer.get_output().size() != 1) {
+                if (transducer.get_input().size() != 1 || transducer.get_output().size() != 1 || transducer.get_input()[0].is_literal() || transducer.get_input()[1].is_literal()) {
                     push_unique(transducer, false);
                 }
             }

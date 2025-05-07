@@ -592,8 +592,7 @@ namespace smt::noodler {
                                                         // the var is length if the corresponding variable on the left or right is length too
                                                         new_element.length_sensitive_vars.contains(left_side_vars[noodle[i].second[0]])
                                                             || new_element.contains_length_var(right_side_division[noodle[i].second[1]]),
-                                                        // we want to create literal if possible, the automaton should be trimmed and reduced from noodlification
-                                                        true);
+                                                        false);
                 left_side_vars_to_new_vars[noodle[i].second[0]].push_back(new_var);
                 right_side_divisions_to_new_vars[noodle[i].second[1]].push_back(new_var);
                 STRACE("str-nfa", tout << new_var << std::endl << *noodle[i].first;);
@@ -665,44 +664,55 @@ namespace smt::noodler {
         const std::vector<BasicTerm>& input_vars = transducer_to_process.get_input();
         const std::vector<BasicTerm>& output_vars = transducer_to_process.get_output();
 
-        if (input_vars.empty() || output_vars.empty()) {
-            // If one side is empty, we can apply empty string on the tape connected with the empty side and replace the transducer with inclusion.
-            // For example, if we have
-            //     output_vars = T("")          or             "" = T(input_vars)
-            // we replace it with
-            //     output_vars ⊆ fresh_var      or      fresh_var ⊆ input_vars
-            // where the language of the fresh_var is the application of empty string on T (either on input or output, based on which side is empty).
+        // If one side is (possibly empty) concatenation of literals, we can apply the literal string on the tape connected with that side and replace the transducer with inclusion.
+        // For example, if we have
+        //     output_vars = T("abc")          or             "abc" = T(input_vars)
+        // we replace it with
+        //     output_vars ⊆ fresh_var      or      fresh_var ⊆ input_vars
+        // where the language of the fresh_var is the application of "abc" on T (either on input or output, based on which side is "abc").
+        zstring literal;
+        bool one_side_is_literal = false;
+        bool input_is_literal = false;
+        mata::nft::Level level_of_literal_side;
+        if (util::is_concatenation_of_literals(input_vars, literal)) {
+            input_is_literal = true;
+            one_side_is_literal = true;
+            level_of_literal_side = 0;
+        } else if (util::is_concatenation_of_literals(output_vars, literal)) {
+            input_is_literal = false;
+            one_side_is_literal = true;
+            level_of_literal_side = 1;
+        } else {
+            one_side_is_literal = false;
+        }
 
-            bool input_is_empty = input_vars.empty();
-            mata::nft::Level level_of_empty_side = input_is_empty ? 0 : 1;
-
-            // we apply empty string to empty tape of transducer, getting the NFA for the nonempty side
-            mata::nfa::Nfa application_to_empty_string = transducer_to_process.get_transducer()->apply(mata::Word(), level_of_empty_side).to_nfa_move();
-            application_to_empty_string = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_empty_string.trim()));
+        if (one_side_is_literal) {
+            // we apply the literal to the corresponding tape of the transducer, getting the NFA for the nonliteral side
+            mata::nfa::Nfa application_to_literal = transducer_to_process.get_transducer()->apply(util::get_mata_word_zstring(literal), level_of_literal_side).to_nfa_move();
+            application_to_literal = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_literal.trim()));
             
-            if (application_to_empty_string.is_lang_empty()) {
-                // empty string is not accepted by transducer as input, this solving_state cannot lead to solution
+            if (application_to_literal.is_lang_empty()) {
+                // the literal is not accepted by transducer on the corresponding tape, this solving_state cannot lead to solution
                 return;
             }
 
-            const std::vector<BasicTerm>& non_empty_side = input_is_empty ? output_vars : input_vars;
+            const std::vector<BasicTerm>& non_literal_side = input_is_literal ? output_vars : input_vars;
 
-            if (non_empty_side.empty()) {
-                // if the non-empty side is actually also empty, then we can just check if the result of application contains epsilon
-                if (application_to_empty_string.is_in_lang({})) {
+            if (non_literal_side.empty()) {
+                // if the non-literal side is actually empty, then we can just check if the result of application contains epsilon
+                if (application_to_literal.is_in_lang({})) {
                     // if it does, we can continue with this solving_state, otherwise we keep it out of worklist as it will not lead to solution
                     push_to_worklist(std::move(solving_state), false);
                 }
                 return;
             }
 
-            // we create new inclusion, either output_var ⊆ application_to_empty_string or application_to_empty_string ⊆ input_vars
-            Predicate new_inclusion = input_is_empty ? Predicate::create_equation(non_empty_side, {}) : Predicate::create_equation({}, non_empty_side);
-            if (!mata::strings::is_lang_eps(application_to_empty_string)) {
-                // if the application does not lead to empty string we need to create a new var for empty side and replace it with its language set to application_to_empty_string
-                BasicTerm fresh_var = util::mk_noodler_var_fresh(std::string("emptysideapp_") + std::to_string(noodlification_no));
-                solving_state.aut_ass[fresh_var] = std::make_shared<mata::nfa::Nfa>(application_to_empty_string);
-                if (input_is_empty) {
+            // we create new inclusion, either output_var ⊆ application_to_literal or application_to_literal ⊆ input_vars
+            Predicate new_inclusion = input_is_literal ? Predicate::create_equation(non_literal_side, {}) : Predicate::create_equation({}, non_literal_side);
+            if (!mata::strings::is_lang_eps(application_to_literal)) {
+                // if the application does not lead to empty string we need to create a new var for literal side and replace it with its language set to application_to_literal
+                BasicTerm fresh_var = solving_state.add_fresh_var(std::make_shared<mata::nfa::Nfa>(application_to_literal), std::string("emptysideapp_") + std::to_string(noodlification_no), false, true);
+                if (input_is_literal) {
                     new_inclusion.set_right_side({fresh_var});
                 } else {
                     new_inclusion.set_left_side({fresh_var});
@@ -747,7 +757,7 @@ namespace smt::noodler {
                                                             noodle[i].input_aut, // we assign Ai to new_input_var
                                                             std::string("input_") + std::to_string(noodlification_no),
                                                             new_element.contains_length_var(input_vars_divisions[noodle[i].input_index]),
-                                                            true
+                                                            false // we do not want literals in simple transducers
                                                         ); // xi
                 input_vars_to_new_input_vars[noodle[i].input_index].push_back(new_input_var);
 
@@ -757,7 +767,7 @@ namespace smt::noodler {
                                                             // lengthness must be propagated from input to output too
                                                             new_element.contains_length_var(input_vars_divisions[noodle[i].input_index])
                                                                 || new_element.length_sensitive_vars.contains(output_vars[noodle[i].output_index]),
-                                                            true
+                                                            false // we do not want literals in simple transducers
                                                         ); // xo
                 output_vars_to_new_output_vars[noodle[i].output_index].push_back(new_output_var);
 
@@ -2082,9 +2092,6 @@ namespace smt::noodler {
                 transducer = transducer.apply(*solution.aut_ass.at(tape_vars[tape_num]), tape_num, false);
             }
             mata::Word accepting_word = transducer.get_word(true).value();
-            STRACE("str-model-transducer",
-                tout << "Getting model of vars with combined word " << zstring(accepting_word.size(), accepting_word.data()) << "\n";
-            );
             std::vector<mata::Word> words_for_tape_vars{tape_vars.size()};
             size_t current_tape_var = 0;
             for (unsigned current_symbol : accepting_word) {
