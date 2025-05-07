@@ -94,7 +94,7 @@ bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_u
         }
     } else if (m_util_a.is_add(e)) {
         // check if it a summation of str.len (using recursion)
-        for (unsigned i = 1; i < to_app(e)->get_num_args(); ++i) {
+        for (unsigned i = 0; i < to_app(e)->get_num_args(); ++i) {
             arg = to_app(e)->get_arg(i);
             if (is_sum_of_lens(arg, m, m_util_s, m_util_a, argref)) {
                 for (expr* var : argref) {
