@@ -73,6 +73,7 @@ bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m
 
 bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref_vector& len_vars) {
     expr *arg = nullptr, *arg2;
+    len_vars = expr_ref_vector(m);
     expr_ref_vector argref(m);
     if (m_util_s.str.is_length(e, arg)) { // str.len(x), we return x
         len_vars.push_back(arg);
