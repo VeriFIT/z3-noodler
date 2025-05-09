@@ -265,6 +265,7 @@ namespace smt::noodler {
                 }
             }
         }
+        return is_there_some_dummy;
     }
 
     std::optional<mata::Symbol> AutAssignment::replace_dummy_with_new_symbol() {
