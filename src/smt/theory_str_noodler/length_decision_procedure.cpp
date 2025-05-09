@@ -760,7 +760,9 @@ namespace smt::noodler {
 
 
     LengthProcModel::LengthProcModel(const ConstraintPool& block_pool, const SubstitutionMap& subst, const AutAssignment& aut_ass, const std::set<BasicTerm>& multi_var_set) : model(), subst_map(subst), aut_ass(aut_ass), block_pool(block_pool), multi_var_set(multi_var_set) {
-        this->aut_ass.replace_dummy_with_new_symbol();
+        if(aut_ass.get_alphabet().size() != 0) {
+            this->aut_ass.replace_dummy_with_new_symbol();
+        }
         std::set<BasicTerm> len_vars{};
         this->lit_conversion = block_pool.get_lit_conversion();
         this->block_models = std::map<BasicTerm, BlockModel>();

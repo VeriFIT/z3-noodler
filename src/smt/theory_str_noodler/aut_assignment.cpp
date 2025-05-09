@@ -240,11 +240,7 @@ namespace smt::noodler {
         }
     }
 
-    std::optional<mata::Symbol> AutAssignment::replace_dummy_with_new_symbol() {
-        if(alphabet.size() == 0) {
-            return std::nullopt;
-        }
-        mata::Symbol new_symbol = regex::Alphabet(alphabet).get_unused_symbol();
+    bool AutAssignment::replace_dummy_with_symbols(std::set<mata::Symbol> symbols) {
         bool is_there_some_dummy = false;
         for (auto& [var, nfa] : *this) {
             for (mata::nfa::State state = 0; state < nfa->num_of_states(); ++state) {
@@ -255,12 +251,18 @@ namespace smt::noodler {
                         is_there_some_dummy = true;
                         mata::nfa::StateSet targets = delta_from_state.back().targets;
                         delta_from_state.pop_back();
-                        nfa->delta.add(state, new_symbol, targets);
+                        for (mata::Symbol symbol : symbols) {
+                            nfa->delta.add(state, symbol, targets);
+                        }
                     }
                 }
             }
         }
-        if (is_there_some_dummy) {
+    }
+
+    std::optional<mata::Symbol> AutAssignment::replace_dummy_with_new_symbol() {
+        mata::Symbol new_symbol = regex::Alphabet(alphabet).get_unused_symbol();
+        if (replace_dummy_with_symbols({new_symbol})) {
             alphabet.insert(new_symbol);
             return new_symbol;
         } else {

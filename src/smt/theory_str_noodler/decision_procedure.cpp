@@ -2017,12 +2017,40 @@ namespace smt::noodler {
         }
         inclusions_from_preprocessing.clear();
 
+        // we need to first handle dummy symbol, we want to get rid of it and replace it with some valid symbols
         std::set<mata::Symbol> set_of_symbols_to_replace_dummy_symbol_with;
-
-        // Restrict the languages in solution of length variables and code/int conversion variables by their models
+        // the valid symbols can come from code-point conversions
         for (auto& [var, nfa] : solution.aut_ass) {
-            // literals should have the correct language + we process only length vars
-            if (var.is_literal() || !solution.length_sensitive_vars.contains(var)) { continue; }
+            if (var.is_literal() || !code_subst_vars.contains(var)) { continue; }
+            rational len = arith_model.at(var);
+            rational to_code_value = arith_model.at(code_version_of(var));
+            if (to_code_value != -1) {
+                mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
+                if (!solution.aut_ass.get_alphabet().contains(to_code_value_as_symbol)) {
+                    // the code value is not a symbol of an alphabet, therefore it is "hidden" in a dummy symbol
+                    // we want to "unhide" it, and make it explicit
+                    set_of_symbols_to_replace_dummy_symbol_with.insert(to_code_value_as_symbol);
+                    solution.aut_ass.add_symbol_to_alphabet(to_code_value.get_unsigned());
+                }
+                update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
+            } // for the case to_code_value == -1 we should have (str.len var) != 1, this restriction will be sorted out further
+        }
+
+        // if there is no symbol from code-point conversions, we add a fresh one instead
+        if (set_of_symbols_to_replace_dummy_symbol_with.empty()) {
+            set_of_symbols_to_replace_dummy_symbol_with.insert(solution.aut_ass.add_fresh_symbol_to_alphabet());
+        }
+
+        // we can now replace dummy symbol in automata
+        solution.aut_ass.replace_dummy_with_symbols(set_of_symbols_to_replace_dummy_symbol_with);
+        // we have to also replace dummy symbol in transducers
+        // TODO it is incorrect, dummy symbols need to be replaced on the level of transducer transitions, not on nfa transitions
+        solution.replace_dummy_symbol_in_transducers_with(set_of_symbols_to_replace_dummy_symbol_with);
+
+        // Restrict the languages in solution of length variables and int conversion variables by their models
+        for (auto& [var, nfa] : solution.aut_ass) {
+            // literals should have the correct language already and we process only length vars which were not already processed in the dummy-symbol step
+            if (var.is_literal() || !solution.length_sensitive_vars.contains(var) || model_of_var.contains(var)) { continue; }
 
             // Restrict length
             rational len = arith_model.at(var);
@@ -2052,30 +2080,9 @@ namespace smt::noodler {
                     }
                 }
             }
-
-            // Restrict code-conversion var
-            if (code_subst_vars.contains(var)) {
-                rational to_code_value = arith_model.at(code_version_of(var));
-                if (to_code_value != -1) {
-                    mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
-                    if (!solution.aut_ass.get_alphabet().contains(to_code_value_as_symbol)) {
-                        // the code value is not a symbol of an alphabet, therefore it is "hidden" in a dummy symbol
-                        // we want to "unhide" it, and make it explicit
-                        set_of_symbols_to_replace_dummy_symbol_with.insert(to_code_value_as_symbol);
-                        solution.aut_ass.add_symbol_from_dummy(to_code_value.get_unsigned());
-                    }
-                    update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
-                } // for the case to_code_value == -1 we should have (str.len var) != 1, so we do not need to restrict the language, as it should have been already be restricted by length
-            }
         }
 
-        // we replace dummy symbol with a new symbol in automata, so we do not have to work with it
-        std::optional<mata::Symbol> symbol_replacing_dummy = solution.aut_ass.replace_dummy_with_new_symbol();
-        if (symbol_replacing_dummy.has_value()) {
-            set_of_symbols_to_replace_dummy_symbol_with.insert(symbol_replacing_dummy.value());
-        }
-
-        // TODO the following is very inefficient and will probably be slow
+        // TODO the following is very inefficient and will probably be slow (and it is also incorrect, dummy symbols are handled wrongly)
         for (auto& [transducer, tape_vars] : transducers_with_vars_on_tapes) {
             util::replace_dummy_symbol_in_transducer_with(transducer, set_of_symbols_to_replace_dummy_symbol_with);
             STRACE("str-model-transducer",
@@ -2104,9 +2111,6 @@ namespace smt::noodler {
                 update_model_and_aut_ass(tape_vars[tape_num], regex::Alphabet{solution.aut_ass.get_alphabet()}.get_string_from_mata_word(words_for_tape_vars[tape_num]));
             }
         }
-
-        // we have to also replace dummy symbol in transducers
-        solution.replace_dummy_symbol_in_transducers_with(set_of_symbols_to_replace_dummy_symbol_with);
 
         is_model_initialized = true;
 
