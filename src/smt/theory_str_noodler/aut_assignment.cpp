@@ -223,6 +223,13 @@ namespace smt::noodler {
         return flat;
     }
 
+    mata::Symbol AutAssignment::add_fresh_symbol_to_alphabet() {
+        mata::Symbol new_symbol = regex::Alphabet(alphabet).get_unused_symbol();
+        this->alphabet.insert(new_symbol);
+        return new_symbol;
+    }
+
+
     void AutAssignment::add_symbol_from_dummy(mata::Symbol sym) {
         if(alphabet.contains(sym)) { return; }
         bool is_there_some_dummy = false;

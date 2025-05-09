@@ -209,11 +209,7 @@ namespace smt::noodler {
             this->alphabet.insert(s);
         }
 
-        mata::Symbol add_fresh_symbol_to_alphabet() {
-            mata::Symbol new_symbol = regex::Alphabet(alphabet).get_unused_symbol();
-            this->alphabet.insert(new_symbol);
-            return new_symbol;
-        }
+        mata::Symbol add_fresh_symbol_to_alphabet();
 
         /// @brief Add symbol @p s to alphabet and removes it from dummy symbol (i.e. adds transitions trough @p s in all automata if there is transition trough dummy symbol)
         void add_symbol_from_dummy(mata::Symbol s);
