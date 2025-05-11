@@ -1838,7 +1838,7 @@ namespace smt::noodler {
                             break;
                         }
                         // add the haystack (ui) to the concatenation haystacks
-                        for (BasicTerm haystack_var : pred.get_haystack()) {
+                        for (const BasicTerm& haystack_var : pred.get_haystack()) {
                             haystacks.emplace_back(haystack_var);
                         }
                         rem_ids.insert(occur.pred_index);
