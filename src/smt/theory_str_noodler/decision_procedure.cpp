@@ -2098,7 +2098,7 @@ namespace smt::noodler {
             for (size_t tape_num = 0; tape_num < tape_vars.size(); ++tape_num) {
                 transducer = transducer.apply(*solution.aut_ass.at(tape_vars[tape_num]), tape_num, false);
             }
-            mata::Word accepting_word = transducer.get_word(true).value();
+            mata::Word accepting_word = transducer.get_word(std::nullopt).value();
             std::vector<mata::Word> words_for_tape_vars{tape_vars.size()};
             size_t current_tape_var = 0;
             for (unsigned current_symbol : accepting_word) {
