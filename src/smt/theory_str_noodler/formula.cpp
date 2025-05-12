@@ -1,10 +1,9 @@
+#include "util.h"
+#include "formula.h"
+
 #include "ast/ast.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/seq_decl_plugin.h"
-
-#include "formula.h"
-#include "util.h"
-
 
 namespace smt::noodler {
     void collect_free_vars_rec(const LenNode& root, std::set<BasicTerm>& free_vars, std::set<BasicTerm>& quantified_vars) {

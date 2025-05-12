@@ -577,8 +577,7 @@ namespace smt::noodler {
          **/
         auto noodles = mata::strings::seg_nfa::noodlify_for_equation(left_side_automata,
                                                                     right_side_automata,
-                                                                    false,
-                                                                    {{"reduce", "forward"}});
+                                                                    AutAssignment::REDUCTION_ALGORITHM);
 
         for (const auto &noodle : noodles) {
             STRACE("str", tout << "Processing noodle" << (is_trace_enabled("str-nfa") ? " with automata:" : "") << std::endl;);
@@ -693,7 +692,7 @@ namespace smt::noodler {
 
             // we apply empty string to empty tape of transducer, getting the NFA for the nonempty side
             mata::nfa::Nfa application_to_empty_string = transducer_to_process.get_transducer()->apply(mata::Word(), level_of_empty_side).to_nfa_move();
-            application_to_empty_string = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_empty_string.trim()));
+            application_to_empty_string = AutAssignment::reduce_nfa(mata::nfa::remove_epsilon(application_to_empty_string.trim()));
             
             if (application_to_empty_string.is_lang_empty()) {
                 // empty string is not accepted by transducer as input, this solving_state cannot lead to solution
@@ -738,7 +737,11 @@ namespace smt::noodler {
         SASSERT(output_vars_automata.size() == output_vars_divisions.size());
         SASSERT(output_vars_divisions.size() == output_vars.size());
 
-        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true);
+        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(),
+                                                                                                                        input_vars_automata,
+                                                                                                                        output_vars_automata,
+                                                                                                                        AutAssignment::REDUCTION_ALGORITHM
+                                                                                                                    );
         for (const auto& noodle : noodles) {
             // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
             //      - T is a transducer, which will take one input and one output var: xo = T(xi)
@@ -1157,10 +1160,10 @@ namespace smt::noodler {
             STRACE("str-conversion-int", tout << "NFA for " << int_subst_var << ":" << std::endl << *aut << std::endl;);
 
             // part containing only digits
-            mata::nfa::Nfa aut_valid_part = mata::nfa::reduce(mata::nfa::intersection(*aut, only_digits).trim());
+            mata::nfa::Nfa aut_valid_part = AutAssignment::reduce_nfa(mata::nfa::intersection(*aut, only_digits).trim());
             STRACE("str-conversion-int", tout << "only-digit NFA:" << std::endl << aut_valid_part << std::endl;);
             // part containing some non-digit
-            mata::nfa::Nfa aut_non_valid_part = mata::nfa::reduce(mata::nfa::intersection(*aut, contain_non_digit).trim());
+            mata::nfa::Nfa aut_non_valid_part = AutAssignment::reduce_nfa(mata::nfa::intersection(*aut, contain_non_digit).trim());
             STRACE("str-conversion-int", tout << "contains-non-digit NFA:" << std::endl << aut_non_valid_part << std::endl;);
 
             // First handle the case of all words (except empty word) from solution.aut_ass.at(int_subst_var) that do not represent numbers
@@ -2054,7 +2057,7 @@ namespace smt::noodler {
 
                     // we get the possible inputs of transducer when output is model of output_var
                     mata::nfa::Nfa possible_inputs = predicate_with_var_on_right_side.get_transducer()->apply(util::get_mata_word_zstring(output_var_model), 1).to_nfa_move();
-                    possible_inputs = mata::nfa::reduce(mata::nfa::remove_epsilon(possible_inputs.trim()));
+                    possible_inputs = AutAssignment::reduce_nfa(mata::nfa::remove_epsilon(possible_inputs.trim()));
                     // the model of var is then some word from possible_inputs and the langauge of var
                     mata::Word accepted_word = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word().value();
                     return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));

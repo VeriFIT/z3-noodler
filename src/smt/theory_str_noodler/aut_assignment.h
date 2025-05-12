@@ -12,6 +12,7 @@
 #include <mata/nfa/nfa.hh>
 #include <mata/nfa/strings.hh>
 #include <mata/nfa/builder.hh>
+#include <mata/nfa/algorithms.hh>
 
 #include "formula.h"
 
@@ -48,6 +49,15 @@ namespace smt::noodler {
             }
             update_alphabet();
         };
+
+        static const mata::nfa::ReductionAlgorithm REDUCTION_ALGORITHM = mata::nfa::ReductionAlgorithm::SIMULATION;
+
+        static mata::nfa::Nfa reduce_nfa(const mata::nfa::Nfa& aut) {
+            STRACE("str-reduce_nfa", tout << "NFA to be reduced:\n" << aut);
+            mata::nfa::Nfa result = mata::nfa::reduce(aut, nullptr, REDUCTION_ALGORITHM);
+            STRACE("str-reduce_nfa", tout << "reduced NFA:\n" << result);
+            return result;
+        }
 
         static mata::nfa::Nfa empty_string_automaton() {
             return mata::nfa::Nfa(1, {0}, {0});
@@ -310,7 +320,7 @@ namespace smt::noodler {
          */
         void reduce() {
              for (auto& pr : *this) {
-                pr.second = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(*pr.second));
+                pr.second = std::make_shared<mata::nfa::Nfa>(reduce_nfa(*pr.second));
             }
         }
 

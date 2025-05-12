@@ -10,13 +10,12 @@
 
 #include <mata/nfa/nfa.hh>
 
-#include "util/trace.h"
-#include "smt/params/theory_str_noodler_params.h"
-
-#include "formula.h"
 #include "aut_assignment.h"
 #include "var_union_find.h"
 #include "util.h"
+
+#include "util/trace.h"
+#include "smt/params/theory_str_noodler_params.h"
 
 namespace smt::noodler {
 

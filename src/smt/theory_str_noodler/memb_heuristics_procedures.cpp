@@ -114,7 +114,7 @@ namespace smt::noodler {
                 if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
                     && intersection.num_of_states() < regex::RED_BOUND)
                 {
-                    intersection = mata::nfa::reduce(intersection);
+                    intersection = AutAssignment::reduce_nfa(intersection);
                 }
                 first = false;
                 if (intersection.is_lang_empty()) {
@@ -131,7 +131,7 @@ namespace smt::noodler {
                 if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
                     && unionn.num_of_states() < regex::RED_BOUND)
                 {
-                    unionn = mata::nfa::reduce(unionn);
+                    unionn = AutAssignment::reduce_nfa(unionn);
                 }
                 first = false;
             }

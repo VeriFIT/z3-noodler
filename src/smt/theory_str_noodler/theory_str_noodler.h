@@ -17,18 +17,7 @@ Eternal glory to Yu-Fang.
 #include <unordered_set>
 #include <vector>
 
-#include "smt/params/smt_params.h"
-#include "ast/arith_decl_plugin.h"
-#include "ast/seq_decl_plugin.h"
-#include "smt/params/theory_str_noodler_params.h"
-#include "smt/smt_kernel.h"
-#include "smt/smt_theory.h"
-#include "smt/smt_arith_value.h"
-#include "util/scoped_vector.h"
-#include "util/union_find.h"
-#include "ast/rewriter/seq_rewriter.h"
-#include "ast/rewriter/th_rewriter.h"
-
+#include "aut_assignment.h"
 #include "formula.h"
 #include "inclusion_graph.h"
 #include "decision_procedure.h"
@@ -42,6 +31,18 @@ Eternal glory to Yu-Fang.
 #include "counter_automaton.h"
 #include "length_decision_procedure.h"
 #include "unary_decision_procedure.h"
+
+#include "smt/params/smt_params.h"
+#include "ast/arith_decl_plugin.h"
+#include "ast/seq_decl_plugin.h"
+#include "smt/params/theory_str_noodler_params.h"
+#include "smt/smt_kernel.h"
+#include "smt/smt_theory.h"
+#include "smt/smt_arith_value.h"
+#include "util/scoped_vector.h"
+#include "util/union_find.h"
+#include "ast/rewriter/seq_rewriter.h"
+#include "ast/rewriter/th_rewriter.h"
 
 /**
  * NOTE: way how to print z3 formula in smt2 format (including the declaration)

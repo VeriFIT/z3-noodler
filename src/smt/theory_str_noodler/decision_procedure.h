@@ -6,10 +6,10 @@
 #include <algorithm>
 #include <functional>
 
+#include "aut_assignment.h"
 #include "smt/params/theory_str_noodler_params.h"
 #include "formula.h"
 #include "inclusion_graph.h"
-#include "aut_assignment.h"
 #include "formula_preprocess.h"
 #include "ca_str_constr.h"
 

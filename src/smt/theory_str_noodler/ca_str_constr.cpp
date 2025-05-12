@@ -821,7 +821,7 @@ namespace smt::noodler::ca {
 
         // Preprocess the assignment: reduce the automata and make them deterministic
         for (auto it = workspace_aut_assignment.begin(); it != workspace_aut_assignment.end(); it++) {
-            mata::nfa::Nfa reduced_nfa = mata::nfa::reduce(*it->second);
+            mata::nfa::Nfa reduced_nfa = AutAssignment::reduce_nfa(*it->second);
             mata::nfa::Nfa reduced_dfa = mata::nfa::determinize(reduced_nfa);
             it->second = std::make_shared<mata::nfa::Nfa>(reduced_dfa);
             STRACE("str-not-contains", {

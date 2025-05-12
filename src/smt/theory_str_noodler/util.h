@@ -11,8 +11,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
 #include <mata/nft/nft.hh>
 #include <mata/nft/strings.hh>
+
+#include "aut_assignment.h"
 
 #include "smt/params/smt_params.h"
 #include "ast/arith_decl_plugin.h"
@@ -23,8 +26,6 @@
 #include "ast/rewriter/seq_rewriter.h"
 #include "ast/rewriter/th_rewriter.h"
 
-#include "formula.h"
-#include "aut_assignment.h"
 
 // FIXME most if not all these functions should probably be in theory_str_noodler
 
