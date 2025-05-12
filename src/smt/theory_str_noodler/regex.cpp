@@ -822,9 +822,13 @@ namespace smt::noodler::regex {
     }
 
     mata::nft::Nft ReplaceAllPrefixTree::create_transducer(mata::Alphabet* mata_alph) {
-        // we will basically construct a product of prefix tree with identity transducer, but
-        // for the matched finds in the prefix tree, we replace them with their corresponding replaces
-        mata::nft::Nft result{1, {0}, {0}};
+        // We will basically construct a product of prefix tree with identity transducer, but
+        // for the matched finds in the prefix tree, we replace them with their corresponding replaces.
+        // The state 0 is initial and final state that will have loops containing the replace operations
+        // given by the prefix tree (first tape is read from prefix tree, then the replaced string is output
+        // on second tape). The state 1 is then there for the cases where we finish reading the input word
+        // but we still need to print to second tape.
+        mata::nft::Nft result{2, {0}, {0, 1}};
         // contains pairs (w, p, q) where p is a state of the prefix tree, w is the word on the path to p and q is the state of result
         std::queue<std::tuple<mata::Word,mata::nfa::State,mata::nft::State>> worklist;
         worklist.push({mata::Word(), 0, 0});
@@ -832,6 +836,11 @@ namespace smt::noodler::regex {
         while (!worklist.empty()) {
             const auto [word, prefix_state, result_state] = worklist.front();
             worklist.pop();
+
+            // we read the next symbol and based on prefix tree, we will either
+            //  - continue reading
+            //  - finish reading and print the replacing word to second tape
+            //  - fail reading (it does not match any replace operation) and print already read word to second tape
             for (mata::Symbol symbol : mata_alph->get_alphabet_symbols()) {
                 mata::Word replacing_word; // if we will be replacing, this is the word by which we are replacing
                 auto symbol_transition_it = prefix_automaton.delta[prefix_state].find(symbol);
@@ -848,6 +857,22 @@ namespace smt::noodler::regex {
                         mata::Word next_word = word;
                         next_word.push_back(symbol);
                         worklist.push({next_word, next_prefix_state, next_result_state});
+
+                        // we also print the already read word to the second tape ending in the final state 1, representing
+                        // the situation where the currently read symbol was the last symbol of the input word
+                        if (next_word.size() == 1) {
+                            // replacing by just one symbol means that we put it out while reading the current symbol
+                            result.add_transition(result_state, {symbol, next_word[0]}, 1);
+                        } else { // next_word.size() >= 1
+                            mata::nft::State next_state = result.add_transition(result_state, {symbol, next_word[0]});
+                            // and then just put out the rest while on the input we take epsilon
+                            for (size_t i = 1; i < next_word.size()-1; ++i) {
+                                next_state = result.add_transition(next_state, {mata::nft::EPSILON, next_word[i]});
+                            }
+                            // the last transition needs to go to the state 1
+                            result.add_transition(next_state, {mata::nft::EPSILON, next_word[next_word.size()-1]}, 1);
+                        }
+
                         continue;
                     }
                 } else {
