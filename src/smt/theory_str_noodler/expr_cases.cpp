@@ -71,32 +71,93 @@ bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m
     return false;
 }
 
-bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& len_arg, rational& num) {
+bool is_sum_of_lens(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref_vector& len_vars) {
+    expr *arg = nullptr, *arg2;
+    len_vars = expr_ref_vector(m);
+    expr_ref_vector argref(m);
+    if (m_util_s.str.is_length(e, arg)) { // str.len(x), we return x
+        len_vars.push_back(arg);
+        return true;
+    } else if (m_util_a.is_mul(e, arg, arg2)) {
+        // check if of the form N*str.len(x), where N is a positive number
+        rational val;
+        if (((m_util_a.is_numeral(arg, val) && is_sum_of_lens(arg2, m, m_util_s, m_util_a, argref)) ||
+             (m_util_a.is_numeral(arg2, val) && is_sum_of_lens(arg, m, m_util_s, m_util_a, argref))) && val > 0) {
+            // we return concatenation xxxx...x, with x being N times in the concatenation
+            for (rational i{0}; i < val; ++i) {
+                for (expr* var : argref) {
+                    len_vars.push_back(var);
+                }
+            }
+            return true;
+        } else {
+            return false;
+        }
+    } else if (m_util_a.is_add(e)) {
+        // check if it a summation of str.len (using recursion)
+        for (unsigned i = 0; i < to_app(e)->get_num_args(); ++i) {
+            arg = to_app(e)->get_arg(i);
+            if (is_sum_of_lens(arg, m, m_util_s, m_util_a, argref)) {
+                for (expr* var : argref) {
+                    len_vars.push_back(var);
+                }
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref_vector& len_arg, rational& num) {
     expr* left = nullptr, *right = nullptr;
     if(m.is_eq(e, left, right)) {
-        if(m_util_a.is_numeral(left, num) && m_util_s.str.is_length(right, len_arg)) {
-            return true;
+        expr* non_num_side;
+        if (m_util_a.is_numeral(left, num)) {
+            non_num_side = right;
+        } else if (m_util_a.is_numeral(right, num)) {
+            non_num_side = left;
+        } else {
+            return false;
         }
-        if(m_util_a.is_numeral(right, num) && m_util_s.str.is_length(left, len_arg)) {
+
+        if (is_sum_of_lens(non_num_side, m, m_util_s, m_util_a, len_arg)) {
             return true;
         }
     }
     return false;
 }
 
-bool is_len_num_leq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& len_arg, rational& num) {
-    expr* left = nullptr, *right = nullptr, *e_not = nullptr;
-    if(m_util_a.is_le(e, left, right)) {
-        if(m_util_a.is_numeral(right, num) && m_util_s.str.is_length(left, len_arg)) {
-            return true;
-        }
-    } else if(m.is_not(e, e_not) && m_util_a.is_ge(e_not, left, right)) {
-        if(m_util_a.is_numeral(right, num) && m_util_s.str.is_length(left, len_arg)) {
-            num--;
-            return true;
-        }
+bool is_len_num_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref_vector& len_arg, rational& num, bool& num_is_larger) {
+    STRACE("str-is_len_num_leq_or_geq", tout << mk_pp(e, m) << std::endl;);
+    expr* less = nullptr, *more = nullptr, *e_not = nullptr;
+    bool strictly_less;
+    if (m_util_a.is_lt(e, less, more) || (m.is_not(e, e_not) && m_util_a.is_ge(e_not, less, more)) ||
+        m_util_a.is_gt(e, more, less) || (m.is_not(e, e_not) && m_util_a.is_le(e_not, more, less))) {
+        strictly_less = true;
+    } else if (m_util_a.is_le(e, less, more) || (m.is_not(e, e_not) && m_util_a.is_gt(e_not, less, more)) ||
+               m_util_a.is_ge(e, more, less) || (m.is_not(e, e_not) && m_util_a.is_lt(e_not, more, less))) {
+        strictly_less = false;
+    } else {
+        return false;
     }
-    return false;
+    
+    if (m_util_a.is_numeral(more, num) && is_sum_of_lens(less, m, m_util_s, m_util_a, len_arg)) {
+        if (strictly_less) {
+            --num;
+        }
+        num_is_larger = true;
+        return true;
+    } else if (m_util_a.is_numeral(less, num) && is_sum_of_lens(more, m, m_util_s, m_util_a, len_arg)) {
+        if (strictly_less) {
+            ++num;
+        }
+        num_is_larger = false;
+        return true;
+    } else {
+        return false;
+    }
 }
 
 bool is_indexof_at(expr * index_param, expr* index_str, ast_manager& m, seq_util& m_util_s) {

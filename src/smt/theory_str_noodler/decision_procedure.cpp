@@ -1736,10 +1736,19 @@ namespace smt::noodler {
 
         prep_handler.conversions_validity(conversions);
 
+        prep_handler.simplify_not_contains_to_equations();
+
         // try to replace the not contains predicates (so-far we replace it by regular constraints)
         if(!prep_handler.replace_not_contains() || prep_handler.can_unify_not_contains()) {
             return l_false;
         }
+
+        if(prep_handler.contains_unsat_eqs_or_diseqs()) {
+            return l_false;
+        }
+
+        // reduce automata of only neccessary variables
+        prep_handler.reduce_automata();
 
          // Refresh the instance
         this->formula = prep_handler.get_modified_formula();
@@ -1757,23 +1766,16 @@ namespace smt::noodler {
         // extract not contains predicate to a separate container
         this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
 
-        if(this->formula.get_predicates().size() > 0) {
-            this->init_aut_ass.reduce(); // reduce all automata in the automata assignment
-        }
-
-        if(prep_handler.contains_unsat_eqs_or_diseqs()) {
-            return l_false;
-        }
-
         STRACE("str-nfa", tout << "Automata after preprocessing" << std::endl << init_aut_ass.print());
-        STRACE("str", tout << "Lenght formula from preprocessing:" << preprocessing_len_formula << std::endl);
         STRACE("str",
+            tout << "Lenght formula from preprocessing:" << preprocessing_len_formula << std::endl;
             tout << "Length variables after preprocesssing:";
             for (const auto &len_var : init_length_sensitive_vars) {
                 tout << " " << len_var;
             }
-            tout << std::endl);
-        STRACE("str", tout << "Formula after preprocessing:" << std::endl << this->formula.to_string() << std::endl; );
+            tout << std::endl;
+            tout << "Formula after preprocessing:" << std::endl << this->formula.to_string() << std::endl;
+        );
 
         // there remains some not contains --> return undef
         if(this->not_contains.get_predicates().size() > 0) {
@@ -1788,8 +1790,7 @@ namespace smt::noodler {
             this->solution = SolvingState(this->init_aut_ass, {}, {}, {}, {}, this->init_length_sensitive_vars, {});
             return l_true;
         } else {
-            // preprocessing was not able to solve it, we at least reduce the size of created automata
-            this->init_aut_ass.reduce();
+            // preprocessing was not able to solve it
             return l_undef;
         }
     }

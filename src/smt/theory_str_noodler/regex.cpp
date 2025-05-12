@@ -891,7 +891,16 @@ namespace smt::noodler::regex {
             return;
         }
 
+        STRACE("str-gather_transducer_constraints", tout << "Gather transducer for " << mk_pp(ex,m) << "\n";);
+
+        // check if we have not constructed this transducer already 
         expr* rpl = pred_replace.find(ex); // dies if it is not found
+        BasicTerm result_var(BasicTermType::Variable, to_app(rpl)->get_decl()->get_name().str());
+        for (const Predicate& trans_pred : transducer_preds) {
+            if (trans_pred.get_output().size() == 1 && trans_pred.get_output()[0] == result_var) {
+                return;
+            }
+        }
 
         // collect all nested replace_all and replace_re_all and keep their arguments as pairs
         // in find_and_replace (where find can be either zstring for replace_all or NFA for 
@@ -928,14 +937,10 @@ namespace smt::noodler::regex {
         if (!find_and_replace.empty()) {
             // recursively call on nested parameters
             gather_transducer_constraints(ex, m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+
             // collect and replace replace_(re)_all argument with a concatenation of basic terms
             std::vector<BasicTerm> side {};
             util::collect_terms(ex, m, m_util_s, pred_replace, var_name, side);
-
-            // result of the replace_all
-            std::string var_name = to_app(rpl)->get_decl()->get_name().str();
-            BasicTerm result_var(BasicTermType::Variable, var_name);
-
 
             // iterate backwards and construct transducer representing the replace operations
             auto backward_iterator = find_and_replace.rbegin();

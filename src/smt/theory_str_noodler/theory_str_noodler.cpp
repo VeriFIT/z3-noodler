@@ -139,17 +139,18 @@ namespace smt::noodler {
         unsigned nFormulas = ctx.get_num_asserted_formulas();
         for (unsigned i = 0; i < nFormulas; ++i) {
             STRACE("str-init-formula", tout << "Initial asserted formula " << i << ": " << expr_ref(ctx.get_asserted_formula(i), m) << std::endl;);
-            obj_hashtable<app> lens;
-            util::get_len_exprs(ctx.get_asserted_formula(i), m_util_s, m, lens);
-            for (app* const a : lens) {
-                util::get_str_variables(a, this->m_util_s, m, this->len_vars, &this->predicate_replace);
-            }
             expr *ex = ctx.get_asserted_formula(i);
+            if (!add_len_num_axioms(ex)) {
+                obj_hashtable<app> lens;
+                util::get_len_exprs(ctx.get_asserted_formula(i), m_util_s, m, lens);
+                for (app* const a : lens) {
+                    util::get_str_variables(a, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+                }
+            }
             ctx.mark_as_relevant(ex);
             string_theory_propagation(ex, true, false);  
         }
         add_conversion_num_axioms();
-        add_len_num_axioms();
         STRACE("str", tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
 
     }
@@ -2111,34 +2112,62 @@ namespace smt::noodler {
      * @brief Add special axioms for length (in)equations. In particular
      * - for (len s) == 10 create (len s) == 10 -> s \in \Sigma^10
      * - for (len s) <= 10 create (len s) <= 10 -> s \in re.loop(0, 10)
+     * - for 10 <= (len s) create 10 <= (len s) -> s \in re.loop(10, \inf)
+     * (len s) can be potentially any LIA formula where the "variables" are length constraints and there is no minus
      */
-    void theory_str_noodler::add_len_num_axioms() {
+    bool theory_str_noodler::add_len_num_axioms(expr* ex) {
         // number bound for the conversion of length constraints into regex constraints.
         // For higher values this conversion could not be beneficial as we would work with 
         // big automata in the decision procedure.
         const int MAX_NUM = 64; 
-        unsigned nFormulas = ctx.get_num_asserted_formulas();
-        for (unsigned i = 0; i < nFormulas; ++i) {
-            expr *ex = ctx.get_asserted_formula(i);
-            rational val;
-            expr* len_arg = nullptr;
-            if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val.is_nonneg() && val < MAX_NUM && val > 0) {
-                expr_ref re(m);
-                for(int i = 0; i < val; i++) {
-                    if(re == nullptr) {
-                        re = m_util_s.re.mk_full_char(nullptr);
-                    } else {
-                        re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
-                    }  
+        const unsigned MAX_VARS = 4;
+        rational val;
+        bool val_is_larger;
+        expr_ref_vector len_arg(m);
+        if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val < MAX_NUM) {
+            if (val < 0) {
+                add_axiom({~mk_literal(ex)});
+                return true;
+            } else if (val == 0) {
+                // we know that concatenation of vars in len_arg must be empty string,
+                // but it doesn't work for some reason, it resulted in some unknowns
+                // even though decision procedure finished, so we better give up
+                return false;
+            } else if (len_arg.size() <= MAX_VARS) {
+                expr_ref re(m_util_s.re.mk_full_char(nullptr), m);
+                for(rational i{1}; i < val; i++) {
+                    re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
                 }
-                expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
+                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
                 add_axiom({~mk_literal(ex), mk_literal(in_re)});
-            } else if(expr_cases::is_len_num_leq(ex, m, m_util_s, m_util_a, len_arg, val) && val.is_nonneg() && val < MAX_NUM && val > 0) {
-                expr_ref re(m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)), m);
-                expr_ref in_re(m_util_s.re.mk_in_re(len_arg, re), m);
+                return true;
+            }
+        } else if(expr_cases::is_len_num_leq_or_geq(ex, m, m_util_s, m_util_a, len_arg, val, val_is_larger) && val < MAX_NUM) {
+            if (val < 0) {
+                if (val_is_larger) {
+                    add_axiom({~mk_literal(ex)});
+                }
+                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger than minus number -> it is useless
+                return true;
+            } else if (val == 0) {
+                if (val_is_larger) {
+                    return false;
+                }
+                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger or equal than 0 -> it is useless
+                return true;
+            } else if (len_arg.size() <= MAX_VARS) {
+                expr_ref re(
+                    val_is_larger ? 
+                        m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
+                        m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(val)),
+                    m
+                );
+                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
                 add_axiom({~mk_literal(ex), mk_literal(in_re)});
+                return true;
             }
         }
+        return false;
     }
 
 

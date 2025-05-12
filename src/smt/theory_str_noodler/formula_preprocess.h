@@ -261,6 +261,7 @@ namespace smt::noodler {
         std::string to_string() const;
 
         const std::set<VarNode>& get_var_occurr(const BasicTerm& var) const { return this->varmap.at(var); };
+        bool var_occurs(const BasicTerm& var) const { return (this->varmap.contains(var) && this->varmap.at(var).size() > 0); };
         const Predicate& get_predicate(size_t index) const { return this->predicates.at(index); };
         const std::map<size_t, Predicate>& get_predicates() const { return this->predicates; };
         const std::set<Predicate>& get_predicates_set() const { return this->allpreds; };
@@ -407,6 +408,10 @@ namespace smt::noodler {
 
         void underapprox_var_language(const BasicTerm& var);
         void refine_languages();
+
+        /// @brief Reduces automata in aut_ass for only variables that are needed (length, conversion vars or occur in the formula)
+        void reduce_automata();
+
         void reduce_diseqalities();
 
         bool contains_unsat_literals();
@@ -426,6 +431,8 @@ namespace smt::noodler {
          * @return false -> unsatisfiable constaint; true if it is not evident
          */
         bool replace_not_contains();
+
+        void simplify_not_contains_to_equations();
 
         /**
          * @brief Replace all occurrences of find with replace. Warning: do not modify the automata assignment.
