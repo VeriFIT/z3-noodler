@@ -1803,16 +1803,16 @@ namespace smt::noodler {
 
     /**
      * Remove not contains predicates that are of the form:
-     * x notin u1
-     * x notin u2
-     * x notin u3
+     * u1 notcontains x
+     * u2 notcontains x
+     * u3 notcontains x
      * ....
-     * x notin uN
-     * where x is non-length/conversion variable which accepts everything and it occurs only
-     * in these not contains and only on the left (so it does not occur in any of ui).
+     * uN notcontains x
+     * where x is non-(length/conversion) variable which accepts everything and it occurs only
+     * in these not contains and only as the needle (so it does not occur in any of ui).
      * 
      * Because it does not occurs anywhere else in the formula, we can always find a word that is
-     * not in any of ui. More spefically, we can take x = u1.u2.u3...uN.'a' where 'a' is some literal.
+     * not in any of ui. More specifically, we can take x = u1.u2.u3...uN.'a' where 'a' is some literal.
      * 
      * We keep the inclusion u1.u2.u3...uN.'a' ⊆ x for model generation.
      */
