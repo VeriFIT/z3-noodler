@@ -903,8 +903,17 @@ namespace smt::noodler::regex {
         return result;
     }
 
-    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds) {
-        if (m_util_s.str.is_string(ex) || util::is_variable(ex)) { // Handle string literals.
+    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, Formula& transducer_preds) {
+        if (m_util_s.str.is_string(ex)) { // Handle string literals.
+            return;
+        }
+
+        if (util::is_variable(ex)) {
+            for (const auto& key_value : pred_replace) {
+                if (to_app(key_value.m_value) == ex) {
+                    gather_transducer_constraints(to_app(key_value.m_key), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+                }
+            }
             return;
         }
 
@@ -921,8 +930,8 @@ namespace smt::noodler::regex {
         // check if we have not constructed this transducer already 
         expr* rpl = pred_replace.find(ex); // dies if it is not found
         BasicTerm result_var(BasicTermType::Variable, to_app(rpl)->get_decl()->get_name().str());
-        for (const Predicate& trans_pred : transducer_preds) {
-            if (trans_pred.get_output().size() == 1 && trans_pred.get_output()[0] == result_var) {
+        for (const Predicate& trans_pred : transducer_preds.get_predicates()) {
+            if (trans_pred.is_transducer() && trans_pred.get_output().size() == 1 && trans_pred.get_output()[0] == result_var) {
                 return;
             }
         }
@@ -1020,7 +1029,7 @@ namespace smt::noodler::regex {
 
             Predicate predicate_transducer = Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var});
             STRACE("str-gather_transducer_constraints", tout << predicate_transducer << "\n";);
-            transducer_preds.push_back(predicate_transducer);
+            transducer_preds.add_predicate(predicate_transducer);
             return;
         }
     }

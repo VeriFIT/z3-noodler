@@ -214,7 +214,7 @@ namespace smt::noodler::regex {
      * @param[out] transducer_preds Newly created transducer constraints
      */
     void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, 
-        std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds);
+        std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, Formula& transducer_preds);
 
 }
 
