@@ -771,8 +771,11 @@ namespace smt::noodler::regex {
 
     bool ReplaceAllPrefixTree::add_find(const zstring& find, const zstring& replace) {
         if (find.length() == 0) {
-            return false;
+            return true; // replacing empty string with anything is NOOP
         }
+
+        if (find.length() != 1) { return false; } // TODO: remove if this function is fixed so that it works for other lengths too
+
         std::set<unsigned> find_chars;
         for (unsigned find_char : find) {
             if (replace_chars.contains(find_char) || find_chars.contains(find_char)) {

@@ -186,6 +186,12 @@ namespace smt::noodler::regex {
          *        be replaced)
          * If it cannot be added, the function returns false and you should get the transducer.
          * 
+         * TODO: This does not work correctly, for example if we have replacements
+         * "abcd" -> "f"
+         * "bc" -> "g"
+         * it will build incorrect tree as "bc" is also inside "abcd".
+         * There is an extra check that |find| == 1 right now, for such cases it should work.
+         * 
          * @param find the string whose every occurence we want to replace
          * @param replace what to replace with
          * @return true If the replace_all application is added to this prefix tree
@@ -194,6 +200,9 @@ namespace smt::noodler::regex {
 
         /**
          * @brief Creates a transducer replacing all added finds by their replaces simultaneously
+         * 
+         * TODO: Does not work correctly, for example for (str.replace_all x "abc" "d") will not match x="aabc".
+         * Works only if all find strings have length == 1
          * 
          * @param mata_alph The alphabet used for creating the transducer
          * @return The simultaneous transducer
