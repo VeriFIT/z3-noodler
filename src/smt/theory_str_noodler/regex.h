@@ -160,37 +160,38 @@ namespace smt::noodler::regex {
     /// Prefix tree for multiple replace_all applications so that we can construct transducer simultaneously
     class ReplaceAllPrefixTree {
         std::set<unsigned> replace_chars; /// the chars occuring in the replace strings of replace_all operations
+        std::set<unsigned> find_delimiters; /// the chars occuring in the first position of find strings of replace_all operation
+        std::set<unsigned> find_non_delimiters; /// the chars occuring in the second, third, etc. find strings of replace_all operations
         mata::nfa::Nfa prefix_automaton{1,{0}}; /// the prefix "tree" for find strings of replace_all operations (each find string will be a word of this automaton)
         std::map<mata::nfa::State, mata::Word> replacing_map; /// maps final states of prefix_automaton that represent find strings to their corresponding replace strings
 
     public:
         ReplaceAllPrefixTree() = default;
         /**
-         * @brief Add another replace_all application
+         * @brief Add another replace_all application where each @p find should be replaced by @p replace
          * 
-         * It also checks if this application can be added to existing ones by some
-         * simple heuristics:
-         *      - @p find cannot contain some character which is in the replace string of
-         *        some previous replace_all application, as the replaced string could be
-         *        possibly matched by @p find (for example the first replace_all replaces
-         *        "a" with "bc" and the next one would replace "cd" with "d", so we would
-         *        need to for the word "ad" to get "bd" which would not happen in simultaneous
-         *        replacing)
-         *      - @p find cannot contain some character twice or more times as the created
-         *        transducer matches only, it cannot "start matching" while it is being
-         *        matched (for example matching "aab" on "aaab" would not work)
+         * It also checks if this application can be added to existing ones by some simple heuristics:
+         *      - @p find must be of the form where the first symbol (delimiter) is different than all
+         *        the other symbols (non-delimiters) of @p find and furthermore, each previous and current
+         *        @p find must have these delimiters different than all the non-delimiters of previous and
+         *        the current @p find. The point of this rule is so that we cannot match a word while we
+         *        are already matching some. For example if we have
+         *          (str.replace_all (str.replace_all x "bad" "c") "a" "f")
+         *        then for the word x="bac", it should transform it into "bfc". However, we would start
+         *        matching on the first character 'b' expecting the word "bad". But on 'c', we would realise
+         *        it is not correct and we would have to go back and check if there was not some 'a'.
+         *        Currently, this is not gonna happen, so it is not allowed.
+         *      - @p find cannot contain any symbol that occurs in any of the previous replace strings.
+         *        This could cause problems, for example, if we have
+         *          (str.replace_all (str.replace_all x "dc" "g") "ag" "r")
+         *        then this would change x="adc" to "r". However, the simultaneus matching would only match "dc",
+         *        transforming it into "ar" and we would not go back to check that this can be again transformed.
          *      - @p find cannot be a prefix of the find string of some previous replace_all
-         *        operation (for example if we had "ab" is replaced with "c" and then we
+         *        operation. For example if we had "ab" is replaced with "c" and then we
          *        would want replace_all where "a" is replaced with "d", the simultaneous
          *        replacing would always replace "a" first, which is incorrect, "ab" should
-         *        be replaced)
+         *        be replaced.
          * If it cannot be added, the function returns false and you should get the transducer.
-         * 
-         * TODO: This does not work correctly, for example if we have replacements
-         * "abcd" -> "f"
-         * "bc" -> "g"
-         * it will build incorrect tree as "bc" is also inside "abcd".
-         * There is an extra check that |find| == 1 right now, for such cases it should work.
          * 
          * @param find the string whose every occurence we want to replace
          * @param replace what to replace with
@@ -200,9 +201,6 @@ namespace smt::noodler::regex {
 
         /**
          * @brief Creates a transducer replacing all added finds by their replaces simultaneously
-         * 
-         * TODO: Does not work correctly, for example for (str.replace_all x "abc" "d") will not match x="aabc".
-         * Works only if all find strings have length == 1
          * 
          * @param mata_alph The alphabet used for creating the transducer
          * @return The simultaneous transducer
