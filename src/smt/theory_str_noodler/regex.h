@@ -159,11 +159,39 @@ namespace smt::noodler::regex {
 
     /// Prefix tree for multiple replace_all applications so that we can construct transducer simultaneously
     class ReplaceAllPrefixTree {
-        std::set<unsigned> replace_chars; /// the chars occuring in the replace strings of replace_all operations
-        std::set<unsigned> find_delimiters; /// the chars occuring in the first position of find strings of replace_all operation
+        std::set<unsigned> replace_chars; /// the chars occuring in the replace strings of replace_all operations (except the ones of length 1)
+        std::set<unsigned> find_delimiters; /// the chars occuring in the first position of find strings of replace_all operation (and the replace strings of length 1)
         std::set<unsigned> find_non_delimiters; /// the chars occuring in the second, third, etc. find strings of replace_all operations
-        mata::nfa::Nfa prefix_automaton{1,{0}}; /// the prefix "tree" for find strings of replace_all operations (each find string will be a word of this automaton)
-        std::map<mata::nfa::State, mata::Word> replacing_map; /// maps final states of prefix_automaton that represent find strings to their corresponding replace strings
+        mata::nfa::Nfa prefix_automaton{1,{0}}; /// the prefix "tree" for find strings of replace_all operations
+        std::map<mata::nfa::State, mata::Word> replacing_map{{0, {}}}; /// maps states of prefix_automaton that to the string that should be replaced by (for find strings it will be corresponding replace, otherwise the prefix)
+        std::map<mata::Symbol, std::set<mata::nfa::State>> one_symbol_replace_to_prefix_state; /// for each symbol w (|w| = 1) and q where w = replacing_map[q], we have q \in one_symbol_replace_to_prefix_state[w]
+
+        /**
+         * @brief Get the next state of prefix tree (if exists) from state @p from trough symbol @p symbol
+         * 
+         * @param from the state from which we go
+         * @param symbol the symbol through which we go
+         * @return the next state (nullopt if it does not exists)
+         */
+        std::optional<mata::nfa::State> get_next_state(mata::nfa::State from, mata::Symbol symbol) {
+            auto next_state_it = prefix_automaton.delta[from].find(symbol);
+            if (next_state_it != prefix_automaton.delta[from].end()) {
+                SASSERT(next_state_it->targets.size() == 1);
+                return next_state_it->targets.front();
+            } else {
+                return std::nullopt;
+            }
+        }
+
+        /// true iff @p state is the last state on the path of prefix tree, i.e., no successors (represents that the path to this state should be replaced in input string by replacing_map[state])
+        bool is_prefix_state_last(mata::nfa::State state) {
+            return prefix_automaton.delta[state].empty();
+        }
+
+        /// true iff @p state is final in the prefix tree (represents the situation that there was some match of find string from the previous final state)
+        bool is_prefix_state_final(mata::nfa::State state) {
+            return prefix_automaton.final[state];
+        }
 
     public:
         ReplaceAllPrefixTree() = default;
@@ -181,16 +209,21 @@ namespace smt::noodler::regex {
          *        matching on the first character 'b' expecting the word "bad". But on 'c', we would realise
          *        it is not correct and we would have to go back and check if there was not some 'a'.
          *        Currently, this is not gonna happen, so it is not allowed.
-         *      - @p find cannot contain any symbol that occurs in any of the previous replace strings.
-         *        This could cause problems, for example, if we have
-         *          (str.replace_all (str.replace_all x "dc" "g") "ag" "r")
-         *        then this would change x="adc" to "r". However, the simultaneus matching would only match "dc",
-         *        transforming it into "ar" and we would not go back to check that this can be again transformed.
          *      - @p find cannot be a prefix of the find string of some previous replace_all
          *        operation. For example if we had "ab" is replaced with "c" and then we
          *        would want replace_all where "a" is replaced with "d", the simultaneous
          *        replacing would always replace "a" first, which is incorrect, "ab" should
          *        be replaced.
+         *      - @p find cannot contain any symbol that occurs in any of the previous replace strings.
+         *        This could cause problems, for example, if we have
+         *          (str.replace_all (str.replace_all x "dc" "g") "ag" "r")
+         *        then this would change x="adc" to "r". However, the simultaneus matching would only match "dc",
+         *        transforming it into "ar" and we would not go back to check that this can be again transformed.
+         *      - The previous condition is slightly weaker, we look at the replace strings of length 1 as delimiters,
+         *        therefore we allow for example
+         *          (str.replace_all (str.replace_all x "abc" "d") "de" "f")
+         *        Here we can remember that if we match "abc" in input string (replaced by "d"), we can continue,
+         *        possibly also matching "de".
          * If it cannot be added, the function returns false and you should get the transducer.
          * 
          * @param find the string whose every occurence we want to replace
