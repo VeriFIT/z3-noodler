@@ -157,17 +157,6 @@ namespace smt::noodler {
         // Gather symbols from relevant (dis)equations and from regular expressions of relevant memberships
         std::set<mata::Symbol> symbols_in_formula = get_symbols_from_relevant();
 
-        // Gather relevant word (dis)equations to noodler formula
-        Formula instance = get_formula_from_relevant(symbols_in_formula);
-        STRACE("str",
-            tout << std::endl;
-            for(const auto& f : instance.get_predicates()) {
-                tout << f.to_string() << std::endl;
-            }
-        );
-        
-        bool contains_transducers = instance.contains_pred_type(PredicateType::Transducer);
-
         // For the case that it is possible we have to_int/from_int, we keep digits (0-9) as explicit symbols, so that they are not represented by dummy_symbol and it is easier to handle to_int/from_int
         if (!m_conversion_todo.empty()) {
             for (mata::Symbol s = 48; s <= 57; ++s) {
@@ -175,8 +164,13 @@ namespace smt::noodler {
             }
         }
 
+        // Gather relevant word (dis)equations (and transducers that occur in them) to noodler formula
+        Formula instance = get_formula_from_relevant(symbols_in_formula);
+
         // Create automata assignment for the formula
         AutAssignment aut_assignment{create_aut_assignment_for_formula(instance, symbols_in_formula)};
+
+        bool contains_transducers = instance.contains_pred_type(PredicateType::Transducer);
 
         std::vector<TermConversion> conversions = get_conversions_as_basicterms(aut_assignment, symbols_in_formula);
 
@@ -187,6 +181,10 @@ namespace smt::noodler {
         // Get the initial length vars that are needed here (i.e they are in aut_assignment)
         std::unordered_set<BasicTerm> init_length_sensitive_vars{ get_init_length_vars(aut_assignment) };
         STRACE("str",
+            tout << "Relevant formula:\n" << instance.to_string();
+            for (const auto& conv : conversions) {
+                tout << get_conversion_name(conv.type) << " with string var " << conv.string_var << " and int var " << conv.int_var << std::endl;
+            }
             tout << "Length variables:";
             for (const auto &len_var : init_length_sensitive_vars) {
                 tout << " " << len_var;
@@ -496,7 +494,6 @@ namespace smt::noodler {
 
     Formula theory_str_noodler::get_formula_from_relevant(const std::set<mata::Symbol>& alph) {
         Formula instance;
-        std::vector<Predicate> transducer_pred {};
         // create mata alphabet for transducer constraints
         mata::EnumAlphabet mata_alph{};
         for(const mata::Symbol& symb : alph) {
@@ -511,16 +508,16 @@ namespace smt::noodler {
             }
             Predicate inst = this->conv_eq_pred(ctx.mk_eq_atom(we.first, we.second));
             // gather transducer constraints occurring in the concatenation
-            regex::gather_transducer_constraints(to_app(we.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
-            regex::gather_transducer_constraints(to_app(we.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(we.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, instance);
+            regex::gather_transducer_constraints(to_app(we.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, instance);
             instance.add_predicate(inst);
         }
 
         for (const auto& wd : this->m_word_diseq_todo_rel) {
             Predicate inst = this->conv_eq_pred(m.mk_not(ctx.mk_eq_atom(wd.first, wd.second)));
             // gather transducer constraints occurring in the concatenation
-            regex::gather_transducer_constraints(to_app(wd.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
-            regex::gather_transducer_constraints(to_app(wd.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(wd.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, instance);
+            regex::gather_transducer_constraints(to_app(wd.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, instance);
             instance.add_predicate(inst);
         }
 
@@ -530,15 +527,18 @@ namespace smt::noodler {
             util::collect_terms(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, left);
             util::collect_terms(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, right);
             // gather transducer constraints occurring in the concatenation
-            regex::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
-            regex::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, transducer_pred);
+            regex::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, instance);
+            regex::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, instance);
             Predicate inst = Predicate::create_not_contains(left, right);
             instance.add_predicate(inst);
         }
 
-        // add all transducer predicates
-        for(const auto& p : transducer_pred) {
-            instance.add_predicate(p);
+        for (const auto& conv : this->m_conversion_todo) {
+            regex::gather_transducer_constraints(to_app(var_name.at(conv.string_var)), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, instance);
+        }
+
+        for (const auto& len: len_vars) {
+            regex::gather_transducer_constraints(to_app(len), m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alph, instance);
         }
 
         return instance;
@@ -549,11 +549,6 @@ namespace smt::noodler {
         std::set<mata::Symbol> symbols_in_formula{util::get_dummy_symbol()};
 
         for (const auto &word_equation: m_word_eq_todo_rel) {
-            // ignore trivial equations obtained from axiomatization of 
-            // transducer constraints, e.g., tmp = replace_all(...)
-            if(is_tmp_transducer_eq(ctx.mk_eq_atom(word_equation.first, word_equation.second))) {
-                continue;
-            }
             regex::extract_symbols(word_equation.first, m_util_s, symbols_in_formula);
             regex::extract_symbols(word_equation.second, m_util_s, symbols_in_formula);
         }
@@ -576,14 +571,15 @@ namespace smt::noodler {
     }
 
     AutAssignment theory_str_noodler::create_aut_assignment_for_formula(
-            const Formula& instance,
+            Formula& instance,
             const std::set<mata::Symbol>& noodler_alphabet
     ) {
         AutAssignment aut_assignment{};
         aut_assignment.set_alphabet(noodler_alphabet);
         regex::Alphabet alph(noodler_alphabet);
-        for (const auto &word_equation: m_membership_todo_rel) {
-            const expr_ref& var_expr{ std::get<0>(word_equation) };
+        mata::EnumAlphabet mata_alphabet(noodler_alphabet.begin(), noodler_alphabet.end());
+        for (const auto &membership: m_membership_todo_rel) {
+            const expr_ref& var_expr{ std::get<0>(membership) };
             assert(is_app(var_expr));
             const auto& var_app{ to_app(var_expr) };
             assert(var_app->get_num_args() == 0);
@@ -595,8 +591,8 @@ namespace smt::noodler {
                 term = BasicTerm(BasicTermType::Literal, s.encode());
             }
             // If the regular constraint is in a negative form, create a complement of the regular expression instead.
-            const bool make_complement{ !std::get<2>(word_equation) };
-            mata::nfa::Nfa nfa{ regex::conv_to_nfa(to_app(std::get<1>(word_equation)), m_util_s, m, alph, make_complement, make_complement) };
+            const bool make_complement{ !std::get<2>(membership) };
+            mata::nfa::Nfa nfa{ regex::conv_to_nfa(to_app(std::get<1>(membership)), m_util_s, m, alph, make_complement, make_complement) };
             auto aut_ass_it{ aut_assignment.find(term) };
             if (aut_ass_it != aut_assignment.end()) {
                 // This variable already has some regular constraints. Hence, we create an intersection of the new one
@@ -609,10 +605,12 @@ namespace smt::noodler {
                 // TODO explain after this function is moved to theory_str_noodler, we do this because var_name contains only variables occuring in instance and not those that occur only in str.in_re
                 this->var_name.insert({term, var_expr});
             }
+
+            // we also need to gather transducer constraints for the var
+            regex::gather_transducer_constraints(var_app, m, this->m_util_s, this->predicate_replace, this->var_name, &mata_alphabet, instance);
         }
 
         // create sigma star automaton for our alphabet
-        mata::EnumAlphabet mata_alphabet(noodler_alphabet.begin(), noodler_alphabet.end());
         auto nfa_sigma_star = std::make_shared<mata::nfa::Nfa>(mata::nfa::builder::create_sigma_star_nfa(&mata_alphabet));
         // remove the pointer to alphabet in the automaton, as it points to local variable (and we have the alphabet in aut_assignment)
         nfa_sigma_star->alphabet = nullptr;

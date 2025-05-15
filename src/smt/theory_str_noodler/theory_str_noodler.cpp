@@ -2338,7 +2338,7 @@ namespace smt::noodler {
 
         ast_manager& m = get_manager();
         expr *refinement = nullptr;
-        STRACE("str", tout << "[Constructing refinement]";);
+        STRACE("str", tout << "[Constructing refinement]\n";);
         for (const auto& we : this->m_word_eq_todo_rel) {
             // we create the equation according to we
             expr *const e = ctx.mk_eq_atom(we.first, we.second);

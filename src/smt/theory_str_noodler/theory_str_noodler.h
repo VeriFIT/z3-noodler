@@ -426,12 +426,13 @@ namespace smt::noodler {
         std::set<mata::Symbol> get_symbols_from_relevant();
         /**
          * Get automata assignment for formula @p instance using relevant memberships in m_membership_todo_rel.
-         * As a side effect updates mapping of variables (BasicTerm) to the corresponding z3 expr.
+         * As a side effect updates mapping of variables (BasicTerm) to the corresponding z3 expr and adds
+         * corresponding transducer constraints for the vars in memberships.
          * @param instance Formula containing (dis)equations
          * @param noodler_alphabet Set of symbols occuring in the formula and memberships
          */
         [[nodiscard]] AutAssignment create_aut_assignment_for_formula(
-                const Formula& instance,
+                Formula& instance,
                 const std::set<mata::Symbol>& noodler_alphabet
         );
         /**

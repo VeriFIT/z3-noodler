@@ -771,26 +771,47 @@ namespace smt::noodler::regex {
 
     bool ReplaceAllPrefixTree::add_find(const zstring& find, const zstring& replace) {
         if (find.length() == 0) {
-            return false;
-        }
-        std::set<unsigned> find_chars;
-        for (unsigned find_char : find) {
-            if (replace_chars.contains(find_char) || find_chars.contains(find_char)) {
-                // find shares some char with some previous replace
-                // or it contains the same char twice
-                return false;
-            }
-            find_chars.insert(find_char);
+            return true; // replacing empty string with anything is NOOP
         }
 
-        // add find to the prefix tree
+        // if the delimiter (first symbol) of find occurs in some replace string of previous operations
+        // or in some nondelimiter part of find strings of previous operations -> it cannot be added
+        unsigned delimiter = find[0];
+        if (replace_chars.contains(delimiter) || find_non_delimiters.contains(delimiter)) {
+            return false;
+        }
+
+        // if some nondelimiter char of current find occurs in some replace string of previous
+        // opertaions, or is the same as some delimiter of previous or current find -> it cannot be added
+        for (unsigned find_non_delimiter : find.extract(1, find.length())) {
+            if (replace_chars.contains(find_non_delimiter) || find_delimiters.contains(find_non_delimiter) || find_non_delimiter == delimiter) {
+                return false;
+            }
+        }
+
+        // If we are here, we can add this operation, so we add the find string to the prefix tree
         mata::nfa::State cur_state = 0;
         bool is_find_prefix_of_some_previous_find = true;
         for (unsigned find_char : find) {
+            // we add the current find_char to the correct set
+            if (find_char == delimiter) {
+                find_delimiters.insert(delimiter);
+            } else {
+                find_non_delimiters.insert(find_char);
+            }
+            // find next state for find_char in prefix tree
             auto next_state_it = prefix_automaton.delta[cur_state].find(find_char);
             if (next_state_it != prefix_automaton.delta[cur_state].end()) {
                 SASSERT(next_state_it->targets.size() == 1);
                 cur_state = next_state_it->targets.front();
+                if (prefix_automaton.final[cur_state]) {
+                    // Some previous find is a prefix of current find, therefore
+                    // the current find will never be matched (as previous find will
+                    // be matched before), so this operation is basically NOOP.
+                    // Note that this holds even if the previous and current finds are
+                    // same, the previous operation should be applied first.
+                    return true;
+                }
             } else {
                 is_find_prefix_of_some_previous_find = false; // find cannot be a prefix of some previous find as we are creating a new path in the prefix tree
                 mata::nfa::State next_state = prefix_automaton.add_state();
@@ -799,87 +820,132 @@ namespace smt::noodler::regex {
             }
         }
 
-        if (!is_find_prefix_of_some_previous_find) {
+        if (is_find_prefix_of_some_previous_find) {
+            // this find is a (proper) prefix of some previous find, so we cannot add it, as it would
+            // be always applied before the previous one (and the previous one should apply first)
+            return false;
+        } else {
+            // the cur_state will become "replacing state" of the prefix tree
             prefix_automaton.final.insert(cur_state);
             replacing_map[cur_state] = util::get_mata_word_zstring(replace);
 
+            // we also need to add replace characters to replace_chars so further add_find can work with them
             for (unsigned replace_char : replace) {
                 replace_chars.insert(replace_char);
             }
 
             return true;
-        } else {
-            if (prefix_automaton.final[cur_state]) {
-                // even though the current find is a prefix of some previous find
-                // it is not a problem, because they are the same, so this replace_all
-                // would basically be a noop (as the previous replace_all would be applied)
-                // so we can return true, as we added this replace_all (noop) to this prefix tree
-                return true;
-            } else {
-                return false;
-            }
         }
     }
 
     mata::nft::Nft ReplaceAllPrefixTree::create_transducer(mata::Alphabet* mata_alph) {
-        // we will basically construct a product of prefix tree with identity transducer, but
-        // for the matched finds in the prefix tree, we replace them with their corresponding replaces
-        mata::nft::Nft result{1, {0}, {0}};
-        // contains pairs (w, p, q) where p is a state of the prefix tree, w is the word on the path to p and q is the state of result
+        // We will basically construct a product of prefix tree with identity transducer, but
+        // for the matched finds in the prefix tree, we replace them with their corresponding replaces.
+        // The state 0 is initial and final state that will have loops containing the replace operations
+        // given by the prefix tree (first tape is read from prefix tree, then the replaced string is output
+        // on second tape). The state 1 is then there for the cases where we finish reading the input word
+        // but we still need to print to second tape.
+        mata::nft::Nft result{2, {0}, {0, 1}};
+
+        // adds a transducer transition first_input_tape_symbol/word_to_print from state state_from to state_to
+        auto add_printing_transition = [&result, this](mata::Symbol first_input_tape_symbol, const mata::Word& word_to_print, mata::nft::State state_from, mata::nft::State state_to) {
+            if (word_to_print.empty()) {
+                // we are printing epsilon, so we just read the symbol first_input_tape_symbol and go directly to state_to
+                result.add_transition(state_from, {first_input_tape_symbol, mata::nft::EPSILON}, state_to);
+            } else if (word_to_print.size() == 1) {
+                // replacing by just one symbol means that we put it out while reading the symbol first_input_tape_symbol
+                result.add_transition(state_from, {first_input_tape_symbol, word_to_print[0]}, state_to);
+            } else {
+                // we need to replace by a longer word, so first we read first_input_tape_symbol while putting out the first symbol of word_to_print
+                mata::nft::State next_state = result.add_transition(state_from, {first_input_tape_symbol, word_to_print[0]});
+                // and then just put out the rest while on the input we take epsilon
+                for (size_t i = 1; i < word_to_print.size()-1; ++i) {
+                    next_state = result.add_transition(next_state, {mata::nft::EPSILON, word_to_print[i]});
+                }
+                // the last transition needs to go back to the final state
+                result.add_transition(next_state, {mata::nft::EPSILON, word_to_print[word_to_print.size()-1]}, state_to);
+            }
+        };
+
+        // contains pairs (w, p, q) where p is a state of the prefix tree, w is the word on the path to p and q is the state of the result transducer
         std::queue<std::tuple<mata::Word,mata::nfa::State,mata::nft::State>> worklist;
         worklist.push({mata::Word(), 0, 0});
+
+        // maps state q of prefix tree to state p of transducer where the word w leading to q is also on the input tape leading to p
+        std::map<mata::nfa::State,mata::nft::State> prefix_state_to_result_state{};
 
         while (!worklist.empty()) {
             const auto [word, prefix_state, result_state] = worklist.front();
             worklist.pop();
+
+            // we read the next symbol and based on prefix tree, we will either
+            //  - continue reading
+            //  - finish reading and print the replacing word to second tape
+            //  - fail reading (it does not match any replace operation) and print already read word to second tape
             for (mata::Symbol symbol : mata_alph->get_alphabet_symbols()) {
-                mata::Word replacing_word; // if we will be replacing, this is the word by which we are replacing
                 auto symbol_transition_it = prefix_automaton.delta[prefix_state].find(symbol);
                 if (symbol_transition_it != prefix_automaton.delta[prefix_state].end()) {
                     // symbol is in the prefix tree
                     SASSERT(symbol_transition_it->targets.size() == 1);
                     mata::nfa::State next_prefix_state = symbol_transition_it->targets.front();
                     if (prefix_automaton.final[next_prefix_state]) {
-                        // if the next state is final, we want to add the replacement to result
-                        replacing_word = replacing_map[next_prefix_state];
+                        // if the next state is final, we want to print the replacement go back to state 0
+                        add_printing_transition(symbol, replacing_map[next_prefix_state], result_state, 0);
                     } else {
                         // otherwise we just move to the next state of the prefix tree
                         mata::nft::State next_result_state = result.add_transition(result_state, {symbol, mata::nft::EPSILON});
                         mata::Word next_word = word;
                         next_word.push_back(symbol);
                         worklist.push({next_word, next_prefix_state, next_result_state});
+                        prefix_state_to_result_state[next_prefix_state] = next_result_state;
+
+                        // we also print the already read word to the second tape ending in the final state 1, representing
+                        // the situation where the currently read symbol was the last symbol of the input word
+                        add_printing_transition(symbol, next_word, result_state, 1);
+
                         continue;
                     }
                 } else {
-                    // symbol is not in the prefix tree, so the word we have just read in the prefix tree should stay the same,
-                    // i.e. we will do idenity
-                    replacing_word = word;
-                    replacing_word.push_back(symbol);
-                }
-
-                if (replacing_word.empty()) {
-                    // we are replacing with epsilon, so we just read the current symbol and return to accepting state
-                    result.add_transition(result_state, {symbol, mata::nft::EPSILON}, 0);
-                } else if (replacing_word.size() == 1) {
-                    // replacing by just one symbol means that we put it out while reading the current symbol
-                    result.add_transition(result_state, {symbol, replacing_word[0]}, 0);
-                } else {
-                    // we need to replace by a longer word, so first we read current symbol while putting out the first symbol of replace
-                    mata::nft::State next_state = result.add_transition(result_state, {symbol, replacing_word[0]});
-                    // and then just put out the rest while on the input we take epsilon
-                    for (size_t i = 1; i < replacing_word.size()-1; ++i) {
-                        next_state = result.add_transition(next_state, {mata::nft::EPSILON, replacing_word[i]});
+                    // symbol is not in the prefix tree, so the word we have just read in the prefix tree should be printed back to output
+                    mata::Word replacing_word = word;
+                    if (find_delimiters.contains(symbol)) {
+                        // if the current symbol is also a delimiter, we need to start reading a new word
+                        mata::nfa::State prefix_state_for_delimiter = prefix_automaton.delta[0].find(symbol)->targets.front();
+                        if (prefix_automaton.final[prefix_state_for_delimiter]) {
+                            // if the delimiter directly leads to replacement, we need to add this replacement to replacing_word...
+                            for (const mata::Symbol s : replacing_map.at(prefix_state_for_delimiter)) {
+                                replacing_word.push_back(s);
+                            }
+                            // ... and print it, going back to state 0
+                            add_printing_transition(symbol, replacing_word, result_state, 0);
+                        } else {
+                            // if the delimiter starts matching a longer word, we only need to print the currently read word and go to
+                            // the state of transducer that already read the delimiter
+                            add_printing_transition(symbol, replacing_word, result_state, prefix_state_to_result_state.at(prefix_state_for_delimiter));
+                        }
+                    } else {
+                        // the current symbol is not a delimiter, therefore we will not be matching anything, so we can just print the word we
+                        // have just read (with also the current symbol)
+                        replacing_word.push_back(symbol);
+                        add_printing_transition(symbol, replacing_word, result_state, 0);
                     }
-                    // the last transition needs to go back to the final state
-                    result.add_transition(next_state, {mata::nft::EPSILON, replacing_word[replacing_word.size()-1]}, 0);
                 }
             }
         }
         return result;
     }
 
-    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, std::vector<Predicate>& transducer_preds) {
-        if (m_util_s.str.is_string(ex) || util::is_variable(ex)) { // Handle string literals.
+    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, Formula& transducer_preds) {
+        if (m_util_s.str.is_string(ex)) { // Handle string literals.
+            return;
+        }
+
+        if (util::is_variable(ex)) {
+            for (const auto& key_value : pred_replace) {
+                if (to_app(key_value.m_value) == ex) {
+                    gather_transducer_constraints(to_app(key_value.m_key), m, m_util_s, pred_replace, var_name, mata_alph, transducer_preds);
+                }
+            }
             return;
         }
 
@@ -896,8 +962,8 @@ namespace smt::noodler::regex {
         // check if we have not constructed this transducer already 
         expr* rpl = pred_replace.find(ex); // dies if it is not found
         BasicTerm result_var(BasicTermType::Variable, to_app(rpl)->get_decl()->get_name().str());
-        for (const Predicate& trans_pred : transducer_preds) {
-            if (trans_pred.get_output().size() == 1 && trans_pred.get_output()[0] == result_var) {
+        for (const Predicate& trans_pred : transducer_preds.get_predicates()) {
+            if (trans_pred.is_transducer() && trans_pred.get_output().size() == 1 && trans_pred.get_output()[0] == result_var) {
                 return;
             }
         }
@@ -995,7 +1061,7 @@ namespace smt::noodler::regex {
 
             Predicate predicate_transducer = Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var});
             STRACE("str-gather_transducer_constraints", tout << predicate_transducer << "\n";);
-            transducer_preds.push_back(predicate_transducer);
+            transducer_preds.add_predicate(predicate_transducer);
             return;
         }
     }
