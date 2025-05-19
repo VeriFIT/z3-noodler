@@ -353,7 +353,7 @@ def cp_license(arch):
         print("copy licence")
     path = get_build_dist_path(arch)
     mk_dir(path)
-    shutil.copy("LICENSE.txt", path)
+    shutil.copy("LICENSE_Z3.txt", path)
 
 def cp_dotnet(arch):
     if not DOTNET_CORE_ENABLED:

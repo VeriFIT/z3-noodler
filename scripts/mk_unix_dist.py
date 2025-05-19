@@ -261,7 +261,7 @@ def mk_zip():
     os.chdir(old)
 
 def cp_license():
-    shutil.copy("LICENSE.txt", os.path.join(DIST_DIR, get_dist_path()))
+    shutil.copy("LICENSE_Z3.txt", os.path.join(DIST_DIR, get_dist_path()))
 
 # Entry point
 def main():

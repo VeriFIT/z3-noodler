@@ -636,7 +636,7 @@ def dos2unix_tree():
 def check_eol():
     if not IS_WINDOWS:
         # Linux/OSX/BSD check if the end-of-line is cr/lf
-        if is_cr_lf('LICENSE.txt'):
+        if is_cr_lf('LICENSE_Z3.txt'):
             if is_verbose():
                 print("Fixing end of line...")
             dos2unix_tree()
