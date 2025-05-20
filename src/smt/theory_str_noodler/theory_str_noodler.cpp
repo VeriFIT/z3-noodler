@@ -320,7 +320,7 @@ namespace smt::noodler {
                 app_ref lhs_ge_rhs(m_util_a.mk_ge(len_str, zero), m);
                 ctx.internalize(lhs_ge_rhs, false);
                 SASSERT(lhs_ge_rhs);
-                STRACE("str", tout << "string axiom 1: " << mk_ismt2_pp(lhs_ge_rhs, m) << std::endl;);
+                STRACE("str-axiom", tout << "string axiom 1: " << mk_ismt2_pp(lhs_ge_rhs, m) << std::endl;);
 
                 add_axiom({mk_literal(lhs_ge_rhs)});
                 this->axiomatized_len_axioms.push_back(lhs_ge_rhs);
@@ -456,7 +456,8 @@ namespace smt::noodler {
 
     void theory_str_noodler::assign_eh(bool_var v, const bool is_true) {
         ast_manager &m = get_manager();
-        STRACE("str", tout << "assign: bool_var #" << v << " is " << is_true << ", "
+        STRACE("str", tout << "assign enter\n";);
+        STRACE("str-assign", tout << "assign: bool_var #" << v << " is " << is_true << ", "
                             << mk_pp(get_context().bool_var2expr(v), m) << "@ scope level:" << m_scope_level << '\n';);
         context &ctx = get_context();
         expr *e = ctx.bool_var2expr(v);
@@ -480,9 +481,9 @@ namespace smt::noodler {
             handle_in_re(e, is_true);
         } else if(m.is_bool(e)) {
             ensure_enode(e);
-            TRACE("str", tout << "bool literal " << mk_pp(e, m) << " " << is_true << "\n" );
+            TRACE("str-assign", tout << "bool literal " << mk_pp(e, m) << " " << is_true << "\n" );
         } else {
-            TRACE("str", tout << "unhandled literal " << mk_pp(e, m) << "\n";);
+            TRACE("str-assign", tout << "unhandled literal " << mk_pp(e, m) << "\n";);
             UNREACHABLE();
         }
     }
