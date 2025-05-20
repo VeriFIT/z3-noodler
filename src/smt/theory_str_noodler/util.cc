@@ -309,6 +309,12 @@ namespace smt::noodler::util {
     }
 
     void replace_dummy_symbol_in_transducer_with(mata::nft::Nft& transducer, const std::set<mata::Symbol>& symbols_to_replace_with) {
+        if (symbols_to_replace_with.size() > 1) {
+            // different transitions with dummy symbol can be connected, i.e. they should have the same symbol, if we would replace
+            // by multiple symbols, it would allow situations where the transitions have different symbols on them
+            // TODO add handling for this? or model generation should be done differently
+            util::throw_error("We cannot replace dummy symbol by more than one symbol in transducers yet");
+        }
         for (mata::nfa::State state = 0; state < transducer.num_of_states(); ++state) {
             if (!transducer.delta[state].empty()) { // if there is some transition from state
                 mata::nfa::StatePost& delta_from_state = transducer.delta.mutable_state_post(state); // then we can for sure get mutable transitions from state without side effect

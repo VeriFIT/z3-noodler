@@ -983,12 +983,7 @@ namespace smt::noodler {
             result.succ.push_back(parikh_of_transducer);
 
             // Handle code-point vars that occur in this transducer
-            // A dummy symbol (that represent all symbols that are not in the alphabet) occuring in this transducer should have always
-            // the same value, therefore, if we have more than one code-point var, we need to share this value. For this, we will use
-            // the variable code_point_of_dummy_symbol, and with is_there_code_conversion_with_dummy_symbol, we know whether we actually
-            // need this variable.
             bool is_there_code_conversion_with_dummy_symbol = false; // whether there is some code-point var that can be a dummy symbol
-            BasicTerm code_point_of_dummy_symbol = util::mk_noodler_var_fresh("dummy_symbol_in_transduers");
             for (const BasicTerm& var : vars_on_tapes) {
                 if (code_subst_vars.contains(var)) {
                     code_subst_vars_handled_by_parikh.insert(var);
@@ -1013,20 +1008,19 @@ namespace smt::noodler {
                         // the rest is just computing 'code_version_of(var) is code point of one of the symbols based on parikh'
 
                         for (mata::Symbol s : parikh_transducer.get_tape_var_used_symbols().at(var)) {
+                            if (!util::is_dummy_symbol(s)) {
+                                // dummy symbols are hard, because there can be connections between different transitions with dummy symbols, even in different transducers
+                                // TODO add handling of dummy symbols
+                                util::throw_error("We cannot handle dummy symbols in tocode conversions with transducers");
+                            }
                             // var for representing how many times s is in var
                             BasicTerm num_of_s_in_var = parikh_transducer.get_tape_var_for_symbol_mapping(var, s);
                             // num_of_s_in_var != 1
                             LenNode num_of_s_in_var_is_one{ LenFormulaType::NEQ, std::vector<LenNode>{num_of_s_in_var, 1} };
 
-                            LenNode code_version_is_equal_to_s(LenFormulaType::EQ, {code_version_of(var)});
-                            if (!util::is_dummy_symbol(s)) {
-                                // code_version_of(var) == s
-                                code_version_is_equal_to_s.succ.push_back(s);
-                            } else {
-                                is_there_code_conversion_with_dummy_symbol = true;
-                                // code_version_of(var) == code_point_of_dummy_symbol
-                                code_version_is_equal_to_s.succ.push_back(code_point_of_dummy_symbol);
-                            }
+                            // code_version_of(var) == s
+                            LenNode code_version_is_equal_to_s(LenFormulaType::EQ, {code_version_of(var), s});
+
                             // (num_of_s_in_var == 1) => (code_version_of(var) == s), i.e.
                             // (num_of_s_in_var != 1) || (code_version_of(var) == s)
                             char_case.succ.push_back({LenFormulaType::OR, {num_of_s_in_var_is_one, code_version_is_equal_to_s}});
@@ -1038,22 +1032,6 @@ namespace smt::noodler {
                         });
                     }
                     STRACE("str-parikh-tocode", tout << "tocode parikh formula for " << var << ": " << result.succ.back() << "\n";);
-                }
-            }
-
-            if (is_there_code_conversion_with_dummy_symbol) {
-                STRACE("str-parikh-tocode", tout << "tocode parikh dummy symbol is needed\n";);
-                // if there is dummy symbol, then we need to restrict code_point_of_dummy_symbol so that it is a code point of any char, except those in the alphabet
-
-                // code_point_of_dummy_symbol is valid code_point: (0 <= code_point_of_dummy_symbol <= max_char)
-                result.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{0, code_point_of_dummy_symbol});
-                result.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{code_point_of_dummy_symbol, zstring::max_char()});
-
-                // code_point_of_dummy_symbol is not equal to code point of some symbol in the alphabet
-                for (mata::Symbol s : solution.aut_ass.get_alphabet()) {
-                    if (!util::is_dummy_symbol(s)) {
-                        result.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{code_point_of_dummy_symbol, s});
-                    }
                 }
             }
         }
@@ -2044,7 +2022,7 @@ namespace smt::noodler {
         // we can now replace dummy symbol in automata
         solution.aut_ass.replace_dummy_with_symbols(set_of_symbols_to_replace_dummy_symbol_with);
         // we have to also replace dummy symbol in transducers
-        // TODO it is incorrect, dummy symbols need to be replaced on the level of transducer transitions, not on nfa transitions
+        // TODO it is incorrect, dummy symbols need to be replaced on the level of transducer transitions, not on nfa transitions (works only if there is one symbol to replace with)
         solution.replace_dummy_symbol_in_transducers_with(set_of_symbols_to_replace_dummy_symbol_with);
 
         // Restrict the languages in solution of length variables and int conversion variables by their models
@@ -2082,7 +2060,7 @@ namespace smt::noodler {
             }
         }
 
-        // TODO the following is very inefficient and will probably be slow (and it is also incorrect, dummy symbols are handled wrongly)
+        // TODO the following is very inefficient and will probably be slow (and it is also incorrect, dummy symbols are handled wrongly if there are more symbols to replace with)
         for (auto& [transducer, tape_vars] : transducers_with_vars_on_tapes) {
             util::replace_dummy_symbol_in_transducer_with(transducer, set_of_symbols_to_replace_dummy_symbol_with);
             STRACE("str-model-transducer",
