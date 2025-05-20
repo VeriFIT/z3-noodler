@@ -157,7 +157,7 @@ namespace smt::noodler::regex {
      */
     zstring get_model_from_regex(const app *regex, const seq_util& m_util_s);
 
-    /// Prefix tree for multiple replace_all applications so that we can construct transducer simultaneously
+    /// Prefix tree for multiple replace_all applications so that we can construct transducer simultaneously (see https://github.com/VeriFIT/z3-noodler/pull/227#issuecomment-2893972253 for small explanation)
     class ReplaceAllPrefixTree {
         std::set<unsigned> replace_chars; /// the chars occuring in the replace strings of replace_all operations (except the ones of length 1)
         std::set<unsigned> find_delimiters; /// the chars occuring in the first position of find strings of replace_all operation (and the replace strings of length 1)
