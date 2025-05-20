@@ -883,6 +883,10 @@ namespace smt::noodler::regex {
         }
         STRACE("str-add_find",
             tout << "add_find: Added with prefix automaton:\n" << prefix_automaton.print_to_dot(true, true);
+            tout << "add_find: The replacing mapping:\n";
+            for (const auto& [state, replacement] : replacing_map) {
+                tout << "   " << state << " -> " << zstring(replacement.size(), replacement.data()) << "\n";
+            }
         );
         return true;
     }
