@@ -157,7 +157,7 @@ namespace smt::noodler::regex {
      */
     zstring get_model_from_regex(const app *regex, const seq_util& m_util_s);
 
-    /// Prefix tree for multiple replace_all applications so that we can construct transducer simultaneously (see https://github.com/VeriFIT/z3-noodler/pull/227#issuecomment-2893972253 for small explanation)
+    /// Prefix tree for multiple replace_all applications so that we can construct transducer simultaneously
     class ReplaceAllPrefixTree {
         std::set<unsigned> replace_chars; /// the chars occuring in the replace strings of replace_all operations (except the ones of length 1)
         std::set<unsigned> find_delimiters; /// the chars occuring in the first position of find strings of replace_all operation (and the replace strings of length 1)
@@ -223,7 +223,8 @@ namespace smt::noodler::regex {
          *        therefore we allow for example
          *          (str.replace_all (str.replace_all x "abc" "d") "de" "f")
          *        Here we can remember that if we match "abc" in input string (replaced by "d"), we can continue,
-         *        possibly also matching "de".
+         *        possibly also matching "de". See https://github.com/VeriFIT/z3-noodler/pull/227#issuecomment-2893972253
+         *        for an explanation.
          * If it cannot be added, the function returns false and you should get the transducer.
          * 
          * @param find the string whose every occurence we want to replace
