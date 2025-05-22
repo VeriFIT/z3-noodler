@@ -592,7 +592,7 @@ namespace smt::noodler {
                                                         // the var is length if the corresponding variable on the left or right is length too
                                                         new_element.length_sensitive_vars.contains(left_side_vars[noodle[i].second[0]])
                                                             || new_element.contains_length_var(right_side_division[noodle[i].second[1]]),
-                                                        false);
+                                                        true);
                 left_side_vars_to_new_vars[noodle[i].second[0]].push_back(new_var);
                 right_side_divisions_to_new_vars[noodle[i].second[1]].push_back(new_var);
                 STRACE("str-nfa", tout << new_var << std::endl << *noodle[i].first;);
