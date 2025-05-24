@@ -64,6 +64,7 @@ namespace smt::noodler {
                 }
                 
             }
+            STRACE("str-unary-lengths", tout << ln << "\n";);
             return {ln, LenNodePrecision::PRECISE};
         }
 
@@ -91,11 +92,11 @@ namespace smt::noodler {
             // it is ok to have only equations with \Sigma^* constraints
             bool only_eqs = !formula.contains_pred_type(PredicateType::Inequation);
             mata::nfa::Nfa sigma_star = init_aut_ass.sigma_star_automaton();
-            for(const BasicTerm& bt : formula.get_vars()) {
+            for(const auto& [bt, aut] : init_aut_ass) {
                 if(only_eqs && init_aut_ass.are_equivalent(bt, sigma_star)) {
                     continue;
                 }
-                auto used_symbols = init_aut_ass.at(bt)->delta.get_used_symbols();
+                auto used_symbols = aut->delta.get_used_symbols();
                 if(used_symbols.size() != 1 || util::is_dummy_symbol(used_symbols.back())) {
                     return false;
                 } 

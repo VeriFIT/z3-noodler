@@ -1084,7 +1084,7 @@ namespace smt::noodler {
                                 std::vector<TermConversion> conversions) {
 
         dec_proc = std::make_shared<UnaryDecisionProcedure>(instance, aut_ass, m_params);
-        expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first); // it is assumed that lenght formulas from equations were added in new_eq_eh, so we can just have 'true'
+        expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
         this->statistics.at("unary").num_start++;
         this->statistics.at("unary").num_finish++;
         if(check_len_sat(lengths, nullptr) == l_false) {
