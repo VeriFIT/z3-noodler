@@ -941,7 +941,7 @@ namespace smt::noodler::regex {
                     // symbol is in the prefix tree
                     if (is_prefix_state_last(*next_prefix_state)) {
                         // if the next state is last in the prefix tree, we want to print the replacement and go back to state 0
-                        add_printing_transition(symbol, replacing_map[*next_prefix_state], result_state, 0);
+                        add_printing_transition(symbol, replacing_map.at(*next_prefix_state), result_state, 0);
                     } else {
                         // otherwise we just move to the next state of the prefix tree
                         mata::nft::State next_result_state = result.add_transition(result_state, {symbol, mata::nft::EPSILON});
@@ -950,7 +950,7 @@ namespace smt::noodler::regex {
 
                         // we also print the already read word to the second tape ending in the final state 1, representing
                         // the situation where the currently read symbol was the last symbol of the input word
-                        add_printing_transition(symbol, replacing_map[prefix_state], result_state, 1);
+                        add_printing_transition(symbol, replacing_map.at(*next_prefix_state), result_state, 1);
                     }
                 } else {
                     // symbol is not in the prefix tree, so the word we have just read in the prefix tree should be printed back to output
