@@ -711,7 +711,7 @@ namespace smt::noodler {
             Predicate new_inclusion = input_is_literal ? Predicate::create_equation(non_literal_side, {}) : Predicate::create_equation({}, non_literal_side);
             if (!mata::strings::is_lang_eps(application_to_literal)) {
                 // if the application does not lead to empty string we need to create a new var for literal side and replace it with its language set to application_to_literal
-                BasicTerm fresh_var = solving_state.add_fresh_var(std::make_shared<mata::nfa::Nfa>(application_to_literal), std::string("emptysideapp_") + std::to_string(noodlification_no), false, true);
+                BasicTerm fresh_var = solving_state.add_fresh_var(std::make_shared<mata::nfa::Nfa>(application_to_literal), std::string("literalsideapp_") + std::to_string(noodlification_no), false, true);
                 if (input_is_literal) {
                     new_inclusion.set_right_side({fresh_var});
                 } else {
