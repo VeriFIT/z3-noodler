@@ -971,9 +971,7 @@ namespace smt::noodler {
                     }
                 }
             }
-            
 
-            // STRACE("str-parikh", tout << one_symbol_transducer;);
             one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(one_symbol_transducer).trim()).trim();
 
             STRACE("str-parikh", tout << "Formula for transducer of size " << one_symbol_transducer.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
@@ -983,7 +981,6 @@ namespace smt::noodler {
             result.succ.push_back(parikh_of_transducer);
 
             // Handle code-point vars that occur in this transducer
-            bool is_there_code_conversion_with_dummy_symbol = false; // whether there is some code-point var that can be a dummy symbol
             for (const BasicTerm& var : vars_on_tapes) {
                 if (code_subst_vars.contains(var)) {
                     code_subst_vars_handled_by_parikh.insert(var);
@@ -1008,7 +1005,7 @@ namespace smt::noodler {
                         // the rest is just computing 'code_version_of(var) is code point of one of the symbols based on parikh'
 
                         for (mata::Symbol s : parikh_transducer.get_tape_var_used_symbols().at(var)) {
-                            if (!util::is_dummy_symbol(s)) {
+                            if (util::is_dummy_symbol(s)) {
                                 // dummy symbols are hard, because there can be connections between different transitions with dummy symbols, even in different transducers
                                 // TODO add handling of dummy symbols
                                 util::throw_error("We cannot handle dummy symbols in tocode conversions with transducers");
