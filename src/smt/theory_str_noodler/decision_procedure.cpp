@@ -941,8 +941,14 @@ namespace smt::noodler {
         }
 
         for (const auto& [transducer, vars_on_tapes] : transducers_with_vars_on_tapes) {
-            for (const BasicTerm& var : vars_on_tapes) {
+            std::set<mata::nft::Level> levels_of_code_subst_vars;
+            for (size_t i = 0; i < vars_on_tapes.size(); ++i) {
+                const BasicTerm& var = vars_on_tapes[i];
                 length_vars_with_transducers.insert(var);
+                if (code_subst_vars.contains(var)) {
+                    code_subst_vars_handled_by_parikh.insert(var);
+                    levels_of_code_subst_vars.insert(i);
+                }
                 if (int_subst_vars.contains(var)) {
                     // TODO add support (pretty hard, we need to remember the order of selected transitions by parikh)
                     util::throw_error("Integer conversions with transducers are not supported yet");
@@ -952,25 +958,7 @@ namespace smt::noodler {
             // we only need the length dependency between variables given by the transducers, therefore we can replace all symbols in the transducer by one symbol
             // except for code-point variables, for these we need exact value (but still dependency of this variable on other non-code-point variables is only
             // trough lengths)
-            mata::nft::Nft one_symbol_transducer{transducer.num_of_states(), transducer.initial, transducer.final, transducer.levels, transducer.num_of_levels};
-            for (mata::nfa::State source_state = 0; source_state < transducer.delta.num_of_states(); ++source_state) {
-                mata::nfa::StatePost& state_post_of_new_source_state = one_symbol_transducer.delta.mutable_state_post(source_state);
-                if (code_subst_vars.contains(vars_on_tapes[transducer.levels[source_state]])) {
-                    state_post_of_new_source_state = transducer.delta[source_state];
-                } else {
-                    mata::nfa::SymbolPost new_transition{0};
-                    for (const mata::nfa::SymbolPost& symbol_post : transducer.delta[source_state]) {
-                        if (symbol_post.symbol == mata::nft::EPSILON) {
-                            state_post_of_new_source_state.insert(symbol_post);
-                        } else {
-                            new_transition.targets.insert(symbol_post.targets);
-                        }
-                    }
-                    if (!new_transition.targets.empty()) {
-                        state_post_of_new_source_state.insert(new_transition);
-                    }
-                }
-            }
+            mata::nft::Nft one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer.get_one_letter_aut(levels_of_code_subst_vars)).trim()).trim();
 
             one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(one_symbol_transducer).trim()).trim();
 
@@ -983,7 +971,6 @@ namespace smt::noodler {
             // Handle code-point vars that occur in this transducer
             for (const BasicTerm& var : vars_on_tapes) {
                 if (code_subst_vars.contains(var)) {
-                    code_subst_vars_handled_by_parikh.insert(var);
                     if (!parikh_transducer.get_tape_var_used_symbols().contains(var)) {
                         // if we are here, this means there is no non-epsilon transition for this var in the transducer,
                         // |var| == 0 (this is encoded in parikh) which means that code_version_of(var) == -1

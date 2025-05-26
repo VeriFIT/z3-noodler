@@ -416,6 +416,9 @@ public:
      * Furthermore, for each var in vars_that_need_symbol_mapping, it also encodes
      * the variables that say how many times each symbol occurs in such a var.
      * 
+     * If you only need lengths, it is recommended to use mata::nft::Nft::get_one_letter_aut()
+     * to reduce the size of the resulting formula.
+     * 
      * @return LenNode Formula representing the Parikh image of the transducer.
      */
     LenNode compute_parikh_image() override;
