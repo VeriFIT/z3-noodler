@@ -163,8 +163,10 @@ namespace smt::noodler::util {
      * Assumes that @p left_sides and @p right_sides have the same size.
      */
     std::vector<Predicate> create_inclusions_from_multiple_sides(const std::vector<std::vector<BasicTerm>>& left_sides, const std::vector<std::vector<BasicTerm>>& right_sides);
-}
 
-size_t bin_search_leftmost(const std::vector<mata::nfa::State>& haystack, mata::nfa::State needle);
+    void replace_dummy_symbol_in_transducer_with(mata::nft::Nft& transducer, const std::set<mata::Symbol>& symbols_to_replace_with);
+
+    bool is_concatenation_of_literals(const std::vector<BasicTerm>& concatenation, zstring& literal);
+}
 
 #endif

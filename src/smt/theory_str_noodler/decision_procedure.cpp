@@ -280,22 +280,7 @@ namespace smt::noodler {
 
     void SolvingState::replace_dummy_symbol_in_transducers_with(std::set<mata::Symbol> replacements) {
         for (const Predicate& trans : transducers) {
-            auto trans_ptr = trans.get_transducer();
-            for (mata::nfa::State state = 0; state < trans_ptr->num_of_states(); ++state) {
-                if (!trans_ptr->delta[state].empty()) { // if there is some transition from state
-                    mata::nfa::StatePost& delta_from_state = trans_ptr->delta.mutable_state_post(state); // then we can for sure get mutable transitions from state without side effect
-                    for (auto iter = delta_from_state.begin(); iter != delta_from_state.end(); ++iter) {
-                        if (iter->symbol == util::get_dummy_symbol()) {
-                            mata::nfa::StateSet targets = iter->targets;
-                            delta_from_state.erase(iter);
-                            for (mata::Symbol replacement : replacements) {
-                                trans_ptr->delta.add(state, replacement, targets); // this invalidates iter, but we are breaking from the loop anyway
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
+            util::replace_dummy_symbol_in_transducer_with(*trans.get_transducer(), replacements);
         }
     }
 
@@ -607,7 +592,6 @@ namespace smt::noodler {
                                                         // the var is length if the corresponding variable on the left or right is length too
                                                         new_element.length_sensitive_vars.contains(left_side_vars[noodle[i].second[0]])
                                                             || new_element.contains_length_var(right_side_division[noodle[i].second[1]]),
-                                                        // we want to create literal if possible, the automaton should be trimmed and reduced from noodlification
                                                         true);
                 left_side_vars_to_new_vars[noodle[i].second[0]].push_back(new_var);
                 right_side_divisions_to_new_vars[noodle[i].second[1]].push_back(new_var);
@@ -680,44 +664,55 @@ namespace smt::noodler {
         const std::vector<BasicTerm>& input_vars = transducer_to_process.get_input();
         const std::vector<BasicTerm>& output_vars = transducer_to_process.get_output();
 
-        if (input_vars.empty() || output_vars.empty()) {
-            // If one side is empty, we can apply empty string on the tape connected with the empty side and replace the transducer with inclusion.
-            // For example, if we have
-            //     output_vars = T("")          or             "" = T(input_vars)
-            // we replace it with
-            //     output_vars ⊆ fresh_var      or      fresh_var ⊆ input_vars
-            // where the language of the fresh_var is the application of empty string on T (either on input or output, based on which side is empty).
+        // If one side is (possibly empty) concatenation of literals, we can apply the literal string on the tape connected with that side and replace the transducer with inclusion.
+        // For example, if we have
+        //     output_vars = T("abc")          or             "abc" = T(input_vars)
+        // we replace it with
+        //     output_vars ⊆ fresh_var      or      fresh_var ⊆ input_vars
+        // where the language of the fresh_var is the application of "abc" on T (either on input or output, based on which side is "abc").
+        zstring literal;
+        bool one_side_is_literal = false;
+        bool input_is_literal = false;
+        mata::nft::Level level_of_literal_side;
+        if (util::is_concatenation_of_literals(input_vars, literal)) {
+            input_is_literal = true;
+            one_side_is_literal = true;
+            level_of_literal_side = 0;
+        } else if (util::is_concatenation_of_literals(output_vars, literal)) {
+            input_is_literal = false;
+            one_side_is_literal = true;
+            level_of_literal_side = 1;
+        } else {
+            one_side_is_literal = false;
+        }
 
-            bool input_is_empty = input_vars.empty();
-            mata::nft::Level level_of_empty_side = input_is_empty ? 0 : 1;
-
-            // we apply empty string to empty tape of transducer, getting the NFA for the nonempty side
-            mata::nfa::Nfa application_to_empty_string = transducer_to_process.get_transducer()->apply(mata::Word(), level_of_empty_side).to_nfa_move();
-            application_to_empty_string = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_empty_string.trim()));
+        if (one_side_is_literal) {
+            // we apply the literal to the corresponding tape of the transducer, getting the NFA for the nonliteral side
+            mata::nfa::Nfa application_to_literal = transducer_to_process.get_transducer()->apply(util::get_mata_word_zstring(literal), level_of_literal_side).to_nfa_move();
+            application_to_literal = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_literal.trim()));
             
-            if (application_to_empty_string.is_lang_empty()) {
-                // empty string is not accepted by transducer as input, this solving_state cannot lead to solution
+            if (application_to_literal.is_lang_empty()) {
+                // the literal is not accepted by transducer on the corresponding tape, this solving_state cannot lead to solution
                 return;
             }
 
-            const std::vector<BasicTerm>& non_empty_side = input_is_empty ? output_vars : input_vars;
+            const std::vector<BasicTerm>& non_literal_side = input_is_literal ? output_vars : input_vars;
 
-            if (non_empty_side.empty()) {
-                // if the non-empty side is actually also empty, then we can just check if the result of application contains epsilon
-                if (application_to_empty_string.is_in_lang({})) {
+            if (non_literal_side.empty()) {
+                // if the non-literal side is actually empty, then we can just check if the result of application contains epsilon
+                if (application_to_literal.is_in_lang({})) {
                     // if it does, we can continue with this solving_state, otherwise we keep it out of worklist as it will not lead to solution
                     push_to_worklist(std::move(solving_state), false);
                 }
                 return;
             }
 
-            // we create new inclusion, either output_var ⊆ application_to_empty_string or application_to_empty_string ⊆ input_vars
-            Predicate new_inclusion = input_is_empty ? Predicate::create_equation(non_empty_side, {}) : Predicate::create_equation({}, non_empty_side);
-            if (!mata::strings::is_lang_eps(application_to_empty_string)) {
-                // if the application does not lead to empty string we need to create a new var for empty side and replace it with its language set to application_to_empty_string
-                BasicTerm fresh_var = util::mk_noodler_var_fresh(std::string("emptysideapp_") + std::to_string(noodlification_no));
-                solving_state.aut_ass[fresh_var] = std::make_shared<mata::nfa::Nfa>(application_to_empty_string);
-                if (input_is_empty) {
+            // we create new inclusion, either output_var ⊆ application_to_literal or application_to_literal ⊆ input_vars
+            Predicate new_inclusion = input_is_literal ? Predicate::create_equation(non_literal_side, {}) : Predicate::create_equation({}, non_literal_side);
+            if (!mata::strings::is_lang_eps(application_to_literal)) {
+                // if the application does not lead to empty string we need to create a new var for literal side and replace it with its language set to application_to_literal
+                BasicTerm fresh_var = solving_state.add_fresh_var(std::make_shared<mata::nfa::Nfa>(application_to_literal), std::string("literalsideapp_") + std::to_string(noodlification_no), false, true);
+                if (input_is_literal) {
                     new_inclusion.set_right_side({fresh_var});
                 } else {
                     new_inclusion.set_left_side({fresh_var});
@@ -762,7 +757,7 @@ namespace smt::noodler {
                                                             noodle[i].input_aut, // we assign Ai to new_input_var
                                                             std::string("input_") + std::to_string(noodlification_no),
                                                             new_element.contains_length_var(input_vars_divisions[noodle[i].input_index]),
-                                                            true
+                                                            false // we do not want literals in simple transducers
                                                         ); // xi
                 input_vars_to_new_input_vars[noodle[i].input_index].push_back(new_input_var);
 
@@ -772,7 +767,7 @@ namespace smt::noodler {
                                                             // lengthness must be propagated from input to output too
                                                             new_element.contains_length_var(input_vars_divisions[noodle[i].input_index])
                                                                 || new_element.length_sensitive_vars.contains(output_vars[noodle[i].output_index]),
-                                                            true
+                                                            false // we do not want literals in simple transducers
                                                         ); // xo
                 output_vars_to_new_output_vars[noodle[i].output_index].push_back(new_output_var);
 
@@ -847,6 +842,10 @@ namespace smt::noodler {
         // add length formula from preprocessing
         conjuncts.push_back(preprocessing_len_formula);
 
+        // compute formula for vars in transducers (lengths and code-point conversions)
+        conjuncts.push_back(get_formula_for_transducers());
+
+        // formula for encoding lengths
         conjuncts.push_back(get_formula_for_len_vars());
 
         // add formula for conversions
@@ -865,8 +864,12 @@ namespace smt::noodler {
         return {result, precision};
     }
 
-    LenNode DecisionProcedure::get_formula_for_len_vars() {
+    LenNode DecisionProcedure::get_formula_for_transducers() {
         LenNode result(LenFormulaType::AND);
+
+        length_vars_with_transducers = {};
+        code_subst_vars_handled_by_parikh = {};
+        transducers_with_vars_on_tapes = {};
 
         // We collect transducers in which length variable occurs in the input (right) side (which also means it must
         // occur also in the output). We do not need transducers where we have length variable only in the output, for
@@ -875,18 +878,22 @@ namespace smt::noodler {
         // var in input. In length_input_vars we save all variables that are length and are input of some transducer.
         std::map<BasicTerm, std::vector<Predicate>> output_var_to_its_transducers;
         std::set<BasicTerm> length_input_vars;
-        for (const Predicate& trans : solution.transducers) {
+        for (auto trans_iter = solution.transducers.begin(); trans_iter != solution.transducers.end();) {
             // transducers in solution should be in simple form (one input, one output var)
-            SASSERT(trans.get_input().size() == 1);
-            SASSERT(trans.get_output().size() == 1);
+            SASSERT(trans_iter->get_input().size() == 1);
+            SASSERT(trans_iter->get_output().size() == 1);
 
-            BasicTerm input_var = trans.get_input()[0];
-            BasicTerm output_var = trans.get_output()[0];
+            BasicTerm input_var = trans_iter->get_input()[0];
+            BasicTerm output_var = trans_iter->get_output()[0];
 
             if (solution.length_sensitive_vars.contains(input_var)) {
                 SASSERT(solution.length_sensitive_vars.contains(output_var)); // if input is length var, output must be too
-                output_var_to_its_transducers[output_var].push_back(trans);
+                output_var_to_its_transducers[output_var].push_back(*trans_iter);
                 length_input_vars.insert(input_var);
+                // we can remove the transducer, as we will be creating one big transducer from it (which then will be used in model generation)
+                trans_iter = solution.transducers.erase(trans_iter);
+            } else {
+                ++trans_iter;
             }
         }
 
@@ -927,31 +934,97 @@ namespace smt::noodler {
 
         // We now find each output_var which is NOT an input var of some transducer, meaning they are at the end of
         // inclusion graph and we create the composed transducer for them.
-        std::vector<std::pair<mata::nft::Nft,std::vector<BasicTerm>>> transducers_with_vars_on_tapes;
         for (const auto& [output_var,transducers] : output_var_to_its_transducers) {
             if (!length_input_vars.contains(output_var)) {
                 transducers_with_vars_on_tapes.push_back(get_composed_trans_with_tapes(output_var));
             }
         }
 
-        length_vars_with_transducers = {};
         for (const auto& [transducer, vars_on_tapes] : transducers_with_vars_on_tapes) {
-            for (const BasicTerm& var : vars_on_tapes) {
+            std::set<mata::nft::Level> levels_of_code_subst_vars;
+            for (size_t i = 0; i < vars_on_tapes.size(); ++i) {
+                const BasicTerm& var = vars_on_tapes[i];
                 length_vars_with_transducers.insert(var);
-                if (code_subst_vars.contains(var) || int_subst_vars.contains(var)) {
-                    // TODO add support, probably these vars should not be replaced by one symbol in parikh + some support in conversion formula, use length_vars_with_transducers there?
-                    util::throw_error("Conversions with transducers are not supported yet");
+                if (code_subst_vars.contains(var)) {
+                    code_subst_vars_handled_by_parikh.insert(var);
+                    levels_of_code_subst_vars.insert(i);
+                }
+                if (int_subst_vars.contains(var)) {
+                    // TODO add support (pretty hard, we need to remember the order of selected transitions by parikh)
+                    util::throw_error("Integer conversions with transducers are not supported yet");
                 }
             }
 
-            mata::nft::Nft transducer_reduced = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
+            // we only need the length dependency between variables given by the transducers, therefore we can replace all symbols in the transducer by one symbol
+            // except for code-point variables, for these we need exact value (but still dependency of this variable on other non-code-point variables is only
+            // trough lengths)
+            mata::nft::Nft one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer.get_one_letter_aut(levels_of_code_subst_vars)).trim()).trim();
 
-            STRACE("str-parikh", tout << "Formula for transducer of size " << transducer_reduced.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
-            LenNode parikh_of_transducer = parikh::ParikhImageTransducer(transducer_reduced).compute_parikh_image_vars(vars_on_tapes);
+            one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(one_symbol_transducer).trim()).trim();
+
+            STRACE("str-parikh", tout << "Formula for transducer of size " << one_symbol_transducer.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
+            parikh::ParikhImageTransducer parikh_transducer{one_symbol_transducer, vars_on_tapes, code_subst_vars};
+            LenNode parikh_of_transducer = parikh_transducer.compute_parikh_image();
             STRACE("str-parikh", tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer);
+
+            // Handle code-point vars that occur in this transducer
+            for (const BasicTerm& var : vars_on_tapes) {
+                if (code_subst_vars.contains(var)) {
+                    if (!parikh_transducer.get_tape_var_used_symbols().contains(var)) {
+                        // if we are here, this means there is no non-epsilon transition for this var in the transducer,
+                        // |var| == 0 (this is encoded in parikh) which means that code_version_of(var) == -1
+                        result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1});
+                    } else {
+                        // If we are here, parikh_transducer.get_tape_var_used_symbols().at(var) contains all symbols
+                        // that are on some transition in the transducer for this var. Therefore we need to create for
+                        // each such symbol s the forula that says
+                        //    "(|var| == 1 and s occurs in var) => code_version_of(var) == s"
+
+                        // We first encode the formula that var is not one symbol
+                        // (|var| != 1 && code_version_of(var) == -1)
+                        LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{var, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1}} });
+
+                        // We now continue with the case that |var| ==1
+                        // (|var| == 1 && code_version_of(var) is code point of one of the symbols based on parikh)
+                        LenNode char_case(LenFormulaType::AND, { {LenFormulaType::EQ, std::vector<LenNode>{var, 1}}, /* code_version_of(var) is code point of one of the symbols based on parikh */ });
+            
+                        // the rest is just computing 'code_version_of(var) is code point of one of the symbols based on parikh'
+
+                        for (mata::Symbol s : parikh_transducer.get_tape_var_used_symbols().at(var)) {
+                            if (util::is_dummy_symbol(s)) {
+                                // dummy symbols are hard, because there can be connections between different transitions with dummy symbols, even in different transducers
+                                // TODO add handling of dummy symbols
+                                util::throw_error("We cannot handle dummy symbols in tocode conversions with transducers");
+                            }
+                            // var for representing how many times s is in var
+                            BasicTerm num_of_s_in_var = parikh_transducer.get_tape_var_for_symbol_mapping(var, s);
+                            // num_of_s_in_var != 1
+                            LenNode num_of_s_in_var_is_one{ LenFormulaType::NEQ, std::vector<LenNode>{num_of_s_in_var, 1} };
+
+                            // code_version_of(var) == s
+                            LenNode code_version_is_equal_to_s(LenFormulaType::EQ, {code_version_of(var), s});
+
+                            // (num_of_s_in_var == 1) => (code_version_of(var) == s), i.e.
+                            // (num_of_s_in_var != 1) || (code_version_of(var) == s)
+                            char_case.succ.push_back({LenFormulaType::OR, {num_of_s_in_var_is_one, code_version_is_equal_to_s}});
+                        }
+
+                        result.succ.emplace_back(LenFormulaType::OR, std::vector<LenNode>{
+                            non_char_case,
+                            char_case
+                        });
+                    }
+                    STRACE("str-parikh-tocode", tout << "tocode parikh formula for " << var << ": " << result.succ.back() << "\n";);
+                }
+            }
         }
 
+        return result;
+    }
+
+    LenNode DecisionProcedure::get_formula_for_len_vars() {
+        LenNode result(LenFormulaType::AND);
         // create length constraints from the solution, we only need to look at length sensitive vars which do not have length based on parikh
         for (const BasicTerm &len_var : solution.length_sensitive_vars) {
             if (!length_vars_with_transducers.contains(len_var)) {
@@ -996,6 +1069,8 @@ namespace smt::noodler {
         // for each code substituting variable c, create the formula
         //   (|c| != 1 && code_version_of(c) == -1) || (|c| == 1 && code_version_of(c) is code point of one of the chars in the language of automaton for c)
         for (const BasicTerm& c : code_subst_vars) {
+            if (code_subst_vars_handled_by_parikh.contains(c)) { continue; }
+
             // non_char_case = (|c| != 1 && code_version_of(c) == -1)
             LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{c, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(c),-1}} });
 
@@ -1904,11 +1979,40 @@ namespace smt::noodler {
         }
         inclusions_from_preprocessing.clear();
 
+        // we need to first handle dummy symbol, we want to get rid of it and replace it with some valid symbols
         std::set<mata::Symbol> set_of_symbols_to_replace_dummy_symbol_with;
-
-        // Restrict the languages in solution of length variables and code/int conversion variables by their models
+        // the valid symbols can come from code-point conversions
         for (auto& [var, nfa] : solution.aut_ass) {
-            if (var.is_literal() || !solution.length_sensitive_vars.contains(var)) { continue; } // literals should have the correct language + we restrict only length vars
+            if (var.is_literal() || !code_subst_vars.contains(var)) { continue; }
+            rational len = arith_model.at(var);
+            rational to_code_value = arith_model.at(code_version_of(var));
+            if (to_code_value != -1) {
+                mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
+                if (!solution.aut_ass.get_alphabet().contains(to_code_value_as_symbol)) {
+                    // the code value is not a symbol of an alphabet, therefore it is "hidden" in a dummy symbol
+                    // we want to "unhide" it, and make it explicit
+                    set_of_symbols_to_replace_dummy_symbol_with.insert(to_code_value_as_symbol);
+                    solution.aut_ass.add_symbol_to_alphabet(to_code_value.get_unsigned());
+                }
+                update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
+            } // for the case to_code_value == -1 we should have (str.len var) != 1, this restriction will be sorted out further
+        }
+
+        // if there is no symbol from code-point conversions, we add a fresh one instead
+        if (set_of_symbols_to_replace_dummy_symbol_with.empty()) {
+            set_of_symbols_to_replace_dummy_symbol_with.insert(solution.aut_ass.add_fresh_symbol_to_alphabet());
+        }
+
+        // we can now replace dummy symbol in automata
+        solution.aut_ass.replace_dummy_with_symbols(set_of_symbols_to_replace_dummy_symbol_with);
+        // we have to also replace dummy symbol in transducers
+        // TODO it is incorrect, dummy symbols need to be replaced on the level of transducer transitions, not on nfa transitions (works only if there is one symbol to replace with)
+        solution.replace_dummy_symbol_in_transducers_with(set_of_symbols_to_replace_dummy_symbol_with);
+
+        // Restrict the languages in solution of length variables and int conversion variables by their models
+        for (auto& [var, nfa] : solution.aut_ass) {
+            // literals should have the correct language already and we process only length vars which were not already processed in the dummy-symbol step
+            if (var.is_literal() || !solution.length_sensitive_vars.contains(var) || model_of_var.contains(var)) { continue; }
 
             // Restrict length
             rational len = arith_model.at(var);
@@ -1938,31 +2042,37 @@ namespace smt::noodler {
                     }
                 }
             }
+        }
 
-            // Restrict code-conversion var
-            if (code_subst_vars.contains(var)) {
-                rational to_code_value = arith_model.at(code_version_of(var));
-                if (to_code_value != -1) {
-                    mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
-                    if (!solution.aut_ass.get_alphabet().contains(to_code_value_as_symbol)) {
-                        // the code value is not a symbol of an alphabet, therefore it is "hidden" in a dummy symbol
-                        // we want to "unhide" it, and make it explicit
-                        set_of_symbols_to_replace_dummy_symbol_with.insert(to_code_value_as_symbol);
-                        solution.aut_ass.add_symbol_from_dummy(to_code_value.get_unsigned());
-                    }
-                    update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
-                } // for the case to_code_value == -1 we shoulh have (str.len var) != 1, so we do not need to restrict the language, as it should have been already be restricted by lenght
+        // TODO the following is very inefficient and will probably be slow (and it is also incorrect, dummy symbols are handled wrongly if there are more symbols to replace with)
+        for (auto& [transducer, tape_vars] : transducers_with_vars_on_tapes) {
+            util::replace_dummy_symbol_in_transducer_with(transducer, set_of_symbols_to_replace_dummy_symbol_with);
+            STRACE("str-model-transducer",
+                tout << "Constructing model for vars:";
+                for (const BasicTerm& var : tape_vars) {
+                    tout << " " << var;
+                }
+                if (is_trace_enabled("str-model-nfa")) {
+                    tout << " and for transducer:\n" << transducer.print_to_dot(true, true);
+                }
+                tout << "\n";
+            );
+            for (size_t tape_num = 0; tape_num < tape_vars.size(); ++tape_num) {
+                transducer = transducer.apply(*solution.aut_ass.at(tape_vars[tape_num]), tape_num, false);
+            }
+            mata::Word accepting_word = transducer.get_word(std::nullopt).value();
+            std::vector<mata::Word> words_for_tape_vars{tape_vars.size()};
+            size_t current_tape_var = 0;
+            for (unsigned current_symbol : accepting_word) {
+                if (current_symbol != mata::nft::EPSILON) {
+                    words_for_tape_vars[current_tape_var].push_back(current_symbol);
+                }
+                current_tape_var = (current_tape_var+1) % tape_vars.size();
+            }
+            for (size_t tape_num = 0; tape_num < tape_vars.size(); ++tape_num) {
+                update_model_and_aut_ass(tape_vars[tape_num], regex::Alphabet{solution.aut_ass.get_alphabet()}.get_string_from_mata_word(words_for_tape_vars[tape_num]));
             }
         }
-
-        // we replace dummy symbol with a new symbol in automata, so we do not have to work with it
-        std::optional<mata::Symbol> symbol_replacing_dummy = solution.aut_ass.replace_dummy_with_new_symbol();
-        if (symbol_replacing_dummy.has_value()) {
-            set_of_symbols_to_replace_dummy_symbol_with.insert(symbol_replacing_dummy.value());
-        }
-
-        // we have to also replace dummy symbol in transducers
-        solution.replace_dummy_symbol_in_transducers_with(set_of_symbols_to_replace_dummy_symbol_with);
 
         is_model_initialized = true;
 
@@ -2104,11 +2214,6 @@ namespace smt::noodler {
     }
 
     std::vector<BasicTerm> DecisionProcedure::get_len_vars_for_model(const BasicTerm& str_var) {
-        if (!length_vars_with_transducers.empty()) {
-            // TODO we need to add handling for these vars, we need all the vars from parikh representing the number of each symbol etc.
-            util::throw_error("We cannot produce models of length variables in transducers yet");
-        }
-
         // we always need (for initialization) all len_vars that are in aut_ass, so we ignore str_var
         std::vector<BasicTerm> needed_vars;
         for (const BasicTerm& len_var : solution.length_sensitive_vars) {

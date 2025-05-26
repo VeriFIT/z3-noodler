@@ -365,31 +365,47 @@ class ParikhImageTransducer : public ParikhImage {
 
 private: 
     mata::nft::Nft nft; ///< The non-deterministic finite transducer (NFT) being analyzed.
-    std::vector<BasicTerm> tape_len {}; ///< Variables representing the lengths of the output tape.
+    std::vector<BasicTerm> tape_vars {}; ///< Variables representing the lengths of the output tape.
+    std::set<BasicTerm> vars_that_need_symbol_mapping {}; ///< Variables for which we will compute also the symbol mapping
 
+    std::map<BasicTerm, std::set<mata::Symbol>> tape_var_used_symbols;
 public:
     /**
      * @brief Construct a ParikhImageTransducer object.
      * 
      * Initializes the ParikhImageTransducer with a given NFT. The underlying NFA
-     * representation of the NFT is used for Parikh image computation.
+     * representation of the NFT is used for Parikh image computation. The resulting
+     * formula will encode
+     *      |tape_vars[i]| == the length of the word on tape i of the NFT
+     * For each tape var that also occur in @p vars_that_need_symbol_mapping, we will
+     * encode in get_tape_var_for_symbol_mapping(tape_var, symbol) how many times symbol
+     * occurs on the word for the tape var.
      * 
      * @param nft The non-deterministic finite transducer to analyze.
+     * @param tape_vars The vars on tapes whose lengths we want to encode, |tape_vars| must be equal nft.num_of_levels()
+     * @param vars_that_need_symbol_mapping The tape vars that need the encoding of how many times each symbol occurs.
      */
-    ParikhImageTransducer(const mata::nft::Nft& nft) 
-        : ParikhImage(nft.to_nfa_copy()), nft(nft) { }
+    ParikhImageTransducer(const mata::nft::Nft& nft, std::vector<BasicTerm> tape_vars, std::set<BasicTerm> vars_that_need_symbol_mapping = {}) 
+        : ParikhImage(nft.to_nfa_copy()), nft(nft), tape_vars(tape_vars), vars_that_need_symbol_mapping(vars_that_need_symbol_mapping) {
+            SASSERT(nft.num_of_levels == tape_vars.size());
+        }
 
     /**
-     * @brief Compute the Parikh image of the transducer with tape length variables.
-     * 
-     * This method extends the Parikh image computation to include constraints 
-     * for the lengths of the output tape. It binds the tape length variables 
-     * to the computed tape lengths for each level of the transducer.
-     * 
-     * @param tape_vars Variables representing the lengths of the output tape.
-     * @return LenNode Formula representing the Parikh image with tape length constraints.
+     * @brief Get the variable encoding how many times @p tape_var contains @p symbol
      */
-    LenNode compute_parikh_image_vars(const std::vector<BasicTerm>& tape_vars);
+    BasicTerm get_tape_var_for_symbol_mapping(const BasicTerm& tape_var, mata::Symbol symbol) const {
+        SASSERT(vars_that_need_symbol_mapping.contains(tape_var));
+        return BasicTerm{ BasicTermType::Variable, zstring(tape_var.get_name() + "!symbolmappingfor" + zstring(rational(symbol))) };
+    }
+
+    /**
+     * @brief Get the mapping that maps each tape var from vars_that_need_symbol_mapping into symbols that can occur in tape var
+     * 
+     * Assumes that compute_parikh_image() was already run.
+     * If such a tape var does not contain any such symbols, then it is not mapped in this mapping.
+     */
+    const std::map<BasicTerm, std::set<mata::Symbol>>& get_tape_var_used_symbols() const { return tape_var_used_symbols; }
+
 
     /**
      * @brief Compute the Parikh image of the transducer.
@@ -397,6 +413,11 @@ public:
      * This method computes the Parikh image of the transducer, including constraints 
      * for the lengths of the output tape. It calculates the tape lengths for each 
      * level of the transducer and generates a formula representing the Parikh image.
+     * Furthermore, for each var in vars_that_need_symbol_mapping, it also encodes
+     * the variables that say how many times each symbol occurs in such a var.
+     * 
+     * If you only need lengths, it is recommended to use mata::nft::Nft::get_one_letter_aut()
+     * to reduce the size of the resulting formula.
      * 
      * @return LenNode Formula representing the Parikh image of the transducer.
      */

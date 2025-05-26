@@ -947,6 +947,7 @@ TEST_CASE("Transducers :: simple lengths", "[noodler]") {
     cmd_context ctx(false, &m);
     std::ostringstream trash;
     ctx.set_regular_stream(trash);
+    std::vector<BasicTerm> vars_on_tapes{{BasicTermType::Variable, "x1"}, {BasicTermType::Variable, "x2"}};
 
     SECTION("Simple transducer 1") {
         mata::nft::Nft nft1{2};
@@ -954,11 +955,11 @@ TEST_CASE("Transducers :: simple lengths", "[noodler]") {
         nft1.final = {1};
         nft1.insert_word_by_parts(0, { {'a'}, {'b'} } , 1);
 
-        ParikhImageTransducer pi(nft1);
+        ParikhImageTransducer pi(nft1, vars_on_tapes);
         LenNode formula = pi.compute_parikh_image();
 
         expr_ref result = len_node_to_expr(m, ctx, formula);
-        check_lia_model(m, result, {{"tape_len!n0", "1"}, {"tape_len!n1", "1"}});
+        check_lia_model(m, result, {{"x1", "1"}, {"x2", "1"}});
     }
 
     SECTION("Simple transducer 2") {
@@ -967,11 +968,11 @@ TEST_CASE("Transducers :: simple lengths", "[noodler]") {
         nft2.final = {1};
         nft2.insert_word_by_parts(0, { {'a', 'b'}, {'b', 'b'} } , 1);
 
-        ParikhImageTransducer pi(nft2);
+        ParikhImageTransducer pi(nft2, vars_on_tapes);
         LenNode formula = pi.compute_parikh_image();
 
         expr_ref result = len_node_to_expr(m, ctx, formula);
-        check_lia_model(m, result, {{"tape_len!n2", "2"}, {"tape_len!n3", "2"}});
+        check_lia_model(m, result, {{"x1", "2"}, {"x2", "2"}});
     }
 
     SECTION("Simple transducer 3") {
@@ -980,21 +981,8 @@ TEST_CASE("Transducers :: simple lengths", "[noodler]") {
         nft3.final = {1};
         nft3.insert_word_by_parts(0, { {'a', 'b'}, {'b'} } , 1);
 
-        ParikhImageTransducer pi(nft3);
+        ParikhImageTransducer pi(nft3, vars_on_tapes);
         LenNode formula = pi.compute_parikh_image();
-
-        expr_ref result = len_node_to_expr(m, ctx, formula);
-        check_lia_model(m, result, {{"tape_len!n4", "2"}, {"tape_len!n5", "1"}});
-    }
-
-    SECTION("Simple transducer 3; explicit vars") {
-        mata::nft::Nft nft3{2};
-        nft3.initial = {0};
-        nft3.final = {1};
-        nft3.insert_word_by_parts(0, { {'a', 'b'}, {'b'} } , 1);
-
-        ParikhImageTransducer pi(nft3);
-        LenNode formula = pi.compute_parikh_image_vars({ BasicTerm(BasicTermType::Variable, "x1"), BasicTerm(BasicTermType::Variable, "x2") });
 
         expr_ref result = len_node_to_expr(m, ctx, formula);
         check_lia_model(m, result, {{"x1", "2"}, {"x2", "1"}});

@@ -7,10 +7,6 @@
 #include "inclusion_graph.h"
 #include "aut_assignment.h"
 
-namespace {
-    using mata::nfa::Nfa;
-}
-
 namespace smt::noodler::util {
 
     void throw_error(std::string errMsg) {
@@ -285,30 +281,40 @@ namespace smt::noodler::util {
         }
         return inclusions;
     }
-}
 
-template <typename T>
-size_t rec_bin_search_leftmost(const std::vector<T>& haystack, T needle, size_t start_idx, size_t end_idx) {
-
-    if (start_idx == end_idx) {
-        if (haystack.at(start_idx) >= needle) return start_idx;
-        return -1;
+    void replace_dummy_symbol_in_transducer_with(mata::nft::Nft& transducer, const std::set<mata::Symbol>& symbols_to_replace_with) {
+        if (symbols_to_replace_with.size() > 1) {
+            // different transitions with dummy symbol can be connected, i.e. they should have the same symbol, if we would replace
+            // by multiple symbols, it would allow situations where the transitions have different symbols on them
+            // TODO add handling for this? or model generation should be done differently
+            util::throw_error("We cannot replace dummy symbol by more than one symbol in transducers yet");
+        }
+        for (mata::nfa::State state = 0; state < transducer.num_of_states(); ++state) {
+            if (!transducer.delta[state].empty()) { // if there is some transition from state
+                mata::nfa::StatePost& delta_from_state = transducer.delta.mutable_state_post(state); // then we can for sure get mutable transitions from state without side effect
+                for (auto iter = delta_from_state.begin(); iter != delta_from_state.end(); ++iter) {
+                    if (iter->symbol == util::get_dummy_symbol()) {
+                        mata::nfa::StateSet targets = iter->targets;
+                        delta_from_state.erase(iter);
+                        for (mata::Symbol replacement : symbols_to_replace_with) {
+                            transducer.delta.add(state, replacement, targets); // this invalidates iter, but we are breaking from the loop anyway
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 
-    size_t midpoint = start_idx + (end_idx - start_idx) / 2;
-    if (needle < midpoint) {
-        return rec_bin_search_leftmost(haystack, needle, start_idx, midpoint);
+    bool is_concatenation_of_literals(const std::vector<BasicTerm>& concatenation, zstring& literal) {
+        literal.reset();
+        for (const BasicTerm& bt : concatenation) {
+            if (bt.is_literal()) {
+                literal += bt.get_name();
+            } else {
+                return false;
+            }
+        }
+        return true;
     }
-
-    size_t match = rec_bin_search_leftmost(haystack, needle, midpoint+1, end_idx);
-    if (match == -1) {
-        // We have not found the the in [midpoint+1 ... end_idx], therefore, the leftmost smaller is midpoint
-        return midpoint;
-    }
-    return match;
-}
-
-template <typename T>
-size_t bin_search_leftmost(const std::vector<T>& haystack, T needle) {
-    return rec_bin_search_leftmost(haystack, needle, 0, haystack.size());
 }

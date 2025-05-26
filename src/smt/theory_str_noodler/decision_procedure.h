@@ -217,7 +217,7 @@ namespace smt::noodler {
          */
         void push_non_simple_transducers_to_processing() {
             for (const Predicate &transducer : transducers) {
-                if (transducer.get_input().size() != 1 || transducer.get_output().size() != 1) {
+                if (transducer.get_input().size() != 1 || transducer.get_output().size() != 1 || transducer.get_input()[0].is_literal() || transducer.get_input()[1].is_literal()) {
                     push_unique(transducer, false);
                 }
             }
@@ -490,6 +490,9 @@ namespace smt::noodler {
         // contains to/from_code/int conversions
         std::vector<TermConversion> conversions;
 
+        // length vars that occur as input/output of some transducer formula
+        std::set<BasicTerm> length_vars_with_transducers;
+
         // disequations that are supposed to be solved after a stable solution is found
         Formula disequations;
         // not contains that are supposed to be solved after a stable solution is found
@@ -503,6 +506,8 @@ namespace smt::noodler {
         // see get_vars_substituted_in_conversions() for what these sets mean (used in get_length() and in model generation)
         std::set<BasicTerm> code_subst_vars;
         std::set<BasicTerm> int_subst_vars;
+
+        std::set<BasicTerm> code_subst_vars_handled_by_parikh;
 
         const theory_str_noodler_params& m_params;
 
@@ -538,15 +543,22 @@ namespace smt::noodler {
         }
 
         /**
-         * @brief Get the formula encoding lengths of variables based on solution
+         * @brief Get the (parikh) formula encoding lengths and code-point conversions of variables in transducers
          * 
-         * It creates parikh formula for length vars in transducers, for other length
+         * Assumes that code_subst_vars and int_subst_vars are computed already.
+         * It also updates length_vars_with_transducers and code_subst_vars_handled_by_parikh
+         */
+        LenNode get_formula_for_transducers();
+
+        /**
+         * @brief Get the formula encoding lengths of variables based on solution
+         * It ignores the length vars that are in tranducers, as formula for these
+         * should be in get_formula_for_transducers(). For the normal length
          * vars it either creates formula |x| = |x_1| + ... + |x_n| if
          *   solution.subtitution_map[x] = x_1 ... x_n
          * or it creates the formula from lasso construction of automaton
          *   solution.aut_ass[x]
          * 
-         * Assumes that code_subst_vars and int_subst_vars are computed already.
          */
         LenNode get_formula_for_len_vars();
 
@@ -650,8 +662,7 @@ namespace smt::noodler {
         // inclusions that resulted from preprocessing, we use them to generate model (we can pretend that they were all already refined)
         std::vector<Predicate> inclusions_from_preprocessing;
 
-        // length vars that occur as input/output of some transducer formula
-        std::set<BasicTerm> length_vars_with_transducers;
+        std::vector<std::pair<mata::nft::Nft,std::vector<BasicTerm>>> transducers_with_vars_on_tapes;
         
         bool is_model_initialized = false;
         /**
@@ -674,6 +685,7 @@ namespace smt::noodler {
          * @return the computed model 
          */
         zstring update_model_and_aut_ass(BasicTerm var, zstring computed_model) {
+            SASSERT(!model_of_var.contains(var) || model_of_var.at(var) == computed_model);
             model_of_var[var] = computed_model;
             if (solution.aut_ass.contains(var)) {
                 solution.aut_ass[var] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(computed_model));

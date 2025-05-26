@@ -205,8 +205,16 @@ namespace smt::noodler {
             }
         }
 
+        void add_symbol_to_alphabet(mata::Symbol s) {
+            this->alphabet.insert(s);
+        }
+
+        mata::Symbol add_fresh_symbol_to_alphabet();
+
         /// @brief Add symbol @p s to alphabet and removes it from dummy symbol (i.e. adds transitions trough @p s in all automata if there is transition trough dummy symbol)
         void add_symbol_from_dummy(mata::Symbol s);
+
+        bool replace_dummy_with_symbols(std::set<mata::Symbol> symbols);
 
         /**
          * @brief Replace dummy symbol in all automata by a new symbol

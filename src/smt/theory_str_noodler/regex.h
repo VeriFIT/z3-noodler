@@ -65,8 +65,13 @@ namespace smt::noodler::regex {
 
         /// @brief Returns any symbol that is not in the alphabet
         mata::Symbol get_unused_symbol() const {
+            if (alphabet.size() == zstring::max_char()) {
+                // alphabet is full, we throw error (TODO: should probably return nullopt or something like that)
+                util::throw_error("Trying to get a fresh symbol in full alphabet");
+                return 0; // this is unreachable, return something so we can compile
+            }
             // std::set is ordered, so alphabet is also ordered
-            if (*alphabet.begin() != 0) {
+            if (alphabet.empty() || *alphabet.begin() != 0) {
                 return 0;
             } else {
                 auto it = alphabet.begin();

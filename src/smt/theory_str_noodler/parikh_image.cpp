@@ -1398,11 +1398,11 @@ namespace smt::noodler::parikh {
     }
 
     LenNode ParikhImageTransducer::compute_parikh_image() {
-        this->tape_len.clear();
         LenNode parikhStruct = ParikhImage::compute_parikh_image();
         LenNode len_formula(LenFormulaType::AND);
 
         std::vector<LenNode> sum_tapes(this->nft.num_of_levels, LenNode(LenFormulaType::PLUS));
+        std::map<BasicTerm, std::map<mata::Symbol, std::vector<BasicTerm>>> tape_var_symbol_to_transition_vars;
 
         for(const auto& [trans, var] : get_trans_vars()) {
             // skip epsilons
@@ -1411,31 +1411,32 @@ namespace smt::noodler::parikh {
             }
             auto srclvl = this->nft.levels[std::get<0>(trans)];
             sum_tapes[srclvl].succ.push_back(var);
+            const BasicTerm& src_tape_var = tape_vars[srclvl];
+            if (vars_that_need_symbol_mapping.contains(src_tape_var)) {
+                tape_var_symbol_to_transition_vars[src_tape_var][std::get<1>(trans)].push_back(var);
+            }
         }
 
         for(size_t i = 0; i < sum_tapes.size(); i++) {
-            this->tape_len.push_back(util::mk_noodler_var_fresh("tape_len"));
             len_formula.succ.push_back({
-                LenFormulaType::EQ, { this->tape_len[i], sum_tapes[i] }
+                LenFormulaType::EQ, { this->tape_vars[i], sum_tapes[i] }
             });
+        }
+
+        for (const auto& [tape_var, symbol_to_transitions_vars] : tape_var_symbol_to_transition_vars) {
+            for (const auto& [symbol, transition_vars] : symbol_to_transitions_vars) {
+                LenNode transition_vars_sum{LenFormulaType::PLUS};
+                for (const BasicTerm& transition_var : transition_vars) {
+                    transition_vars_sum.succ.emplace_back(transition_var);
+                }
+                BasicTerm tape_var_num_of_symbol = get_tape_var_for_symbol_mapping(tape_var, symbol);
+                tape_var_used_symbols[tape_var].insert(symbol);
+                len_formula.succ.push_back({LenFormulaType::EQ, {tape_var_num_of_symbol, transition_vars_sum}});
+            }
         }
 
         return LenNode{
             LenFormulaType::AND, { parikhStruct, len_formula }
         };
-    }
-
-    LenNode ParikhImageTransducer::compute_parikh_image_vars(const std::vector<BasicTerm>& tape_vars) {
-        LenNode pi = compute_parikh_image();
-        assert(tape_vars.size() == this->tape_len.size());
-
-        LenNode res(LenFormulaType::AND);
-        for(size_t i = 0; i < tape_vars.size(); i++) {
-            res.succ.push_back({
-                LenFormulaType::EQ, {tape_vars[i], this->tape_len[i]}
-            });
-        }
-        res.succ.push_back(pi);
-        return res;
     }
 }

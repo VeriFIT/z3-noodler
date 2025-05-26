@@ -711,10 +711,16 @@ namespace smt::noodler::regex {
         } else if (m_util_s.re.is_loop(regex)) { // Handle loop.
             unsigned low, high;
             expr *body;
-            VERIFY(m_util_s.re.is_loop(regex, body, low, high) || m_util_s.re.is_loop(regex, body, low));
+            if (m_util_s.re.is_loop(regex, body, low, high)) {
+                if (low > high) {
+                    return zstring();
+                }
+            } else {
+                VERIFY(m_util_s.re.is_loop(regex, body, low));
+            }
 
             // return model from body iterated low times
-            if (low == 0 || low > high) {
+            if (low == 0) {
                 return zstring();
             } else {
                 const zstring inside = get_model_from_regex(to_app(body), m_util_s);
