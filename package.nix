@@ -1,5 +1,4 @@
 {
-  lib,
   stdenv,
   cmake,
   ninja,
@@ -28,7 +27,10 @@ in
 stdenv.mkDerivation {
   name = "z3-noodler";
 
-  src = ./.;
+  src = builtins.path {
+    path = ./.;
+    name = "z3-noodler";
+  };
 
   nativeBuildInputs = [
     cmake
