@@ -303,7 +303,7 @@ namespace smt::noodler {
                 res << escape_DOT_string(to_string(pred.get_left_side())) << "\\ ⊆\\ " << escape_DOT_string(to_string(pred.get_right_side()));
             } else { //transducer
                 SASSERT(pred.is_transducer());
-                res << escape_DOT_string(to_string(pred.get_output())) << "\\ =\\ T" << pred.get_transducer().get() << "(" << escape_DOT_string(to_string(pred.get_input())) << ")";
+                res << escape_DOT_string(to_string(pred.get_output())) << "\\ =\\ T" << pred.get_transducer() << "(" << escape_DOT_string(to_string(pred.get_input())) << ")";
             }
             if (is_predicate_on_cycle(pred)) {
                 res << "\\ :\\ oncycle";

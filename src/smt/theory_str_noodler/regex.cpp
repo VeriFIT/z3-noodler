@@ -897,7 +897,7 @@ namespace smt::noodler::regex {
         return true;
     }
 
-    mata::nft::Nft ReplaceAllPrefixTree::create_transducer(mata::Alphabet* mata_alph) {
+    NFT ReplaceAllPrefixTree::create_transducer(mata::Alphabet* mata_alph) {
         // We will basically construct a product of prefix tree with identity transducer, but
         // for the matched finds in the prefix tree, we replace them with their corresponding replaces.
         // The state 0 is initial and final state that will have loops containing the replace operations
@@ -984,7 +984,7 @@ namespace smt::noodler::regex {
                 }
             }
         }
-        return result;
+        return NFT{std::make_shared<mata::nft::Nft>(std::move(result))};
     }
 
     void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, Formula& transducer_preds) {
@@ -1073,7 +1073,7 @@ namespace smt::noodler::regex {
                 }
 
                 if (backward_iterator != backward_iterator_old) {
-                    return mata::nft::reduce(prefix_tree.create_transducer(mata_alph)).trim();
+                    return prefix_tree.create_transducer(mata_alph).reduce();
                 } else {
                     auto& find = backward_iterator->first;
                     zstring& replace = backward_iterator->second;
@@ -1082,36 +1082,35 @@ namespace smt::noodler::regex {
                                                 mata::nft::strings::replace_reluctant_literal(util::get_mata_word_zstring(std::get<zstring>(find)), util::get_mata_word_zstring(replace), mata_alph)
                                               : mata::nft::strings::replace_reluctant_regex(std::get<mata::nfa::Nfa>(find), util::get_mata_word_zstring(replace), mata_alph);
                     ++backward_iterator;
-                    return mata::nft::reduce(mata::nft::remove_epsilon(result).trim()).trim();
+                    return NFT{std::make_shared<mata::nft::Nft>(result)}.reduce();
                 }
             };
 
-            mata::nft::Nft transducer = get_next_transducer();
+            NFT transducer = get_next_transducer();
             STRACE("str-gather_transducer_constraints",
-                tout << "Size of first NFT " << transducer.num_of_states() << "\n";
+                tout << "Size of first NFT " << transducer->num_of_states() << "\n";
                 if (is_trace_enabled("str-nfa")) {
-                    tout << transducer.print_to_dot(true);
+                    tout << transducer->print_to_dot(true);
                 }
             );
             while (backward_iterator != backward_iterator_end) {
-                mata::nft::Nft next_transducer = get_next_transducer();
+                NFT next_transducer = get_next_transducer();
                 STRACE("str-gather_transducer_constraints",
-                    tout << "Size of next NFT " << next_transducer.num_of_states() << "\n";
+                    tout << "Size of next NFT " << next_transducer->num_of_states() << "\n";
                     if (is_trace_enabled("str-nfa")) {
-                        tout << next_transducer.print_to_dot(true);
+                        tout << next_transducer->print_to_dot(true);
                     }
                 );
-                transducer = mata::nft::compose(transducer, next_transducer, 1, 0);
-                transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
+                transducer = transducer.compose_with(next_transducer).reduce();
                 STRACE("str-gather_transducer_constraints",
-                    tout << "Size of composed NFT " << transducer.num_of_states() << "\n";
+                    tout << "Size of composed NFT " << transducer->num_of_states() << "\n";
                     if (is_trace_enabled("str-nfa")) {
-                        tout << transducer.print_to_dot(true);
+                        tout << transducer->print_to_dot(true);
                     }
                 );
             }
 
-            Predicate predicate_transducer = Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var});
+            Predicate predicate_transducer = Predicate::create_transducer(side, {result_var}, transducer);
             STRACE("str-gather_transducer_constraints", tout << predicate_transducer << "\n";);
             transducer_preds.add_predicate(predicate_transducer);
             return;

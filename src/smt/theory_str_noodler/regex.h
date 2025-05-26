@@ -246,7 +246,7 @@ namespace smt::noodler::regex {
          * @param mata_alph The alphabet used for creating the transducer
          * @return The simultaneous transducer
          */
-        mata::nft::Nft create_transducer(mata::Alphabet* mata_alph);
+        NFT create_transducer(mata::Alphabet* mata_alph);
     };
 
     /**

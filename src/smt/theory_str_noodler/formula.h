@@ -300,12 +300,78 @@ namespace smt::noodler {
 
     //----------------------------------------------------------------------------------------------------------------------------------
 
+    class NFT {
+        std::shared_ptr<mata::nft::Nft> mata_nft = nullptr;
+
+        bool is_input_one_symbol = false;
+        bool is_output_one_symbol = false;
+
+    public:
+        NFT() = default;
+        explicit NFT(std::shared_ptr<mata::nft::Nft> mata_nft, bool is_input_one_symbol = false, bool is_output_one_symbol = false) :
+                        mata_nft(mata_nft),
+                        // input_tape_level(input_tape_level), output_tape_level(output_tape_level),
+                        is_input_one_symbol(is_input_one_symbol), is_output_one_symbol(is_output_one_symbol)
+                        {
+                            SASSERT(mata_nft->num_of_levels == 2);
+                        }
+
+        NFT get_reversed() const {
+            return NFT{std::make_shared<mata::nft::Nft>(mata::nft::invert_levels(**this)), is_output_one_symbol, is_input_one_symbol};
+            // std::swap(input_tape_level, output_tape_level);
+        }
+
+        std::strong_ordering operator<=>(const NFT& other) const {
+            // if (this->mata_nft == other.mata_nft) {
+            //     if (this->input_tape_level == other.input_tape_level) {
+            //         return this->output_tape_level <=> other.output_tape_level;
+            //     } else {
+            //         return this->input_tape_level <=> other.input_tape_level;
+            //     }
+            // } else {
+                return this->mata_nft <=> other.mata_nft;
+            // }
+        }
+
+        bool operator==(const NFT& other) const {
+            return (this->mata_nft == other.mata_nft);
+        }
+
+        NFT& reduce() {
+            *mata_nft = mata::nft::reduce(mata::nft::remove_epsilon(*mata_nft).trim()).trim();
+            return *this;
+        }
+
+        mata::nft::Nft& operator*() const {
+            return *mata_nft;
+        }
+
+        mata::nft::Nft* operator->() const {
+            return mata_nft.get();
+        }
+
+        NFT compose_with(const NFT& other) const {
+            return NFT{std::make_shared<mata::nft::Nft>(mata::nft::compose(**this, *other, 1, 0))};
+        }
+
+        std::string to_string() const {
+            std::ostringstream res;
+            res << mata_nft;
+            return res.str();
+        }
+    }; // class NFT
+
+    static std::ostream& operator<<(std::ostream& os, const NFT& transducer) {
+        os << transducer.to_string();
+        return os;
+    }
+
     class Predicate {
     private:
         PredicateType type;
         std::vector<std::vector<BasicTerm>> params;
         // transducer for the case of PredicateType::Transducer where params[0] is input and params[1] is output
-        std::shared_ptr<mata::nft::Nft> transducer = nullptr;
+        NFT transducer;
     public:
         enum struct EquationSideType { // can be used also for disequations
             Left,
@@ -325,12 +391,12 @@ namespace smt::noodler {
             assert(!is_two_sided() || params.size() == 2);
         }
 
-        explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par, std::shared_ptr<mata::nft::Nft> trans) : 
+        explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par, NFT transducer) : 
             type(type),
             params(par),
-            transducer(trans) {
+            transducer(transducer) {
             assert(type == PredicateType::Transducer);
-            assert(trans->num_of_levels == 2);
+            assert(transducer->num_of_levels == 2);
         }
 
 
@@ -342,8 +408,8 @@ namespace smt::noodler {
             return Predicate{PredicateType::Inequation, {std::move(left_side), std::move(right_side)}};
         }
 
-        static Predicate create_transducer(std::shared_ptr<mata::nft::Nft> trans, std::vector<BasicTerm> input, std::vector<BasicTerm> output) {
-            return Predicate{PredicateType::Transducer, {std::move(input), std::move(output)}, trans};
+        static Predicate create_transducer(std::vector<BasicTerm> input, std::vector<BasicTerm> output, NFT transducer) {
+            return Predicate{PredicateType::Transducer, {std::move(input), std::move(output)}, transducer};
         }
 
         static Predicate create_not_contains(std::vector<BasicTerm> haystick, std::vector<BasicTerm> needle) {
@@ -630,10 +696,13 @@ namespace smt::noodler {
             assert(is_two_sided());
             // for transducers we need to invert tapes, i.e., T(x,y) iff T^{-1}(y,x)
             if(is_transducer()) {
-                auto nft_inverse = std::make_shared<mata::nft::Nft>(mata::nft::invert_levels(*transducer));
-                return Predicate::create_transducer(nft_inverse, get_output(), get_input());
+                return Predicate::create_transducer(get_output(), get_input(), transducer.get_reversed());
             }
-            return Predicate{ type, { get_right_side(), get_left_side() } };
+            if (is_eq_or_ineq()) {
+                return Predicate{ type, { get_right_side(), get_left_side() } };
+            }
+            UNREACHABLE();
+            return Predicate{};
         }
 
         /**
@@ -772,16 +841,12 @@ namespace smt::noodler {
             }
         };
 
-        /**
-         * @brief Get the transducer shared pointer (for the transducer predicates only).
-         * 
-         * @return std::shared_ptr<mata::nft::Nft> Transducer
-         */
-        const std::shared_ptr<mata::nft::Nft>& get_transducer() const {
+        const NFT& get_transducer() const {
             assert(is_transducer());
             return transducer;
         }
-        std::shared_ptr<mata::nft::Nft>& get_transducer() {
+
+        NFT& get_transducer() {
             assert(is_transducer());
             return transducer;
         }

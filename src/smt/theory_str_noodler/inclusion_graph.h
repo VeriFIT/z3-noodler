@@ -100,7 +100,7 @@ namespace smt::noodler {
                 output << " ⊆ " << get_real_right_side();
             } else {
                 //transducer, we name them based on the raw pointer
-                output << " = T" << node_predicate.get_transducer().get();
+                output << " = T" << node_predicate.get_transducer();
                 if (is_reversed()) {
                     output << "^-1";
                 }
