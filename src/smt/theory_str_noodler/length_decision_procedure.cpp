@@ -822,9 +822,13 @@ namespace smt::noodler {
             // get model for the multi var and propagate them to the model of the block var (as literals)
             if(this->multi_var_set.size() != 0) {
                 BasicTerm multi_var = *this->multi_var_set.begin();
-                zstring multi_var_model = this->model.at(multi_var);
-                int multi_var_pos = arith_model.at(begin_of(multi_var.get_name(), block_var.get_name())).get_int32();
-                update_res(solution_str, multi_var_model, multi_var_pos);
+                BasicTerm multivar_in = begin_of(multi_var.get_name(), block_var.get_name());
+                // multivar variable might not occurr in all blocks
+                if(arith_model.contains(multivar_in)) {
+                    zstring multi_var_model = this->model.at(multi_var);
+                    int multi_var_pos = arith_model.at(begin_of(multi_var.get_name(), block_var.get_name())).get_int32();
+                    update_res(solution_str, multi_var_model, multi_var_pos);
+                }
             }
             // filter literals and propagate them to the model of the block var
             for(const BasicTerm& bt : block_model.terms) {
