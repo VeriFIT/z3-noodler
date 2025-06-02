@@ -984,7 +984,25 @@ namespace smt::noodler::regex {
                 }
             }
         }
-        return NFT{std::make_shared<mata::nft::Nft>(std::move(result))};
+
+        bool is_input_one_symbol = true;
+        for (const auto &t : prefix_automaton.delta[0]) {
+            SASSERT(t.num_of_targets() == 1);
+            if (!prefix_automaton.delta[t.targets.front()].empty()) {
+                is_input_one_symbol = false;
+                break;
+            }
+        }
+        bool is_output_one_symbol = true;
+        for (mata::nfa::State prefix_state = 0; prefix_state != prefix_automaton.num_of_states(); ++prefix_state) {
+            if (prefix_automaton.delta[prefix_state].empty()) {
+                if (replacing_map.at(prefix_state).size() > 1) {
+                    is_output_one_symbol = false;
+                    break;
+                }
+            }
+        }
+        return NFT{std::make_shared<mata::nft::Nft>(std::move(result)), is_input_one_symbol, is_output_one_symbol};
     }
 
     void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::map<BasicTerm, expr_ref>& var_name, mata::Alphabet* mata_alph, Formula& transducer_preds) {

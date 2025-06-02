@@ -8,13 +8,13 @@
 
 namespace smt::noodler {
     struct TransducerNoodleElement {
-        std::shared_ptr<mata::nft::Nft> transducer;
+        NFT transducer;
         std::shared_ptr<mata::nfa::Nfa> input_aut;
         unsigned input_index;
         std::shared_ptr<mata::nfa::Nfa> output_aut;
         unsigned output_index;
 
-        TransducerNoodleElement(std::shared_ptr<mata::nft::Nft> transducer, std::shared_ptr<mata::nfa::Nfa> input_aut, unsigned input_index, std::shared_ptr<mata::nfa::Nfa> output_aut, unsigned output_index)
+        TransducerNoodleElement(NFT transducer, std::shared_ptr<mata::nfa::Nfa> input_aut, unsigned input_index, std::shared_ptr<mata::nfa::Nfa> output_aut, unsigned output_index)
                     : transducer(transducer), input_aut(input_aut), input_index(input_index), output_aut(output_aut), output_index(output_index) { }
     };
 

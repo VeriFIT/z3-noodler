@@ -351,7 +351,19 @@ namespace smt::noodler {
         }
 
         NFT compose_with(const NFT& other) const {
-            return NFT{std::make_shared<mata::nft::Nft>(mata::nft::compose(**this, *other, 1, 0))};
+            return NFT{
+                std::make_shared<mata::nft::Nft>(mata::nft::compose(**this, *other, 1, 0)),
+                is_input_one_symbol && other.is_input_one_symbol,
+                is_output_one_symbol && other.is_output_one_symbol
+            };
+        }
+
+        bool get_is_input_one_symbol() const {
+            return is_input_one_symbol;
+        }
+
+        bool get_is_output_one_symbol() const {
+            return is_output_one_symbol;
         }
 
         std::string to_string() const {

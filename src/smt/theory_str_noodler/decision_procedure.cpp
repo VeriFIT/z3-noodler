@@ -773,7 +773,7 @@ namespace smt::noodler {
                 output_vars_to_new_output_vars[noodle[i].output_index].push_back(new_output_var);
 
                 // add the new transducer xo = T(xi)
-                Predicate new_trans = new_element.add_transducer(NFT(noodle[i].transducer), {new_input_var}, {new_output_var}, false);
+                Predicate new_trans = new_element.add_transducer(noodle[i].transducer, {new_input_var}, {new_output_var}, false);
                 STRACE("str",
                     tout << "New transducer: " << new_trans << std::endl;
                     if (is_trace_enabled("str-nfa")) {
