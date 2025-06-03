@@ -78,7 +78,7 @@ namespace smt::noodler {
         // of the transducer, so that intersection works correctly (i.e. the delimiters behave
         // as epsilon transitions).
 
-        mata::nft::Nft intersection = *nft;
+        mata::nft::Nft intersection;
 
         if (nft.get_is_input_one_symbol()) {
             mata::nft::Nft concatenation{mata::nft::compose(mata::nft::Nft(*input_automata[0]), *nft, 0, 0, false)};
@@ -87,26 +87,64 @@ namespace smt::noodler {
                 concatenation = mata::nft::algorithms::concatenate_eps(concatenation, composition, INPUT_DELIMITER, true);
             }
             intersection = std::move(concatenation);
+
+            if(intersection.final.empty()) {
+                return {};
+            }
+    
+            // we intersect output nfa with nft on the output track but we need to add OUTPUT_DELIMITER as a "epsilon transition" of nft
+            // and, we also need to INPUT_DELIMITER as "epsilon transition" of the output nfa, so that we do not lose it
+            add_self_loop_for_every_default_state(concatenated_output_nft, INPUT_DELIMITER);
+            add_self_loop_for_every_default_state(intersection, OUTPUT_DELIMITER);
+            intersection = mata::nft::compose(concatenated_output_nft, intersection, 0, 1, false);
+            intersection.trim();
+    
+            if(intersection.final.empty()) {
+                return {};
+            }
+        } else if (nft.get_is_output_one_symbol()) {
+            mata::nft::Nft concatenation{mata::nft::compose(mata::nft::Nft(*output_automata[0]), *nft, 0, 0, false)};
+            for (std::vector<std::shared_ptr<mata::nfa::Nfa>>::size_type i = 1; i < output_automata.size(); ++i) {
+                mata::nft::Nft composition = mata::nft::compose(mata::nft::Nft(*output_automata[i]), *nft, 0, 0, false);
+                concatenation = mata::nft::algorithms::concatenate_eps(concatenation, composition, OUTPUT_DELIMITER, true);
+            }
+            intersection = std::move(concatenation);
+
+            if(intersection.final.empty()) {
+                return {};
+            }
+    
+            // we intersect output nfa with nft on the output track but we need to add INPUT_DELIMITER as a "epsilon transition" of nft
+            // and, we also need to OUTPUT_DELIMITER as "epsilon transition" of the output nfa, so that we do not lose it
+            add_self_loop_for_every_default_state(concatenated_output_nft, OUTPUT_DELIMITER);
+            add_self_loop_for_every_default_state(intersection, INPUT_DELIMITER);
+            intersection = mata::nft::compose(concatenated_input_nft, intersection, 0, 1, false);
+            intersection.trim();
+    
+            if(intersection.final.empty()) {
+                return {};
+            }
         } else {
+            intersection = *nft;
             // we intersect input nfa with nft on the input track but we need to add INPUT_DELIMITER as an "epsilon transition" of nft
             add_self_loop_for_every_default_state(intersection, INPUT_DELIMITER);
             intersection = mata::nft::compose(concatenated_input_nft, intersection, 0, 0, false);
             intersection.trim();
-        }
 
-        if(intersection.final.empty()) {
-            return {};
-        }
-
-        // we intersect output nfa with nft on the output track but we need to add OUTPUT_DELIMITER as a "epsilon transition" of nft
-        // and, we also need to INPUT_DELIMITER as "epsilon transition" of the output nfa, so that we do not lose it
-        add_self_loop_for_every_default_state(concatenated_output_nft, INPUT_DELIMITER);
-        add_self_loop_for_every_default_state(intersection, OUTPUT_DELIMITER);
-        intersection = mata::nft::compose(concatenated_output_nft, intersection, 0, 1, false);
-        intersection.trim();
-
-        if(intersection.final.empty()) {
-            return {};
+            if(intersection.final.empty()) {
+                return {};
+            }
+    
+            // we intersect output nfa with nft on the output track but we need to add OUTPUT_DELIMITER as a "epsilon transition" of nft
+            // and, we also need to INPUT_DELIMITER as "epsilon transition" of the output nfa, so that we do not lose it
+            add_self_loop_for_every_default_state(concatenated_output_nft, INPUT_DELIMITER);
+            add_self_loop_for_every_default_state(intersection, OUTPUT_DELIMITER);
+            intersection = mata::nft::compose(concatenated_output_nft, intersection, 0, 1, false);
+            intersection.trim();
+    
+            if(intersection.final.empty()) {
+                return {};
+            }
         }
 
         // we assume that the operations did not add jump transitions
