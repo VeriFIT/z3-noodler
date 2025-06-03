@@ -1,4 +1,5 @@
 #include <mata/nfa/algorithms.hh>
+#include <mata/nft/algorithms.hh>
 #include <mata/nft/builder.hh>
 
 #include "noodlification.h"
@@ -79,10 +80,19 @@ namespace smt::noodler {
 
         mata::nft::Nft intersection = *nft;
 
-        // we intersect input nfa with nft on the input track but we need to add INPUT_DELIMITER as an "epsilon transition" of nft
-        add_self_loop_for_every_default_state(intersection, INPUT_DELIMITER);
-        intersection = mata::nft::compose(concatenated_input_nft, intersection, 0, 0, false);
-        intersection.trim();
+        if (nft.get_is_input_one_symbol()) {
+            mata::nft::Nft concatenation{mata::nft::compose(mata::nft::Nft(*input_automata[0]), *nft, 0, 0, false)};
+            for (std::vector<std::shared_ptr<mata::nfa::Nfa>>::size_type i = 1; i < input_automata.size(); ++i) {
+                mata::nft::Nft composition = mata::nft::compose(mata::nft::Nft(*input_automata[i]), *nft, 0, 0, false);
+                concatenation = mata::nft::algorithms::concatenate_eps(concatenation, composition, INPUT_DELIMITER, true);
+            }
+            intersection = std::move(concatenation);
+        } else {
+            // we intersect input nfa with nft on the input track but we need to add INPUT_DELIMITER as an "epsilon transition" of nft
+            add_self_loop_for_every_default_state(intersection, INPUT_DELIMITER);
+            intersection = mata::nft::compose(concatenated_input_nft, intersection, 0, 0, false);
+            intersection.trim();
+        }
 
         if(intersection.final.empty()) {
             return {};
