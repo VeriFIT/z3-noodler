@@ -300,17 +300,19 @@ namespace smt::noodler {
 
     //----------------------------------------------------------------------------------------------------------------------------------
 
+    /// Class for representing transducers while keeping some special info
     class NFT {
         std::shared_ptr<mata::nft::Nft> mata_nft = nullptr;
 
+        // Whether mata_nft is transducer that replaces words of length at most 1.
         bool is_input_one_symbol = false;
+        // Whether mata_nft is transducer that replaces words to words of length at most 1.
         bool is_output_one_symbol = false;
 
     public:
         NFT() = default;
         explicit NFT(std::shared_ptr<mata::nft::Nft> mata_nft, bool is_input_one_symbol = false, bool is_output_one_symbol = false) :
                         mata_nft(mata_nft),
-                        // input_tape_level(input_tape_level), output_tape_level(output_tape_level),
                         is_input_one_symbol(is_input_one_symbol), is_output_one_symbol(is_output_one_symbol)
                         {
                             SASSERT(mata_nft->num_of_levels == 2);
@@ -318,19 +320,10 @@ namespace smt::noodler {
 
         NFT get_reversed() const {
             return NFT{std::make_shared<mata::nft::Nft>(mata::nft::invert_levels(**this)), is_output_one_symbol, is_input_one_symbol};
-            // std::swap(input_tape_level, output_tape_level);
         }
 
         std::strong_ordering operator<=>(const NFT& other) const {
-            // if (this->mata_nft == other.mata_nft) {
-            //     if (this->input_tape_level == other.input_tape_level) {
-            //         return this->output_tape_level <=> other.output_tape_level;
-            //     } else {
-            //         return this->input_tape_level <=> other.input_tape_level;
-            //     }
-            // } else {
-                return this->mata_nft <=> other.mata_nft;
-            // }
+            return this->mata_nft <=> other.mata_nft;
         }
 
         bool operator==(const NFT& other) const {
@@ -350,6 +343,7 @@ namespace smt::noodler {
             return mata_nft.get();
         }
 
+        /// if T1 is this and T2 is other, returns the transducer T2(T1(...))
         NFT compose_with(const NFT& other) const {
             return NFT{
                 std::make_shared<mata::nft::Nft>(mata::nft::compose(**this, *other, 1, 0)),
