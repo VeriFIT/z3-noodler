@@ -116,9 +116,9 @@ namespace smt::noodler {
     
             // we intersect output nfa with nft on the output track but we need to add INPUT_DELIMITER as a "epsilon transition" of nft
             // and, we also need to OUTPUT_DELIMITER as "epsilon transition" of the output nfa, so that we do not lose it
-            add_self_loop_for_every_default_state(concatenated_output_nft, OUTPUT_DELIMITER);
+            add_self_loop_for_every_default_state(concatenated_input_nft, OUTPUT_DELIMITER);
             add_self_loop_for_every_default_state(intersection, INPUT_DELIMITER);
-            intersection = mata::nft::compose(concatenated_input_nft, intersection, 0, 1, false);
+            intersection = mata::nft::compose(concatenated_input_nft, intersection, 0, 0, false);
             intersection.trim();
     
             if(intersection.final.empty()) {
