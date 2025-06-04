@@ -91,6 +91,7 @@ namespace smt::noodler {
                 concatenation = mata::nft::algorithms::concatenate_eps(concatenation, composition, INPUT_DELIMITER, true);
             }
             intersection = std::move(concatenation);
+            intersection.trim();
 
             if(intersection.final.empty()) {
                 return {};
@@ -114,6 +115,7 @@ namespace smt::noodler {
                 concatenation = mata::nft::algorithms::concatenate_eps(concatenation, composition, OUTPUT_DELIMITER, true);
             }
             intersection = std::move(concatenation);
+            intersection.trim();
 
             if(intersection.final.empty()) {
                 return {};
