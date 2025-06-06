@@ -1842,15 +1842,17 @@ namespace smt::noodler {
         // extract not contains predicate to a separate container
         this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
 
-        STRACE("str-nfa", tout << "Automata after preprocessing" << std::endl << init_aut_ass.print());
         STRACE("str",
-            tout << "Lenght formula from preprocessing:" << preprocessing_len_formula << std::endl;
+            tout << "Length formula from preprocessing:" << preprocessing_len_formula << std::endl;
             tout << "Length variables after preprocesssing:";
             for (const auto &len_var : init_length_sensitive_vars) {
                 tout << " " << len_var;
             }
             tout << std::endl;
             tout << "Formula after preprocessing:" << std::endl << this->formula.to_string() << std::endl;
+            if (is_trace_enabled("str-nfa")) {
+                tout << "Automata after preprocessing" << std::endl << init_aut_ass.print();
+            }
         );
 
         // there remains some not contains --> return undef

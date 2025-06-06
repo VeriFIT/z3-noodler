@@ -242,7 +242,7 @@ namespace smt::noodler {
                 // the level opposite of the level of the previous state.
                 std::shared_ptr<mata::nft::Nft> element_nft = std::make_shared<mata::nft::Nft>(mata::nft::builder::from_nfa_with_levels_advancing(std::move(*element_aut), 2));
 
-                TransducerNoodleElement transd_el{NFT{element_nft, nft.get_is_input_one_symbol(), nft.get_is_output_one_symbol()},
+                TransducerNoodleElement transd_el{NFT{element_nft, false, false},
                     // the language of the input automaton is the projection to input track
                     std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(mata::nfa::remove_epsilon(mata::nft::project_to(*element_nft, 0)))), element.second[0],
                     // the language of the output automaton is the projection to output track
