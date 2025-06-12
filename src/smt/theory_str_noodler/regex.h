@@ -75,15 +75,17 @@ namespace smt::noodler::regex {
                 return 0;
             } else {
                 auto it = alphabet.begin();
-                mata::Symbol s = *it;
-                ++it;
-                while (it != alphabet.end()) {
-                    if (s+1 != *it) {
-                        return s+1;
+                while (true) {
+                    auto old_it = it++;
+                    // we are trying to find two values in alphabet that have something inbetween,
+                    // i.e., they differ more than by one, or if no such space exists, the last
+                    // symbol will not be max_char() (because of the test at the beginning of the
+                    // function), so we can return the value one larger
+                    if ((*old_it)+1 != *it // the values at old_it and at it differ by more than one
+                      || it == alphabet.end()) {
+                        return (*old_it)+1;
                     }
-                    ++it;
                 }
-                return (*it)+1;
             }
         }
 
