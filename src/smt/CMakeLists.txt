@@ -89,6 +89,7 @@ z3_add_component(smt
     theory_str_noodler/counter_automaton.cpp
     theory_str_noodler/ca_str_constr.cpp
     theory_str_noodler/unary_decision_procedure.cpp
+    theory_str_noodler/noodlification.cpp
     theory_str_mc.cpp
     theory_str_regex.cpp
     theory_user_propagator.cpp

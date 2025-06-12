@@ -632,7 +632,7 @@ namespace smt::noodler {
             }
         }
 
-        TRACE("str-nfa",
+        TRACE("str-create_aut_assignment_for_formula",
             tout << "Created automata assignment for formula:" << std::endl;
             for (const auto& single_aut_assignment: aut_assignment) {
                tout << "Automaton for " << single_aut_assignment.first.get_name() << ":" << std::endl;

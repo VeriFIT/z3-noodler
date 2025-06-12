@@ -273,8 +273,8 @@ namespace smt::noodler {
          * @param is_on_cycle Whether the transducer would be on cycle in the inclusion graph (if not sure, set to true)
          * @return The newly added transducer predicate
          */
-        Predicate add_transducer(std::shared_ptr<mata::nft::Nft> trans, std::vector<BasicTerm> input, std::vector<BasicTerm> output, bool is_on_cycle = true) {
-            Predicate new_transducer = Predicate::create_transducer(trans, std::move(input), std::move(output));
+        Predicate add_transducer(NFT trans, std::vector<BasicTerm> input, std::vector<BasicTerm> output, bool is_on_cycle = true) {
+            Predicate new_transducer = Predicate::create_transducer(std::move(input), std::move(output), trans);
             add_predicate(new_transducer, is_on_cycle);
             return new_transducer;
         }

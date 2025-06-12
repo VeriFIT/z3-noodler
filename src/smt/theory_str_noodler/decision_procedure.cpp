@@ -8,6 +8,7 @@
 #include "aut_assignment.h"
 #include "decision_procedure.h"
 #include "regex.h"
+#include "noodlification.h"
 
 namespace smt::noodler {
 
@@ -303,7 +304,7 @@ namespace smt::noodler {
                 res << escape_DOT_string(to_string(pred.get_left_side())) << "\\ ⊆\\ " << escape_DOT_string(to_string(pred.get_right_side()));
             } else { //transducer
                 SASSERT(pred.is_transducer());
-                res << escape_DOT_string(to_string(pred.get_output())) << "\\ =\\ T" << pred.get_transducer().get() << "(" << escape_DOT_string(to_string(pred.get_input())) << ")";
+                res << escape_DOT_string(to_string(pred.get_output())) << "\\ =\\ T" << pred.get_transducer() << "(" << escape_DOT_string(to_string(pred.get_input())) << ")";
             }
             if (is_predicate_on_cycle(pred)) {
                 res << "\\ :\\ oncycle";
@@ -733,7 +734,7 @@ namespace smt::noodler {
         SASSERT(output_vars_automata.size() == output_vars_divisions.size());
         SASSERT(output_vars_divisions.size() == output_vars.size());
 
-        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles = mata::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true);
+        std::vector<TransducerNoodle> noodles = noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true);
         for (const auto& noodle : noodles) {
             // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
             //      - T is a transducer, which will take one input and one output var: xo = T(xi)
@@ -1841,15 +1842,17 @@ namespace smt::noodler {
         // extract not contains predicate to a separate container
         this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
 
-        STRACE("str-nfa", tout << "Automata after preprocessing" << std::endl << init_aut_ass.print());
         STRACE("str",
-            tout << "Lenght formula from preprocessing:" << preprocessing_len_formula << std::endl;
+            tout << "Length formula from preprocessing:" << preprocessing_len_formula << std::endl;
             tout << "Length variables after preprocesssing:";
             for (const auto &len_var : init_length_sensitive_vars) {
                 tout << " " << len_var;
             }
             tout << std::endl;
             tout << "Formula after preprocessing:" << std::endl << this->formula.to_string() << std::endl;
+            if (is_trace_enabled("str-nfa")) {
+                tout << "Automata after preprocessing" << std::endl << init_aut_ass.print();
+            }
         );
 
         // there remains some not contains --> return undef

@@ -42,7 +42,7 @@ namespace smt::noodler {
                 bool is_int;
                 rational val(0);
                 VERIFY(th.m_util_a.is_numeral(values[i], val, is_int) && is_int);
-                STRACE("str-model", tout << "Arith model of " << needed_vars[i] << " is " << val << std::endl;);
+                STRACE("str-model-arith", tout << "Arith model of " << needed_vars[i] << " is " << val << std::endl;);
                 var_to_arith_model[needed_vars[i]] = val;
             }
 
