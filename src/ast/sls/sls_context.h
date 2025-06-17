@@ -58,6 +58,7 @@ namespace sls {
         virtual void collect_statistics(statistics& st) const = 0;
         virtual void reset_statistics() = 0;
         virtual bool include_func_interp(func_decl* f) const { return false; }
+        virtual bool check_ackerman(func_decl* f) const { return false; }
     };
 
     using clause = ptr_iterator<sat::literal>;
@@ -69,16 +70,22 @@ namespace sls {
         virtual sat::clause_info const& get_clause(unsigned idx) const = 0;
         virtual ptr_iterator<unsigned> get_use_list(sat::literal lit) = 0;
         virtual void flip(sat::bool_var v) = 0;
+        virtual sat::bool_var external_flip() = 0;
+        virtual bool try_rotate(sat::bool_var v, sat::bool_var_set& rotated, unsigned& budget) = 0;
         virtual double reward(sat::bool_var v) = 0;
         virtual double get_weigth(unsigned clause_idx) = 0;
         virtual bool is_true(sat::literal lit) = 0;
         virtual unsigned num_vars() const = 0;
         virtual indexed_uint_set const& unsat() const = 0;
+        virtual indexed_uint_set const& unsat_vars() const = 0;
+        virtual void shift_weights() = 0;
+        virtual unsigned num_external_in_unsat_vars() const = 0;
         virtual void on_model(model_ref& mdl) = 0;
         virtual sat::bool_var add_var() = 0;
         virtual void add_clause(unsigned n, sat::literal const* lits) = 0;
         virtual void force_restart() = 0;
         virtual std::ostream& display(std::ostream& out) = 0;
+        virtual reslimit& rlimit() = 0;
     };
     
     class context {
@@ -118,7 +125,7 @@ namespace sls {
         random_gen m_rand;
         bool m_initialized = false;
         bool m_new_constraint = false;
-        bool m_dirty = false;
+        expr_ref_vector m_input_assertions;
         expr_ref_vector m_allterms;
         ptr_vector<expr> m_subterms;
         greater_depth m_gd;
@@ -133,8 +140,12 @@ namespace sls {
 
         void init();
         expr_ref_vector m_todo;
+        bool m_is_input_assertion = false;
         void register_terms(expr* e);
         void register_term(expr* e);
+
+        void add_assertion(expr* f, bool is_input);        
+        void save_input_assertion(expr* f, bool sign);
 
         void propagate_boolean_assignment();
         void propagate_literal(sat::literal lit);
@@ -148,6 +159,8 @@ namespace sls {
 
 
         sat::literal mk_literal();
+
+        void validate_model(model& mdl);
         
     public:
         context(ast_manager& m, sat_solver_context& s);
@@ -156,6 +169,7 @@ namespace sls {
         void register_atom(sat::bool_var v, expr* e);
         lbool check();       
 
+        bool is_external(sat::bool_var v);
         void on_restart();
         void updt_params(params_ref const& p);
         params_ref const& get_params() const { return m_params;  }
@@ -170,18 +184,28 @@ namespace sls {
         bool is_true(sat::bool_var v) const { return s.is_true(sat::literal(v, false)); }
         expr* atom(sat::bool_var v) { return m_atoms.get(v, nullptr); }
         expr* term(unsigned id) const { return m_allterms.get(id); }
+        void add_new_term(expr* e) { register_terms(e); }
         sat::bool_var atom2bool_var(expr* e) const { return m_atom2bool_var.get(e->get_id(), sat::null_bool_var); }
         sat::literal mk_literal(expr* e);
-        void add_clause(expr* f);
+        void add_input_assertion(expr* f) { add_assertion(f, true); }
+        void add_theory_axiom(expr* f) { add_assertion(f, false); }
         void add_clause(sat::literal_vector const& lits);
         void flip(sat::bool_var v) { s.flip(v); }
+        sat::bool_var bool_flip() { return s.external_flip(); }
+        void shift_weights() { s.shift_weights(); }
+        bool try_rotate(sat::bool_var v, sat::bool_var_set& rotated, unsigned& budget) { return s.try_rotate(v, rotated, budget); }
         double reward(sat::bool_var v) { return s.reward(v); }
         indexed_uint_set const& unsat() const { return s.unsat(); }
+        indexed_uint_set const& unsat_vars() const { return s.unsat_vars(); }
+        unsigned num_external_in_unsat_vars() const { return s.num_external_in_unsat_vars(); }
         unsigned rand() { return m_rand(); }
         unsigned rand(unsigned n) { return m_rand(n); }
+        reslimit& rlimit() { return s.rlimit(); }
         sat::literal_vector const& root_literals() const { return m_root_literals; }
         sat::literal_vector const& unit_literals() const { return m_unit_literals; }
-        bool is_unit(sat::literal lit) const { return m_unit_indices.contains(lit.index()); }
+        expr_ref_vector const& input_assertions() const { return m_input_assertions; }
+        bool is_unit(sat::literal lit) const { return is_unit(lit.var()); }
+        bool is_unit(sat::bool_var v) const { return m_unit_indices.contains(v); }
         void reinit_relevant();
         void force_restart() { s.force_restart(); }
         bool include_func_interp(func_decl* f) const { return any_of(m_plugins, [&](plugin* p) { return p && p->include_func_interp(f); }); }
@@ -199,7 +223,8 @@ namespace sls {
         bool is_true(expr* e);
         bool is_fixed(expr* e);        
         bool is_relevant(expr* e);  
-        void add_constraint(expr* e);
+        bool add_constraint(expr* e);
+        bool check_ackerman(app* e) const;
         ptr_vector<expr> const& subterms();        
         ast_manager& get_manager() { return m; }
         std::ostream& display(std::ostream& out) const;

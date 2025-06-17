@@ -4,11 +4,37 @@ Version 4.next
 ================
 - Planned features
   - sat.euf 
-    - a new CDCL core for SMT queries. It extends the SAT engine with theory solver plugins.
-      the current state is unstable. It lacks efficient ematching.
-  - polysat
-    - native word level bit-vector solving.
-  - introduction of simple induction lemmas to handle a limited repertoire of induction proofs.
+    - CDCL core for SMT queries. It extends the SAT engine with theory solver plugins.
+  - add global incremental pre-processing for the legacy core.
+
+
+Version 4.15.1
+==============
+- #7672 - fix library header padding for install_name_tool
+- enable E-matching and conditional equations in euf-completion tactic
+- various bug fixes
+
+Version 4.15.0
+==============
+- Improved integer cut algorithms for linear integer arithmetic.
+  It integrates diophantine equation solving with stronger cuts.
+- C and OCaml API for accessing numerics, thanks to Josh Berdine
+- A minimal mcp server in src/api/z3mcp.py that can run locally.
+- Bug fixes.
+
+
+Version 4.14.1
+==============
+- Add ubv_to_int, sbv_to_int, int_to_bv to SMTLIB2 API.
+- Fix nuget package regression omitting Microsoft.Z3.* files
+
+Version 4.14.0
+==============
+- [SLS modulo theories](https://microsoft.github.io/z3guide/programming/Local%20Search/) engine v1 release.
+- API for accessing term [depth and groundness](https://github.com/Z3Prover/z3/pull/7479).
+- Two fixes to relevancy propagation thanks to Can Cebeci. Two instacnes where literals lemmas and axioms were not marked relevant and therefore not propagated to other theories. Theory lemmas are replayed during backjumping and have are now by default marked relevant. 
+- A new API for solving LRA variables modulo constraints.
+- Performance and bug fixes.
 
 Version 4.13.4
 ==============

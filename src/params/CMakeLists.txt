@@ -1,9 +1,21 @@
 z3_add_component(params
   SOURCES
-    pattern_inference_params.cpp
     context_params.cpp
+    dyn_ack_params.cpp	
+    pattern_inference_params.cpp
+    preprocessor_params.cpp
+    qi_params.cpp
+    smt_params.cpp
+    theory_arith_params.cpp
+    theory_array_params.cpp
+    theory_bv_params.cpp
+    theory_pb_params.cpp
+    theory_seq_params.cpp
+    theory_str_params.cpp     
+    theory_str_noodler_params.cpp   
   COMPONENT_DEPENDENCIES
     util
+    ast
   PYG_FILES
     arith_rewriter_params.pyg
     array_rewriter_params.pyg
@@ -17,6 +29,7 @@ z3_add_component(params
     sat_params.pyg
     seq_rewriter_params.pyg
     sls_params.pyg
+    smt_params_helper.pyg
     solver_params.pyg
     tactic_params.pyg
   EXTRA_REGISTER_MODULE_HEADERS

@@ -7,7 +7,6 @@ z3_add_component(sat
     sat_asymm_branch.cpp
     sat_bcd.cpp
     sat_big.cpp
-    sat_binspr.cpp
     sat_clause.cpp
     sat_clause_set.cpp
     sat_clause_use_list.cpp
@@ -18,7 +17,6 @@ z3_add_component(sat
     sat_ddfw_wrapper.cpp    
     sat_drat.cpp
     sat_elim_eqs.cpp
-    sat_elim_vars.cpp
     sat_gc.cpp
     sat_integrity_checker.cpp
     sat_local_search.cpp

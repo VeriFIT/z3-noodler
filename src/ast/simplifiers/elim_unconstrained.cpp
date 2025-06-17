@@ -159,7 +159,7 @@ void elim_unconstrained::eliminate() {
         SASSERT(!m_heap.contains(p.term()->get_id()));
         
         app* t = to_app(e);
-        TRACE("elim_unconstrained", tout << "eliminating " << mk_bounded_pp(t, m) << "\n";);
+        TRACE(elim_unconstrained, tout << "eliminating " << mk_bounded_pp(t, m) << "\n";);
         unsigned sz = m_args.size();
         for (expr* arg : *to_app(t))
             m_args.push_back(reconstruct_term(root(arg)));
@@ -180,14 +180,15 @@ void elim_unconstrained::eliminate() {
         IF_VERBOSE(4, verbose_stream() << "replace " << mk_bounded_pp(t, m) << " / " << mk_bounded_pp(rr, m) << " -> " << mk_bounded_pp(r, m) << "\n");
 
         
-        TRACE("elim_unconstrained", tout << mk_bounded_pp(t, m) << " / " << mk_bounded_pp(rr, m) << " -> " << mk_bounded_pp(r, m) << "\n");
+        TRACE(elim_unconstrained, tout << mk_bounded_pp(t, m) << " / " << mk_bounded_pp(rr, m) << " -> " << mk_bounded_pp(r, m) << "\n");
         SASSERT(r->get_sort() == t->get_sort());
         m_stats.m_num_eliminated++;
         node& rn = root(r);
         set_root(p, rn);
         expr* rt = rn.term();
         SASSERT(!m_heap.contains(rt->get_id()));
-        if (is_uninterp_const(rt))
+        m_heap.reserve(rt->get_id() + 1);
+        if (is_uninterp_const(rt)) 
             m_heap.insert(rt->get_id());
         else
             m_created_compound = true;
@@ -242,6 +243,8 @@ elim_unconstrained::node& elim_unconstrained::get_node(expr* t) {
                 node& ch = get_node(arg);
                 SASSERT(ch.is_root());
                 ch.add_parent(*n);
+                if (is_uninterp_const(arg) && m_heap.contains(arg->get_id()))
+                    m_heap.increased(arg->get_id());
             }
         }
         else if (is_quantifier(t)) {            
@@ -379,7 +382,7 @@ void elim_unconstrained::assert_normalized(vector<dependent_expr>& old_fmls) {
         if (f == g)
             continue;
         old_fmls.push_back(m_fmls[i]);
-        TRACE("elim_unconstrained", tout << mk_bounded_pp(f, m) << " -> " << mk_bounded_pp(g, m) << "\n");
+        TRACE(elim_unconstrained, tout << mk_bounded_pp(f, m) << " -> " << mk_bounded_pp(g, m) << "\n");
         m_fmls.update(i, dependent_expr(m, g, nullptr, d));
     }
 }
@@ -408,13 +411,14 @@ void elim_unconstrained::update_model_trail(generic_model_converter& mc, vector<
         case generic_model_converter::instruction::HIDE:
             break;
         case generic_model_converter::instruction::ADD:
-            new_def = entry.m_def;
-            (*rp)(new_def);           
-            sub->insert(m.mk_const(entry.m_f), new_def, nullptr, nullptr);
+            //            new_def = entry.m_def;
+            // (*rp)(new_def);
+            new_def = m.mk_const(entry.m_f);
+            sub->insert(new_def, new_def, nullptr, nullptr);
             break;
         }
     }
-    trail.push(sub.detach(), old_fmls);
+    trail.push(sub.detach(), old_fmls, true);
 }
 
 void elim_unconstrained::reduce() {

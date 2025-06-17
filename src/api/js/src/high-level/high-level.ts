@@ -1524,11 +1524,11 @@ export function createApi(Z3: Z3Core): Z3HighLevel {
         return new AstVectorImpl(check(Z3.optimize_get_assertions(contextPtr, this.ptr)));
       }
 
-      maximize(expr: Arith<Name>) {
+      maximize(expr: Arith<Name> | BitVec<number, Name>) {
         check(Z3.optimize_maximize(contextPtr, this.ptr, expr.ast));
       }
 
-      minimize(expr: Arith<Name>) {
+      minimize(expr: Arith<Name> | BitVec<number, Name>) {
         check(Z3.optimize_minimize(contextPtr, this.ptr, expr.ast));
       }
 
@@ -1908,6 +1908,10 @@ export function createApi(Z3: Z3Core): Z3HighLevel {
               break;
             case Z3_parameter_kind.Z3_PARAMETER_FUNC_DECL:
               result.push(new FuncDeclImpl(check(Z3.get_decl_func_decl_parameter(contextPtr, this.ptr, i))));
+              break;
+            case Z3_parameter_kind.Z3_PARAMETER_INTERNAL:
+              break;
+            case Z3_parameter_kind.Z3_PARAMETER_ZSTRING:
               break;
             default:
               assertExhaustive(kind);

@@ -29,7 +29,7 @@ namespace sls {
     bool basic_plugin::is_basic(expr* e) const {
         if (!e || !is_app(e))
             return false;
-        if (m.is_ite(e) && !m.is_bool(e) && false)
+        if (m.is_ite(e) && !m.is_bool(e))
             return true;
         if (m.is_xor(e) && to_app(e)->get_num_args() != 2)
             return true;
@@ -44,8 +44,17 @@ namespace sls {
     void basic_plugin::register_term(expr* e) {
         expr* c, * th, * el;
         if (m.is_ite(e, c, th, el) && !m.is_bool(e)) {
-            ctx.add_clause(m.mk_or(mk_not(m, c), m.mk_eq(e, th)));
-            ctx.add_clause(m.mk_or(c, m.mk_eq(e, el)));
+            auto eq_th = expr_ref(m.mk_eq(e, th), m);
+            auto eq_el = expr_ref(m.mk_eq(e, el), m);
+
+            ctx.add_theory_axiom(m.mk_or(mk_not(m, c), eq_th));
+            ctx.add_theory_axiom(m.mk_or(c, eq_el));
+#if 0
+            auto eq_th_el = expr_ref(m.mk_eq(th, el), m);
+            verbose_stream() << mk_bounded_pp(eq_th_el, m) << "\n";
+            ctx.add_theory_axiom(m.mk_or(eq_th_el, c, m.mk_not(eq_th)));
+            ctx.add_theory_axiom(m.mk_or(eq_th_el, m.mk_not(c), m.mk_not(eq_el)));
+#endif
         }
     }
 
@@ -72,7 +81,7 @@ namespace sls {
     }
 
     expr_ref basic_plugin::eval_ite(app* e) {
-        expr* c, * th, * el;
+        expr* c = nullptr, * th = nullptr, * el = nullptr;
         VERIFY(m.is_ite(e, c, th, el));
         if (bval0(c))
             return ctx.get_value(th);
@@ -99,7 +108,7 @@ namespace sls {
 
     bool basic_plugin::bval0(expr* e) const {
         SASSERT(m.is_bool(e));     
-        return ctx.is_true(ctx.mk_literal(e));
+        return ctx.is_true(e);
     }
 
     bool basic_plugin::try_repair(app* e, unsigned i) {
@@ -149,7 +158,6 @@ namespace sls {
         if (m.is_value(child))
             return false;
         bool r = ctx.set_value(child, ctx.get_value(e));
-        verbose_stream() << "repair-ite-down " << mk_bounded_pp(e, m) << " @ " << mk_bounded_pp(child, m) << " := " << ctx.get_value(e) << " success " << r << "\n";
         return r;
     }
 
@@ -166,7 +174,6 @@ namespace sls {
             val = eval_distinct(e);           
         else
             return;
-        verbose_stream() << "repair-up " << mk_bounded_pp(e, m) << " " << val << "\n";
         if (!ctx.set_value(e, val))
             ctx.new_value_eh(e);
     }
@@ -176,14 +183,22 @@ namespace sls {
 
     bool basic_plugin::repair_down(app* e) {    
         if (!is_basic(e))
-            return true;        
+            return true;     
+
         if (m.is_xor(e) && eval_xor(e) == ctx.get_value(e))
             return true;
-        if (m.is_ite(e) && eval_ite(e) == ctx.get_value(e))
+        if (m.is_ite(e) && !m.is_bool(e)) {
+            if (eval_ite(e) == ctx.get_value(e))
+                return true;
+            if (try_repair(e, 1))
+                return true;
+            if (try_repair(e, 2))
+                return true;
+            ctx.flip(ctx.atom2bool_var(e->get_arg(0)));
             return true;
+        }
         if (m.is_distinct(e) && eval_distinct(e) == ctx.get_value(e))
             return true;
-        verbose_stream() << "basic repair down " << mk_bounded_pp(e, m) << "\n";
         unsigned n = e->get_num_args();
         unsigned s = ctx.rand(n);
         for (unsigned i = 0; i < n; ++i) {

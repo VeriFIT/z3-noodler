@@ -20,7 +20,7 @@ Author:
 #include "sat/smt/sat_smt.h"
 #include "ast/euf/euf_egraph.h"
 #include "model/model.h"
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 
 namespace euf {
 
@@ -198,7 +198,7 @@ namespace euf {
         virtual void push_core();
         virtual void pop_core(unsigned n);
         void force_push() {
-            CTRACE("euf_verbose", m_num_scopes > 0, tout << "push-core " << m_num_scopes << "\n";);
+            CTRACE(euf_verbose, m_num_scopes > 0, tout << "push-core " << m_num_scopes << "\n";);
             for (; m_num_scopes > 0; --m_num_scopes) push_core();
         }
 

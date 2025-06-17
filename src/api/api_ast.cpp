@@ -369,7 +369,7 @@ extern "C" {
         Z3_CATCH_RETURN(-1);
     }
 
-    Z3_API char const * Z3_get_symbol_string(Z3_context c, Z3_symbol s) {
+    Z3_string Z3_API Z3_get_symbol_string(Z3_context c, Z3_symbol s) {
         Z3_TRY;
         LOG_Z3_get_symbol_string(c, s);
         RESET_ERROR_CODE();
@@ -423,6 +423,20 @@ extern "C" {
         RESET_ERROR_CODE();
         SASSERT(is_app(reinterpret_cast<ast*>(a)));
         RETURN_Z3(of_app(reinterpret_cast<app*>(a)));
+    }
+
+    bool Z3_API Z3_is_ground(Z3_context c, Z3_ast a) {
+        LOG_Z3_is_ground(c, a);
+        RESET_ERROR_CODE();
+        CHECK_IS_EXPR(a, 0);
+        return is_ground(to_expr(a));
+    }
+
+    unsigned Z3_API Z3_get_depth(Z3_context c, Z3_ast a) {
+        LOG_Z3_get_depth(c, a);
+        RESET_ERROR_CODE();
+        CHECK_IS_EXPR(a, 0);
+        return get_depth(to_expr(a));
     }
 
     Z3_func_decl Z3_API Z3_to_func_decl(Z3_context c, Z3_ast a) {
@@ -486,25 +500,25 @@ extern "C" {
             return Z3_PARAMETER_INT;
         }
         parameter const& p = to_func_decl(d)->get_parameters()[idx];
-        if (p.is_int()) {
-            return Z3_PARAMETER_INT;
-        }
-        if (p.is_double()) {
-            return Z3_PARAMETER_DOUBLE;
-        }
-        if (p.is_symbol()) {
-            return Z3_PARAMETER_SYMBOL;
-        }
-        if (p.is_rational()) {
-            return Z3_PARAMETER_RATIONAL;
-        }
-        if (p.is_ast() && is_sort(p.get_ast())) {
-            return Z3_PARAMETER_SORT;
-        }
-        if (p.is_ast() && is_expr(p.get_ast())) {
-            return Z3_PARAMETER_AST;
-        }
-        SASSERT(p.is_ast() && is_func_decl(p.get_ast()));
+        if (p.is_int()) 
+            return Z3_PARAMETER_INT;        
+        if (p.is_double()) 
+            return Z3_PARAMETER_DOUBLE;        
+        if (p.is_symbol()) 
+            return Z3_PARAMETER_SYMBOL;        
+        if (p.is_rational()) 
+            return Z3_PARAMETER_RATIONAL;        
+        if (p.is_ast() && is_sort(p.get_ast())) 
+            return Z3_PARAMETER_SORT;        
+        if (p.is_ast() && is_expr(p.get_ast())) 
+            return Z3_PARAMETER_AST;   
+        if (p.is_ast() && is_func_decl(p.get_ast()))
+            return Z3_PARAMETER_FUNC_DECL;
+        if (p.is_zstring())
+            return Z3_PARAMETER_ZSTRING;
+        if (p.is_external())
+            return Z3_PARAMETER_INTERNAL;
+        throw default_exception("an attempt was made to access an unknown parameter kind");
         return Z3_PARAMETER_FUNC_DECL;
         Z3_CATCH_RETURN(Z3_PARAMETER_INT);
     }
@@ -700,7 +714,7 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    Z3_sort_kind Z3_get_sort_kind(Z3_context c, Z3_sort t) {
+    Z3_sort_kind Z3_API Z3_get_sort_kind(Z3_context c, Z3_sort t) {
         LOG_Z3_get_sort_kind(c, t);
         RESET_ERROR_CODE();
         CHECK_VALID_AST(t, Z3_UNKNOWN_SORT);
@@ -1005,7 +1019,7 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    Z3_API char const * Z3_ast_to_string(Z3_context c, Z3_ast a) {
+    Z3_string Z3_API Z3_ast_to_string(Z3_context c, Z3_ast a) {
         Z3_TRY;
         LOG_Z3_ast_to_string(c, a);
         RESET_ERROR_CODE();
@@ -1031,11 +1045,11 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    Z3_API char const * Z3_sort_to_string(Z3_context c, Z3_sort s) {
+    Z3_string Z3_API Z3_sort_to_string(Z3_context c, Z3_sort s) {
         return Z3_ast_to_string(c, reinterpret_cast<Z3_ast>(s));
     }
 
-    Z3_API char const * Z3_func_decl_to_string(Z3_context c, Z3_func_decl f) {
+    Z3_string Z3_API Z3_func_decl_to_string(Z3_context c, Z3_func_decl f) {
         return Z3_ast_to_string(c, reinterpret_cast<Z3_ast>(f));
     }
 
@@ -1243,7 +1257,8 @@ extern "C" {
             case OP_EXT_ROTATE_LEFT:  return Z3_OP_EXT_ROTATE_LEFT;
             case OP_EXT_ROTATE_RIGHT: return Z3_OP_EXT_ROTATE_RIGHT;
             case OP_INT2BV:    return Z3_OP_INT2BV;
-            case OP_BV2INT:    return Z3_OP_BV2INT;
+            case OP_UBV2INT:    return Z3_OP_BV2INT;
+            case OP_SBV2INT:    return Z3_OP_SBV2INT;
             case OP_CARRY:     return Z3_OP_CARRY;
             case OP_XOR3:      return Z3_OP_XOR3;
             case OP_BIT2BOOL: return Z3_OP_BIT2BOOL;

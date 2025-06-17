@@ -98,10 +98,9 @@ namespace smt {
     
     class theory_array_bapa::imp {
         struct sz_info {
-            bool                  m_is_leaf;   // has it been split into disjoint subsets already?
-            rational              m_size;      // set to >= integer if fixed in final check, otherwise -1
+            bool                  m_is_leaf = true;               // has it been split into disjoint subsets already?
+            rational              m_size = rational::minus_one(); // set to >= integer if fixed in final check, otherwise -1
             obj_map<enode, expr*> m_selects;
-            sz_info(): m_is_leaf(true), m_size(rational::minus_one()) {}
         };
 
         typedef std::pair<func_decl*, func_decl*> func_decls;
@@ -152,7 +151,7 @@ namespace smt {
             mk_th_axiom(3, lits);
         }
         void mk_th_axiom(unsigned n, literal* lits) {
-            TRACE("card", ctx().display_literals_verbose(tout, n, lits) << "\n";);
+            TRACE(card, ctx().display_literals_verbose(tout, n, lits) << "\n";);
             IF_VERBOSE(10, ctx().display_literals_verbose(verbose_stream(), n, lits) << "\n");
             ctx().mk_th_axiom(th.get_id(), n, lits);            
         }
@@ -360,7 +359,7 @@ namespace smt {
                         expr_ref idx = mk_index_skolem(set_sz, set, k);
                         app_ref sel(mk_select(set, idx), m);
                         mk_th_axiom(~sz_lit, le_lit, mk_literal(sel));
-                        TRACE("card", tout << idx << " " << sel << " " << i.m_size << "\n";);
+                        TRACE(card, tout << idx << " " << sel << " " << i.m_size << "\n";);
                     }
                     return l_false;
                 }
@@ -544,7 +543,7 @@ namespace smt {
             if (r == l_true) r = trace_call("ensure_values_assigned", ensure_values_assigned());
             if (r == l_true) r = trace_call("ensure_non_empty", ensure_non_empty());
             if (r == l_true) r = trace_call("ensure_no_overflow", ensure_no_overflow());
-            CTRACE("card", r != l_true, display(tout););
+            CTRACE(card, r != l_true, display(tout););
             switch (r) {
             case l_true:
                 return FC_DONE;
@@ -623,7 +622,7 @@ namespace smt {
                 expr* sz =  kv.m_key->get_arg(1);
                 assumptions.push_back(mk_size_limit(set, sz));
             }            
-            TRACE("card", tout << "ASSUMPTIONS: " << assumptions << "\n";);
+            TRACE(card, tout << "ASSUMPTIONS: " << assumptions << "\n";);
         }
     
     };

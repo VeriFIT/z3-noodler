@@ -63,8 +63,8 @@ namespace smt {
     class model_generator;
     class context;
 
-    struct cancel_exception : public std::exception {
-        char const * what() const noexcept override { return "smt-canceled"; }
+    struct oom_exception : public z3_error {
+        oom_exception() : z3_error(ERR_MEMOUT) {}
     };
 
     struct enode_pp {
@@ -130,7 +130,7 @@ namespace smt {
         class parallel*             m_par = nullptr;
         unsigned                    m_par_index = 0;
         bool                        m_internalizing_assertions = false;
-        lbool                       m_sls_completed = l_undef;
+        lbool                       m_internal_completed = l_undef;
 
 
         // -----------------------------------
@@ -291,9 +291,9 @@ namespace smt {
 
         bool get_cancel_flag();
 
-        void set_sls_completed() {
-            if (m_sls_completed == l_undef)
-                m_sls_completed = l_true;
+        void set_internal_completed() {
+            if (m_internal_completed == l_undef)
+                m_internal_completed = l_true;
         }
 
         region & get_region() {
@@ -1201,7 +1201,7 @@ namespace smt {
             if (act > ACTIVITY_LIMIT)
                 rescale_bool_var_activity();
             m_case_split_queue->activity_increased_eh(v);
-            TRACE("case_split", tout << "v" << v << " " << m_bvar_inc << " -> " << act << "\n";);
+            TRACE(case_split, tout << "v" << v << " " << m_bvar_inc << " -> " << act << "\n";);
         }
 
     protected:
@@ -1377,13 +1377,13 @@ namespace smt {
 
         // -----------------------------------
         //
-        // Model checking... (must be improved)
+        // Value extraction and solving
         //
         // -----------------------------------
     public:
         bool get_value(enode * n, expr_ref & value);
 
-        bool solve_for(enode* n, expr_ref& term);
+        void solve_for(vector<solution>& sol);
 
         // -----------------------------------
         //
@@ -1469,7 +1469,7 @@ namespace smt {
         unsigned display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents, literal consequent = false_literal, symbol const& logic = symbol::null) const;
         void display_lemma_as_smt_problem(std::ostream & out, unsigned num_antecedents, literal const * antecedents,
                                           unsigned num_antecedent_eqs, enode_pair const * antecedent_eqs,
-                                          literal consequent = false_literal, symbol const& logic = symbol::null) const;
+                                          literal consequent = false_literal, symbol const& logic = symbol::null, enode* x = nullptr, enode* y = nullptr) const;
 
         unsigned display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents,
                                           unsigned num_antecedent_eqs, enode_pair const * antecedent_eqs,
@@ -1575,6 +1575,13 @@ namespace smt {
         bool already_internalized_theory_core(theory * th, expr_ref_vector const & s) const;
 #endif
         bool check_preamble(bool reset_cancel);
+
+        struct search_completion {
+            context& ctx;
+            search_completion(context& ctx) : ctx(ctx) { ctx.m_search_finalized = false; }
+            ~search_completion() { if (!ctx.m_search_finalized) ctx.m_last_search_failure = CANCELED; }
+        };
+        bool m_search_finalized = true;
         lbool check_finalize(lbool r);
 
         // -----------------------------------

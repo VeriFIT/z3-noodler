@@ -23,8 +23,8 @@ Notes:
 #include "ast/ast_pp.h"
 #include "ast/func_decl_dependencies.h"
 #include "smt/smt_kernel.h"
-#include "smt/params/smt_params.h"
-#include "smt/params/smt_params_helper.hpp"
+#include "params/smt_params.h"
+#include "params/smt_params_helper.hpp"
 #include "solver/solver_na2as.h"
 #include "solver/mus.h"
 
@@ -196,7 +196,7 @@ namespace {
         }
 
         lbool check_sat_core2(unsigned num_assumptions, expr * const * assumptions) override {
-            TRACE("solver_na2as", tout << "smt_solver::check_sat_core: " << num_assumptions << "\n";);
+            TRACE(solver_na2as, tout << "smt_solver::check_sat_core: " << num_assumptions << "\n";);
             return m_context.check(num_assumptions, assumptions);
         }
 
@@ -337,7 +337,8 @@ namespace {
 
         expr* congruence_next(expr* e) override { return m_context.congruence_next(e); }
         expr* congruence_root(expr* e) override { return m_context.congruence_root(e); }
-        bool  solve_for(expr* e, expr_ref& term) override { return m_context.solve_for(e, term); }
+        expr_ref congruence_explain(expr* a, expr* b) override { return m_context.congruence_explain(a, b); }
+        void  solve_for(vector<solver::solution>& s) override { m_context.solve_for(s); }
 
 
         expr_ref_vector cube(expr_ref_vector& vars, unsigned cutoff) override {

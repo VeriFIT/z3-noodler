@@ -138,7 +138,7 @@ class simplifier_solver : public solver {
             m_preprocess.reduce();
             if (!m.inc())
                 return;
-            TRACE("solver", tout << "qhead " << qhead << "\n";
+            TRACE(solver, tout << "qhead " << qhead << "\n";
                   m_preprocess_state.display(tout));
             m_preprocess_state.advance_qhead();
         }
@@ -225,7 +225,7 @@ public:
     lbool check_sat_core(unsigned num_assumptions, expr* const* assumptions) override { 
         expr_ref_vector _assumptions(m, num_assumptions, assumptions);
         flush(_assumptions);
-        TRACE("simplifier", tout << _assumptions);
+        TRACE(simplifier, tout << _assumptions);
         return s->check_sat_core(num_assumptions, _assumptions.data()); 
     }
 
@@ -236,7 +236,7 @@ public:
 
     model_ref m_cached_model;
     void get_model_core(model_ref& m) override {       
-        CTRACE("simplifier", m_mc.get(), m_mc->display(tout));
+        CTRACE(simplifier, m_mc.get(), m_mc->display(tout));
         if (m_cached_model) {
             m = m_cached_model;
             return;
@@ -365,6 +365,7 @@ public:
 
     expr* congruence_root(expr* e) override { return s->congruence_root(e); }
     expr* congruence_next(expr* e) override { return s->congruence_next(e); }
+    expr_ref congruence_explain(expr* a, expr* b) override { return s->congruence_explain(a, b); }
     std::ostream& display(std::ostream& out, unsigned n, expr* const* assumptions) const override {
         return s->display(out, n, assumptions);
     }

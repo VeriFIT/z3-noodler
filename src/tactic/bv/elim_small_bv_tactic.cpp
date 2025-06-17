@@ -69,7 +69,7 @@ class elim_small_bv_tactic : public tactic {
         expr_ref replace_var(used_vars & uv,
             unsigned num_decls, unsigned max_var_idx_p1,
             unsigned idx, sort * s, expr * e, expr * replacement) {
-            TRACE("elim_small_bv", tout << "replace idx " << idx << " with " << mk_ismt2_pp(replacement, m) <<
+            TRACE(elim_small_bv, tout << "replace idx " << idx << " with " << mk_ismt2_pp(replacement, m) <<
                 " in " << mk_ismt2_pp(e, m) << std::endl;);
             expr_ref res(m);
             ptr_vector<expr> substitution;
@@ -88,7 +88,7 @@ class elim_small_bv_tactic : public tactic {
 
             // (VAR 0) should be in the last position of substitution.
 
-            TRACE("elim_small_bv", tout << "substitution: " << std::endl;
+            TRACE(elim_small_bv, tout << "substitution: " << std::endl;
                                     for (unsigned k = 0; k < substitution.size(); k++) {
                                         expr * se = substitution[k];
                                         tout << k << " = ";
@@ -103,13 +103,13 @@ class elim_small_bv_tactic : public tactic {
 
             proof_ref pr(m);
             m_simp(res, res, pr);
-            TRACE("elim_small_bv", tout << "replace done: " << mk_ismt2_pp(res, m) << std::endl;);
+            TRACE(elim_small_bv, tout << "replace done: " << mk_ismt2_pp(res, m) << std::endl;);
 
             return res;
         }
 
         br_status reduce_app(func_decl * f, unsigned num, expr * const * args, expr_ref & result, proof_ref & result_pr) {
-            TRACE("elim_small_bv_app", expr_ref tmp(m.mk_app(f, num, args), m); tout << "reduce " << tmp << std::endl; );
+            TRACE(elim_small_bv_app, expr_ref tmp(m.mk_app(f, num, args), m); tout << "reduce " << tmp << std::endl; );
             return BR_FAILED;
         }
 
@@ -123,7 +123,7 @@ class elim_small_bv_tactic : public tactic {
             if (is_lambda(q)) {
                 return false;
             }
-            TRACE("elim_small_bv", tout << "reduce_quantifier " << mk_ismt2_pp(q, m) << std::endl; );
+            TRACE(elim_small_bv, tout << "reduce_quantifier " << mk_ismt2_pp(q, m) << std::endl; );
             unsigned long long num_steps = 0;
             unsigned curr_sz = m_bindings.size();
             SASSERT(q->get_num_decls() <= curr_sz);
@@ -141,7 +141,7 @@ class elim_small_bv_tactic : public tactic {
                 expr_ref_vector new_bodies(m);
                 if (is_small_bv(s) && !max_steps_exceeded(num_steps)) {
                     unsigned bv_sz = m_util.get_bv_size(s);
-                    TRACE("elim_small_bv", tout << "eliminating " << q->get_decl_name(i) <<
+                    TRACE(elim_small_bv, tout << "eliminating " << q->get_decl_name(i) <<
                         "; sort = " << mk_ismt2_pp(s, m) <<
                         "; body = " << mk_ismt2_pp(body, m) << std::endl;);
 
@@ -169,7 +169,7 @@ class elim_small_bv_tactic : public tactic {
                     return false;
                 }
                 
-                TRACE("elim_small_bv", tout << "new bodies: " << std::endl;
+                TRACE(elim_small_bv, tout << "new bodies: " << std::endl;
                       for (unsigned k = 0; k < new_bodies.size(); k++)
                           tout << mk_ismt2_pp(new_bodies[k].get(), m) << std::endl; );
                 
@@ -187,7 +187,7 @@ class elim_small_bv_tactic : public tactic {
             unused_vars_eliminator el(m, m_params);
             result = el(new_q);
 
-            TRACE("elim_small_bv", tout << "elimination result: " << mk_ismt2_pp(result, m) << std::endl; );
+            TRACE(elim_small_bv, tout << "elimination result: " << mk_ismt2_pp(result, m) << std::endl; );
 
             result_pr = nullptr; // proofs NIY
             m_bindings.shrink(old_sz);
@@ -195,10 +195,10 @@ class elim_small_bv_tactic : public tactic {
         }
 
         bool pre_visit(expr * t) {
-            TRACE("elim_small_bv_pre", tout << "pre_visit: " << mk_ismt2_pp(t, m) << std::endl;);
+            TRACE(elim_small_bv_pre, tout << "pre_visit: " << mk_ismt2_pp(t, m) << std::endl;);
             if (is_quantifier(t)) {
                 quantifier * q = to_quantifier(t);
-                TRACE("elim_small_bv", tout << "pre_visit quantifier [" << q->get_id() << "]: " << mk_ismt2_pp(q->get_expr(), m) << std::endl;);
+                TRACE(elim_small_bv, tout << "pre_visit quantifier [" << q->get_id() << "]: " << mk_ismt2_pp(q->get_expr(), m) << std::endl;);
                 sort_ref_vector new_bindings(m);
                 for (unsigned i = 0; i < q->get_num_decls(); i++)
                     new_bindings.push_back(q->get_decl_sort(i));
@@ -256,22 +256,19 @@ public:
     void operator()(goal_ref const & g,
                     goal_ref_buffer & result) override {
         tactic_report report("elim-small-bv", *g);
-        bool produce_proofs = g->proofs_enabled();
         fail_if_proof_generation("elim-small-bv", g);
         fail_if_unsat_core_generation("elim-small-bv", g);
         m_rw.cfg().m_produce_models = g->models_enabled();
 
         expr_ref   new_curr(m);
         proof_ref  new_pr(m);
-        unsigned   size = g->size();
-        for (unsigned idx = 0; !g->inconsistent() && idx < size; idx++) {
-            expr * curr = g->form(idx);
+        unsigned idx = 0;
+        for (auto [curr, dep, pr] : *g) {
+            if (g->inconsistent())
+                break;
             m_rw(curr, new_curr, new_pr);
-            if (produce_proofs) {
-                proof * pr = g->pr(idx);
-                new_pr = m.mk_modus_ponens(pr, new_pr);
-            }
-            g->update(idx, new_curr, new_pr, g->dep(idx));
+            new_pr = m.mk_modus_ponens(pr, new_pr);            
+            g->update(idx++, new_curr, new_pr, dep);
         }
         g->add(m_rw.m_cfg.m_mc.get());
 

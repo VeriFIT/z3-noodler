@@ -115,7 +115,7 @@ br_status array_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * c
         st = BR_FAILED;
         break;
     }
-    CTRACE("array_rewriter", st != BR_FAILED, 
+    CTRACE(array_rewriter, st != BR_FAILED, 
            tout << mk_pp(f, m()) << "\n";
            for (unsigned i = 0; i < num_args; ++i) {
                tout << mk_bounded_pp(args[i], m(), 2) << "\n";
@@ -266,15 +266,7 @@ br_status array_rewriter::mk_select_same_store(unsigned num_args, expr * const *
                 continue;
 
             case l_undef:
-                // check if loading from subsequent arrays yields the same value
-                if (first) {
-                    result = to_app(arg0)->get_arg(num_args);
-                    first  = false;
-                }
-                else if (result != to_app(arg0)->get_arg(num_args))
-                    return BR_FAILED;
-                arg0 = to_app(arg0)->get_arg(0);
-                continue;
+                return BR_FAILED;
             }
         }
 
@@ -467,7 +459,7 @@ br_status array_rewriter::mk_map_core(func_decl * f, unsigned num_args, expr * c
             sort_ref s = get_map_array_sort(f, num_args, args);
             result = m_util.mk_const_array(s, value);
         }
-        TRACE("array", tout << result << "\n";);
+        TRACE(array, tout << result << "\n";);
         return BR_REWRITE2;
     }
 
@@ -827,7 +819,7 @@ expr_ref array_rewriter::expand_store(expr* s) {
 }
 
 br_status array_rewriter::mk_eq_core(expr * lhs, expr * rhs, expr_ref & result) {
-    TRACE("array_rewriter", tout << mk_bounded_pp(lhs, m(), 2) << " " << mk_bounded_pp(rhs, m(), 2) << "\n";);
+    TRACE(array_rewriter, tout << mk_bounded_pp(lhs, m(), 2) << " " << mk_bounded_pp(rhs, m(), 2) << "\n";);
     expr* v = nullptr, *w = nullptr;
     if (m_util.is_const(rhs) && is_lambda(lhs)) {
         std::swap(lhs, rhs);

@@ -59,7 +59,7 @@ extern "C" {
         Z3_CATCH;
     }
 
-    Z3_ast_opt Z3_API Z3_model_get_const_interp(Z3_context c, Z3_model m, Z3_func_decl a) {
+    Z3_ast Z3_API Z3_model_get_const_interp(Z3_context c, Z3_model m, Z3_func_decl a) {
         Z3_TRY;
         LOG_Z3_model_get_const_interp(c, m, a);
         RESET_ERROR_CODE();
@@ -422,7 +422,7 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    Z3_API char const * Z3_model_to_string(Z3_context c, Z3_model m) {
+    Z3_string Z3_API Z3_model_to_string(Z3_context c, Z3_model m) {
         Z3_TRY;
         LOG_Z3_model_to_string(c, m);
         RESET_ERROR_CODE();

@@ -40,24 +40,23 @@ namespace sls {
     }
 
     bool bv_plugin::is_bv_predicate(expr* e) {
-        if (!e || !is_app(e))
-            return false;
-        auto a = to_app(e);
-        if (a->get_family_id() == bv.get_family_id())
-            return true;
-        if (m.is_eq(e) && bv.is_bv(a->get_arg(0)))
-            return true;
-        return false;
+        return m_terms.is_bv_predicate(e);
     }
 
-    void bv_plugin::propagate_literal(sat::literal lit) {       
-        SASSERT(ctx.is_true(lit));
+    void bv_plugin::start_propagation() {
+        m_eval.start_propagation();
+    }
+
+    void bv_plugin::propagate_literal(sat::literal lit) {   
+        if (!ctx.is_true(lit))
+            return;
         auto e = ctx.atom(lit.var());
         if (!is_bv_predicate(e))
             return;
         auto a = to_app(e);
 
         if (!m_eval.eval_is_correct(a)) {
+            TRACE(sls, tout << "incorrect eval " << lit << ": " << mk_bounded_pp(e, m) << "\n";);
             IF_VERBOSE(20, verbose_stream() << "repair " << lit << " " << mk_bounded_pp(e, m) << "\n");
             ctx.new_value_eh(e);
         }
@@ -81,22 +80,11 @@ namespace sls {
         }
     }
 
-    void bv_plugin::init_bool_var_assignment(sat::bool_var v) {
-        auto a = ctx.atom(v);
-        if (!a || !is_app(a))
-            return;
-        if (to_app(a)->get_family_id() != bv.get_family_id())
-            return;
-        bool is_true = m_eval.bval1(to_app(a));
-
-        if (is_true != ctx.is_true(v))
-            ctx.flip(v);        
-    }
-
     bool bv_plugin::is_sat() {
         bool is_sat = true;
         for (auto t : ctx.subterms())
             if (is_app(t) && bv.is_bv(t) && to_app(t)->get_family_id() == bv.get_fid() && !m_eval.eval_is_correct(to_app(t))) {
+                TRACE(sls, tout << "incorrect eval: " << mk_bounded_pp(t, m) << " " << m_eval.wval(t) << "\n";);
                 ctx.new_value_eh(t);
                 is_sat = false;
             }
@@ -114,7 +102,7 @@ namespace sls {
         VERIFY(bv.is_numeral(v, val));
         auto& w = m_eval.eval(to_app(e));
         w.set_value(w.eval, val);
-        return w.commit_eval();
+        return w.commit_eval_check_tabu();
     }
 
     bool bv_plugin::repair_down(app* e) {
@@ -153,9 +141,10 @@ namespace sls {
 
     void bv_plugin::repair_up(app* e) {
         if (m_eval.repair_up(e)) {
-            if (!m_eval.eval_is_correct(e)) {
-                verbose_stream() << "Incorrect eval #" << e->get_id() << " " << mk_bounded_pp(e, m) << "\n";
-            }
+            IF_VERBOSE(0,
+                if (!m_eval.eval_is_correct(e))
+                    verbose_stream() << "Incorrect eval #" << e->get_id() << " " << mk_bounded_pp(e, m) << "\n";
+                    );
             log(e, true, true);
             SASSERT(m_eval.eval_is_correct(e));
             if (m.is_bool(e)) {
@@ -163,26 +152,24 @@ namespace sls {
                     ctx.flip(ctx.atom2bool_var(e));
             }
         }
-        else if (bv.is_bv(e)) {
-            log(e, true, false);
-            IF_VERBOSE(5, verbose_stream() << "repair-up "; trace_repair(true, e)); 
-            auto& v = m_eval.wval(e);
-            m_eval.set_random(e);
-            ctx.new_value_eh(e);
-        }
-        else
+        else 
             log(e, true, false);
 
     }
 
     void bv_plugin::repair_literal(sat::literal lit) {
-        SASSERT(ctx.is_true(lit));
+        if (!ctx.is_true(lit))
+            return;
         auto e = ctx.atom(lit.var());
         if (!is_bv_predicate(e))
             return;
         auto a = to_app(e);
         if (!m_eval.eval_is_correct(a))
             ctx.flip(lit.var());
+    }
+
+    void bv_plugin::collect_statistics(statistics& st) const {
+        m_eval.collect_statistics(st);
     }
 
     std::ostream& bv_plugin::trace_repair(bool down, expr* e) {

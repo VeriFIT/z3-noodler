@@ -42,7 +42,6 @@ Revision History:
 #include "sat/sat_cut_simplifier.h"
 #include "sat/sat_probing.h"
 #include "sat/sat_mus.h"
-#include "sat/sat_binspr.h"
 #include "sat/sat_drat.h"
 #include "sat/sat_parallel.h"
 #include "sat/sat_local_search.h"
@@ -114,7 +113,6 @@ namespace sat {
         probing                 m_probing;
         bool                    m_is_probing { false };
         mus                     m_mus;           // MUS for minimal core extraction
-        binspr                  m_binspr;
         bool                    m_inconsistent;
         bool                    m_searching;
         // A conflict is usually a single justification. That is, a justification
@@ -215,7 +213,6 @@ namespace sat {
         friend class cleaner;
         friend class asymm_branch;
         friend class big;
-        friend class binspr;
         friend class drat;
         friend class elim_eqs;
         friend class bcd;
@@ -398,7 +395,7 @@ namespace sat {
         unsigned trail_size() const { return m_trail.size(); }
         literal  scope_literal(unsigned n) const { return m_trail[m_scopes[n].m_trail_lim]; }
         void assign(literal l, justification j) {
-            TRACE("sat_assign", tout << l << " previous value: " << value(l) << " j: " << j << "\n";);
+            TRACE(sat_assign, tout << l << " previous value: " << value(l) << " j: " << j << "\n";);
             switch (value(l)) {
             case l_false: set_conflict(j, ~l); break;
             case l_undef: assign_core(l, j); break;
@@ -421,7 +418,7 @@ namespace sat {
         bool limit_reached() {
             if (!m_rlimit.inc()) {
                 m_model_is_current = false;
-                TRACE("sat", tout << "canceled\n";);
+                TRACE(sat, tout << "canceled\n";);
                 m_reason_unknown = "sat.canceled";
                 return true;
             }

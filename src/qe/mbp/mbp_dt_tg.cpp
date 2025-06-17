@@ -72,11 +72,11 @@ struct mbp_dt_tg::impl {
 
     // rewrite head(x) with y
     // and x with list(y, z)
-    void rm_select(expr *term) {
+    void rm_accessor(expr *term) {
         SASSERT(is_app(term) &&
                 m_dt_util.is_accessor(to_app(term)->get_decl()) &&
-                is_var(to_app(term)->get_arg(0)));
-        TRACE("mbp_tg", tout << "applying rm_select on " << expr_ref(term, m););
+                has_var(to_app(term)->get_arg(0)));
+        TRACE(mbp_tg, tout << "applying rm_accessor on " << expr_ref(term, m););
         expr *v = to_app(term)->get_arg(0);
         expr_ref sel(m);
         app_ref u(m);
@@ -107,7 +107,7 @@ struct mbp_dt_tg::impl {
     // rewrite cons(v, u) = x with v = head(x) and u = tail(x)
     // where u or v contain variables
     void deconstruct_eq(expr *cons, expr *rhs) {
-        TRACE("mbp_tg",
+        TRACE(mbp_tg,
               tout << "applying deconstruct_eq on " << expr_ref(cons, m););
         ptr_vector<func_decl> const *accessors =
             m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
@@ -125,7 +125,7 @@ struct mbp_dt_tg::impl {
     // rewrite cons(v, u) != x into one of !cons(x) or v != head(x) or u !=
     // tail(x) where u or v contain variables
     void deconstruct_neq(expr *cons, expr *rhs) {
-        TRACE("mbp_tg",
+        TRACE(mbp_tg,
               tout << "applying deconstruct_neq on " << expr_ref(cons, m););
         ptr_vector<func_decl> const *accessors =
             m_dt_util.get_constructor_accessors(to_app(cons)->get_decl());
@@ -153,7 +153,7 @@ struct mbp_dt_tg::impl {
         expr *cons, *rhs, *f, *term;
         bool progress = false;
         m_new_vars.reset();
-        TRACE("mbp_tg", tout << "Iterating over terms of tg";);
+        TRACE(mbp_tg, tout << "Iterating over terms of tg";);
         // Not resetting terms because get_terms calls resize on terms
         m_tg.get_terms(terms, false);
         for (unsigned i = 0; i < terms.size(); i++) {
@@ -162,10 +162,10 @@ struct mbp_dt_tg::impl {
             if (m_tg.is_cgr(term)) continue;
             if (is_app(term) &&
                 m_dt_util.is_accessor(to_app(term)->get_decl()) &&
-                is_var(to_app(term)->get_arg(0))) {
+                has_var(to_app(term)->get_arg(0))) {
                 mark_seen(term);
                 progress = true;
-                rm_select(term);
+                rm_accessor(term);
                 continue;
             }
             if (is_constructor_app(term, cons, rhs)) {

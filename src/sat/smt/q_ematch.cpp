@@ -29,6 +29,7 @@ Done:
 --*/
 
 #include "ast/ast_util.h"
+#include "ast/euf/euf_mam.h"
 #include "ast/rewriter/var_subst.h"
 #include "ast/rewriter/rewriter_def.h"
 #include "ast/normal_forms/pull_quant.h"
@@ -36,7 +37,7 @@ Done:
 #include "sat/smt/sat_th.h"
 #include "sat/smt/euf_solver.h"
 #include "sat/smt/q_solver.h"
-#include "sat/smt/q_mam.h"
+
 #include "sat/smt/q_ematch.h"
 
 
@@ -75,7 +76,7 @@ namespace q {
             if (!ctx.relevancy_enabled())
                 ctx.get_egraph().set_on_make(_on_make);
         }
-        m_mam = mam::mk(ctx, *this);
+        m_mam = euf::mam::mk(ctx, *this);
     }
 
     void ematch::relevant_eh(euf::enode* n) {
@@ -84,7 +85,7 @@ namespace q {
     }
 
     void ematch::ensure_ground_enodes(expr* e) {
-        mam::ground_subterms(e, m_ground);
+        euf::mam::ground_subterms(e, m_ground);
         for (expr* g : m_ground) 
             m_qs.e_internalize(g);
     }
@@ -156,7 +157,7 @@ namespace q {
         SASSERT(is_forall(r));
         for (expr* d : m_new_defs)
             m_qs.add_unit(m_qs.mk_literal(d));
-        CTRACE("q", r != q, tout << mk_pp(q, m) << " -->\n" << r << "\n" << m_new_defs << "\n";);
+        CTRACE(q, r != q, tout << mk_pp(q, m) << " -->\n" << r << "\n" << m_new_defs << "\n";);
         return quantifier_ref(to_quantifier(r), m);
     }
 
@@ -190,7 +191,7 @@ namespace q {
     };
 
     void ematch::on_merge(euf::enode* root, euf::enode* other) {
-        TRACE("q", tout << "on-merge " << ctx.bpp(root) << " " << ctx.bpp(other) << "\n";);
+        TRACE(q, tout << "on-merge " << ctx.bpp(root) << " " << ctx.bpp(other) << "\n";);
         SASSERT(root->get_root() == other->get_root());
         unsigned root_id = root->get_expr_id();
         unsigned other_id = other->get_expr_id();
@@ -330,7 +331,7 @@ namespace q {
         binding* b = alloc_binding(c, pat, _binding, max_generation, min_gen, max_gen);
         if (!b)
             return;
-        TRACE("q", b->display(ctx, tout << "on-binding " << mk_pp(q, m) << "\n") << "\n";);
+        TRACE(q, b->display(ctx, tout << "on-binding " << mk_pp(q, m) << "\n") << "\n";);
 
 
         if (propagate(false, _binding, max_generation, c, new_propagation))
@@ -556,7 +557,7 @@ namespace q {
      * Attach ground subterms of patterns so they appear shared.
      */
     void ematch::attach_ground_pattern_terms(expr* pat) {
-        mam::ground_subterms(pat, m_ground);
+        euf::mam::ground_subterms(pat, m_ground);
         for (expr* g : m_ground) { 
             euf::enode* n = ctx.get_egraph().find(g);
             if (!n->is_attached_to(m_qs.get_id())) 
@@ -575,7 +576,7 @@ namespace q {
     };
 
     void ematch::add(quantifier* _q) {
-        TRACE("q", tout << "add " << mk_pp(_q, m) << "\n");
+        TRACE(q, tout << "add " << mk_pp(_q, m) << "\n");
         scoped_ptr<clause> c = clausify(_q);
         quantifier* q = c->q();
         if (m_q2clauses.contains(q)) 
@@ -597,11 +598,11 @@ namespace q {
             app * mp = to_app(q->get_pattern(i));
             SASSERT(m.is_pattern(mp));
             bool unary = (mp->get_num_args() == 1);
-            TRACE("q", tout << "adding:\n" << expr_ref(mp, m) << "\n");
+            TRACE(q, tout << "adding:\n" << expr_ref(mp, m) << "\n");
             if (!unary && j >= num_eager_multi_patterns) {
-                TRACE("q", tout << "delaying (too many multipatterns):\n" << mk_ismt2_pp(mp, m) << "\n";);
+                TRACE(q, tout << "delaying (too many multipatterns):\n" << mk_ismt2_pp(mp, m) << "\n";);
                 if (!m_lazy_mam)
-                    m_lazy_mam = mam::mk(ctx, *this);
+                    m_lazy_mam = euf::mam::mk(ctx, *this);
                 m_lazy_mam->add_pattern(q, mp);
             }
             else 
@@ -674,7 +675,7 @@ namespace q {
     }
 
     bool ematch::operator()() {
-        TRACE("q", m_mam->display(tout););
+        TRACE(q, m_mam->display(tout););
         if (propagate(false))
             return true;
         if (m_lazy_mam) 
@@ -691,11 +692,11 @@ namespace q {
         for (unsigned i = 0; i < m_clauses.size(); ++i)
             if (m_clauses[i]->m_bindings) {
                 IF_VERBOSE(0, verbose_stream() << "missed propagation " << i << "\n");
-                TRACE("q", display(tout << "missed propagation\n"));
+                TRACE(q, display(tout << "missed propagation\n"));
                 break;
             }
         
-        TRACE("q", tout << "no more propagation\n";);
+        TRACE(q, tout << "no more propagation\n";);
         return false;
     }
 

@@ -25,7 +25,8 @@ Author:
 #include "ast/sls/sls_seq_plugin.h"
 #include "ast/ast_ll_pp.h"
 #include "ast/ast_pp.h"
-#include "smt/params/smt_params_helper.hpp"
+#include "ast/for_each_expr.h"
+#include "params/smt_params_helper.hpp"
 
 namespace sls {
 
@@ -35,7 +36,7 @@ namespace sls {
     }
 
     context::context(ast_manager& m, sat_solver_context& s) : 
-        m(m), s(s), m_atoms(m), m_allterms(m),
+        m(m), s(s), m_atoms(m), m_input_assertions(m), m_allterms(m),
         m_gd(*this),
         m_ld(*this),
         m_repair_down(m.get_num_asts(), m_gd),
@@ -72,10 +73,12 @@ namespace sls {
             register_plugin(alloc(array_plugin, *this));
         else if (fid == datatype_util(m).get_family_id())
             register_plugin(alloc(datatype_plugin, *this));
-        else if (fid == seq_util(m).get_family_id())
+        else if (fid == seq_util(m).get_family_id() || fid == seq_util(m).get_char_family_id())
             register_plugin(alloc(seq_plugin, *this));
-        else
+        else {
             verbose_stream() << "did not find plugin for " << fid << "\n";
+            throw default_exception("no plugin for family id " + m.get_family_name(fid).str());
+        }
     }
 
     scoped_ptr<euf::egraph>& context::egraph() {
@@ -110,6 +113,18 @@ namespace sls {
             if (p)
                 p->on_restart();
     }
+
+    bool context::is_external(sat::bool_var v) {
+        auto a = atom(v);
+        if (!a)
+            return false;
+        family_id fid = get_fid(a);
+        if (fid == basic_family_id)
+            return false;
+        auto p = m_plugins.get(fid, nullptr);
+        CTRACE(sls_verbose, p != nullptr, tout << "external " << mk_bounded_pp(a, m) << "\n");
+        return p != nullptr;     
+    }
     
     lbool context::check() {
         //
@@ -123,13 +138,18 @@ namespace sls {
 
             propagate_boolean_assignment();
 
-
             // verbose_stream() << "propagate " << unsat().size() << " " << m_new_constraint << "\n";
 
             if (m_new_constraint || !unsat().empty())
                 return l_undef;
 
+            // check if root literals got flipped. is-sat assumes root literals are true
+            if (any_of(root_literals(), [&](sat::literal lit) { return !is_true(lit); })) 
+                continue;            
+
             if (all_of(m_plugins, [&](auto* p) { return !p || p->is_sat(); })) {
+                if (!unsat().empty() || m_new_constraint)
+                    continue;
                 values2model();
                 return l_true;
             }
@@ -146,6 +166,8 @@ namespace sls {
         
         for (expr* e : subterms()) {
             if (!is_app(e))
+                continue;
+            if (!is_relevant(e))
                 continue;
             auto f = to_app(e)->get_decl();
             if (!include_func_interp(f))
@@ -164,11 +186,37 @@ namespace sls {
             SASSERT(f->get_arity() == args.size());
             if (!fi->get_entry(args.data()))
                 fi->insert_new_entry(args.data(), v);
+            else if (fi->get_entry(args.data())->get_result() != v) {
+                IF_VERBOSE(0, verbose_stream() << "conflict: " << mk_pp(e, m) << " " << v << " " << mk_pp(fi->get_entry(args.data())->get_result(), m) << "\n");
+                throw default_exception("conflicting assignment");
+            }
         }
+
+        validate_model(*mdl);
                 
         s.on_model(mdl);
         // verbose_stream() << *mdl << "\n";
-        TRACE("sls", display(tout));
+        TRACE(sls, display(tout));
+    }
+
+    void context::validate_model(model& mdl) {
+        model_evaluator ev(mdl);
+        for (sat::literal lit : root_literals()) {
+            auto a = atom(lit.var());
+            if (!a)
+                continue;
+            auto eval_a = ev(a);
+            bool bad_model = (m.is_true(eval_a) && lit.sign()) || (m.is_false(eval_a) && !lit.sign());
+
+            if (bad_model) {             
+                IF_VERBOSE(0, verbose_stream() << lit << " " << a->get_id() << " " << mk_bounded_pp(a, m) << " " << eval_a << "\n");
+                TRACE(sls, s.display(tout << lit << " " << a->get_id() << " " << mk_bounded_pp(a, m) << " " << eval_a << "\n");
+                for (expr* t : subterms::all(expr_ref(a, m))) 
+                    tout << "#" << t->get_id() << ": " << mk_bounded_pp(t, m) << " := " << ev(t) << "\n";
+                );
+                throw default_exception("failed to create a well-formed model");
+            }
+        }
     }
     
     void context::propagate_boolean_assignment() {
@@ -192,12 +240,13 @@ namespace sls {
             while (!m_repair_down.empty() && !m_new_constraint && m.inc()) {
                 auto id = m_repair_down.erase_min();
                 expr* e = term(id);
-                TRACE("sls", tout << "repair down " << mk_bounded_pp(e, m) << "\n");
+                TRACE(sls, tout << "repair down " << mk_bounded_pp(e, m) << "\n");
                 if (is_app(e)) {
                     auto p = m_plugins.get(get_fid(e), nullptr);
                     ++m_stats.m_num_repair_down;
                     if (p && !p->repair_down(to_app(e)) && !m_repair_up.contains(e->get_id())) {
                         IF_VERBOSE(3, verbose_stream() << "revert repair: " << mk_bounded_pp(e, m) << "\n");
+                        TRACE(sls, tout << "revert repair: " << mk_bounded_pp(e, m) << "\n");
                         m_repair_up.insert(e->get_id());
                     }
                 }
@@ -206,7 +255,7 @@ namespace sls {
                 auto id = m_repair_up.erase_min();
                 expr* e = term(id);
                 ++m_stats.m_num_repair_up;
-                TRACE("sls", tout << "repair up " << mk_bounded_pp(e, m) << "\n");
+                TRACE(sls, tout << "repair up " << mk_bounded_pp(e, m) << "\n");
                 if (is_app(e)) {
                     auto p = m_plugins.get(get_fid(e), nullptr);
                     if (p)
@@ -241,7 +290,7 @@ namespace sls {
 
     family_id context::get_fid(expr* e) const {
         if (!is_app(e))
-            return user_sort_family_id;
+            throw default_exception("no plugin for " + mk_pp(e, m));
         family_id fid = to_app(e)->get_family_id();
         if (m.is_eq(e))
             fid = to_app(e)->get_arg(0)->get_sort()->get_family_id();   
@@ -266,11 +315,22 @@ namespace sls {
 
     bool context::is_true(expr* e) {
         SASSERT(m.is_bool(e));
-        auto v = m_atom2bool_var.get(e->get_id(), sat::null_bool_var);
+        auto v = m_atom2bool_var.get(e->get_id(), sat::null_bool_var);       
         if (v != sat::null_bool_var)
-            return m.is_true(m_plugins[basic_family_id]->get_value(e));
-        else
             return is_true(v);
+        if (m.is_and(e))
+            return all_of(*to_app(e), [&](expr* arg) { return is_true(arg); });
+        if (m.is_or(e))
+            return any_of(*to_app(e), [&](expr* arg) { return is_true(arg); });
+        if (m.is_not(e))
+            return !is_true(to_app(e)->get_arg(0));
+        if (m.is_implies(e))
+            return !is_true(to_app(e)->get_arg(0)) || is_true(to_app(e)->get_arg(1));
+        if (m.is_iff(e))
+            return is_true(to_app(e)->get_arg(0)) == is_true(to_app(e)->get_arg(1));
+        if (m.is_ite(e))
+            return is_true(to_app(e)->get_arg(0)) ? is_true(to_app(e)->get_arg(1)) : is_true(to_app(e)->get_arg(2));
+        return is_true(mk_literal(e));          
     }
 
     bool context::is_fixed(expr* e) {
@@ -278,12 +338,26 @@ namespace sls {
         return false;
     }
 
+    bool context::check_ackerman(app* e) const {
+        if (e->get_num_args() == 0)
+            return false;
+        auto f = e->get_decl();
+        if (is_uninterp(f))
+            return true;
+        auto fid = f->get_family_id();
+        auto p = m_plugins.get(fid, nullptr);        
+        return !p || p->check_ackerman(f);
+    }
+
     expr_ref context::get_value(expr* e) {
         sort* s = e->get_sort();
         auto fid = s->get_family_id();
         auto p = m_plugins.get(fid, nullptr);
         if (p) 
-            return p->get_value(e);      
+            return p->get_value(e);  
+        if (m.is_bool(e)) 
+            return expr_ref(m.mk_bool_val(is_true(e)), m);
+        
         verbose_stream() << fid << " " << m.get_family_name(fid) << " " << mk_pp(e, m) << "\n";
         UNREACHABLE();
         return expr_ref(e, m);
@@ -308,8 +382,10 @@ namespace sls {
         if (m_visited.contains(id))
             return false;
         m_visited.insert(id);
-        if (m_parents.size() <= id)
-            verbose_stream() << "not in map " << mk_bounded_pp(e, m) << "\n";
+        if (m_parents.size() <= id) // expressions can be temporary created in E-graph but not registered 
+        {
+            return false;
+        }
         for (auto p : m_parents[id]) {
             if (is_relevant(p)) {
                 m_relevant.insert(id);
@@ -319,25 +395,27 @@ namespace sls {
         return false;
     }
 
-    void context::add_constraint(expr* e) {        
+    bool context::add_constraint(expr* e) {        
         if (m_constraint_ids.contains(e->get_id()))
-            return;
+            return false;
         m_constraint_ids.insert(e->get_id());
         m_constraint_trail.push_back(e);
-        add_clause(e);     
+        add_assertion(e, false);     
         m_new_constraint = true;
-        verbose_stream() << "add constraint\n";
+        IF_VERBOSE(3, verbose_stream() << "add constraint " << mk_bounded_pp(e, m) << "\n");
         ++m_stats.m_num_constraints;
+        return true;
     }
 
-    void context::add_clause(expr* f)  {
+    void context::add_assertion(expr* f, bool is_input)  {
+        m_new_constraint = true;
         expr_ref _e(f, m);
         expr* g, * h, * k;
         sat::literal_vector clause;
         if (m.is_true(f))
             return;
         if (m.is_not(f, g) && m.is_not(g, g)) {
-            add_clause(g);
+            add_assertion(g, is_input);
             return;
         }
         bool sign = m.is_not(f, f);
@@ -346,15 +424,17 @@ namespace sls {
             for (auto arg : *to_app(f))
                 clause.push_back(mk_literal(arg));
             s.add_clause(clause.size(), clause.data());
+            if (is_input)
+                save_input_assertion(f, sign);
         }
         else if (!sign && m.is_and(f)) {
             for (auto arg : *to_app(f))
-                add_clause(arg);
+                add_assertion(arg, is_input);
         }
         else if (sign && m.is_or(f)) {
             for (auto arg : *to_app(f)) {
                 expr_ref fml(m.mk_not(arg), m);
-                add_clause(fml);
+                add_assertion(fml, is_input);
             }
         }
         else if (!sign && m.is_implies(f, g, h)) {
@@ -362,17 +442,21 @@ namespace sls {
             clause.push_back(~mk_literal(g));
             clause.push_back(mk_literal(h));
             s.add_clause(clause.size(), clause.data());
+            if (is_input)
+                save_input_assertion(f, sign);
         }
         else if (sign && m.is_implies(f, g, h)) {
             expr_ref fml(m.mk_not(h), m);
-            add_clause(fml);
-            add_clause(g);
+            add_assertion(fml, is_input);
+            add_assertion(g, is_input);
         }
         else if (sign && m.is_and(f)) {
             clause.reset();
             for (auto arg : *to_app(f))
                 clause.push_back(~mk_literal(arg));
             s.add_clause(clause.size(), clause.data());
+            if (is_input)
+                save_input_assertion(f, sign);
         }
         else if (m.is_iff(f, g, h)) {
             auto lit1 = mk_literal(g);
@@ -381,6 +465,8 @@ namespace sls {
             sat::literal cls2[2] = { sign ? ~lit1 : lit1, ~lit2 };
             s.add_clause(2, cls1);
             s.add_clause(2, cls2);
+            if (is_input)
+                save_input_assertion(f, sign);
         }
         else if (m.is_ite(f, g, h, k)) {
             auto lit1 = mk_literal(g);
@@ -393,13 +479,21 @@ namespace sls {
             sat::literal cls2[2] = { lit1, sign ? ~lit3 : lit3 };
             s.add_clause(2, cls1);
             s.add_clause(2, cls2);
+            if (is_input)
+                save_input_assertion(f, sign);
         }
         else {
             sat::literal lit = mk_literal(f);
             if (sign)
                 lit.neg();
             s.add_clause(1, &lit);
+            if (is_input)
+                save_input_assertion(f, sign);
         }
+    }
+
+    void context::save_input_assertion(expr* f, bool sign) {
+        m_input_assertions.push_back(sign ? m.mk_not(f) : f);
     }
 
     void context::add_clause(sat::literal_vector const& lits) {
@@ -415,6 +509,7 @@ namespace sls {
 
     sat::literal context::mk_literal(expr* e) {
         expr_ref _e(e, m);
+
         sat::literal lit;
         bool neg = false;
         expr* a, * b, * c;
@@ -423,6 +518,7 @@ namespace sls {
         auto v = m_atom2bool_var.get(e->get_id(), sat::null_bool_var);
         if (v != sat::null_bool_var) 
             return sat::literal(v, neg);
+        SASSERT(!m_input_assertions.contains(e));
         sat::literal_vector clause;
         lit = mk_literal();
         register_atom(lit.var(), e);
@@ -499,12 +595,17 @@ namespace sls {
             if (clause.m_clause.size() == 1) 
                 m_unit_literals.push_back(clause.m_clause[0]);
         for (sat::literal lit : m_unit_literals)
-            m_unit_indices.insert(lit.index());
+            m_unit_indices.insert(lit.var());
             
         IF_VERBOSE(3, verbose_stream() << "UNITS " << m_unit_literals << "\n");
         for (unsigned i = 0; i < m_atoms.size(); ++i)
             if (m_atoms.get(i))
                 register_terms(m_atoms.get(i));
+        {
+            flet<bool> _is_input_assertion(m_is_input_assertion, true);
+            for (auto e : m_input_assertions)
+                register_terms(e);
+        }
         for (auto p : m_plugins)
             if (p)
                 p->initialize();
@@ -539,7 +640,7 @@ namespace sls {
                         m_parents.reserve(arg->get_id() + 1);
                         m_parents[arg->get_id()].push_back(e);
                     }
-                    if (m.is_bool(e))
+                    if (m.is_bool(e) && !m_is_input_assertion)
                         mk_literal(e);
                     visit(e);
                 }
@@ -564,8 +665,8 @@ namespace sls {
                     SASSERT(m.is_true(get_value(e)) == is_true(v));
                 }                    
             }
-        );
-
+        );        
+          
         m_repair_down.reserve(e->get_id() + 1);
         m_repair_up.reserve(e->get_id() + 1);
         if (!term(e->get_id()))
@@ -604,7 +705,6 @@ namespace sls {
         m_visited.reset();
         m_root_literals.reset();
 
-
         for (auto const& clause : s.clauses()) {
             bool has_relevant = false;
             unsigned n = 0;
@@ -620,7 +720,7 @@ namespace sls {
                     has_relevant = true;
                     break;
                 }
-                if (m_rand() % ++n == 0)
+                if (m_rand(++n) == 0)
                     selected_lit = lit;
             }               
             if (!has_relevant && selected_lit != sat::null_literal) {

@@ -123,7 +123,7 @@ static void tst_isolate_roots(polynomial_ref const & p, unsigned prec, mpbq_mana
                     um.eval_sign_at(q.size(), q.data(), uppers[i]) == 0 ||
                     um.sign_variations_at(sseq, lowers[i]) - um.sign_variations_at(sseq, uppers[i]) == 1);
             // Fourier sequence may also be used to check if the interval is isolating
-            TRACE("upolynomial",
+            TRACE(upolynomial,
                   tout << "lowers[i]: " << bqm.to_string(lowers[i]) << "\n";
                   tout << "uppers[i]: " << bqm.to_string(uppers[i]) << "\n";
                   tout << "fourier lower: " << um.sign_variations_at(fseq, lowers[i]) << "\n";
@@ -140,7 +140,7 @@ static void tst_isolate_roots(polynomial_ref const & p, unsigned prec, mpbq_mana
             // Double checking using Descartes bounds for the interval
             // Must use square free component.
             unsigned dab = um.descartes_bound_a_b(q_sqf.size(), q_sqf.data(), bqm, lowers[i], uppers[i]);
-            TRACE("upolynomial", tout << "Descartes bound: " << dab << "\n";);
+            TRACE(upolynomial, tout << "Descartes bound: " << dab << "\n";);
             VERIFY(dab == 1);
         }
     }
@@ -896,7 +896,7 @@ static void tst_fact(polynomial_ref const & p, unsigned num_distinct_factors, up
     ENSURE(fs.distinct_factors() == num_distinct_factors);
     upolynomial::scoped_numeral_vector _r(um);
     fs.multiply(_r);
-    TRACE("upolynomial", tout << "_r: "; um.display(tout, _r); tout << "\n_p: "; um.display(tout, _p); tout << "\n";);
+    TRACE(upolynomial, tout << "_r: "; um.display(tout, _r); tout << "\n_p: "; um.display(tout, _p); tout << "\n";);
     ENSURE(um.eq(_p, _r));
 }
 
@@ -1060,10 +1060,10 @@ static void tst_lower_bound() {
 
 void tst_upolynomial() {
     set_verbosity_level(1000);
-    enable_trace("mpz_gcd");
-    enable_trace("normalize_bug");
-    enable_trace("factor_bug");
-    enable_trace("factor");
+    //    enable_trace("mpz_gcd");
+    // enable_trace("normalize_bug");
+    // enable_trace("factor_bug");
+    // enable_trace("factor");
     // enable_trace("mpzp_inv_bug");
     // enable_trace("mpz");
     tst_gcd();
@@ -1080,8 +1080,8 @@ void tst_upolynomial() {
     tst_isolate_roots();
     tst_sturm2();
     tst_convert_q2bq();
-    enable_trace("div_bug");
-    enable_trace("mpbq_bug");
+    // enable_trace("div_bug");
+    // enable_trace("mpbq_bug");
     tst_translate_q();
     tst_refine();
     tst_refinable();

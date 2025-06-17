@@ -25,7 +25,7 @@ Revision History:
 #include "smt/smt_checker.h"
 #include "smt/smt_quantifier.h"
 #include "smt/fingerprints.h"
-#include "smt/params/qi_params.h"
+#include "params/qi_params.h"
 #include "ast/cost_evaluator.h"
 #include "util/statistics.h"
 
@@ -51,7 +51,7 @@ namespace smt {
         cost_evaluator                m_evaluator;
         cached_var_subst              m_subst;
         svector<float>                m_vals;
-        double                        m_eager_cost_threshold;
+        double                        m_eager_cost_threshold = 0;
         struct entry {
             fingerprint * m_qb;
             float         m_cost;

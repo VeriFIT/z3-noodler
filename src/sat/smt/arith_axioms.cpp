@@ -65,6 +65,31 @@ namespace arith {
         add_clause(eq, eq_internalize(t, a.mk_numeral(rational(1), a.is_int(t))));
     }
 
+    // t = n^p
+    void solver::mk_power_axiom(expr* p, expr* x, expr* y) {
+        if (a.is_zero(y)) {
+            mk_power0_axioms(to_app(p), to_app(x));
+            return;
+        }
+        rational r;
+        // r > 0 => r^y > 0
+        if (a.is_extended_numeral(x, r) && r > 0) {
+            expr_ref zero(a.mk_real(0), m);
+            add_clause(~mk_literal(a.mk_le(p, zero)));
+        }
+        if (a.is_extended_numeral(y, r) && r > 0) {
+            // r is m/n then x >= 0 => x^m = p^n
+            if (denominator(r) > 1) {
+                expr_ref x_ge_0(a.mk_ge(x, a.mk_real(0)), m);
+                expr_ref x(m);
+                if (numerator(r) > 1)
+                    x = a.mk_power(x, a.mk_real(numerator(r)));
+                expr_ref x_eq_pn(a.mk_eq(x, a.mk_power(p, a.mk_real(denominator(r)))), m);
+                add_clause(~mk_literal(x_ge_0), mk_literal(x_eq_pn));
+            }
+        }
+    }
+
     // is_int(x) <=> to_real(to_int(x)) = x
     void solver::mk_is_int_axiom(expr* n) {
         expr* x = nullptr;
@@ -79,7 +104,7 @@ namespace arith {
         if (a.is_zero(q)) {
             return;
         }
-        TRACE("arith", tout << expr_ref(p, m) << " " << expr_ref(q, m) << "\n";);
+        TRACE(arith, tout << expr_ref(p, m) << " " << expr_ref(q, m) << "\n";);
         // if q is zero, then idiv and mod are uninterpreted functions.
         expr_ref div(a.mk_idiv(p, q), m);
         expr_ref mod(a.mk_mod(p, q), m);
@@ -526,7 +551,7 @@ namespace arith {
         force_push();
         expr* e1 = var2expr(v1);
         expr* e2 = var2expr(v2);
-        TRACE("arith", tout << "new eq: v" << v1 << " v" << v2 << "\n";);
+        TRACE(arith, tout << "new eq: v" << v1 << " v" << v2 << "\n";);
         if (e1->get_id() > e2->get_id())
             std::swap(e1, e2);
             
@@ -547,7 +572,7 @@ namespace arith {
     }
 
     void solver::new_diseq_eh(euf::th_eq const& e) {
-        TRACE("artih", tout << mk_bounded_pp(e.eq(), m) << "\n");
+        TRACE(artih, tout << mk_bounded_pp(e.eq(), m) << "\n");
         ensure_column(e.v1());
         ensure_column(e.v2());
         m_delayed_eqs.push_back(std::make_pair(e, false));
@@ -612,7 +637,7 @@ namespace arith {
         add_def_constraint_and_equality(vi, lp::GE, rational::zero());
         add_def_constraint_and_equality(vi, lp::LT, abs(r));
         SASSERT(!is_infeasible());
-        TRACE("arith", tout << term << "\n" << lp().constraints(););
+        TRACE(arith, tout << term << "\n" << lp().constraints(););
     }
 
     /**
@@ -651,14 +676,14 @@ namespace arith {
 
             if (a.is_numeral(q, r2) && r2.is_pos()) {
                 if (!a.is_bounded(n)) {
-                    TRACE("arith", tout << "unbounded " << expr_ref(n, m) << "\n";);
+                    TRACE(arith, tout << "unbounded " << expr_ref(n, m) << "\n";);
                     continue;
                 }
                 theory_var v = internalize_def(n);
                 lp::impq val_v = get_ivalue(v);
                 if (val_v.y.is_zero() && val_v.x == div(r1.x, r2)) continue;
 
-                TRACE("arith", tout << get_value(v) << " != " << r1 << " div " << r2 << "\n";);
+                TRACE(arith, tout << get_value(v) << " != " << r1 << " div " << r2 << "\n";);
                 rational div_r = div(r1.x, r2);
                 // p <= q * div(r1, q) + q - 1 => div(p, q) <= div(r1, r2)
                 // p >= q * div(r1, q) => div(r1, q) <= div(p, q)
@@ -684,7 +709,7 @@ namespace arith {
 
                 all_divs_valid = false;
 
-                TRACE("arith", tout << r1 << " div " << r2 << "\n";);
+                TRACE(arith, tout << r1 << " div " << r2 << "\n";);
                 continue;
             }
         }

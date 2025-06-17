@@ -451,25 +451,34 @@ public:
             case OP_BLSHR: {
                 SASSERT(n_args == 2);
                 m_mpz_manager.set(result, m_tracker.get_value(args[0]));
-                mpz shift; m_mpz_manager.set(shift, m_tracker.get_value(args[1]));
-                while (!m_mpz_manager.is_zero(shift)) {
-                    m_mpz_manager.machine_div(result, m_two, result);
-                    m_mpz_manager.dec(shift);
+                auto const& shift = m_tracker.get_value(args[1]);
+                if (m_mpz_manager.is_small(shift)) {
+                    int s = m_mpz_manager.get_int(shift);
+                    SASSERT(s >= 0);
+                    m_mpz_manager.machine_div2k(result, s);
                 }
-                m_mpz_manager.del(shift);
+                else 
+                    m_mpz_manager.set(result, m_zero);                
                 break;
             }
             case OP_BSHL: {
                 SASSERT(n_args == 2);
-                m_mpz_manager.set(result, m_tracker.get_value(args[0]));                
-                mpz shift; m_mpz_manager.set(shift, m_tracker.get_value(args[1]));
-                while (!m_mpz_manager.is_zero(shift)) {
-                    m_mpz_manager.mul(result, m_two, result);
-                    m_mpz_manager.dec(shift);
+                m_mpz_manager.set(result, m_tracker.get_value(args[0]));  
+                auto const& shift = m_tracker.get_value(args[1]);
+                if (m_mpz_manager.is_small(shift)) {
+                    int s = m_mpz_manager.get_int(shift);
+                    SASSERT(s >= 0);
+                    int sz = m_bv_util.get_bv_size(n);
+                    if (s >= sz) 
+                        m_mpz_manager.set(result, m_zero);                    
+                    else {
+                        m_mpz_manager.mul2k(result, s);
+                        const mpz& p = m_powers(sz);
+                        m_mpz_manager.rem(result, p, result);
+                    }
                 }
-                const mpz & p = m_powers(m_bv_util.get_bv_size(n));
-                m_mpz_manager.rem(result, p, result);
-                m_mpz_manager.del(shift);                    
+                else 
+                    m_mpz_manager.set(result, m_zero);                               
                 break;
             }
             case OP_SIGN_EXT: {
@@ -485,7 +494,7 @@ public:
             NOT_IMPLEMENTED_YET();
         }        
 
-        TRACE("sls_eval", tout << "(" << fd->get_name();
+        TRACE(sls_eval, tout << "(" << fd->get_name();
                             for (unsigned i = 0; i < n_args; i++)
                                 tout << " " << m_mpz_manager.to_string(m_tracker.get_value(args[i]));
                             tout << ") ---> " <<  m_mpz_manager.to_string(result);
@@ -516,7 +525,7 @@ public:
             evaluator(q, temp);
             mpz check_res;
             m_tracker.value2mpz(temp, check_res);
-            CTRACE("sls", !m_mpz_manager.eq(check_res, result), 
+            CTRACE(sls, !m_mpz_manager.eq(check_res, result), 
                             tout << "EVAL BUG: IS " << m_mpz_manager.to_string(result) << 
                             " SHOULD BE " << m_mpz_manager.to_string(check_res) << std::endl; );
             SASSERT(m_mpz_manager.eq(check_res, result));
@@ -624,16 +633,14 @@ public:
     void update_all() {
         unsigned max_depth = 0;
 
-        sls_tracker::entry_point_type::iterator start = m_tracker.get_entry_points().begin();
-        sls_tracker::entry_point_type::iterator end = m_tracker.get_entry_points().end();
-        for (sls_tracker::entry_point_type::iterator it = start; it != end; it++) {
-            expr * ep = m_tracker.get_entry_point(it->m_key);
+        for (auto const& [key, value] : m_tracker.get_entry_points()) {
+            expr* ep = m_tracker.get_entry_point(key);
             unsigned cur_depth = m_tracker.get_distance(ep);
-            if (m_traversal_stack.size() <= cur_depth) 
-                m_traversal_stack.resize(cur_depth+1);
+            m_traversal_stack.reserve(cur_depth + 1);
             m_traversal_stack[cur_depth].push_back(ep);
-            if (cur_depth > max_depth) max_depth = cur_depth;
+            max_depth = std::max(max_depth, cur_depth);
         }
+
         run_serious_update(max_depth);
     }
 
@@ -641,21 +648,18 @@ public:
         m_tracker.set_value(fd, new_value);
         expr * ep = m_tracker.get_entry_point(fd);
         unsigned cur_depth = m_tracker.get_distance(ep);
-        if (m_traversal_stack.size() <= cur_depth) 
-            m_traversal_stack.resize(cur_depth+1);
+        m_traversal_stack.reserve(cur_depth + 1);
         m_traversal_stack[cur_depth].push_back(ep);
-
         run_update(cur_depth);
     }
 
     void serious_update(func_decl * fd, const mpz & new_value) {
+        TRACE(sls, tout << "set: " << fd->get_name() << " to " << m_mpz_manager.to_string(new_value) << std::endl;);
         m_tracker.set_value(fd, new_value);
         expr * ep = m_tracker.get_entry_point(fd);
         unsigned cur_depth = m_tracker.get_distance(ep);
-        if (m_traversal_stack.size() <= cur_depth) 
-            m_traversal_stack.resize(cur_depth+1);
+        m_traversal_stack.reserve(cur_depth+1);
         m_traversal_stack[cur_depth].push_back(ep);
-
         run_serious_update(cur_depth);
     }
 
@@ -804,7 +808,7 @@ public:
 
         m_mpz_manager.del(temp);
 
-        TRACE("sls",    tout << "Randomization candidate: " << unsat_constants[r]->get_name() << std::endl;
+        TRACE(sls,    tout << "Randomization candidate: " << unsat_constants[r]->get_name() << std::endl;
                         tout << "Locally randomized model: " << std::endl; 
                         m_tracker.show_model(tout); );
 

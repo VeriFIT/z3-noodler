@@ -22,10 +22,14 @@ Author:
 #include "ast/ast_trail.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/sls/sls_context.h"
+#include "ast/sls/sls_arith_clausal.h"
+#include "ast/sls/sls_arith_lookahead.h"
 
 namespace sls {
 
     using theory_var = int;
+
+    static const unsigned null_arith_var = UINT_MAX;
 
     // local search portion for arithmetic
     template<typename num_t>
@@ -37,15 +41,35 @@ namespace sls {
         typedef unsigned atom_t;
 
         struct config {
+            bool config_initialized = false;
             double cb = 2.85;
             unsigned L = 20;
             unsigned t = 45;
             unsigned max_no_improve = 500000;
             double sp = 0.0003;
+            unsigned paws_init = 40;
+            unsigned paws_sp = 52;
+            bool paws = true;
+            unsigned max_moves = 500;
+            unsigned max_moves_base = 500;
+            unsigned wp = 100;
+            bool ucb = true;
+            double ucb_constant = 1.0;
+            double ucb_forget = 0.1;
+            bool ucb_init = false;
+            double ucb_noise = 0.1;
+            unsigned restart_base = 1000;
+            unsigned restart_next = 1000;
+            unsigned restart_init = 1000;
+            bool     use_lookahead = false;
+            bool     use_clausal_lookahead = false;
+            bool     allow_plateau = false;
         };
 
         struct stats {
-            unsigned m_num_steps = 0;
+            unsigned m_steps = 0;
+            unsigned m_restarts = 0;
+            unsigned m_propagations = 0;
         };
 
     public:
@@ -87,31 +111,43 @@ namespace sls {
             var_sort     m_sort;
             arith_op_kind m_op = arith_op_kind::LAST_ARITH_OP;
             unsigned     m_def_idx = UINT_MAX;
-            vector<std::pair<num_t, sat::bool_var>> m_ineqs;
-            unsigned_vector m_muls;
-            unsigned_vector m_adds;
+            vector<std::pair<num_t, sat::bool_var>> m_linear_occurs;
+            sat::bool_var_vector m_bool_vars_of;
+            unsigned_vector m_clauses_of;
+            unsigned_vector m_muls, m_adds, m_ops, m_ifs;
             optional<bound> m_lo, m_hi;
+            vector<num_t> m_finite_domain;
 
             num_t const& value() const { return m_value; }
             void set_value(num_t const& v) { m_value = v; }
 
+            bool is_arith_op() const { return m_def_idx < UINT_MAX - 1; }
+            bool is_if_op() const { return m_def_idx == UINT_MAX - 1; }
+
             num_t const& best_value() const { return m_best_value; }
             void set_best_value(num_t const& v) { m_best_value = v; }
+
+            bool is_big_num() const;
 
             bool in_range(num_t const& n) {
                 if (-m_range < n && n < m_range)
                     return true;
                 bool result = false;
+#if 0
+                if (m_lo && m_lo->value > n)
+                    return false;
+                if (m_hi && m_hi->value < n)
+                    return false;
+#endif
                 if (m_lo)
                     result = n < m_lo->value + m_range;
                 if (!result && m_hi)
                     result = n > m_hi->value - m_range;
-#if 0
-                if (!result) 
-                    out_of_range();
-                else 
-                    ++m_num_in_range;
-#endif
+                if (!result && m_lo && m_hi)
+                    result = m_hi->value - m_lo->value > 2 * m_range;
+                if (!result && is_big_num() && !m_lo && !m_hi) 
+                    result = true;
+                
                 return result;                
             }
             unsigned m_tabu_pos = 0, m_tabu_neg = 0;
@@ -125,6 +161,9 @@ namespace sls {
                 else
                     m_tabu_neg = tabu_step, m_last_neg = step;
             }
+            unsigned last_step(num_t const& delta) const {
+                return delta > 0 ? m_last_pos : m_last_neg;
+            }
             void out_of_range() {
                 ++m_num_out_of_range;
                 if (m_num_out_of_range < 1000 * (1 + m_num_in_range))
@@ -134,6 +173,8 @@ namespace sls {
                 m_num_out_of_range = 0;
                 m_num_in_range = 0;
             }
+
+            std::ostream& display_range(std::ostream& out) const;
         };
 
         struct mul_def {
@@ -164,6 +205,7 @@ namespace sls {
         vector<mul_def>              m_muls;
         vector<add_def>              m_adds;
         vector<op_def>               m_ops;
+        expr_ref_vector              m_new_terms;
         unsigned_vector              m_expr2var;
         svector<double>              m_probs;
         bool                         m_dscore_mode = false;
@@ -172,15 +214,24 @@ namespace sls {
         sat::literal                 m_last_literal = sat::null_literal;
         num_t                        m_last_delta { 0 };
         bool                         m_use_tabu = true;
+        bool                         m_allow_recursive_delta = false;
         unsigned                     m_updates_max_size = 45;
         arith_util                   a;
+        friend class arith_clausal<num_t>;
+        friend class arith_lookahead<num_t>;
+        arith_clausal<num_t>         m_clausal_sls;
+        arith_lookahead<num_t>       m_lookahead_sls;
         svector<double>              m_prob_break;
+        indexed_uint_set             m_bool_var_atoms;
+        indexed_uint_set             m_tmp_set;
+        nat_set  m_tmp_nat_set;
 
         void invariant();
         void invariant(ineq const& i);
 
         unsigned get_num_vars() const { return m_vars.size(); }
 
+        void updt_params();
         bool is_distinct(expr* e);
         bool eval_distinct(expr* e);
         void repair_distinct(expr* e);
@@ -190,6 +241,7 @@ namespace sls {
         bool repair_mod(op_def const& od);
         bool repair_idiv(op_def const& od);
         bool repair_div(op_def const& od);
+        bool repair_div_idiv(op_def const& od, num_t const& val, num_t const& v1, num_t const& v2);
         bool repair_rem(op_def const& od);
         bool repair_power(op_def const& od);
         bool repair_abs(op_def const& od);
@@ -203,6 +255,11 @@ namespace sls {
         num_t mul_value_without(var_t m, var_t x);
 
         void add_update(var_t v, num_t delta);
+        void add_update(op_def const& od, num_t const& delta);
+        void add_update_mod(op_def const& od, num_t const& delta);
+        void add_update_add(add_def const& ad, num_t const& delta);
+        void add_update_mul(mul_def const& md, num_t const& delta);
+        void add_update_idiv(op_def const& od, num_t const& delta);
         bool is_permitted_update(var_t v, num_t const& delta, num_t& delta_out);
 
 
@@ -232,20 +289,27 @@ namespace sls {
 
         bool is_mul(var_t v) const { return m_vars[v].m_op == arith_op_kind::OP_MUL; }
         bool is_add(var_t v) const { return m_vars[v].m_op == arith_op_kind::OP_ADD; }
+        bool is_op(var_t v) const { return 0 <= m_vars[v].m_op && m_vars[v].m_op < arith_op_kind::LAST_ARITH_OP && m_vars[v].m_op != arith_op_kind::OP_MUL && m_vars[v].m_op != arith_op_kind::OP_ADD; }
+        bool is_if(var_t v) const { return m.is_ite(m_vars[v].m_expr); }
         mul_def const& get_mul(var_t v) const { SASSERT(is_mul(v));  return m_muls[m_vars[v].m_def_idx]; }
         add_def const& get_add(var_t v) const { SASSERT(is_add(v));  return m_adds[m_vars[v].m_def_idx]; }
+        op_def const& get_op(var_t v) const { SASSERT(is_op(v));  return m_ops[m_vars[v].m_def_idx]; }
 
-        bool update(var_t v, num_t const& new_value);
+        bool update_checked(var_t v, num_t const& new_value);
+        void update_unchecked(var_t v, num_t const& new_value);
         bool apply_update();
         bool find_nl_moves(sat::literal lit);
         bool find_lin_moves(sat::literal lit);
         bool find_reset_moves(sat::literal lit);
         void add_reset_update(var_t v);
-        void find_linear_moves(ineq const& i, var_t x, num_t const& coeff, num_t const& sum);
+        void find_linear_moves(ineq const& i, var_t x, num_t const& coeff);
         void find_quadratic_moves(ineq const& i, var_t x, num_t const& a, num_t const& b, num_t const& sum);
         double compute_score(var_t x, num_t const& delta);
         void save_best_values();
 
+        void initialize_vars_of(sat::bool_var bv);
+        void initialize_of_bool_var(sat::bool_var bv);
+        void initialize_clauses_of(sat::bool_var bv, unsigned cl);
         var_t mk_var(expr* e);
         var_t mk_term(expr* e);
         var_t mk_op(arith_op_kind k, expr* e, expr* x, expr* y);
@@ -253,6 +317,7 @@ namespace sls {
         void add_args(linear_term& term, expr* e, num_t const& sign);
         ineq& new_ineq(ineq_kind op, num_t const& bound);
         void init_ineq(sat::bool_var bv, ineq& i);
+        void add_new_terms();
         num_t divide(var_t v, num_t const& delta, num_t const& coeff);
         num_t divide_floor(var_t v, num_t const& a, num_t const& b);
         num_t divide_ceil(var_t v, num_t const& a, num_t const& b);
@@ -263,10 +328,13 @@ namespace sls {
 
         num_t value(var_t v) const { return m_vars[v].value(); }
         bool is_num(expr* e, num_t& i);
+        num_t to_num(rational const& r);
+        void check_real(expr* e);
         expr_ref from_num(sort* s, num_t const& n);
         void check_ineqs();
         void init_bool_var(sat::bool_var bv);
         void initialize_unit(sat::literal lit);
+        void initialize_input_assertion(expr* f);
         void add_le(var_t v, num_t const& n);
         void add_ge(var_t v, num_t const& n);
         void add_lt(var_t v, num_t const& n);
@@ -274,12 +342,17 @@ namespace sls {
         std::ostream& display(std::ostream& out, var_t v) const;
         std::ostream& display(std::ostream& out, add_def const& ad) const;
         std::ostream& display(std::ostream& out, mul_def const& md) const;
+
+
+        bool can_update_num(var_t v, num_t const& delta);
+        bool update_num(var_t v, num_t const& delta);
     public:
         arith_base(context& ctx);
         ~arith_base() override {}        
         void register_term(expr* e) override;
         bool set_value(expr* e, expr* v) override;
         expr_ref get_value(expr* e) override;
+        void start_propagation() override;
         bool is_fixed(expr* e, expr_ref& value) override;
         void initialize() override;
         void propagate_literal(sat::literal lit) override;

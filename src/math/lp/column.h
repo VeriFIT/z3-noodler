@@ -36,43 +36,33 @@ inline std::ostream& operator<<(std::ostream& out, lconstraint_kind k) {
     return out << "??";
 }
 
-inline bool compare(const std::pair<mpq, lpvar> & a, const std::pair<mpq, lpvar> & b) {
-    return a.second < b.second;
-}
 class lar_term; // forward definition
 class column {
     u_dependency* m_lower_bound_witness = nullptr;
     u_dependency* m_upper_bound_witness = nullptr;
-    bool          m_associated_with_row = false;  
+    unsigned m_previous_lower = UINT_MAX;
+    unsigned m_previous_upper = UINT_MAX;
     lar_term*     m_term = nullptr;
 public:
     lar_term*  term() const { return m_term; }
  
-    u_dependency*& lower_bound_witness() { return m_lower_bound_witness; }
+    void set_lower_bound_witness(u_dependency* d) { m_lower_bound_witness = d; }
+    void set_upper_bound_witness(u_dependency* d) { m_upper_bound_witness = d; }
+
     u_dependency* lower_bound_witness() const { return m_lower_bound_witness; }
-    u_dependency*& upper_bound_witness() { return m_upper_bound_witness; }
     u_dependency* upper_bound_witness() const { return m_upper_bound_witness; }
 
-    // equality is used by stackedvector operations.
-    // this appears to be a low level reason
-    
-    bool operator!=(const column & p) const {
-        return !(*this == p);
-    }
+    unsigned previous_lower() const { return m_previous_lower; }
+    unsigned previous_upper() const { return m_previous_upper; }
 
-    bool operator==(const column & p) const {
-        return m_lower_bound_witness == p.m_lower_bound_witness
-            && m_upper_bound_witness == p.m_upper_bound_witness 
-            && m_associated_with_row == p.m_associated_with_row;
-    }
-    column()  = delete;
-    column(bool) = delete;
+    void set_previous_lower(unsigned j) { m_previous_lower = j; }
+    void set_previous_upper(unsigned j) { m_previous_upper = j; }
 
-    
-    column(bool associated_with_row, lar_term* term) :
-        m_associated_with_row(associated_with_row), m_term(term) {}
+    column() {}
 
-    bool associated_with_row() const { return m_associated_with_row; }
+    column(lar_term* term) : m_term(term) {}
+
+    bool associated_with_row() const { return m_term != nullptr; }
 };
 
 }

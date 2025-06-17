@@ -292,6 +292,9 @@ The following useful options can be passed to CMake whilst configuring.
 * ``Z3_INSTALL_JAVA_BINDINGS`` - BOOL. If set to ``TRUE`` and ``Z3_BUILD_JAVA_BINDINGS`` is ``TRUE`` then running the ``install`` target will install Z3's Java bindings.
 * ``Z3_JAVA_JAR_INSTALLDIR`` - STRING. The path to directory to install the Z3 Java ``.jar`` file. This path should be relative to ``CMAKE_INSTALL_PREFIX``.
 * ``Z3_JAVA_JNI_LIB_INSTALLDIRR`` - STRING. The path to directory to install the Z3 Java JNI bridge library. This path should be relative to ``CMAKE_INSTALL_PREFIX``.
+* ``Z3_BUILD_OCAML_BINDINGS`` - BOOL. If set to ``TRUE`` then Z3's OCaml bindings will be built.
+* ``Z3_BUILD_JULIA_BINDINGS`` - BOOL. If set to ``TRUE`` then Z3's Julia bindings will be built.
+* ``Z3_INSTALL_JULIA_BINDINGS`` - BOOL. If set to ``TRUE`` and ``Z3_BUILD_JULIA_BINDINGS`` is ``TRUE`` then running the ``install`` target will install Z3's Julia bindings.
 * ``Z3_INCLUDE_GIT_DESCRIBE`` - BOOL. If set to ``TRUE`` and the source tree of Z3 is a git repository then the output of ``git describe`` will be included in the build.
 * ``Z3_INCLUDE_GIT_HASH`` - BOOL. If set to ``TRUE`` and the source tree of Z3 is a git repository then the git hash will be included in the build.
 * ``Z3_BUILD_DOCUMENTATION`` - BOOL. If set to ``TRUE`` then documentation for the API bindings can be built by invoking the ``api_docs`` target.
@@ -311,6 +314,7 @@ The following useful options can be passed to CMake whilst configuring.
 * ``Z3_SAVE_CLANG_OPTIMIZATION_RECORDS`` - BOOL. If set to ``TRUE`` saves Clang optimization records by setting the compiler flag ``-fsave-optimization-record``.
 * ``Z3_SINGLE_THREADED`` - BOOL. If set to ``TRUE`` compiles Z3 for single threaded mode.
 * ``Z3_POLLING_TIMER`` - BOOL. If set to ``TRUE`` compiles Z3 to use polling based timer instead of requiring a thread. This is useful for wasm builds and avoids spawning threads that interfere with how WASM is run.
+* ``Z3_ADDRESS_SANITIZE`` - BOOL. If set to ``TRUE`` compiles Z3 with address sanitization enabled. 
 
 
 On the command line these can be passed to ``cmake`` using the ``-D`` option. In ``ccmake`` and ``cmake-gui`` these can be set in the user interface.
@@ -437,3 +441,16 @@ relevant `*_WARNINGS_AS_ERRORS` list defined in
 
 Additional warnings should only be added here if the warnings has no false
 positives.
+
+### Building TPTP with CMAKE
+
+
+Build instructions:
+
+1. cd z3
+2. mkdir release
+3. cd release
+4. cmake3 -DZ3_BUILD_LIBZ3_SHARED=FALSE -DCMAKE_BUILD_TYPE=RelWithDebInfo -G "Unix Makefiles" ../
+5. make
+6. make z3_tptp5
+7. cp examples/tptp_build_dir/z3_tptp5 ../../bin/z3_tptp

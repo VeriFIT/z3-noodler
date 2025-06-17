@@ -412,7 +412,7 @@ public:
         }
     }
 
-    std::string get_value(params_ref const & ps, std::string const & p) {
+    std::string get_value(params_ref const& ps, std::string const& p) {
         symbol sp(p.c_str());
         std::ostringstream buffer;
         ps.display(buffer, sp);
@@ -428,6 +428,19 @@ public:
         if (r == nullptr)
             return "default";
         return r;
+    }
+
+    void display_updated_parameters(std::ostream& out, params_ref const& p) {
+        param_descrs* d = nullptr;
+        for (auto const& [k, v] : m_module_params) {
+            if (!get_module_param_descr(k, d))
+                continue;
+            params_ref* ps = nullptr;
+            if (!m_module_params.find(k, ps))
+                continue;
+            ps->display_smt2(out, k, *d);
+            p.display_smt2(out, k, *d);
+        }
     }
 
     std::string get_value(char const * name) {
@@ -599,7 +612,7 @@ void gparams::reset() {
 }
 
 void gparams::set(char const * name, char const * value) {
-    TRACE("gparams", tout << "setting [" << name << "] <- '" << value << "'\n";);
+    TRACE(gparams, tout << "setting [" << name << "] <- '" << value << "'\n";);
     SASSERT(g_imp);
     g_imp->set(name, value);
 }
@@ -641,7 +654,7 @@ params_ref gparams::get_module(char const * module_name) {
 
 
 params_ref const& gparams::get_ref() {
-    TRACE("gparams", tout << "gparams::get_ref()\n";);
+    TRACE(gparams, tout << "gparams::get_ref()\n";);
     SASSERT(g_imp);
     return g_imp->get_ref();
 }
@@ -676,13 +689,13 @@ void gparams::display_parameter(std::ostream & out, char const * name) {
 }
 
 void gparams::init() {
-    TRACE("gparams", tout << "gparams::init()\n";);
+    TRACE(gparams, tout << "gparams::init()\n";);
     ALLOC_MUTEX(gparams_mux);
     g_imp = alloc(imp);
 }
 
 void gparams::finalize() {
-    TRACE("gparams", tout << "gparams::finalize()\n";);
+    TRACE(gparams, tout << "gparams::finalize()\n";);
     dealloc(g_imp);
     DEALLOC_MUTEX(gparams_mux);
 }
@@ -690,4 +703,8 @@ void gparams::finalize() {
 std::string& gparams::g_buffer() {
     SASSERT(g_imp);
     return g_imp->m_buffer;
+}
+
+void gparams::display_updated_parameters(std::ostream& out, params_ref const& p) {
+    g_imp->display_updated_parameters(out, p);
 }

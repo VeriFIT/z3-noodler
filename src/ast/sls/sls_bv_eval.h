@@ -20,7 +20,9 @@ Author:
 #include "ast/sls/sls_bv_valuation.h"
 #include "ast/sls/sls_bv_fixed.h"
 #include "ast/sls/sls_context.h"
+#include "ast/sls/sls_bv_lookahead.h"
 #include "ast/bv_decl_plugin.h"
+
 
  
 namespace sls {
@@ -31,6 +33,8 @@ namespace sls {
     using bvect = sls::bvect;
 
     class bv_eval {
+        friend class bv_lookahead;
+
         struct config {
             unsigned m_prob_randomize_extract = 50;
         };
@@ -40,13 +44,18 @@ namespace sls {
         ast_manager&        m;
         sls::context&       ctx;
         sls::bv_terms&      terms;
+        sls::bv_lookahead   m_lookahead;
         bv_util             bv;
         sls::bv_fixed       m_fix;
         mutable mpn_manager mpn;
         ptr_vector<expr>    m_todo;
         random_gen          m_rand;
         config              m_config;
-        bool_vector         m_fixed;
+        bool_vector         m_is_fixed;
+        unsigned            m_lookahead_steps = 0;
+        unsigned            m_lookahead_phase_size = 10;
+        mutable svector<lbool>      m_tmp_bool_values;
+        mutable svector<std::pair<unsigned, lbool>>  m_tmp_bool_value_updates;
         
 
         scoped_ptr_vector<sls::bv_valuation> m_values; // expr-id -> bv valuation
@@ -58,13 +67,6 @@ namespace sls {
 
         void init_eval_bv(app* e);
 
-        ptr_vector<expr> m_restore;
-        vector<ptr_vector<expr>> m_update_stack;
-        expr_mark m_on_restore;
-        void insert_update_stack(expr* e);
-        bool insert_update(expr* e);
-        double lookahead(expr* e, bvect const& new_value);
-        void restore_lookahead();
        
         /**
         * Register e as a bit-vector. 
@@ -73,8 +75,9 @@ namespace sls {
         void add_bit_vector(app* e);
         sls::bv_valuation* alloc_valuation(app* e);
 
-        bool bval1_bv(app* e, bool use_current) const;  
-        bool bval1_tmp(app* e) const;
+        bool bval1_bv(app* e) const;  
+        bool bval1_bool(app* e) const;
+
 
 
         void fold_oper(bvect& out, app* e, unsigned i, std::function<void(bvect&, bvval const&)> const& f);
@@ -107,6 +110,7 @@ namespace sls {
         bool try_repair_lshr1(bvect const& e, bvval const& a, bvval& b);
         bool try_repair_ashr0(bvect const& e, bvval& a, bvval const& b);
         bool try_repair_ashr1(bvect const& e, bvval const& a, bvval& b);
+        bool try_repair_sdiv(bvect const& e, bvval& a, bvval& b, unsigned i);
         bool try_repair_bit2bool(bvval& a, unsigned idx);
         bool try_repair_udiv(bvect const& e, bvval& a, bvval& b, unsigned i);
         bool try_repair_urem(bvect const& e, bvval& a, bvval& b, unsigned i);
@@ -123,9 +127,9 @@ namespace sls {
         bool try_repair_comp(bvect const& e, bvval& a, bvval& b, unsigned i);
         bool try_repair_eq(bool is_true, bvval& a, bvval const& b);
         bool try_repair_eq(app* e, unsigned i);
-        bool try_repair_eq_lookahead(app* e);
+
         bool try_repair_int2bv(bvect const& e, expr* arg);
-        void add_p2_1(bvval const& a, bool use_current, bvect& t) const;
+        void add_p2_1(bvval const& a, bvect& t) const;
 
         bool add_overflow_on_fixed(bvval const& a, bvect const& t);
         bool mul_overflow_on_fixed(bvval const& a, bvect const& t);
@@ -137,7 +141,7 @@ namespace sls {
 
         sls::bv_valuation& wval(app* e, unsigned i) { return wval(e->get_arg(i)); }
 
-        void eval(app* e, sls::bv_valuation& val) const;
+        void eval(expr* e, sls::bv_valuation& val) const;
 
         bvect const& assign_value(app* e) const { return wval(e).bits(); }
 
@@ -146,14 +150,18 @@ namespace sls {
          * Retrieve evaluation based on immediate children.
          */
 
-        bool can_eval1(app* e) const;
+        bool can_eval1(expr* e) const;
 
         void commit_eval(expr* p, app* e);
+
+        bool is_lookahead_phase();
 
     public:
         bv_eval(sls::bv_terms& terms, sls::context& ctx);
 
         void init() { m_fix.init(); }
+
+        void start_propagation();
 
         void register_term(expr* e);
 
@@ -167,8 +175,10 @@ namespace sls {
 
         void set(expr* e, sls::bv_valuation const& val);
 
-        bool is_fixed0(expr* e) const { return m_fixed.get(e->get_id(), false); }
+        bool is_fixed0(expr* e) const { return m_is_fixed.get(e->get_id(), false); }
         
+        // control whether if-then-else is eavaluated based on SAT solver or temporary values.
+        bool m_use_tmp_bool_value = false;
         sls::bv_valuation& eval(app* e) const;
 
         void set_random(app* e);
@@ -180,7 +190,14 @@ namespace sls {
         expr_ref get_value(app* e);
 
         bool bval0(expr* e) const { return ctx.is_true(e); }
-        bool bval1(app* e) const;
+        bool bval1(expr* e) const;
+
+        unsigned bool_value_restore_point() const { return m_tmp_bool_value_updates.size(); }
+        void set_bool_value_log(expr* e, bool val);
+        void set_bool_value_no_log(expr* e, bool val);
+        void restore_bool_values(unsigned restore_point);
+        void commit_bool_values() { m_tmp_bool_value_updates.reset(); }
+        bool get_bool_value(expr* e) const;
       
         /*
          * Try to invert value of child to repair value assignment of parent.
@@ -193,6 +210,7 @@ namespace sls {
         */
         bool repair_up(expr* e);
 
+        void collect_statistics(statistics& st) const;
 
         std::ostream& display(std::ostream& out) const;
 

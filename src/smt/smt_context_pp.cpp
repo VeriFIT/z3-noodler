@@ -456,6 +456,7 @@ namespace smt {
             literal2expr(~consequent, n);
             fmls.push_back(std::move(n));
         }
+
         if (logic != symbol::null) out << "(set-logic " << logic << ")\n";
         visitor.collect(fmls);
         visitor.display_decls(out);
@@ -467,7 +468,7 @@ namespace smt {
     unsigned context::display_lemma_as_smt_problem(unsigned num_antecedents, literal const * antecedents, literal consequent, symbol const& logic) const {
         std::string name = mk_lemma_name();
         std::ofstream out(name);
-        TRACE("lemma", tout << name << "\n";);
+        TRACE(lemma, tout << name << "\n";);
         display_lemma_as_smt_problem(out, num_antecedents, antecedents, consequent, logic);
         out.close();
         return m_lemma_id;
@@ -475,7 +476,7 @@ namespace smt {
 
     void context::display_lemma_as_smt_problem(std::ostream & out, unsigned num_antecedents, literal const * antecedents,
                                                unsigned num_eq_antecedents, enode_pair const * eq_antecedents,
-                                               literal consequent, symbol const& logic) const {
+                                               literal consequent, symbol const& logic, enode* x, enode* y) const {
         ast_pp_util visitor(m);
         expr_ref_vector fmls(m);
         visitor.collect(fmls);
@@ -489,6 +490,10 @@ namespace smt {
             enode_pair const & p = eq_antecedents[i];
             n = m.mk_eq(p.first->get_expr(), p.second->get_expr());
             fmls.push_back(n);
+        }
+        if (x && y) {
+            expr_ref eq(m.mk_eq(x->get_expr(), y->get_expr()), m);
+            fmls.push_back(m.mk_not(eq));
         }
         if (consequent != false_literal) {
             literal2expr(~consequent, n);
@@ -519,7 +524,7 @@ namespace smt {
                                                literal consequent, symbol const& logic) const {
         std::string name = mk_lemma_name();
         std::ofstream out(name);
-        TRACE("lemma", tout << name << "\n";
+        TRACE(lemma, tout << name << "\n";
               display_lemma_as_smt_problem(tout, num_antecedents, antecedents, num_eq_antecedents, eq_antecedents, consequent, logic);
               );
         display_lemma_as_smt_problem(out, num_antecedents, antecedents, num_eq_antecedents, eq_antecedents, consequent, logic);

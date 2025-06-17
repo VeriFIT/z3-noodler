@@ -136,7 +136,7 @@ namespace sls {
 
     void datatype_plugin::add_edge(expr* child, expr* parent, expr* cond) {
         m_parents.insert_if_not_there(child, vector<parent_t>()).push_back({parent, expr_ref(cond, m)});
-        TRACE("dt", tout << mk_bounded_pp(child, m) << " <- " << mk_bounded_pp(parent, m) << " " << mk_bounded_pp(cond, m) << "\n");
+        TRACE(dt, tout << mk_bounded_pp(child, m) << " <- " << mk_bounded_pp(parent, m) << " " << mk_bounded_pp(cond, m) << "\n");
     }
 
     void datatype_plugin::add_path_axioms() {
@@ -164,7 +164,7 @@ namespace sls {
             }
             if (children[0]->get_sort() == parent->get_sort()) {
                 lits.push_back(~ctx.mk_literal(m.mk_eq(children[0], parent)));
-                TRACE("dt", for (auto lit : lits) tout << (lit.sign() ? "~": "") << mk_pp(ctx.atom(lit.var()), m) << "\n";);
+                TRACE(dt, for (auto lit : lits) tout << (lit.sign() ? "~": "") << mk_pp(ctx.atom(lit.var()), m) << "\n";);
                 ctx.add_clause(lits);
                 lits.pop_back();
             }
@@ -179,6 +179,15 @@ namespace sls {
                 lits.pop_back();
         }
     }
+
+    // collect datatypes sorts
+    // for each constructor term c(t) add axioms:
+    //  is-c(c(t))
+    //  sel_i(c(..t_i..)) = t_i
+    //  not is-c'(c(t)) for c' != c
+    // for each term t of datatype sort
+    //  or_i is-c_i(t)
+    //  is_c_i(t) <=> t = c_i(acc_1(t)..acc_n(t))
 
     void datatype_plugin::add_axioms() {
         expr_ref_vector axioms(m);
@@ -251,7 +260,7 @@ namespace sls {
         }
         //collect_path_axioms();
 
-        TRACE("dt", for (auto a : m_axioms) tout << mk_pp(a, m) << "\n";);
+        TRACE(dt, for (auto a : m_axioms) tout << mk_pp(a, m) << "\n";);
 
         for (auto a : m_axioms)
             ctx.add_constraint(a);
@@ -265,9 +274,18 @@ namespace sls {
     }
 
     expr_ref datatype_plugin::get_value(expr* e) {
-        if (!dt.is_datatype(e))
+        if (!dt.is_datatype(e) || !g)
             return expr_ref(m);
         if (m_axiomatic_mode) {
+
+            init_values();
+            TRACE(dt, tout << "get value " << mk_bounded_pp(e, m) << " " << m_values.size() << " " << g->find(e)->get_root_id() << "\n";);
+            for (auto n : euf::enode_class(g->find(e))) {
+                auto id = n->get_id();
+                if (m_values.get(id, nullptr))
+                    return expr_ref(m_values.get(id), m);
+            }
+            m_values.reset();
             init_values();
             return expr_ref(m_values.get(g->find(e)->get_root_id()), m);
         }
@@ -277,7 +295,7 @@ namespace sls {
     void datatype_plugin::init_values() {
         if (!m_values.empty())
             return;
-        TRACE("dt", g->display(tout));
+        TRACE(dt, g->display(tout));
         m_model = alloc(model, m);
         // retrieve e-graph from sls_euf_solver: add bridge in sls_context to share e-graph
         SASSERT(g);
@@ -292,6 +310,7 @@ namespace sls {
                 out << g->bpp(sib) << " ";
             out << " <- " << mk_bounded_pp(m_values.get(n->get_id()), m) << "\n";
         };
+        (void)trace_assignment;
         deps.topological_sort();
         expr_ref_vector args(m);
         euf::enode_vector leaves, worklist;
@@ -316,7 +335,7 @@ namespace sls {
             bool has_null = false;
             for (auto arg : euf::enode_args(con)) {
                 if (dt.is_datatype(arg->get_sort())) {
-                    auto val_arg = m_values.get(arg->get_root_id());
+                    auto val_arg = m_values.get(arg->get_root_id(), nullptr);
                     if (!val_arg)
                         has_null = true;
                     leaf2root.insert_if_not_there(arg->get_root(), euf::enode_vector()).push_back(n);
@@ -328,11 +347,11 @@ namespace sls {
             if (!has_null) {                
                 m_values.setx(id, m.mk_app(f, args));
                 m_model->register_value(m_values.get(id));
-                TRACE("dt", tout << "Set interpretation "; trace_assignment(tout, n););
+                TRACE(dt, tout << "Set interpretation "; trace_assignment(tout, n););
             }
         }
 
-        TRACE("dt",
+        TRACE(dt,
             for (euf::enode* n : deps.top_sorted()) {
                 tout << g->bpp(n) << ": ";
                 tout << g->bpp(get_constructor(n)) << " :: ";
@@ -375,7 +394,7 @@ namespace sls {
                 worklist.push_back(p);
                 SASSERT(all_of(args, [&](expr* e) { return e != nullptr; }));
                 m_values.setx(p->get_id(), m.mk_app(f, args));
-                TRACE("dt", tout << "Patched interpretation "; trace_assignment(tout, p););
+                TRACE(dt, tout << "Patched interpretation "; trace_assignment(tout, p););
                 m_model->register_value(m_values.get(p->get_id()));
             }
             return all_processed;
@@ -401,7 +420,7 @@ namespace sls {
             SASSERT(v);
             unsigned id = n->get_id();
             m_values.setx(id, v);
-            TRACE("dt", tout << "Fresh interpretation "; trace_assignment(tout, n););
+            TRACE(dt, tout << "Fresh interpretation "; trace_assignment(tout, n););
             worklist.reset();
             worklist.push_back(n);
             while (process_worklist(worklist))
@@ -413,7 +432,7 @@ namespace sls {
         if (!dt.is_datatype(n->get_expr()))
             return;
         euf::enode* con = get_constructor(n);
-        TRACE("dt", tout << g->bpp(n) << " con: " << g->bpp(con) << "\n";);
+        TRACE(dt, tout << g->bpp(n) << " con: " << g->bpp(con) << "\n";);
         if (!con)
             dep.insert(n, nullptr);
         else if (con->num_args() == 0)
@@ -561,6 +580,21 @@ namespace sls {
         return false; 
     }
 
+    bool datatype_plugin::check_ackerman(func_decl* f) const {
+        if (dt.is_accessor(f))
+            return true;
+        if (dt.is_constructor(f)) {
+            for (unsigned i = 0; i < f->get_arity(); ++i) {
+                if (f->get_range() != f->get_domain(i))
+                    return true;
+            }
+            return false;
+        }
+        if (dt.is_is(f))
+            return false;
+        return true;
+    }
+
     std::ostream& datatype_plugin::display(std::ostream& out) const {
         for (auto a : m_axioms)
             out << mk_bounded_pp(a, m, 3) << "\n";
@@ -672,9 +706,9 @@ namespace sls {
         }
         for (unsigned j = 0; j < accs.size(); ++j) {
             if (i == j)
-                args[i] = v0;
+                args.push_back(v0);
             else
-                args[j] = m_model->get_some_value(accs[j]->get_range());
+                args.push_back(m_model->get_some_value(accs[j]->get_range()));
         }
         expr* new_val_t = m.mk_app(c, args);
         set_eval0(t, new_val_t);
@@ -740,6 +774,7 @@ namespace sls {
             if (coin <= 3) {
                 set_eval0(t, vs);
                 ctx.new_value_eh(t);
+                return;
             }
             if (true) {
                 auto new_v = m_model->get_some_value(s->get_sort());
@@ -870,16 +905,19 @@ namespace sls {
         if (!is_app(e) || to_app(e)->get_family_id() != m_fid)
             return ctx.get_value(e);
         auto w = eval1(e);
-        m_eval.set(e->get_id(), w);
+        m_eval.setx(e->get_id(), w);
         return w;
     }
 
     expr_ref datatype_plugin::eval_accessor(func_decl* f, expr* t) {
         auto& t2val = m_eval_accessor[f];
         if (!t2val.contains(t)) {
+            if (!m_model)
+                m_model = alloc(model, m);
             auto val = m_model->get_some_value(f->get_range());
             m.inc_ref(t);
             m.inc_ref(val);
+            t2val.insert(t, val);
         }
         return expr_ref(t2val[t], m);
     }
@@ -906,7 +944,7 @@ namespace sls {
         for (expr* b : m_occurs[f]) {
             if (b == e)
                 continue;
-            expr* a;
+            expr* a = nullptr;
             VERIFY(dt.is_accessor(b, a));
             auto v_a = eval0(a);
             if (v_a.get() == t) {
@@ -937,7 +975,7 @@ namespace sls {
 
     void datatype_plugin::set_eval0(expr* e, expr* value) {
         if (dt.is_datatype(e->get_sort()))
-            m_eval[e->get_id()] = value;
+            m_eval.setx(e->get_id(), value);
         else
             ctx.set_value(e, value);
     }

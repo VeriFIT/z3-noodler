@@ -126,6 +126,9 @@ public:
         init(vars, fml, mdl);
         // Apply MBP rules till saturation
 
+        TRACE(mbp_tg,
+            tout << "mbp tg " << m_tg.get_lits() << "\nand vars " << vars << "\n";);
+
         // First, apply rules without splitting on model
         saturate(vars);
 
@@ -134,19 +137,16 @@ public:
         // Do complete mbp
         saturate(vars);
 
-        TRACE("mbp_tg",
-              tout << "mbp tg " << m_tg.get_lits() << " and vars " << vars;);
-        TRACE("mbp_tg_verbose", obj_hashtable<app> vars_tmp;
+        TRACE(mbp_tg,
+              tout << "mbp tg " << m_tg.get_lits() << " and vars " << vars << "\n";);
+        TRACE(mbp_tg_verbose, obj_hashtable<app> vars_tmp;
               collect_uninterp_consts(mk_and(m_tg.get_lits()), vars_tmp);
-              for (auto a
-                   : vars_tmp) tout
-              << mk_pp(a->get_decl(), m) << "\n";
-              for (auto b
-                   : m_tg.get_lits()) tout
-              << expr_ref(b, m) << "\n";
-              for (auto a
-                   : vars) tout
-              << expr_ref(a, m) << " ";);
+              for (auto a : vars_tmp) 
+                  tout << mk_pp(a->get_decl(), m) << "\n";
+              for (auto b : m_tg.get_lits()) 
+                  tout << expr_ref(b, m) << "\n";
+              for (auto a : vars) tout << expr_ref(a, m) << " ";
+              tout << "\n");
 
         // 1. Apply qe_lite to remove all c-ground variables
         // 2. Collect all core variables in the output (variables used as array
@@ -171,18 +171,16 @@ public:
         };
         expr_sparse_mark red_vars;
         for (auto v : vars)
-            if (is_red(v)) red_vars.mark(v);
-        CTRACE("mbp_tg", !core_vars.empty(), tout << "vars not redundant ";
-               for (auto v
-                    : core_vars) tout
-               << " " << app_ref(v, m);
+            if (is_red(v)) 
+                red_vars.mark(v);
+        CTRACE(mbp_tg, !core_vars.empty(), tout << "vars not redundant ";
+               for (auto v : core_vars) tout << " " << app_ref(v, m);
                tout << "\n";);
 
         std::function<bool(expr *)> non_core = [&](expr *e) {
-            if (is_app(e) && is_partial_eq(to_app(e)))
+            if (is_partial_eq(e))
                 return true;
-            if (m.is_ite(e) || m.is_or(e) || m.is_implies(e) ||
-                m.is_distinct(e))
+            if (m.is_ite(e) || m.is_or(e) || m.is_implies(e) || m.is_distinct(e))
                 return true;
             return red_vars.is_marked(e);
         };
@@ -190,14 +188,14 @@ public:
         // Step 3.
         m_tg.qel(vars, fml, &non_core);
 
-        CTRACE("mbp_tg", !vars.empty(),
+        CTRACE(mbp_tg, !vars.empty(),
                tout << "before substitution " << fml << "\n";);
         // for all remaining non-cgr bool, dt, array variables, add v = mdl(v)
         expr_sparse_mark s_vars;
         for (auto v : vars) {
             if (m_dt_util.is_datatype(v->get_sort()) ||
                 m_array_util.is_array(v) || m.is_bool(v)) {
-                CTRACE("mbp_tg",
+                CTRACE(mbp_tg,
                        m_array_util.is_array(v) ||
                            m_dt_util.is_datatype(v->get_sort()),
                        tout << "Could not eliminate  " << v->get_name()
@@ -209,7 +207,7 @@ public:
 
         std::function<bool(expr *)> substituted = [&](expr *e) {
             return
-                (is_app(e) && is_partial_eq(to_app(e))) ||
+                is_partial_eq(e) ||
                 m.is_ite(e) ||
                 red_vars.is_marked(e) ||
                 s_vars.is_marked(e);

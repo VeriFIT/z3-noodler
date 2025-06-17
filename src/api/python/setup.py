@@ -88,6 +88,11 @@ else:
     LIBRARY_FILE = "libz3.so"
     EXECUTABLE_FILE = "z3"
 
+# check if cmake is available, and pull it in via PyPI if necessary
+SETUP_REQUIRES = []
+if not shutil.which("cmake"):
+    SETUP_REQUIRES += ["cmake"]
+
 def rmtree(tree):
     if os.path.exists(tree):
         shutil.rmtree(tree, ignore_errors=False)
@@ -240,6 +245,7 @@ def _copy_sources():
     shutil.rmtree(SRC_DIR_LOCAL, ignore_errors=True)
     os.mkdir(SRC_DIR_LOCAL)
 
+#   shutil.copy(os.path.join(SRC_DIR_REPO, 'LICENSE.txt'), ROOT_DIR)
     shutil.copy(os.path.join(SRC_DIR_REPO, 'LICENSE.txt'), SRC_DIR_LOCAL)
     shutil.copy(os.path.join(SRC_DIR_REPO, 'z3.pc.cmake.in'), SRC_DIR_LOCAL)
     shutil.copy(os.path.join(SRC_DIR_REPO, 'CMakeLists.txt'), SRC_DIR_LOCAL)
@@ -298,6 +304,7 @@ class bdist_wheel(_bdist_wheel):
                 # linux tags cannot be deployed - they must be auditwheel'd to pick the right compatibility tag based on imported libc symbol versions
                 ("linux", "x86_64"): "linux_x86_64",
                 ("linux", "aarch64"): "linux_aarch64",
+                ('linux', "riscv64"): "linux_riscv64",
                 # windows arm64 is not supported by pypi yet
                 ("win", "x64"): "win_amd64",
                 ("win", "x86"): "win32",
@@ -327,6 +334,7 @@ setup(
     license='MIT License',
     keywords=['z3', 'smt', 'sat', 'prover', 'theorem'],
     packages=['z3'],
+    setup_requires = SETUP_REQUIRES,
     install_requires = ["importlib-resources; python_version < '3.9'"],
     include_package_data=True,
     package_data={

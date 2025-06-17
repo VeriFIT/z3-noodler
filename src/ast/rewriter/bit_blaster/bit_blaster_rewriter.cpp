@@ -379,7 +379,7 @@ MK_PARAMETRIC_UNARY_REDUCE(reduce_sign_extend, mk_sign_extend);
 
     br_status reduce_app(func_decl * f, unsigned num, expr * const * args, expr_ref & result, proof_ref & result_pr) {
         result_pr = nullptr;
-        TRACE("bit_blaster", tout << f->get_name() << " ";
+        TRACE(bit_blaster, tout << f->get_name() << " ";
               for (unsigned i = 0; i < num; ++i) tout << mk_pp(args[i], m()) << " ";
               tout << "\n";);
         if (num == 0 && f->get_family_id() == null_family_id && butil().is_bv_sort(f->get_range())) {
@@ -548,10 +548,11 @@ MK_PARAMETRIC_UNARY_REDUCE(reduce_sign_extend, mk_sign_extend);
             case OP_BIT2BOOL:
             case OP_MKBV:
             case OP_INT2BV:
-            case OP_BV2INT:
+            case OP_UBV2INT:
+            case OP_SBV2INT:
                 return BR_FAILED;
             default:                
-                TRACE("bit_blaster", tout << "non-supported operator: " << f->get_name() << "\n";
+                TRACE(bit_blaster, tout << "non-supported operator: " << f->get_name() << "\n";
                       for (unsigned i = 0; i < num; i++) tout << mk_ismt2_pp(args[i], m()) << std::endl;);
                 {
                     expr_ref r(m().mk_app(f, num, args), m());

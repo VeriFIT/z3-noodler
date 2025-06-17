@@ -36,7 +36,6 @@ z3_add_component(sat_smt
     q_clause.cpp
     q_ematch.cpp
     q_eval.cpp
-    q_mam.cpp
     q_mbi.cpp
     q_model_fixer.cpp
     q_theory_checker.cpp
@@ -53,6 +52,6 @@ z3_add_component(sat_smt
     ast
     euf
     mbp
-    smt_params
+    params
 )
 

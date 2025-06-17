@@ -3,12 +3,15 @@ z3_add_component(ast_sls
     bvsls_opt_engine.cpp
     sat_ddfw.cpp
     sls_arith_base.cpp
+    sls_arith_clausal.cpp
+    sls_arith_lookahead.cpp
     sls_arith_plugin.cpp
     sls_array_plugin.cpp
     sls_basic_plugin.cpp
     sls_bv_engine.cpp
     sls_bv_eval.cpp
     sls_bv_fixed.cpp
+    sls_bv_lookahead.cpp
     sls_bv_plugin.cpp
     sls_bv_terms.cpp
     sls_bv_valuation.cpp
@@ -23,4 +26,5 @@ z3_add_component(ast_sls
     euf
     converters
     normal_forms
+    params
 )

@@ -1,7 +1,6 @@
 # 
 # Copyright (c) 2018 Microsoft Corporation
 #
-
 # 1. copy over dlls
 # 2. copy over libz3.dll for the different architectures
 # 3. copy over Microsoft.Z3.dll from suitable distribution
@@ -75,18 +74,26 @@ def unpack(packages, symbols, arch):
                 if symbols:
                     zip_ref.extract(f"{package_dir}/bin/libz3.pdb", f"{tmp}")
                     replace(f"{tmp}/{package_dir}/bin/libz3.pdb", f"out/runtimes/{dst}/native/libz3.pdb") 
-                files = ["Microsoft.Z3.dll"]                
-                if symbols:
-                    files += ["Microsoft.Z3.pdb", "Microsoft.Z3.xml"]
+                files = ["Microsoft.Z3.dll", "Microsoft.Z3.pdb", "Microsoft.Z3.xml"]                
                 for b in files:
-                    file = f"{package_dir}/bin/{b}"
-                    if os.path.exists(file):
-                        zip_ref.extract(file, f"{tmp}")
-                        replace(f"{tmp}/{package_dir}/bin/{b}", f"out/lib/netstandard2.0/{b}")
-                    file = os.path.join(file,"netstandard2.0")
-                    if os.path.exists(file):
-                        zip_ref.extract(file, f"{tmp}")
-                        replace(f"{tmp}/{package_dir}/bin/netstandard2.0/{b}", f"out/lib/netstandard2.0/{b}")
+                    file1 = f"{package_dir}/bin/{b}"
+                    file2 = f"{package_dir}/bin/netstandard2.0/{b}"
+                    found_path = False
+                    # check that file1 exists in zip_ref:
+                    try:
+                        zip_ref.extract(file1, f"{tmp}")
+                        replace(f"{tmp}/{file1}", f"out/lib/netstandard2.0/{b}")
+                        found_path = True
+                    except:
+                        pass
+                    try:
+                        zip_ref.extract(file2, f"{tmp}")
+                        replace(f"{tmp}/{file2}", f"out/lib/netstandard2.0/{b}")
+                        found_path = True
+                    except:
+                        pass
+                    if not found_path:
+                        print(f"Could not find file path {file1} nor {file2}")
 
 
 def mk_targets(source_root):

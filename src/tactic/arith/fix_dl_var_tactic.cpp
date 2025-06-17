@@ -46,7 +46,7 @@ class fix_dl_var_tactic : public tactic {
         }
         
         void throw_failed(expr * ctx1, expr * ctx2 = nullptr) {
-            TRACE("fix_dl_var", tout << mk_ismt2_pp(ctx1, m) << "\n"; if (ctx2) tout << mk_ismt2_pp(ctx2, m) << "\n";);
+            TRACE(fix_dl_var, tout << mk_ismt2_pp(ctx1, m) << "\n"; if (ctx2) tout << mk_ismt2_pp(ctx2, m) << "\n";);
             throw failed();
         }
         
@@ -104,7 +104,7 @@ class fix_dl_var_tactic : public tactic {
                 visit(s, nested);
             }
             else {
-                CTRACE("fix_dl_var", m_util.is_add(lhs, t, ms),
+                CTRACE(fix_dl_var, m_util.is_add(lhs, t, ms),
                        s = 0;
                        tout << "is_times_minus_one: " << m_util.is_times_minus_one(ms, s) << "\n";
                        tout << "is_uninterp(t):     " << is_uninterp(t) << "\n";
@@ -197,7 +197,7 @@ class fix_dl_var_tactic : public tactic {
             app * r1, * r2;
             r1 = most_occs(m_non_nested_occs, best1);
             r2 = most_occs(m_occs, best2);
-            TRACE("fix_dl_var", 
+            TRACE(fix_dl_var, 
                   if (r1) {
                       tout << "r1 occs: " << best1 << "\n";
                       tout << mk_ismt2_pp(r1, m) << "\n";
@@ -216,10 +216,8 @@ class fix_dl_var_tactic : public tactic {
             try {
                 expr_fast_mark1 visited;
                 flet<expr_fast_mark1*> _visited(m_visited, &visited);
-                unsigned sz = g.size();
-                for (unsigned i = 0; i < sz; i++) {
-                    process(g.form(i));
-                }
+                for (auto [f, d, p] : g)
+                    process(f);
                 return most_occs();
             }
             catch (const failed &) {
@@ -247,9 +245,8 @@ class fix_dl_var_tactic : public tactic {
         void operator()(goal_ref const & g, 
                         goal_ref_buffer & result) {
             tactic_report report("fix-dl-var", *g);
-            bool produce_proofs = g->proofs_enabled();
             m_produce_models    = g->models_enabled();
-            TRACE("fix_dl_var", g->display(tout););
+            TRACE(fix_dl_var, g->display(tout););
 
             app * var = is_target(u)(*g);
             if (var != nullptr) {
@@ -268,15 +265,13 @@ class fix_dl_var_tactic : public tactic {
                 
                 expr_ref   new_curr(m);
                 proof_ref  new_pr(m);
-                unsigned size = g->size();
-                for (unsigned idx = 0; !g->inconsistent() && idx < size; idx++) {
-                    expr * curr = g->form(idx);
+                unsigned idx = 0;
+                for (auto [curr, d, p] : *g) {
+                    if (g->inconsistent())
+                        break;
                     m_rw(curr, new_curr, new_pr);
-                    if (produce_proofs) {
-                        proof * pr = g->pr(idx);
-                        new_pr     = m.mk_modus_ponens(pr, new_pr);
-                    }
-                    g->update(idx, new_curr, new_pr, g->dep(idx));
+                    new_pr = m.mk_modus_ponens(p, new_pr);
+                    g->update(idx++, new_curr, new_pr, d);
                 }
                 g->inc_depth();
             }

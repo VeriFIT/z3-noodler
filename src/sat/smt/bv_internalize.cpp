@@ -90,7 +90,7 @@ namespace bv {
         m_wpos.push_back(0);
         m_zero_one_bits.push_back(zero_one_bits());       
         ctx.attach_th_var(n, this, r);        
-        TRACE("bv", tout << "mk-var: v" << r << " " << n->get_expr_id() << " " << mk_bounded_pp(n->get_expr(), m) << "\n";);
+        TRACE(bv, tout << "mk-var: v" << r << " " << n->get_expr_id() << " " << mk_bounded_pp(n->get_expr(), m) << "\n";);
         return r;
     }
 
@@ -139,7 +139,7 @@ namespace bv {
         SASSERT(!n || !n->is_attached_to(get_id()));
         bool suppress_args = !reflect() 
             && !m.is_considered_uninterpreted(a->get_decl())
-            && !bv.is_int2bv(e) && !bv.is_bv2int(e);
+            && !bv.is_int2bv(e) && !bv.is_ubv2int(e);
         if (!n)
             n = mk_enode(e, suppress_args);
 
@@ -219,7 +219,8 @@ namespace bv {
         case OP_REPEAT:           internalize_repeat(a); break;
         case OP_MKBV:             internalize_mkbv(a); break;
         case OP_INT2BV:           internalize_int2bv(a); break;
-        case OP_BV2INT:           internalize_bv2int(a); break;
+        case OP_UBV2INT:          internalize_bv2int(a); break;
+        case OP_SBV2INT:          throw default_exception("sbv_to_int is not handled. Pre-processing should have removed it");
         case OP_BUDIV:            internalize_int(bv.mk_bv_udiv_i, bv.mk_bv_udiv0); break;
         case OP_BSDIV:            internalize_int(bv.mk_bv_sdiv_i, bv.mk_bv_sdiv0); break;
         case OP_BSREM:            internalize_int(bv.mk_bv_srem_i, bv.mk_bv_srem0); break;
@@ -239,7 +240,7 @@ namespace bv {
     }
 
     void solver::mk_bits(theory_var v) {
-        TRACE("bv", tout << "v" << v << "@" << s().scope_lvl() << "\n";);
+        TRACE(bv, tout << "v" << v << "@" << s().scope_lvl() << "\n";);
         expr* e = var2expr(v);
         unsigned bv_size = get_bv_size(v);
         m_bits[v].reset();
@@ -247,7 +248,7 @@ namespace bv {
             expr_ref b2b(bv.mk_bit2bool(e, i), m);
             m_bits[v].push_back(sat::null_literal);
             sat::literal lit = ctx.internalize(b2b, false, false);
-            TRACE("bv", tout << "add-bit: " << lit << " " << literal2expr(lit) << "\n";);
+            TRACE(bv, tout << "add-bit: " << lit << " " << literal2expr(lit) << "\n";);
             if (m_bits[v].back() == sat::null_literal)
                 m_bits[v].back() = lit;
             SASSERT(m_bits[v].back() == lit);
@@ -292,7 +293,7 @@ namespace bv {
         SASSERT(l == mk_true() || ~l == mk_true());
         bool is_true = l == mk_true();
         zero_one_bits& bits = m_zero_one_bits[v];
-        TRACE("bv", tout << "register v" << v << " " << l << " " << mk_true() << "\n";);
+        TRACE(bv, tout << "register v" << v << " " << l << " " << mk_true() << "\n";);
         bits.push_back(zero_one_bit(v, idx, is_true));
     }
 
@@ -302,7 +303,7 @@ namespace bv {
     void solver::add_bit(theory_var v, literal l) {
         unsigned idx = m_bits[v].size();
         m_bits[v].push_back(l);
-        TRACE("bv", tout << "add-bit: v" << v << "[" << idx << "] " << l << " " << literal2expr(l) << "@" << s().scope_lvl() << "\n";);
+        TRACE(bv, tout << "add-bit: v" << v << "[" << idx << "] " << l << " " << literal2expr(l) << "@" << s().scope_lvl() << "\n";);
         SASSERT(m_num_scopes == 0);
         s().set_external(l.var());
         euf::enode* n = bool_var2enode(l.var());
@@ -345,7 +346,7 @@ namespace bv {
             unsigned i = 0;
             for (expr* bit : bits) {
                 sat::literal lit = ctx.internalize(bit, false, false);
-                TRACE("bv", tout << "set " << m_bits[v][i] << " == " << lit << "\n";);
+                TRACE(bv, tout << "set " << m_bits[v][i] << " == " << lit << "\n";);
                 add_clause(~lit, m_bits[v][i]);
                 add_clause(lit, ~m_bits[v][i]);
                 ++i;
@@ -415,7 +416,7 @@ namespace bv {
 
     void solver::assert_bv2int_axiom(app* n) {
         expr* k = nullptr;        
-        VERIFY(bv.is_bv2int(n, k));
+        VERIFY(bv.is_ubv2int(n, k));
         SASSERT(bv.is_bv_sort(k->get_sort()));
         expr_ref_vector k_bits(m);
         euf::enode* k_enode = expr2enode(k);
@@ -461,7 +462,7 @@ namespace bv {
         VERIFY(bv.is_int2bv(n, e));      
         euf::enode* n_enode = expr2enode(n);
         expr_ref lhs(m), rhs(m);
-        lhs = bv.mk_bv2int(n);
+        lhs = bv.mk_ubv2int(n);
         unsigned sz = bv.get_bv_size(n);
         numeral mod = power(numeral(2), sz);
         rhs = m_autil.mk_mod(e, m_autil.mk_int(mod));
@@ -588,7 +589,7 @@ namespace bv {
             bits.swap(new_bits);
         }        
         init_bits(e, bits);
-        TRACE("bv_verbose", tout << arg_bits << " " << bits << " " << new_bits << "\n";);
+        TRACE(bv_verbose, tout << arg_bits << " " << bits << " " << new_bits << "\n";);
     }
 
     void solver::internalize_novfl(app* n, std::function<void(unsigned, expr* const*, expr* const*, expr_ref&)>& fn) {
@@ -674,7 +675,7 @@ namespace bv {
         sat::literal lit0 = m_bits[v_arg][idx];
         if (lit0 == sat::null_literal) {
             m_bits[v_arg][idx] = lit;
-            TRACE("bv", tout << "add-bit: " << lit << " " << literal2expr(lit) << "\n";);
+            TRACE(bv, tout << "add-bit: " << lit << " " << literal2expr(lit) << "\n";);
             atom* a = new (get_region()) atom(lit.var());
             a->m_occs = new (get_region()) var_pos_occ(v_arg, idx);
             insert_bv2a(lit.var(), a);
@@ -759,7 +760,7 @@ namespace bv {
         expr_ref oe = mk_var_eq(v1, v2);
         literal oeq = ctx.internalize(oe, false, false);
         unsigned sz = m_bits[v1].size();
-        TRACE("bv", tout << "ackerman-eq: " << s().scope_lvl() << " " << oe << "\n";);
+        TRACE(bv, tout << "ackerman-eq: " << s().scope_lvl() << " " << oe << "\n";);
         literal_vector eqs;
         eqs.push_back(oeq);
         for (unsigned i = 0; i < sz; ++i) {
@@ -770,7 +771,7 @@ namespace bv {
             add_clause(eq, ~oeq);
             eqs.push_back(~eq);
         }
-        TRACE("bv", for (auto l : eqs) tout << mk_bounded_pp(literal2expr(l), m) << " "; tout << "\n";);
+        TRACE(bv, for (auto l : eqs) tout << mk_bounded_pp(literal2expr(l), m) << " "; tout << "\n";);
         euf::th_proof_hint* ph = ctx.mk_smt_clause(name(), eqs.size(), eqs.data());
         s().mk_clause(eqs, sat::status::th(true, m.get_basic_family_id(), ph));
     }

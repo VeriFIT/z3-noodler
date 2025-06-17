@@ -58,7 +58,7 @@ void expr_abstractor::operator()(unsigned base, unsigned num_bound, expr* const*
             bool changed = false;
             m_args.reset();
             for (unsigned i = 0, e = a->get_num_args(); i < e; ++i) {
-                if (!m_map.find(a->get_arg(i), b)) {
+                if (!all_visited || !m_map.find(a->get_arg(i), b)) {
                     m_stack.push_back(a->get_arg(i));
                     all_visited = false;
                 }
@@ -111,7 +111,7 @@ void expr_abstractor::operator()(unsigned base, unsigned num_bound, expr* const*
 void expr_abstract(ast_manager& m, unsigned base, unsigned num_bound, expr* const* bound, expr* n, expr_ref&  result) {
     expr_abstractor abs(m);
     abs(base, num_bound, bound, n, result);
-    TRACE("expr_abstract",
+    TRACE(expr_abstract,
           tout << expr_ref(n, m) << "\n";
           tout << result << "\n";);
 }
@@ -128,7 +128,7 @@ static expr_ref mk_quantifier(quantifier_kind k, ast_manager& m, unsigned num_bo
         }
         result = m.mk_quantifier(k, num_bound, sorts.data(), names.data(), result);
     }
-    TRACE("expr_abstract",
+    TRACE(expr_abstract,
           tout << expr_ref(n, m) << "\n";
           for (unsigned i = 0; i < num_bound; ++i) tout << expr_ref(bound[i], m) << " ";
           tout << "\n";

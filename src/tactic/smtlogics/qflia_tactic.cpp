@@ -26,6 +26,7 @@ Notes:
 #include "tactic/arith/add_bounds_tactic.h"
 #include "tactic/arith/pb2bv_tactic.h"
 #include "tactic/arith/lia2pb_tactic.h"
+#include "tactic/arith/lia2card_tactic.h"
 #include "tactic/core/ctx_simplify_tactic.h"
 #include "tactic/bv/bit_blaster_tactic.h"
 #include "tactic/bv/max_bv_sharing_tactic.h"
@@ -191,6 +192,11 @@ tactic * mk_preamble_tactic(ast_manager& m) {
     ctx_simp_p.set_uint("max_depth", 30);
     ctx_simp_p.set_uint("max_steps", 5000000);
 
+    // only binary integer variables are converted to PB
+    params_ref lia2card_p;
+    lia2card_p.set_uint("lia2card.max_range", 1);
+    lia2card_p.set_uint("lia2card.max_ite_nesting", 1);
+
     return
         and_then(
             mk_simplify_tactic(m),
@@ -198,6 +204,7 @@ tactic * mk_preamble_tactic(ast_manager& m) {
             using_params(mk_ctx_simplify_tactic(m), ctx_simp_p),
             using_params(mk_simplify_tactic(m), pull_ite_p),
             mk_solve_eqs_tactic(m),
+            mk_lia2card_tactic(m, lia2card_p),
             mk_elim_uncnstr_tactic(m));
 }
 
@@ -207,6 +214,8 @@ tactic * mk_qflia_tactic(ast_manager & m, params_ref const & p) {
     main_p.set_bool("som", true);
     main_p.set_bool("blast_distinct", true);
     main_p.set_uint("blast_distinct_threshold", 128);
+    main_p.set_uint("lia2card.max_range", 1);
+    main_p.set_uint("lia2card.max_ite_nesting", 1);
     // main_p.set_bool("push_ite_arith", true);
    
     params_ref quasi_pb_p;

@@ -19,7 +19,7 @@ Revision History:
 #pragma once
 
 #include "smt/theory_array_base.h"
-#include "smt/params/theory_array_params.h"
+#include "params/theory_array_params.h"
 #include "util/union_find.h"
 
 namespace smt {
@@ -34,6 +34,7 @@ namespace smt {
     };
 
     class theory_array : public theory_array_base {
+        unsigned laziness() const { return ctx.relevancy()?m_params.m_array_laziness:0; }
     protected:
         typedef union_find<theory_array>  th_union_find;
 
@@ -41,17 +42,16 @@ namespace smt {
             ptr_vector<enode>  m_stores;
             ptr_vector<enode>  m_parent_selects;
             ptr_vector<enode>  m_parent_stores;
-            bool               m_prop_upward;
-            bool               m_is_array;
-            bool               m_is_select;
-            var_data():m_prop_upward(false), m_is_array(false), m_is_select(false) {}
+            bool               m_prop_upward = false;
+            bool               m_is_array = false;
+            bool               m_is_select = false;
         };
         ptr_vector<var_data>            m_var_data;
         theory_array_params&            m_params;
         theory_array_stats              m_stats;
         th_union_find                   m_find;
         trail_stack                     m_trail_stack;
-        unsigned                        m_final_check_idx;
+        unsigned                        m_final_check_idx = 0;
 
         theory_var mk_var(enode * n) override;
         bool internalize_atom(app * atom, bool gate_ctx) override;
@@ -64,7 +64,7 @@ namespace smt {
         void pop_scope_eh(unsigned num_scopes) override;
         final_check_status final_check_eh() override;
         void reset_eh() override;
-        void init_search_eh() override { m_final_check_idx = 0; }
+        void init_search_eh() override;
 
         void set_prop_upward(theory_var v) override;
         virtual void set_prop_upward(enode* n);

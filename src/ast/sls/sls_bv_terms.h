@@ -43,12 +43,14 @@ namespace sls {
         void register_uninterp(expr* e);
 
     public:
-        bv_terms(sls::context& ctx);       
+        bv_terms(context& ctx);       
 
         void register_term(expr* e);
 
+        bool is_bv_predicate(expr* e) const;
+
         expr_ref_vector& axioms() { return m_axioms; }
 
-        ptr_vector<expr> const& uninterp_occurs(expr* e) { m_uninterp_occurs.reserve(e->get_id() + 1); return m_uninterp_occurs[e->get_id()]; }
+        ptr_vector<expr> const& uninterp_occurs(expr* e);
     };
 }
