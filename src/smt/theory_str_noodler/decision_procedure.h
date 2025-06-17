@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <functional>
 
-#include "smt/params/theory_str_noodler_params.h"
+#include "params/theory_str_noodler_params.h"
 #include "formula.h"
 #include "inclusion_graph.h"
 #include "aut_assignment.h"

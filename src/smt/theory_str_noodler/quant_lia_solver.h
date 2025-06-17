@@ -2,7 +2,7 @@
 #define _QUANT_LIA_SOLVER_H_
 
 #include "smt/smt_kernel.h"
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 #include "smt/smt_context.h"
 #include "smt/theory_arith.h"
 #include "solver/tactic2solver.h"
