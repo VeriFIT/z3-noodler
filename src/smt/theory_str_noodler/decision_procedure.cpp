@@ -121,7 +121,7 @@ namespace smt::noodler {
             flatten_var(subst_map_pair.first);
         }
 
-        STRACE(str-nfa,
+        STRACE(str_nfa,
             tout << "Flattened substitution map:" << std::endl;
             for (const auto &var_map : new_substitution_map) {
                 tout << "    " << var_map.first.get_name() << " ->";
@@ -159,7 +159,7 @@ namespace smt::noodler {
                 // with the previous automaton
                 automata_for_concatenation.push_back(prev_aut);
                 divisions.push_back(prev_division);
-                STRACE(str-nfa,
+                STRACE(str_nfa,
                     tout << "Automaton for var(s)";
                     for (const auto &var : prev_division) {
                         tout << " " << var.get_name();
@@ -180,7 +180,7 @@ namespace smt::noodler {
         // we need to push last automaton into result
         automata_for_concatenation.push_back(prev_aut);
         divisions.push_back(prev_division);
-        STRACE(str-nfa,
+        STRACE(str_nfa,
             tout << "Automaton for var(s)";
             for (const auto &var : prev_division) {
                 tout << " " << var.get_name();
@@ -407,7 +407,7 @@ namespace smt::noodler {
                     }
                     for (const auto& var_aut : solution.aut_ass) {
                         tout << "    " << var_aut.first << " -> NFA" << std::endl;
-                        if (is_trace_enabled(str-nfa)) {
+                        if (is_trace_enabled(str_nfa)) {
                             var_aut.second->print_to_mata(tout);
                         }
                     }
@@ -415,7 +415,7 @@ namespace smt::noodler {
                         tout << transd << "\n";
                     }
                 );
-                STRACE(str-noodle-dot, tout << solution.DOT_name << " [style=filled,fillcolor=\"aqua\"];\n";);
+                STRACE(str_noodle_dot, tout << solution.DOT_name << " [style=filled,fillcolor=\"aqua\"];\n";);
                 return l_true;
             }
 
@@ -433,7 +433,7 @@ namespace smt::noodler {
         }
 
         // there are no solving states left, which means nothing led to solution -> it must be unsatisfiable
-        STRACE(str-noodle-dot, tout << "}\n";);
+        STRACE(str_noodle_dot, tout << "}\n";);
         return l_false;
     }
 
@@ -504,7 +504,7 @@ namespace smt::noodler {
 
 
         // Get automata of the variables on the left side
-        STRACE(str-nfa, tout << "Left automata:" << std::endl);
+        STRACE(str_nfa, tout << "Left automata:" << std::endl);
         auto [left_side_automata, left_side_division] = solving_state.get_automata_and_division_of_concatenation(left_side_vars, false);
         SASSERT(left_side_division.size() == left_side_vars.size()); // each division should contain exactly one left variable
         SASSERT(left_side_automata.size() == left_side_division.size()); // we have one automaton for each division
@@ -513,7 +513,7 @@ namespace smt::noodler {
         // together. Each right side automaton corresponds to either concatenation of non-length-aware vars (vector of
         // basic terms) or one lenght-aware var (vector of one basic term). Division then contains for each right
         // side automaton the variables whose concatenation it represents.
-        STRACE(str-nfa, tout << "Right automata:" << std::endl);
+        STRACE(str_nfa, tout << "Right automata:" << std::endl);
         auto [right_side_automata, right_side_division] = solving_state.get_automata_and_division_of_concatenation(right_side_vars, true);
         SASSERT(right_side_automata.size() == right_side_division.size()); // we have one automaton for each division
 
@@ -566,7 +566,7 @@ namespace smt::noodler {
                                                                     {{"reduce", "forward"}});
 
         for (const auto &noodle : noodles) {
-            STRACE(str, tout << "Processing noodle" << (is_trace_enabled(str-nfa) ? " with automata:" : "") << std::endl;);
+            STRACE(str, tout << "Processing noodle" << (is_trace_enabled(str_nfa) ? " with automata:" : "") << std::endl;);
             SolvingState new_element = solving_state;
 
             /* Explanation of the next code on an example:
@@ -595,7 +595,7 @@ namespace smt::noodler {
                                                         true);
                 left_side_vars_to_new_vars[noodle[i].second[0]].push_back(new_var);
                 right_side_divisions_to_new_vars[noodle[i].second[1]].push_back(new_var);
-                STRACE(str-nfa, tout << new_var << std::endl << *noodle[i].first;);
+                STRACE(str_nfa, tout << new_var << std::endl << *noodle[i].first;);
             }
 
             /* Following the example from before, the following will create these inclusions from the right side divisions:
@@ -648,7 +648,7 @@ namespace smt::noodler {
         SASSERT(!solving_state.is_predicate_on_cycle(transducer_to_process));
 
         STRACE(str, tout << "Processing node with transducer " << transducer_to_process << std::endl;);
-        STRACE(str-nfa, tout << *transducer_to_process.get_transducer(););
+        STRACE(str_nfa, tout << *transducer_to_process.get_transducer(););
         STRACE(str,
             tout << "Length variables are:";
             for(auto const &var : transducer_to_process.get_vars()) {
@@ -724,11 +724,11 @@ namespace smt::noodler {
             return;
         }
 
-        STRACE(str-nfa, tout << "Input automata:" << std::endl);
+        STRACE(str_nfa, tout << "Input automata:" << std::endl);
         auto [input_vars_automata, input_vars_divisions] = solving_state.get_automata_and_division_of_concatenation(input_vars, true);
         SASSERT(input_vars_automata.size() == input_vars_divisions.size());
 
-        STRACE(str-nfa, tout << "Output automata:" << std::endl);
+        STRACE(str_nfa, tout << "Output automata:" << std::endl);
         auto [output_vars_automata, output_vars_divisions] = solving_state.get_automata_and_division_of_concatenation(output_vars, false);
         SASSERT(output_vars_automata.size() == output_vars_divisions.size());
         SASSERT(output_vars_divisions.size() == output_vars.size());
@@ -775,7 +775,7 @@ namespace smt::noodler {
                 Predicate new_trans = new_element.add_transducer(noodle[i].transducer, {new_input_var}, {new_output_var}, false);
                 STRACE(str,
                     tout << "New transducer: " << new_trans << std::endl;
-                    if (is_trace_enabled(str-nfa)) {
+                    if (is_trace_enabled(str_nfa)) {
                         tout << new_input_var << ":\n" << *noodle[i].input_aut
                              << new_output_var << ":\n" << *noodle[i].output_aut
                              << "transducer:\n" << *new_trans.get_transducer();
@@ -962,10 +962,10 @@ namespace smt::noodler {
 
             one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(one_symbol_transducer).trim()).trim();
 
-            STRACE(str-parikh, tout << "Formula for transducer of size " << one_symbol_transducer.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
+            STRACE(str_parikh, tout << "Formula for transducer of size " << one_symbol_transducer.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
             parikh::ParikhImageTransducer parikh_transducer{one_symbol_transducer, vars_on_tapes, code_subst_vars};
             LenNode parikh_of_transducer = parikh_transducer.compute_parikh_image();
-            STRACE(str-parikh, tout << parikh_of_transducer << "\n";);
+            STRACE(str_parikh, tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer);
 
             // Handle code-point vars that occur in this transducer
@@ -1015,7 +1015,7 @@ namespace smt::noodler {
                             char_case
                         });
                     }
-                    STRACE(str-parikh-tocode, tout << "tocode parikh formula for " << var << ": " << result.succ.back() << "\n";);
+                    STRACE(str_parikh_tocode, tout << "tocode parikh formula for " << var << ": " << result.succ.back() << "\n";);
                 }
             }
         }
@@ -1216,10 +1216,10 @@ namespace smt::noodler {
         // automaton representing all valid inputs (only digits)
         // - we also keep empty word, because we will use it for substituted vars, and one of them can be empty, while other has only digits (for example s1="45", s2="" but s=s1s2 = "45" is valid)
         mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
-        STRACE(str-conversion-int, tout << "only-digit NFA:" << std::endl << only_digits << std::endl;);
+        STRACE(str_conversion_int, tout << "only-digit NFA:" << std::endl << only_digits << std::endl;);
         // automaton representing all non-valid inputs (contain non-digit)
         mata::nfa::Nfa contain_non_digit = solution.aut_ass.complement_aut(only_digits);
-        STRACE(str-conversion-int, tout << "contains-non-digit NFA:" << std::endl << contain_non_digit << std::endl;);
+        STRACE(str_conversion_int, tout << "contains-non-digit NFA:" << std::endl << contain_non_digit << std::endl;);
 
         for (const BasicTerm& int_subst_var : int_subst_vars) {
             int_subst_vars_to_possible_valid_lengths[int_subst_var] = {};
@@ -1229,14 +1229,14 @@ namespace smt::noodler {
             LenNode formula_for_int_subst_var(LenFormulaType::OR);
 
             std::shared_ptr<mata::nfa::Nfa> aut = solution.aut_ass.at(int_subst_var);
-            STRACE(str-conversion-int, tout << "NFA for " << int_subst_var << ":" << std::endl << *aut << std::endl;);
+            STRACE(str_conversion_int, tout << "NFA for " << int_subst_var << ":" << std::endl << *aut << std::endl;);
 
             // part containing only digits
             mata::nfa::Nfa aut_valid_part = mata::nfa::reduce(mata::nfa::intersection(*aut, only_digits).trim());
-            STRACE(str-conversion-int, tout << "only-digit NFA:" << std::endl << aut_valid_part << std::endl;);
+            STRACE(str_conversion_int, tout << "only-digit NFA:" << std::endl << aut_valid_part << std::endl;);
             // part containing some non-digit
             mata::nfa::Nfa aut_non_valid_part = mata::nfa::reduce(mata::nfa::intersection(*aut, contain_non_digit).trim());
-            STRACE(str-conversion-int, tout << "contains-non-digit NFA:" << std::endl << aut_non_valid_part << std::endl;);
+            STRACE(str_conversion_int, tout << "contains-non-digit NFA:" << std::endl << aut_non_valid_part << std::endl;);
 
             // First handle the case of all words (except empty word) from solution.aut_ass.at(int_subst_var) that do not represent numbers
             if (!aut_non_valid_part.is_lang_empty()) {
@@ -1290,7 +1290,7 @@ namespace smt::noodler {
                 max_length_of_words = aut_valid_part.num_of_states()-1;
             } else {
                 // there is infinite number of such words => we need to underapproximate
-                STRACE(str-conversion, tout << "infinite NFA for which we need to do underapproximation:" << std::endl << aut_valid_part << std::endl;);
+                STRACE(str_conversion, tout << "infinite NFA for which we need to do underapproximation:" << std::endl << aut_valid_part << std::endl;);
                 max_length_of_words = m_params.m_underapprox_length;
                 res_precision = LenNodePrecision::UNDERAPPROX;
             }
@@ -1329,7 +1329,7 @@ namespace smt::noodler {
         }
 
 
-        STRACE(str-conversion-int, tout << "int_subst_vars formula: " << result << std::endl;);
+        STRACE(str_conversion_int, tout << "int_subst_vars formula: " << result << std::endl;);
         return {result, res_precision};
     }
 
@@ -1403,7 +1403,7 @@ namespace smt::noodler {
             });
         }
 
-        STRACE(str-conversion-int, tout << "non-valid part for int conversion: " << result << std::endl;);
+        STRACE(str_conversion_int, tout << "non-valid part for int conversion: " << result << std::endl;);
 
         if (subst_vars.size() == 0) {
             // we only have empty word, i.e., a non-valid case that is already in result
@@ -1462,14 +1462,14 @@ namespace smt::noodler {
                 // see get_formula_for_int_subst_vars() for the reason why), we do not want to use it in computation
                 // int_version_of(s_i) != -1
                 formula_for_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{int_version_of(subst_var), -1});
-                STRACE(str-conversion-int, tout << "part of valid part for int conversion: " << formula_for_case << std::endl;);
+                STRACE(str_conversion_int, tout << "part of valid part for int conversion: " << formula_for_case << std::endl;);
 
                 if (length_of_subst_var > 0) {
                     is_empty = false; // l_i != 0 => we cannot get the case where all l_1,...,l_n are 0
 
                     // ... + int_version_of(s_i)*10^(l_{i+1}+...+l_n)
                     formula_for_sum.succ.emplace_back(LenFormulaType::TIMES, std::vector<LenNode>{ int_version_of(subst_var), place_value });
-                    STRACE(str-conversion-int, tout << "part of the sum for int conversion: " << formula_for_sum << std::endl;);
+                    STRACE(str_conversion_int, tout << "part of the sum for int conversion: " << formula_for_sum << std::endl;);
 
                     // place_value = place_value*(10^l_i)
                     for (unsigned j = 0; j < length_of_subst_var; ++j) {
@@ -1482,11 +1482,11 @@ namespace smt::noodler {
 
             formula_for_case.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ i, formula_for_sum });
 
-            STRACE(str-conversion-int, tout << "valid part for int conversion: " << formula_for_case << std::endl;);
+            STRACE(str_conversion_int, tout << "valid part for int conversion: " << formula_for_case << std::endl;);
             result.succ.push_back(formula_for_case);
         }
 
-        STRACE(str-conversion-int, tout << "int conversion: " << result << std::endl;);
+        STRACE(str_conversion_int, tout << "int conversion: " << result << std::endl;);
         return result;
     }
 
@@ -1520,7 +1520,7 @@ namespace smt::noodler {
      * Similarly, we use get_formula_for_int_conversion to handle int_conversions.
      */
     std::pair<LenNode, LenNodePrecision> DecisionProcedure::get_formula_for_conversions() {
-        STRACE(str-conversion,
+        STRACE(str_conversion,
             tout << "Creating formula for conversions" << std::endl;
         );
 
@@ -1545,7 +1545,7 @@ namespace smt::noodler {
         }
 
         for (const TermConversion& conv : conversions) {
-            STRACE(str-conversion,
+            STRACE(str_conversion,
                 tout << " processing " << get_conversion_name(conv.type) << " with string var " << conv.string_var << " and int var " << conv.int_var << std::endl;
             );
 
@@ -1572,7 +1572,7 @@ namespace smt::noodler {
             result = LenNode(LenFormulaType::TRUE);
         }
 
-        STRACE(str-conversion,
+        STRACE(str_conversion,
             tout << "Formula for conversions: " << result << std::endl;
         );
         return {result, res_precision};
@@ -1680,11 +1680,11 @@ namespace smt::noodler {
             }
         }
 
-        STRACE(str-dis,
+        STRACE(str_dis,
             tout << "Disequation len formula: " << LenNode(LenFormulaType::AND, disequations_len_formula_conjuncts) << std::endl;
         );
 
-        STRACE(str-dis,
+        STRACE(str_dis,
             tout << "Equations and transducers after removing disequations" << std::endl;
             for (const auto &eq : equations_and_transducers.get_predicates()) {
                 tout << "    " << eq << std::endl;
@@ -1723,7 +1723,7 @@ namespace smt::noodler {
         }
 
 
-        STRACE(str-noodle-dot, tout << "digraph Procedure {\ninit[shape=none, label=\"\"]\n";);
+        STRACE(str_noodle_dot, tout << "digraph Procedure {\ninit[shape=none, label=\"\"]\n";);
         push_to_worklist(std::move(init_solving_state), true);
     }
 
@@ -1841,7 +1841,7 @@ namespace smt::noodler {
         // extract not contains predicate to a separate container
         this->formula.extract_predicates(PredicateType::NotContains, this->not_contains);
 
-        STRACE(str-nfa, tout << "Automata after preprocessing" << std::endl << init_aut_ass.print());
+        STRACE(str_nfa, tout << "Automata after preprocessing" << std::endl << init_aut_ass.print());
         STRACE(str,
             tout << "Lenght formula from preprocessing:" << preprocessing_len_formula << std::endl;
             tout << "Length variables after preprocesssing:";
@@ -1917,7 +1917,7 @@ namespace smt::noodler {
             if(mata::nfa::is_included(*autl, *sigma_eps_automaton) && mata::nfa::is_included(*autr, *sigma_eps_automaton)) {
                 // create to_code(a1) != to_code(a2)
                 create_to_code_ineq(a1, a2);
-                STRACE(str-dis, tout << "from disequation " << diseq << " no new equations were created" << std::endl;);
+                STRACE(str_dis, tout << "from disequation " << diseq << " no new equations were created" << std::endl;);
                 return std::vector<Predicate>();
             }
         }
@@ -1961,7 +1961,7 @@ namespace smt::noodler {
         // (|a2| = 0) => (|y2| = 0)
         disequations_len_formula_conjuncts.push_back(LenNode(LenFormulaType::OR, {LenNode(LenFormulaType::NEQ, {a2, 0}), LenNode(LenFormulaType::EQ, {y2, 0})}));
 
-        STRACE(str-dis, tout << "from disequation " << diseq << " created equations: " << new_eqs[0] << " and " << new_eqs[1] << std::endl;);
+        STRACE(str_dis, tout << "from disequation " << diseq << " created equations: " << new_eqs[0] << " and " << new_eqs[1] << std::endl;);
         return new_eqs;
     }
 
@@ -2047,12 +2047,12 @@ namespace smt::noodler {
         // TODO the following is very inefficient and will probably be slow (and it is also incorrect, dummy symbols are handled wrongly if there are more symbols to replace with)
         for (auto& [transducer, tape_vars] : transducers_with_vars_on_tapes) {
             util::replace_dummy_symbol_in_transducer_with(transducer, set_of_symbols_to_replace_dummy_symbol_with);
-            STRACE(str-model-transducer,
+            STRACE(str_model_transducer,
                 tout << "Constructing model for vars:";
                 for (const BasicTerm& var : tape_vars) {
                     tout << " " << var;
                 }
-                if (is_trace_enabled(str-model-nfa)) {
+                if (is_trace_enabled(str_model_nfa)) {
                     tout << " and for transducer:\n" << transducer.print_to_dot(true, true);
                 }
                 tout << "\n";
@@ -2076,7 +2076,7 @@ namespace smt::noodler {
 
         is_model_initialized = true;
 
-        STRACE(str-model,
+        STRACE(str_model,
             tout << "Init model finished" << std::endl;
             tout << "  Inclusions:" << std::endl;
             for (const auto& incl : solution.inclusions) {
@@ -2086,7 +2086,7 @@ namespace smt::noodler {
             tout << "  Transducers:" << std::endl;
             for (const auto& tran : solution.transducers) {
                 tout << tran << std::endl;
-                if (is_trace_enabled(str-nfa)) {
+                if (is_trace_enabled(str_nfa)) {
                     tout << *tran.get_transducer() << std::endl;
                 }
             }
@@ -2094,7 +2094,7 @@ namespace smt::noodler {
             tout << "  Vars in aut ass" << std::endl;
             for (const auto& autass : solution.aut_ass) {
                 tout << "      " << autass.first << std::endl;
-                if (is_trace_enabled(str-nfa)) {
+                if (is_trace_enabled(str_nfa)) {
                     tout << *autass.second << std::endl;
                 }
             }
@@ -2116,7 +2116,7 @@ namespace smt::noodler {
             return model_of_var.at(var);
         }
 
-        STRACE(str-model,
+        STRACE(str_model,
             tout << "Generating model for var " << var << "\n";
         );
 
@@ -2203,7 +2203,7 @@ namespace smt::noodler {
             } else {
                 // var is only on the left side in the inclusion graph => we can return whatever
                 const auto& nfa = solution.aut_ass.at(var);
-                STRACE(str-model-nfa, tout << "NFA for var " << var << " before getting some word:\n" << *nfa;);
+                STRACE(str_model_nfa, tout << "NFA for var " << var << " before getting some word:\n" << *nfa;);
                 mata::Word accepted_word = nfa->get_word().value();
                 return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
             }

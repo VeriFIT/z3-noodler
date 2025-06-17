@@ -57,7 +57,7 @@ namespace smt::noodler {
         assert(aut.is_acyclic()); // accepts a finite language
 
 
-        STRACE(str-interval-words, tout << "NFA for which we compute interval words:" << std::endl << aut << std::endl;);
+        STRACE(str_interval_words, tout << "NFA for which we compute interval words:" << std::endl << aut << std::endl;);
 
         // Because aut is minimized (i.e., deterministic) and finite, the automaton aut has a specific structure
         //      - there is exactly one initial and final state
@@ -83,7 +83,7 @@ namespace smt::noodler {
                     assert(aut.final.contains(st));
                     assert(cur_level.size() == 1);
                     // interval_words should therefore be the accepted interval words by aut
-                    STRACE(str-interval-words,
+                    STRACE(str_interval_words,
                         tout << "interval words:" << std::endl;
                         for (const auto& interval_word : interval_words) {
                             tout << "   ";

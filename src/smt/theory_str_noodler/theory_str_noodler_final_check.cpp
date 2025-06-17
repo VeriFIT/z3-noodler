@@ -293,7 +293,7 @@ namespace smt::noodler {
 
                 lengths = len_node_to_z3_formula(noodler_lengths);
 
-                STRACE(str-print-notcontains-lia,
+                STRACE(str_print_notcontains_lia,
                     std::ofstream out_file("./not-contains-lia.smt2");
                     write_z3_expr_into_stream(this->m, out_file, lengths);
                     out_file.close();
@@ -452,7 +452,7 @@ namespace smt::noodler {
     }
 
     Predicate theory_str_noodler::conv_eq_pred(app* const ex) {
-        STRACE(str-conv-eq, tout << "conv_eq_pred: " << mk_pp(ex, m) << std::endl);
+        STRACE(str_conv_eq, tout << "conv_eq_pred: " << mk_pp(ex, m) << std::endl);
         const app* eq = ex;
         PredicateType ptype = PredicateType::Equation;
         if(m.is_not(ex)) {
@@ -632,7 +632,7 @@ namespace smt::noodler {
             }
         }
 
-        TRACE(str-nfa,
+        TRACE(str_nfa,
             tout << "Created automata assignment for formula:" << std::endl;
             for (const auto& single_aut_assignment: aut_assignment) {
                tout << "Automaton for " << single_aut_assignment.first.get_name() << ":" << std::endl;
@@ -781,7 +781,7 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::block_curr_len(expr_ref len_formula, bool add_axiomatized, bool init_lengths) {
-        STRACE(str-block, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
+        STRACE(str_block, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
 
         context& ctx = get_context();
 
@@ -822,7 +822,7 @@ namespace smt::noodler {
         if (refinement != nullptr) {
             add_axiom(m.mk_or(m.mk_not(refinement), len_formula));
         }
-        STRACE(str-block, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
+        STRACE(str_block, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
     }
 
     bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const {
@@ -1112,13 +1112,13 @@ namespace smt::noodler {
                 len_constraints.push_back(expr_ref(m_util_a.mk_le(m_util_s.str.mk_length(len_var), m_util_a.mk_int(LENGTH_LIMIT)), m));
             }
             expr_ref length_formula_underapprox(m.mk_and(length_formula, m.mk_and(len_constraints)), m);
-            STRACE(str-sat-handling, tout << "Checking if we can put stronger limits on lengths with formula " << mk_pp(length_formula_underapprox, m) << " which is ";);
+            STRACE(str_sat_handling, tout << "Checking if we can put stronger limits on lengths with formula " << mk_pp(length_formula_underapprox, m) << " which is ";);
             if (check_len_sat(length_formula_underapprox) == lbool::l_true) {
                 // we can limit the lengths => add it to the resulting length formula
-                STRACE(str-sat-handling, tout << "sat\n");
+                STRACE(str_sat_handling, tout << "sat\n");
                 length_formula = length_formula_underapprox;
             } else {
-                STRACE(str-sat-handling, tout << "unsat\n");
+                STRACE(str_sat_handling, tout << "unsat\n");
             }
         }
         sat_length_formula = length_formula;

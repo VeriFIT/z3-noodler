@@ -173,7 +173,7 @@ namespace smt::noodler::regex {
                     results_stack.pop();
                 }
 
-                STRACE(str-create_nfa,
+                STRACE(str_create_nfa,
                     tout << "--------------" << "Creating NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "\n";
                 );
 
@@ -387,14 +387,14 @@ namespace smt::noodler::regex {
                 // intermediate automata reduction
                 // if the automaton is too big --> skip it. The computation of the simulation would be too expensive.
                 if(result.num_of_states() < RED_BOUND) {
-                    STRACE(str-create_nfa-reduce, 
+                    STRACE(str_create_nfa_reduce, 
                         tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
                         tout << result;
                     );
                     result = mata::nfa::reduce(result);
                 }
 
-                STRACE(str-create_nfa,
+                STRACE(str_create_nfa,
                     tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "---------------" << std::endl;
                     tout << result;
                 );
@@ -408,7 +408,7 @@ namespace smt::noodler::regex {
         mata::nfa::Nfa final_result = std::move(results_stack.top());
 
         if(determinize && !make_complement) { // if we need to complement, we will determinize anyway
-            STRACE(str-create_nfa-reduce, 
+            STRACE(str_create_nfa_reduce, 
                 tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(expression), const_cast<ast_manager&>(m)) << " that is going to be minimized" << "---------------" << std::endl;
                 tout << final_result;
             );
@@ -417,14 +417,14 @@ namespace smt::noodler::regex {
 
         // Whether to create complement of the final automaton.
         if (make_complement) {
-            STRACE(str-create_nfa, tout << "Complemented NFA:" << std::endl;);
+            STRACE(str_create_nfa, tout << "Complemented NFA:" << std::endl;);
             final_result = mata::nfa::complement(final_result, alphabet.mata_alphabet, { 
                 {"algorithm", "classical"}, 
                 //{"minimize", "true"} // it seems that minimizing during complement causes more TOs in benchmarks
                 });
         }
 
-        STRACE(str-create_nfa, tout << final_result;);
+        STRACE(str_create_nfa, tout << final_result;);
         return final_result;
     }
 
@@ -780,7 +780,7 @@ namespace smt::noodler::regex {
             return true; // replacing empty string with anything is NOOP
         }
 
-        STRACE(str-add_find,
+        STRACE(str_add_find,
             tout << "add_find: Adding find string " << find << " to be replaced with " << replace << "\n";
         );
 
@@ -887,7 +887,7 @@ namespace smt::noodler::regex {
                 }
             }
         }
-        STRACE(str-add_find,
+        STRACE(str_add_find,
             tout << "add_find: Added with prefix automaton:\n" << prefix_automaton.print_to_dot(true, true);
             tout << "add_find: The replacing mapping:\n";
             for (const auto& [state, replacement] : replacing_map) {
@@ -1009,7 +1009,7 @@ namespace smt::noodler::regex {
             return;
         }
 
-        STRACE(str-gather_transducer_constraints, tout << "Gather transducer for " << mk_pp(ex,m) << "\n";);
+        STRACE(str_gather_transducer_constraints, tout << "Gather transducer for " << mk_pp(ex,m) << "\n";);
 
         // check if we have not constructed this transducer already 
         expr* rpl = pred_replace.find(ex); // dies if it is not found
@@ -1087,32 +1087,32 @@ namespace smt::noodler::regex {
             };
 
             mata::nft::Nft transducer = get_next_transducer();
-            STRACE(str-gather_transducer_constraints,
+            STRACE(str_gather_transducer_constraints,
                 tout << "Size of first NFT " << transducer.num_of_states() << "\n";
-                if (is_trace_enabled(str-nfa)) {
+                if (is_trace_enabled(str_nfa)) {
                     tout << transducer.print_to_dot(true);
                 }
             );
             while (backward_iterator != backward_iterator_end) {
                 mata::nft::Nft next_transducer = get_next_transducer();
-                STRACE(str-gather_transducer_constraints,
+                STRACE(str_gather_transducer_constraints,
                     tout << "Size of next NFT " << next_transducer.num_of_states() << "\n";
-                    if (is_trace_enabled(str-nfa)) {
+                    if (is_trace_enabled(str_nfa)) {
                         tout << next_transducer.print_to_dot(true);
                     }
                 );
                 transducer = mata::nft::compose(transducer, next_transducer, 1, 0);
                 transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
-                STRACE(str-gather_transducer_constraints,
+                STRACE(str_gather_transducer_constraints,
                     tout << "Size of composed NFT " << transducer.num_of_states() << "\n";
-                    if (is_trace_enabled(str-nfa)) {
+                    if (is_trace_enabled(str_nfa)) {
                         tout << transducer.print_to_dot(true);
                     }
                 );
             }
 
             Predicate predicate_transducer = Predicate::create_transducer(std::make_shared<mata::nft::Nft>(transducer), side, {result_var});
-            STRACE(str-gather_transducer_constraints, tout << predicate_transducer << "\n";);
+            STRACE(str_gather_transducer_constraints, tout << predicate_transducer << "\n";);
             transducer_preds.add_predicate(predicate_transducer);
             return;
         }

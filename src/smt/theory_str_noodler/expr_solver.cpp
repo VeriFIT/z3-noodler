@@ -8,13 +8,13 @@ Eternal glory to Yu-Fang.
 
 namespace smt::noodler {
     lbool int_expr_solver::check_sat(expr* e) {
-        TRACE(str-lia, tout << "check_sat start\n";);
+        TRACE(str_lia, tout << "check_sat start\n";);
 
         erv.push_back(e);
         lbool r = m_kernel.check(erv);
         erv.pop_back();
 
-        STRACE(str-lia,
+        STRACE(str_lia,
             if(r==lbool::l_false){
                 tout << "UNSAT core:" << std::endl;
                 for(unsigned i=0; i < m_kernel.get_unsat_core_size(); i++) {
@@ -23,7 +23,7 @@ namespace smt::noodler {
             }
         );
 
-        TRACE(str-lia, tout << "check_sat end\n";);
+        TRACE(str_lia, tout << "check_sat end\n";);
         return r;
     }
 
@@ -33,14 +33,14 @@ namespace smt::noodler {
             expr_ref_vector Assigns(m);
             ctx.get_assignments(Assigns);
             for (unsigned i = 0; i < ctx.get_num_asserted_formulas(); ++i) {
-                STRACE(str-lia, tout<< "check_sat context from asserted: " << mk_pp(ctx.get_asserted_formula(i),m) << std::endl);
+                STRACE(str_lia, tout<< "check_sat context from asserted: " << mk_pp(ctx.get_asserted_formula(i),m) << std::endl);
                 assert_expr(ctx.get_asserted_formula(i));
 
             }
             if (include_ass) {
                 for (auto & e : Assigns){
                     if(ctx.is_relevant(e)) {
-                        STRACE(str-lia, tout << "check_sat context from assign: " << mk_pp(e, m) << std::endl);
+                        STRACE(str_lia, tout << "check_sat context from assign: " << mk_pp(e, m) << std::endl);
                         assert_expr(e);
                     }
                 }
@@ -55,7 +55,7 @@ namespace smt::noodler {
         } else {
             erv.push_back(e);
             lbool r = m_kernel.check(erv);
-            STRACE(str-lia,
+            STRACE(str_lia,
                 if(r==lbool::l_false){
                     tout << "UNSAT core:" << std::endl;
                     for(unsigned i=0; i<m_kernel.get_unsat_core_size(); i++) {

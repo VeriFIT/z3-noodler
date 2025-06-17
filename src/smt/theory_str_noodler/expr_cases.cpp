@@ -130,7 +130,7 @@ bool is_len_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_ut
 }
 
 bool is_len_num_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr_ref_vector& len_arg, rational& num, bool& num_is_larger) {
-    STRACE(str-is_len_num_leq_or_geq, tout << mk_pp(e, m) << std::endl;);
+    STRACE(str_is_len_num_leq_or_geq, tout << mk_pp(e, m) << std::endl;);
     expr* less = nullptr, *more = nullptr, *e_not = nullptr;
     bool strictly_less;
     if (m_util_a.is_lt(e, less, more) || (m.is_not(e, e_not) && m_util_a.is_ge(e_not, less, more)) ||

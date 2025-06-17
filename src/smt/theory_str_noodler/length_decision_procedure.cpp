@@ -893,7 +893,7 @@ namespace smt::noodler {
         // if there are variables with in the substittuion map with no model --> assign
         assign_subst_map_vars(arith_model);
         assign_free_vars(arith_model);
-        STRACE(str-model-res,
+        STRACE(str_model_res,
             for (const auto& [var, model_string] : model) {
                 tout << "Model for " << var << ": " << model_string << std::endl;
             }

@@ -230,7 +230,7 @@ namespace smt::noodler::parikh {
         LenNode phi_kirch = compute_phi_kirch(succ_trans, prev_trans);
         LenNode phi_span = compute_phi_span(succ_trans, prev_trans);
 
-        STRACE(str-diseq, tout << "* Parikh image transitions:  " << std::endl;
+        STRACE(str_diseq, tout << "* Parikh image transitions:  " << std::endl;
             for(const auto& [tr, bt] : this->trans) {
                 tout << bt.to_string() << " : " << std::get<0>(tr) << " -(" << std::get<1>(tr) << ")-> " << std::get<2>(tr) << std::endl;
             }
@@ -321,25 +321,25 @@ namespace smt::noodler::parikh {
     LenNode ParikhImageDiseqTag::get_diseq_formula(const Predicate& diseq) {
         LenNode parikh = compute_parikh_image();
 
-        STRACE(str-diseq, tout << "* Parikh image symbols:  " << std::endl;
+        STRACE(str_diseq, tout << "* Parikh image symbols:  " << std::endl;
             for(const auto& [sym, bt] : this->tag_occurence_count_vars) {
                 tout << bt.to_string() << " : " << sym.to_string() << std::endl;
             }
             tout << std::endl;
         );
-        STRACE(str-diseq, tout << "* compute_parikh_image:  " << std::endl << parikh << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* compute_parikh_image:  " << std::endl << parikh << std::endl << std::endl;);
 
         LenNode diseq_len = get_diseq_length(diseq);
-        STRACE(str-diseq, tout << "* get_diseq_length:  " << std::endl << diseq_len << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* get_diseq_length:  " << std::endl << diseq_len << std::endl << std::endl;);
 
         LenNode mismatch = get_all_mismatch_formula(diseq);
-        STRACE(str-diseq, tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
 
         LenNode force_new_vars_expressing_str_vars_length = get_var_length(diseq.get_set());
-        STRACE(str-diseq, tout << "* get_var_length:  " << std::endl << force_new_vars_expressing_str_vars_length << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* get_var_length:  " << std::endl << force_new_vars_expressing_str_vars_length << std::endl << std::endl;);
 
         LenNode diff_symbol = get_diff_symbol_formula();
-        STRACE(str-diseq, tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
 
         LenNode result = LenNode(LenFormulaType::AND, {
             parikh,
@@ -362,19 +362,19 @@ namespace smt::noodler::parikh {
 
         LenNode parikh_image_formula = compute_parikh_image();
 
-        STRACE(str-diseq, tout << "* (multiple-disequations) Parikh image symbols:  " << std::endl;
+        STRACE(str_diseq, tout << "* (multiple-disequations) Parikh image symbols:  " << std::endl;
             for(const auto& [sym, bt] : this->tag_occurence_count_vars) {
                 tout << bt.to_string() << " : " << sym.to_string() << std::endl;
             }
             tout << std::endl;
         );
-        STRACE(str-diseq, tout << "* (multiple-disequations) compute_parikh_image:  " << std::endl << parikh_image_formula << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* (multiple-disequations) compute_parikh_image:  " << std::endl << parikh_image_formula << std::endl << std::endl;);
 
         LenNode all_disequations_have_samples = make_sure_every_disequation_has_symbols_sampled();
-        STRACE(str-diseq, tout << "* every disequation should have a symbol sampled:  " << std::endl << all_disequations_have_samples << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* every disequation should have a symbol sampled:  " << std::endl << all_disequations_have_samples << std::endl << std::endl;);
 
         LenNode all_register_variables_have_values = assert_register_values();
-        STRACE(str-diseq, tout << "* all registers hold correct values wrt. run:  " << std::endl << all_register_variables_have_values << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* all registers hold correct values wrt. run:  " << std::endl << all_register_variables_have_values << std::endl << std::endl;);
 
         std::set<BasicTerm> all_vars;  // @Todo(mhecko): We are doing something similar elsewhere in the codebase, refactor.
         for (auto& disequation : disequations) {
@@ -383,10 +383,10 @@ namespace smt::noodler::parikh {
         }
 
         LenNode force_new_vars_expressing_str_vars_length = get_var_length(all_vars);
-        STRACE(str-diseq, tout << "* binding variable lengths to <L, var> occurrences:  " << std::endl << force_new_vars_expressing_str_vars_length << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* binding variable lengths to <L, var> occurrences:  " << std::endl << force_new_vars_expressing_str_vars_length << std::endl << std::endl;);
 
         LenNode all_copies_are_correct = assert_copy_transition_correctness();
-        STRACE(str-diseq, tout << "* making <C, X..> transitions can be taken if there is some <R, X..> transition taken before:  " << std::endl << all_copies_are_correct << std::endl << std::endl;);
+        STRACE(str_diseq, tout << "* making <C, X..> transitions can be taken if there is some <R, X..> transition taken before:  " << std::endl << all_copies_are_correct << std::endl << std::endl;);
 
         LenNode all_disequations_are_satisfied (LenFormulaType::AND, {});
         for (int disequation_idx = 0; disequation_idx < static_cast<int>(disequations.size()); disequation_idx++) {
@@ -1322,25 +1322,25 @@ namespace smt::noodler::parikh {
         LenNode second_level_parikh = compute_parikh_image(); // We don't want to recompute length vars |x|, |y|, etc.
         std::map<Transition, BasicTerm> second_level_parikh_vars = this->get_trans_vars();
 
-        STRACE(str-not-contains, tout << "* Parikh image symbols:  " << std::endl;
+        STRACE(str_not_contains, tout << "* Parikh image symbols:  " << std::endl;
             for(const auto& [sym, bt] : this->tag_occurence_count_vars) {
                 tout << bt.to_string() << " : " << sym.to_string() << std::endl;
             }
             tout << std::endl;
         );
-        STRACE(str-not-contains, tout << "* compute_parikh_image:  " << std::endl << top_level_parikh << std::endl << std::endl;);
+        STRACE(str_not_contains, tout << "* compute_parikh_image:  " << std::endl << top_level_parikh << std::endl << std::endl;);
 
         LenNode rhs_with_offset_longer_than_lhs = mk_rhs_longer_than_lhs_formula(not_contains);
-        STRACE(str-not-contains, tout << "* rhs+offset is longer than lhs:  :  " << std::endl << rhs_with_offset_longer_than_lhs << std::endl << std::endl;);
+        STRACE(str_not_contains, tout << "* rhs+offset is longer than lhs:  :  " << std::endl << rhs_with_offset_longer_than_lhs << std::endl << std::endl;);
 
         LenNode mismatch = get_nt_all_mismatch_formula(not_contains);
-        STRACE(str-not-contains, tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
+        STRACE(str_not_contains, tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
 
         LenNode var_lengths_from_tag_count_formula = get_var_length(not_contains.get_set());
-        STRACE(str-not-contains, tout << "* get_var_length:  " << std::endl << var_lengths_from_tag_count_formula << std::endl << std::endl;);
+        STRACE(str_not_contains, tout << "* get_var_length:  " << std::endl << var_lengths_from_tag_count_formula << std::endl << std::endl;);
 
         LenNode diff_symbol = get_diff_symbol_formula();
-        STRACE(str-not-contains, tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
+        STRACE(str_not_contains, tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
 
         LenNode parikh_images_agree = mk_parikh_images_encode_same_word_formula(top_level_parikh_vars, second_level_parikh_vars);
 
@@ -1377,7 +1377,7 @@ namespace smt::noodler::parikh {
             }),
         });
 
-        STRACE(str-not-contains, tout << "* resulting_formula:  " << std::endl << formula << std::endl << std::endl;);
+        STRACE(str_not_contains, tout << "* resulting_formula:  " << std::endl << formula << std::endl << std::endl;);
 
         { // Debug
             const char* out_file_path = std::getenv("NOODLER_NC_WRITE_LIA_INTO");

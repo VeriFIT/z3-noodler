@@ -138,7 +138,7 @@ namespace smt::noodler {
         context &ctx = get_context();
         unsigned nFormulas = ctx.get_num_asserted_formulas();
         for (unsigned i = 0; i < nFormulas; ++i) {
-            STRACE(str-init-formula, tout << "Initial asserted formula " << i << ": " << expr_ref(ctx.get_asserted_formula(i), m) << std::endl;);
+            STRACE(str_init_formula, tout << "Initial asserted formula " << i << ": " << expr_ref(ctx.get_asserted_formula(i), m) << std::endl;);
             expr *ex = ctx.get_asserted_formula(i);
             if (!add_len_num_axioms(ex)) {
                 obj_hashtable<app> lens;
@@ -157,7 +157,7 @@ namespace smt::noodler {
 
     void theory_str_noodler::string_theory_propagation(expr *expr, bool init, bool neg, bool var_lengths) {
         STRACE(str, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
-        STRACE(str-propagation, tout << mk_pp(expr, get_manager()) << std::endl;);
+        STRACE(str_propagation, tout << mk_pp(expr, get_manager()) << std::endl;);
 
         context &ctx = get_context();
 
@@ -251,7 +251,7 @@ namespace smt::noodler {
         len_x_plus_len_y = m_util_a.mk_add(len_x, len_y);
         SASSERT(len_x_plus_len_y);
 
-        STRACE(str-concat,
+        STRACE(str_concat,
             tout << "[Concat Axiom] " << mk_pp(len_xy, m) << " = " << mk_pp(len_x, m) << " + " << mk_pp(len_y, m)
                  << std::endl;
         );
@@ -291,7 +291,7 @@ namespace smt::noodler {
 
         // len(str) = |str| for explicit string str
         if (m_util_s.str.is_string(a_str)) {
-            STRACE(str-axiom, tout << "[ConstStr Axiom] " << mk_pp(a_str, m) << std::endl);
+            STRACE(str_axiom, tout << "[ConstStr Axiom] " << mk_pp(a_str, m) << std::endl);
 
             expr_ref len_str(m_util_s.str.mk_length(a_str), m);
             SASSERT(len_str);
@@ -307,7 +307,7 @@ namespace smt::noodler {
         } else if(!m.is_ite(a_str)) {
             // axiom |t| >= 0 where t is a string term
             { 
-                STRACE(str-axiom, tout << "[Non-Zero Axiom] " << mk_pp(a_str, m) << std::endl);
+                STRACE(str_axiom, tout << "[Non-Zero Axiom] " << mk_pp(a_str, m) << std::endl);
                 // build LHS
                 expr_ref len_str(m);
                 len_str = m_util_s.str.mk_length(a_str);
@@ -320,14 +320,14 @@ namespace smt::noodler {
                 app_ref lhs_ge_rhs(m_util_a.mk_ge(len_str, zero), m);
                 ctx.internalize(lhs_ge_rhs, false);
                 SASSERT(lhs_ge_rhs);
-                STRACE(str-axiom, tout << "string axiom 1: " << mk_ismt2_pp(lhs_ge_rhs, m) << std::endl;);
+                STRACE(str_axiom, tout << "string axiom 1: " << mk_ismt2_pp(lhs_ge_rhs, m) << std::endl;);
 
                 add_axiom({mk_literal(lhs_ge_rhs)});
                 this->axiomatized_len_axioms.push_back(lhs_ge_rhs);
             }
             // axiom |t| <= 0 -> t = eps; if var_lengths is set add also t = eps -> |t| = 0
             {
-                STRACE(str-axiom, tout << "[Zero iff Empty Axiom] " << mk_pp(a_str, m) << std::endl);
+                STRACE(str_axiom, tout << "[Zero iff Empty Axiom] " << mk_pp(a_str, m) << std::endl);
 
                 // build LHS of iff
                 expr_ref len_str(m);
@@ -457,7 +457,7 @@ namespace smt::noodler {
     void theory_str_noodler::assign_eh(bool_var v, const bool is_true) {
         ast_manager &m = get_manager();
         STRACE(str, tout << "assign enter\n";);
-        STRACE(str-assign, tout << "assign: bool_var #" << v << " is " << is_true << ", "
+        STRACE(str_assign, tout << "assign: bool_var #" << v << " is " << is_true << ", "
                             << mk_pp(get_context().bool_var2expr(v), m) << "@ scope level:" << m_scope_level << '\n';);
         context &ctx = get_context();
         expr *e = ctx.bool_var2expr(v);
@@ -481,9 +481,9 @@ namespace smt::noodler {
             handle_in_re(e, is_true);
         } else if(m.is_bool(e)) {
             ensure_enode(e);
-            TRACE(str-assign, tout << "bool literal " << mk_pp(e, m) << " " << is_true << "\n" );
+            TRACE(str_assign, tout << "bool literal " << mk_pp(e, m) << " " << is_true << "\n" );
         } else {
-            TRACE(str-assign, tout << "unhandled literal " << mk_pp(e, m) << "\n";);
+            TRACE(str_assign, tout << "unhandled literal " << mk_pp(e, m) << "\n";);
             UNREACHABLE();
         }
     }

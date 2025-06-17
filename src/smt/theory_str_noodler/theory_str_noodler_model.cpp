@@ -42,7 +42,7 @@ namespace smt::noodler {
                 bool is_int;
                 rational val(0);
                 VERIFY(th.m_util_a.is_numeral(values[i], val, is_int) && is_int);
-                STRACE(str-model, tout << "Arith model of " << needed_vars[i] << " is " << val << std::endl;);
+                STRACE(str_model, tout << "Arith model of " << needed_vars[i] << " is " << val << std::endl;);
                 var_to_arith_model[needed_vars[i]] = val;
             }
 
@@ -97,18 +97,18 @@ namespace smt::noodler {
             // for concatenation, we just recursively get the models for arguments and then concatenate them
             expr_ref_vector concats(m);
             enode* str_concat_enode = ctx.get_enode(str_concat);
-            STRACE(str-model-concat, tout << "Dependencies for concat " << mk_pp(str_concat, m) << " (#" << str_concat_enode->get_owner_id() << "):";);
+            STRACE(str_model_concat, tout << "Dependencies for concat " << mk_pp(str_concat, m) << " (#" << str_concat_enode->get_owner_id() << "):";);
             m_util_s.str.get_concat(str_concat, concats);
             for (auto concat : concats) {
                 enode* concat_enode = ctx.get_enode(concat);
-                STRACE(str-model-concat, tout << " " << mk_pp(concat, m) << " (#" << concat_enode->get_root()->get_owner_id() << ")";);
+                STRACE(str_model_concat, tout << " " << mk_pp(concat, m) << " (#" << concat_enode->get_root()->get_owner_id() << ")";);
                 if (concat_enode->get_root() == str_concat_enode) {
                     // this should not happen
                     util::throw_error("Enode for some concatenation is the representant of enode of one of its arguments");
                 }
                 m_dependencies.push_back(model_value_dependency(concat_enode));
             }
-            STRACE(str-model-concat, tout << "\n";);
+            STRACE(str_model_concat, tout << "\n";);
         }
 
         void get_dependencies(buffer<model_value_dependency> & result) override {
