@@ -319,7 +319,7 @@ namespace smt::noodler {
 
             if (removed.contains(pr.first)) continue; // if the equation was already removed, we do not remove it again
 
-            STRACE(str_prep-remove_regular, tout << "Remove regular:" << pr.second << std::endl;);
+            STRACE(str_prep_remove_regular, tout << "Remove regular:" << pr.second << std::endl;);
 
             assert(pr.second.get_left_side().size() == 1);
 
@@ -359,7 +359,7 @@ namespace smt::noodler {
 
             this->formula.remove_predicate(pr.first);
             removed.insert(pr.first);
-            STRACE(str_prep-remove_regular, tout << "removed" << std::endl;);
+            STRACE(str_prep_remove_regular, tout << "removed" << std::endl;);
 
             // check if by removing the regular equation, some other equations did not become regular
             // we only need to check this for left_var, as the variables from the right side do not occur
