@@ -138,7 +138,7 @@ namespace smt::noodler {
             
             STRACE(str_mult_memb_heur,
                 tout << "computing inclusion";
-                if (is_trace_enabled(str_nfa)) {
+                if (is_trace_enabled(TraceTag::str_nfa)) {
                     tout << " of automaton\n" << intersection << "within automaton\n" << unionn;
                 } else {
                     tout << "\n";

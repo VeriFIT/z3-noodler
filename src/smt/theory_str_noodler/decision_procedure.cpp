@@ -407,7 +407,7 @@ namespace smt::noodler {
                     }
                     for (const auto& var_aut : solution.aut_ass) {
                         tout << "    " << var_aut.first << " -> NFA" << std::endl;
-                        if (is_trace_enabled(str_nfa)) {
+                        if (is_trace_enabled(TraceTag::str_nfa)) {
                             var_aut.second->print_to_mata(tout);
                         }
                     }
@@ -566,7 +566,7 @@ namespace smt::noodler {
                                                                     {{"reduce", "forward"}});
 
         for (const auto &noodle : noodles) {
-            STRACE(str, tout << "Processing noodle" << (is_trace_enabled(str_nfa) ? " with automata:" : "") << std::endl;);
+            STRACE(str, tout << "Processing noodle" << (is_trace_enabled(TraceTag::str_nfa) ? " with automata:" : "") << std::endl;);
             SolvingState new_element = solving_state;
 
             /* Explanation of the next code on an example:
@@ -775,7 +775,7 @@ namespace smt::noodler {
                 Predicate new_trans = new_element.add_transducer(noodle[i].transducer, {new_input_var}, {new_output_var}, false);
                 STRACE(str,
                     tout << "New transducer: " << new_trans << std::endl;
-                    if (is_trace_enabled(str_nfa)) {
+                    if (is_trace_enabled(TraceTag::str_nfa)) {
                         tout << new_input_var << ":\n" << *noodle[i].input_aut
                              << new_output_var << ":\n" << *noodle[i].output_aut
                              << "transducer:\n" << *new_trans.get_transducer();
@@ -2052,7 +2052,7 @@ namespace smt::noodler {
                 for (const BasicTerm& var : tape_vars) {
                     tout << " " << var;
                 }
-                if (is_trace_enabled(str_model_nfa)) {
+                if (is_trace_enabled(TraceTag::str_model_nfa)) {
                     tout << " and for transducer:\n" << transducer.print_to_dot(true, true);
                 }
                 tout << "\n";
@@ -2086,7 +2086,7 @@ namespace smt::noodler {
             tout << "  Transducers:" << std::endl;
             for (const auto& tran : solution.transducers) {
                 tout << tran << std::endl;
-                if (is_trace_enabled(str_nfa)) {
+                if (is_trace_enabled(TraceTag::str_nfa)) {
                     tout << *tran.get_transducer() << std::endl;
                 }
             }
@@ -2094,7 +2094,7 @@ namespace smt::noodler {
             tout << "  Vars in aut ass" << std::endl;
             for (const auto& autass : solution.aut_ass) {
                 tout << "      " << autass.first << std::endl;
-                if (is_trace_enabled(str_nfa)) {
+                if (is_trace_enabled(TraceTag::str_nfa)) {
                     tout << *autass.second << std::endl;
                 }
             }

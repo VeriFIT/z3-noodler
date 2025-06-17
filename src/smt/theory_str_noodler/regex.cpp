@@ -1089,7 +1089,7 @@ namespace smt::noodler::regex {
             mata::nft::Nft transducer = get_next_transducer();
             STRACE(str_gather_transducer_constraints,
                 tout << "Size of first NFT " << transducer.num_of_states() << "\n";
-                if (is_trace_enabled(str_nfa)) {
+                if (is_trace_enabled(TraceTag::str_nfa)) {
                     tout << transducer.print_to_dot(true);
                 }
             );
@@ -1097,7 +1097,7 @@ namespace smt::noodler::regex {
                 mata::nft::Nft next_transducer = get_next_transducer();
                 STRACE(str_gather_transducer_constraints,
                     tout << "Size of next NFT " << next_transducer.num_of_states() << "\n";
-                    if (is_trace_enabled(str_nfa)) {
+                    if (is_trace_enabled(TraceTag::str_nfa)) {
                         tout << next_transducer.print_to_dot(true);
                     }
                 );
@@ -1105,7 +1105,7 @@ namespace smt::noodler::regex {
                 transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
                 STRACE(str_gather_transducer_constraints,
                     tout << "Size of composed NFT " << transducer.num_of_states() << "\n";
-                    if (is_trace_enabled(str_nfa)) {
+                    if (is_trace_enabled(TraceTag::str_nfa)) {
                         tout << transducer.print_to_dot(true);
                     }
                 );

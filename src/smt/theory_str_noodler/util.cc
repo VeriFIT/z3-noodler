@@ -162,7 +162,7 @@ namespace smt::noodler::util {
         STRACE(str_split_word_to_automata,
             tout << "split_word_to_automata with word:\n" << word << "\n";
             tout << "and " << automata.size() << " automata\n";
-            if (is_trace_enabled(str_nfa)) {
+            if (is_trace_enabled(TraceTag::str_nfa)) {
                 for (auto aut : automata) {
                     tout << *aut << "\n";
                 }

@@ -374,7 +374,7 @@ namespace smt::noodler {
                 }
             }
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -446,7 +446,7 @@ namespace smt::noodler {
         // Not true: you can have equation of two, literals which is not removed 
         //assert(!this->formula.contains_simple_eqs());
 
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -575,7 +575,7 @@ namespace smt::noodler {
         for(const auto &pr : new_preds) {
             this->formula.add_predicate(pr.second, pr.first);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -686,7 +686,7 @@ namespace smt::noodler {
             this->formula.add_predicate(eq);
             // We do not add dependency
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -774,7 +774,7 @@ namespace smt::noodler {
             this->dependency[pr.first].insert(eps_eq_id.begin(), eps_eq_id.end());
         }
 
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -868,7 +868,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -986,7 +986,7 @@ namespace smt::noodler {
         for(const auto& pr : updates) {
             this->update_predicate(pr.first, pr.second);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1007,7 +1007,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1108,7 +1108,7 @@ namespace smt::noodler {
                 this->aut_ass[pr.first] = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(inters));
             }
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     void FormulaPreprocessor::reduce_automata() {
@@ -1191,7 +1191,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1262,7 +1262,7 @@ namespace smt::noodler {
         for(const auto &pr : new_preds) {
             this->formula.add_predicate(pr);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1336,7 +1336,7 @@ namespace smt::noodler {
                 }
             }
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1443,7 +1443,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1509,7 +1509,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1568,7 +1568,7 @@ namespace smt::noodler {
                 }
             }
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     } 
 
     void FormulaPreprocessor::underapprox_var_language(const BasicTerm& var) {
@@ -1628,7 +1628,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1737,7 +1737,7 @@ namespace smt::noodler {
                     len_formula.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{conv.int_var, -1});
                 }
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1797,7 +1797,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
         return true;
     }
 
@@ -1857,7 +1857,7 @@ namespace smt::noodler {
                 }
             }
         }
-        STRACE(str_prep, tout << print_info(is_trace_enabled(str_nfa)));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
