@@ -176,7 +176,7 @@ namespace smt::noodler {
             }
         }
 
-        STRACE("str",
+        STRACE(str,
             tout << "Length constraints on variable " << this->_name << "\n-----\n";
             for (LenNode c : form) {
                 tout << c << std::endl;
@@ -514,15 +514,15 @@ namespace smt::noodler {
     lbool LengthDecisionProcedure::check_formula(std::set<BasicTerm>& multi_vars) {
         std::set<BasicTerm> concat_vars = {};	// variables that have appeared in concatenation
         
-        STRACE("str", tout << " - checking suitability: "; );
+        STRACE(str, tout << " - checking suitability: "; );
         for (const Predicate& pred : this->formula.get_predicates()) {
             if (!pred.is_equation()) {
-                STRACE("str", tout << "False - Inequations\n");
+                STRACE(str, tout << "False - Inequations\n");
                 return l_undef;
             }
             if (pred.mult_occurr_var_side(Predicate::EquationSideType::Left) || 
                 pred.mult_occurr_var_side(Predicate::EquationSideType::Right)) {
-                STRACE("str", tout << "False - multiple occurrences of a variable in single equation\n");
+                STRACE(str, tout << "False - multiple occurrences of a variable in single equation\n");
                 return l_undef;
             }
             for (const Concat& side : pred.get_params()) {
@@ -538,7 +538,7 @@ namespace smt::noodler {
                         concat_vars.insert(t);
                     } else {
                         multi_vars.insert(t);
-                        STRACE("str", tout << "multiconcat on " << t.to_string() << std::endl; );
+                        STRACE(str, tout << "multiconcat on " << t.to_string() << std::endl; );
                     }
                 }
             }
@@ -547,7 +547,7 @@ namespace smt::noodler {
     }
 
     lbool LengthDecisionProcedure::compute_next_solution() {
-        STRACE("str", tout << "len: Compute next solution\n"; );
+        STRACE(str, tout << "len: Compute next solution\n"; );
 
         std::set<BasicTerm> multi_vars = {};
         // Check for suitability
@@ -556,7 +556,7 @@ namespace smt::noodler {
         }
 
         if(multi_vars.size() > 1) {
-            STRACE("str", tout << "multiple vars " << std::endl; );
+            STRACE(str, tout << "multiple vars " << std::endl; );
             return l_undef;
         }
 
@@ -564,7 +564,7 @@ namespace smt::noodler {
             this->pool.add_to_pool(pred);
         }   
 
-        STRACE("str",
+        STRACE(str,
             tout << "Conversions:\n-----\n";
             for (auto c : this->pool.get_lit_conversion()) {
                 tout << c.first << " : " << c.second << std::endl;
@@ -575,7 +575,7 @@ namespace smt::noodler {
         for (auto& [var, constr] : pool) {
             if (constr.parse(pool) == false) {
                 // There is a cycle
-                STRACE("str", tout << "len: Cyclic dependecy.\n";);
+                STRACE(str, tout << "len: Cyclic dependecy.\n";);
                 return l_undef;	// We cannot solve this formula
             }
         }
@@ -605,7 +605,7 @@ namespace smt::noodler {
                         continue;
                     }
                     LenNode mult_lia = constr1.get_multi_var_lia(pool, multi_var, var2);
-                    STRACE("str",
+                    STRACE(str,
                         tout << "Multi var lia:\n-----\n";
                         tout << mult_lia << std::endl;
                         tout << "-----\n";
@@ -616,12 +616,12 @@ namespace smt::noodler {
             }
         }
 
-        STRACE("str", tout << "len: Finished computing.\n");
+        STRACE(str, tout << "len: Finished computing.\n");
         return l_true;
     }
 
     std::pair<LenNode, LenNodePrecision> LengthDecisionProcedure::get_lengths() {
-        STRACE("str", tout << "len: Get lengths\n"; );
+        STRACE(str, tout << "len: Get lengths\n"; );
         LenNode len_formula = LenNode(LenFormulaType::AND, {
             this->preprocessing_len_formula, 
             LenNode(LenFormulaType::AND, this->implicit_len_formula), 
@@ -645,7 +645,7 @@ namespace smt::noodler {
 
         FormulaPreprocessor prep_handler(this->formula, this->init_aut_ass, this->init_length_sensitive_vars, m_params, {});
 
-        STRACE("str", tout << "len: Preprocessing\n");
+        STRACE(str, tout << "len: Preprocessing\n");
 
         prep_handler.remove_trivial();
         prep_handler.reduce_diseqalities(); // only makes variable a literal or removes the disequation 
@@ -659,7 +659,7 @@ namespace smt::noodler {
             if (prep_handler.get_aut_assignment().is_co_finite(term)) {
                 prep_handler.underapprox_var_language(term);
                 this->precision = LenNodePrecision::UNDERAPPROX;
-                STRACE("str", tout << term.to_string() << " - UNDERAPPROXIMATE languages\n";);
+                STRACE(str, tout << term.to_string() << " - UNDERAPPROXIMATE languages\n";);
             }
         }
 
@@ -696,7 +696,7 @@ namespace smt::noodler {
         // reduce automata of only neccessary variables
         prep_handler.reduce_automata();
 
-        STRACE("str",
+        STRACE(str,
             tout << " - formula after preprocess:\n";
             for (const Predicate& pred : this->formula.get_predicates()) {
                 tout << "\t" << pred << std::endl;
@@ -708,10 +708,10 @@ namespace smt::noodler {
     }
 
     bool LengthDecisionProcedure::is_suitable(const Formula &form, const AutAssignment& init_aut_ass) {
-        STRACE("str", tout << "len: suitability: ";);
+        STRACE(str, tout << "len: suitability: ";);
         for (const Predicate& pred : form.get_predicates()) {
             if(!pred.is_eq_or_ineq()) {
-                STRACE("str", tout << "False - non-equation predicate\n");
+                STRACE(str, tout << "False - non-equation predicate\n");
                 return false;
             }
         }
@@ -739,11 +739,11 @@ namespace smt::noodler {
             if(init_aut_ass.is_singleton(t)) {
                 continue;
             }
-            STRACE("str", tout << "False - regular constraints on variable " << t << std::endl;);
+            STRACE(str, tout << "False - regular constraints on variable " << t << std::endl;);
             return false;
         }
 
-        STRACE("str", tout << "True\n"; );
+        STRACE(str, tout << "True\n"; );
         return true;
     }
 
@@ -893,7 +893,7 @@ namespace smt::noodler {
         // if there are variables with in the substittuion map with no model --> assign
         assign_subst_map_vars(arith_model);
         assign_free_vars(arith_model);
-        STRACE("str-model-res",
+        STRACE(str-model-res,
             for (const auto& [var, model_string] : model) {
                 tout << "Model for " << var << ": " << model_string << std::endl;
             }

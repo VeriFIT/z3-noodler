@@ -118,7 +118,7 @@ namespace smt::noodler {
                 }
                 first = false;
                 if (intersection.is_lang_empty()) {
-                    STRACE("str-mult-memb-heur", tout << "intersection is empty => UNSAT" << std::endl;);
+                    STRACE(str-mult-memb-heur, tout << "intersection is empty => UNSAT" << std::endl;);
                     return l_false;
                 }
             }
@@ -136,9 +136,9 @@ namespace smt::noodler {
                 first = false;
             }
             
-            STRACE("str-mult-memb-heur",
+            STRACE(str-mult-memb-heur,
                 tout << "computing inclusion";
-                if (is_trace_enabled("str-nfa")) {
+                if (is_trace_enabled(str-nfa)) {
                     tout << " of automaton\n" << intersection << "within automaton\n" << unionn;
                 } else {
                     tout << "\n";
@@ -150,7 +150,7 @@ namespace smt::noodler {
                 mata::nfa::Run model_run;
                 if (mata::nfa::algorithms::is_included_antichains(intersection, unionn, nullptr, &model_run)) {
                     // if inclusion holds, the intersection is empty => UNSAT
-                    STRACE("str-mult-memb-heur", tout << "inclusion holds => UNSAT" << std::endl;);
+                    STRACE(str-mult-memb-heur, tout << "inclusion holds => UNSAT" << std::endl;);
                     return l_false;
                 } else {
                     // otherwise, the counterexample for why inclusion does not hold is a model
@@ -159,18 +159,18 @@ namespace smt::noodler {
             } else {
                 if (mata::nfa::algorithms::is_included_antichains(intersection, unionn, nullptr, nullptr)) {
                     // if inclusion holds, the intersection is empty => UNSAT
-                    STRACE("str-mult-memb-heur", tout << "inclusion holds => UNSAT" << std::endl;);
+                    STRACE(str-mult-memb-heur, tout << "inclusion holds => UNSAT" << std::endl;);
                     return l_false;
                 }
             }
         }
 
-        STRACE("str-mult-memb-heur", tout << "inclusion holds for all vars => SAT" << std::endl;);
+        STRACE(str-mult-memb-heur, tout << "inclusion holds for all vars => SAT" << std::endl;);
         return l_true;
     }
     
     zstring MultMembHeuristicProcedure::get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
-        STRACE("str-mult-memb-heur", tout << "getting model for " << var << std::endl;);
+        STRACE(str-mult-memb-heur, tout << "getting model for " << var << std::endl;);
         return models.at(var);
     }
 }

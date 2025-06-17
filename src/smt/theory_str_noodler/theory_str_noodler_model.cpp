@@ -42,7 +42,7 @@ namespace smt::noodler {
                 bool is_int;
                 rational val(0);
                 VERIFY(th.m_util_a.is_numeral(values[i], val, is_int) && is_int);
-                STRACE("str-model", tout << "Arith model of " << needed_vars[i] << " is " << val << std::endl;);
+                STRACE(str-model, tout << "Arith model of " << needed_vars[i] << " is " << val << std::endl;);
                 var_to_arith_model[needed_vars[i]] = val;
             }
 
@@ -97,18 +97,18 @@ namespace smt::noodler {
             // for concatenation, we just recursively get the models for arguments and then concatenate them
             expr_ref_vector concats(m);
             enode* str_concat_enode = ctx.get_enode(str_concat);
-            STRACE("str-model-concat", tout << "Dependencies for concat " << mk_pp(str_concat, m) << " (#" << str_concat_enode->get_owner_id() << "):";);
+            STRACE(str-model-concat, tout << "Dependencies for concat " << mk_pp(str_concat, m) << " (#" << str_concat_enode->get_owner_id() << "):";);
             m_util_s.str.get_concat(str_concat, concats);
             for (auto concat : concats) {
                 enode* concat_enode = ctx.get_enode(concat);
-                STRACE("str-model-concat", tout << " " << mk_pp(concat, m) << " (#" << concat_enode->get_root()->get_owner_id() << ")";);
+                STRACE(str-model-concat, tout << " " << mk_pp(concat, m) << " (#" << concat_enode->get_root()->get_owner_id() << ")";);
                 if (concat_enode->get_root() == str_concat_enode) {
                     // this should not happen
                     util::throw_error("Enode for some concatenation is the representant of enode of one of its arguments");
                 }
                 m_dependencies.push_back(model_value_dependency(concat_enode));
             }
-            STRACE("str-model-concat", tout << "\n";);
+            STRACE(str-model-concat, tout << "\n";);
         }
 
         void get_dependencies(buffer<model_value_dependency> & result) override {
@@ -143,7 +143,7 @@ namespace smt::noodler {
     model_value_proc* theory_str_noodler::mk_value(enode *const n, model_generator &mg) {
         // it seems here we only get string literals/vars, concats (whose arguments can be something more complex, but should be replacable by a var), from_int/from_code and regex literals/vars (vars probably not, only if we fix disequations with unrestricted regex vars)
         app *tgt = n->get_expr();
-        STRACE("str", tout << "mk_value: getting model for " << mk_pp(tgt, m) << " sort is " << mk_pp(tgt->get_sort(), m) << "\n";);
+        STRACE(str, tout << "mk_value: getting model for " << mk_pp(tgt, m) << " sort is " << mk_pp(tgt->get_sort(), m) << "\n";);
 
         if (m_util_s.is_re(tgt)) {
             // if tgt is regular
@@ -185,10 +185,10 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::init_model(model_generator &mg) {
-        STRACE("str", tout << "init_model\n");
+        STRACE(str, tout << "init_model\n");
     }
 
     void theory_str_noodler::finalize_model(model_generator &mg) {
-        STRACE("str", tout << "finalize_model\n";);
+        STRACE(str, tout << "finalize_model\n";);
     }
 }

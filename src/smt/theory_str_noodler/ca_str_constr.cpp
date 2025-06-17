@@ -427,12 +427,12 @@ namespace smt::noodler::ca {
         }
 
         if (autass.empty()) {
-            STRACE("str-diseq", tout << "Aut assignment is empty, cannot build formula.\n");
+            STRACE(str-diseq, tout << "Aut assignment is empty, cannot build formula.\n");
             assert(!autass.empty());
         }
 
         std::vector<Predicate> disequations_with_literals = prep_handler.get_modified_formula().get_predicates();
-        STRACE("str-diseq",
+        STRACE(str-diseq,
             tout << "* Conjunction of disequations: \n";
             for (const auto& diseq: disequations_with_literals) {
                 tout << "   - " << diseq << "\n";
@@ -443,7 +443,7 @@ namespace smt::noodler::ca {
         AutAssignment workspace_aut_assignment = prep_handler.get_aut_assignment(); // Make a local copy that we will modify; do not pollute autass
         std::vector<Predicate> disequations = replace_literals_with_fresh_vars(disequations_with_literals, literal_table, workspace_aut_assignment);
 
-        STRACE("str-diseq",
+        STRACE(str-diseq,
             tout << "* After replacing literals with fresh variables: \n";
             for (const auto& diseq: disequations) {
                 tout << "   - " << diseq << "\n";
@@ -457,13 +457,13 @@ namespace smt::noodler::ca {
         TagDiseqGen tag_automaton_generator(disequations, workspace_aut_assignment);
         ca::TagAut tag_aut = tag_automaton_generator.construct_tag_aut();
 
-        STRACE("str-diseq",
+        STRACE(str-diseq,
             tout << "* Variable ordering: " << std::endl;
             tout << concat_to_string(tag_automaton_generator.get_aut_matrix().get_var_order()) << std::endl << std::endl;
         );
 
         const std::vector<BasicTerm>& all_vars = tag_automaton_generator.get_aut_matrix().get_var_order();
-        STRACE("str-diseq",
+        STRACE(str-diseq,
             tout << "* NFAs for variables: " << std::endl;
             for (const BasicTerm& bt : all_vars) {
                 tout << bt.to_string() << ":" << std::endl;
@@ -472,12 +472,12 @@ namespace smt::noodler::ca {
             tout << std::endl;
         );
 
-        STRACE("str-diseq",
+        STRACE(str-diseq,
             tout << "* Tag Automaton for diseq: " << diseqs.to_string() << std::endl;
             tag_aut.print_to_dot(tout);
             tout << std::endl;
         );
-        STRACE("str", tout << "TagAut LIA: finished" << std::endl; );
+        STRACE(str, tout << "TagAut LIA: finished" << std::endl; );
 
         // we include only those symbols occurring in the reduced tag automaton
         TagSet all_used_tags;
@@ -490,16 +490,16 @@ namespace smt::noodler::ca {
 
         LenNode pi_formula (LenFormulaType::FALSE, {});
         if (disequations.size() == 1) { // Use a simpler construction without Copy tags
-            STRACE("str-diseq", tout << "* Generating formulae for a single disequation\n"; );
+            STRACE(str-diseq, tout << "* Generating formulae for a single disequation\n"; );
 
             Predicate diseq = disequations[0];
             pi_formula = diseq_lia_formula_generator.get_diseq_formula(diseq);
         } else {
-            STRACE("str-diseq", tout << "* Generating formulae for multiple disequations\n"; );
+            STRACE(str-diseq, tout << "* Generating formulae for multiple disequations\n"; );
             pi_formula = diseq_lia_formula_generator.get_formula_for_multiple_diseqs(disequations);
         }
 
-        STRACE("str-diseq", tout << "* Resulting formula: " << std::endl << pi_formula << std::endl << std::endl; );
+        STRACE(str-diseq, tout << "* Resulting formula: " << std::endl << pi_formula << std::endl << std::endl; );
 
         return pi_formula;
     }
@@ -595,7 +595,7 @@ namespace smt::noodler::ca {
         std::map<BasicTerm, std::set<mata::Word>> rhs_var_words;
         for (const Predicate& not_contains : not_contains_predicates) {
             if (not_contains.get_needle().size() > 1) {
-                STRACE("str-not-contains", tout << "* Cannot apply heuristics for finite side not-contains - we do not support more than 1 variable on RHS. Problematic predicate: \n  - " << not_contains << std::endl; );
+                STRACE(str-not-contains, tout << "* Cannot apply heuristics for finite side not-contains - we do not support more than 1 variable on RHS. Problematic predicate: \n  - " << not_contains << std::endl; );
                 can_apply_heuristic = false;
                 break;
             }
@@ -605,7 +605,7 @@ namespace smt::noodler::ca {
 
             bool is_finite = rhs_var_automaton->is_acyclic();
             if (!is_finite) {
-                STRACE("str-not-contains", tout << "* Cannot apply heuristics for finite side not-contains - RHS var has infinite language. Problematic predicate: \n  - " << not_contains << std::endl; );
+                STRACE(str-not-contains, tout << "* Cannot apply heuristics for finite side not-contains - RHS var has infinite language. Problematic predicate: \n  - " << not_contains << std::endl; );
                 can_apply_heuristic = false;
                 break;
             }
@@ -623,7 +623,7 @@ namespace smt::noodler::ca {
             rhs_var_words.emplace(rhs_var, std::move(words));
 
             if (!are_all_words_have_length_one) {
-                STRACE("str-not-contains", tout << "* Cannot apply heuristics for finite side not-contains - RHS var has finite language with words longer than 1. Problematic predicate: \n  - " << not_contains << std::endl; );
+                STRACE(str-not-contains, tout << "* Cannot apply heuristics for finite side not-contains - RHS var has finite language with words longer than 1. Problematic predicate: \n  - " << not_contains << std::endl; );
                 can_apply_heuristic = false;
                 break;
             }
@@ -792,7 +792,7 @@ namespace smt::noodler::ca {
         AutAssignment workspace_aut_assignment = actual_var_assignment;
         Predicate not_contains = replace_literals_in_predicate(not_contains_with_literals, literal_table, workspace_aut_assignment);
 
-        STRACE("str-not-contains", {
+        STRACE(str-not-contains, {
             tout << "* Replaced literals with variables: " << not_contains << "\n";
             tout << "* Literal table:\n";
             for (const auto& [literal, literal_handle] : literal_table) {
@@ -806,7 +806,7 @@ namespace smt::noodler::ca {
         if (can_construct_lia) {
             for (const BasicTerm& var : vars) {
                 if (!workspace_aut_assignment.is_flat(var)) {
-                    STRACE("str-not-contains", tout << "* cannot reduce to LIA - one of the input vars does not have a flat langauge\n"; );
+                    STRACE(str-not-contains, tout << "* cannot reduce to LIA - one of the input vars does not have a flat langauge\n"; );
                     can_construct_lia = false;
                     break;
                 };
@@ -824,7 +824,7 @@ namespace smt::noodler::ca {
             mata::nfa::Nfa reduced_nfa = mata::nfa::reduce(*it->second);
             mata::nfa::Nfa reduced_dfa = mata::nfa::determinize(reduced_nfa);
             it->second = std::make_shared<mata::nfa::Nfa>(reduced_dfa);
-            STRACE("str-not-contains", {
+            STRACE(str-not-contains, {
                 tout << "* (var assignment) NFA assigned to " << it->first << ":\n";
                 it->second->print_to_dot(tout);
             });
@@ -835,7 +835,7 @@ namespace smt::noodler::ca {
         ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
         std::set<AtomicSymbol> atomic_symbols = tag_automaton.gather_used_symbols();
 
-        STRACE("str-not-contains",
+        STRACE(str-not-contains,
             tout << "* tag automaton: \n";
             tag_automaton.print_to_dot(tout);
             tout << std::endl;
@@ -848,7 +848,7 @@ namespace smt::noodler::ca {
 
         LenNode not_contains_formula = not_contains_generator.get_not_cont_formula(not_contains);
 
-        STRACE("str-not-contains",
+        STRACE(str-not-contains,
             tout << "* generated formula: \n";
             tout << not_contains_formula << std::endl;
         );

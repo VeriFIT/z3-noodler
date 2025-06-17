@@ -105,7 +105,7 @@ void seq_decl_plugin::match_assoc(psig& sig, unsigned dsz, sort *const* dom, sor
         if (range) {
             strm << " and range: " << mk_pp(range, m);
         }
-        STRACE("str", strm.str());
+        STRACE(str, strm.str());
         m.raise_exception(strm.str());
     }
     range_out = apply_binding(binding, sig.m_range);

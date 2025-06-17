@@ -99,8 +99,8 @@ FormulaGraph smt::noodler::FormulaGraph::create_inclusion_graph(FormulaGraph& si
         for (const FormulaGraphNode& node: simplified_splitting_graph.get_nodes()) {
             if (!erased_nodes.contains(node) && simplified_splitting_graph.inverse_edges[node].empty()) { // if node is initial (has no transitions going into it)
                 inclusion_graph.nodes.push_back(node);
-                STRACE("str", tout << "Added node " << node.print() << " to the graph without the reversed inclusion." << std::endl;);
-                SCTRACE("str-nfa", node.get_predicate().is_transducer(), tout << "Transducer T" << node.get_predicate().get_transducer() << ":\n" << node.get_predicate().get_transducer()->print_to_dot(true););
+                STRACE(str, tout << "Added node " << node.print() << " to the graph without the reversed inclusion." << std::endl;);
+                SCTRACE(str-nfa, node.get_predicate().is_transducer(), tout << "Transducer T" << node.get_predicate().get_transducer() << ":\n" << node.get_predicate().get_transducer()->print_to_dot(true););
                 inclusion_graph.nodes_not_on_cycle.insert(node); // the inserted node cannot be on the cycle, because it is either initial or all nodes leading to it were not on cycle
 
                 FormulaGraphNode reversed_node{ node.get_reversed() };
@@ -121,8 +121,8 @@ FormulaGraph smt::noodler::FormulaGraph::create_inclusion_graph(FormulaGraph& si
     for (auto& node: simplified_splitting_graph.get_nodes()) {
         if (!erased_nodes.contains(node)) {
             inclusion_graph.nodes.push_back(node);
-            STRACE("str", tout << "Added node " << node.print() << " to the graph with its reversed inclusion." << std::endl;);
-            SCTRACE("str-nfa", node.get_predicate().is_transducer(), tout << "Transducer T" << node.get_predicate().get_transducer() << ":\n" << *node.get_predicate().get_transducer(););
+            STRACE(str, tout << "Added node " << node.print() << " to the graph with its reversed inclusion." << std::endl;);
+            SCTRACE(str-nfa, node.get_predicate().is_transducer(), tout << "Transducer T" << node.get_predicate().get_transducer() << ":\n" << *node.get_predicate().get_transducer(););
         }
     }
 

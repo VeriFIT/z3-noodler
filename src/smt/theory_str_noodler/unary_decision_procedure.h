@@ -64,7 +64,7 @@ namespace smt::noodler {
                 }
                 
             }
-            STRACE("str-unary-lengths", tout << ln << "\n";);
+            STRACE(str-unary-lengths, tout << ln << "\n";);
             return {ln, LenNodePrecision::PRECISE};
         }
 
