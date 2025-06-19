@@ -1861,6 +1861,65 @@ namespace smt::noodler {
     }
 
     /**
+     * Remove not contains predicates that are of the form:
+     * u1 notcontains x
+     * u2 notcontains x
+     * u3 notcontains x
+     * ....
+     * uN notcontains x
+     * where x is non-(length/conversion) variable which accepts everything and it occurs only
+     * in these not contains and only as the needle (so it does not occur in any of ui).
+     * 
+     * Because it does not occurs anywhere else in the formula, we can always find a word that is
+     * not in any of ui. More specifically, we can take x = u1.u2.u3...uN.'a' where 'a' is some literal.
+     * 
+     * We keep the inclusion u1.u2.u3...uN.'a' ⊆ x for model generation.
+     */
+    void FormulaPreprocessor::simplify_not_contains_to_equations() {
+        STRACE("str-prep", tout << "Preprocessing step - simplify_not_contains_to_equations\n";);
+        bool something_changed = true;
+        while (something_changed) {
+            something_changed = false;
+            for(const auto& [id, pred] : this->formula.get_predicates()) {
+                if(!pred.is_not_cont()) continue;
+                Concat needle = pred.get_needle();
+                if (needle.size() != 1) continue; // needle must be only one variable x
+                BasicTerm needle_var = needle[0]; // the variable x
+                if (needle_var.is_variable() && !len_variables.contains(needle_var) && !conversion_vars.contains(needle_var)) {
+                    bool occurs_only_in_not_contains_as_needle = true;
+                    std::set<size_t> rem_ids; // the not contains in which x occurs as needle
+                    std::vector<BasicTerm> haystacks; // we will collect the concatenation u1.u2.u3...uN here
+                    for (const auto& occur : this->formula.get_var_occurr(needle_var)) {
+                        const Predicate& pred = this->formula.get_predicate(occur.pred_index);
+                        // check if x occurs only as needle in not contains
+                        if (!pred.is_not_cont() || pred.get_needle().size() != 1 || occur.position != 1) {
+                            occurs_only_in_not_contains_as_needle = false;
+                            break;
+                        }
+                        // add the haystack (ui) to the concatenation haystacks
+                        for (const BasicTerm& haystack_var : pred.get_haystack()) {
+                            haystacks.emplace_back(haystack_var);
+                        }
+                        rem_ids.insert(occur.pred_index);
+                    }
+                    if (occurs_only_in_not_contains_as_needle && this->aut_ass.are_equivalent(needle_var, aut_ass.sigma_star_automaton())) {
+                        for(const size_t & i : rem_ids) {
+                            this->formula.remove_predicate(i);
+                        }
+                        // add 'a' (some literal) to the end of haystacks
+                        haystacks.emplace_back(BasicTermType::Literal, zstring(*this->aut_ass.get_alphabet().begin()));
+                        // add the inclusion u1.u2.u3...uN.'a' ⊆ x to removed_inclusions_for_model
+                        this->removed_inclusions_for_model.push_back(Predicate::create_equation(haystacks, {needle_var}));
+                        something_changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+    }
+
+    /**
      * @brief Check whether the system contains trivially unsatisfiable (dis)equations 
      * containing only literals.
      * 
