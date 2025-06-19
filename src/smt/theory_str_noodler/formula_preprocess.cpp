@@ -1805,27 +1805,59 @@ namespace smt::noodler {
      * @brief Unify transducers. For transducer constraints having the same arguments, intersect them and use 
      * only the intersected one. For instance T(x,y) && S(x,y) --> T'(x,y) where T'= T \cap S
      */
-    void FormulaPreprocessor::unify_transducers() {
+    bool FormulaPreprocessor::has_unsat_transducers() {
         std::map<Predicate, std::vector<std::shared_ptr<mata::nft::Nft>>> mp{};
         std::set<size_t> rem_ids {};
         for(const auto& [id, pred] : this->formula.get_predicates()) {
             if(!pred.is_transducer()) {
                 continue;
             }
-            rem_ids.insert(id);
             mp[Predicate::create_equation(pred.get_input(), pred.get_output())].push_back(pred.get_transducer());
         }
-        for(const size_t & i : rem_ids) {
-            this->formula.remove_predicate(i);
-        }
+
         for(const auto& [pred, trans] : mp) {
             assert(trans.size() >= 1);
-            mata::nft::Nft nft = *(trans[0]);
-            for(size_t i = 1; i < trans.size(); i++) {
-                nft = mata::nft::compose(nft, *trans[1], {0,1}, {0,1}, false);
+            if(pred.get_left_side().size() > 1) {
+                continue;
             }
-            this->formula.add_predicate(Predicate::create_transducer(std::make_shared<mata::nft::Nft>(nft), pred.get_left_side(), pred.get_right_side()));
+            mata::nft::Nft nft = *(trans[0]);
+
+            auto nfa = this->aut_ass.at(pred.get_left_side()[0]);
+
+            mata::nft::Nft lang_nft(*nfa, 2);
+            nft = mata::nft::compose(lang_nft, nft, 0, 0, true);
+            for(size_t i = 1; i < trans.size(); i++) {
+                auto tr = mata::nft::compose(lang_nft, *trans[1], 0, 0, true);
+                nft = mata::nft::compose(nft, tr, 0, 0, true);
+            }
+            
+            std::vector<mata::nft::Transition> to_remove {};
+            for(mata::nft::State state : nft.initial) {
+                for(const auto& post : nft.delta[state]) {
+                    for(const auto& target : post.targets) {
+                        bool symbol_found = false;
+                        for(const auto& mv : nft.delta[target]) {
+                            if(mv.symbol == post.symbol || mata::nft::EPSILON == post.symbol || mata::nft::EPSILON == mv.symbol) {
+                                symbol_found = true;
+                                break;
+                            }
+                        }
+                        if(!symbol_found) {
+                            to_remove.push_back(mata::nft::Transition(state, post.symbol, target));
+                        }
+                    }
+                }
+            }
+            for(const auto& tr : to_remove) {
+                nft.delta.remove(tr);
+            }
+
+            nft = nft.trim();
+            if(nft.is_lang_empty()) {
+                return true;
+            }
         }
+        return false;
     }
 
     /**
