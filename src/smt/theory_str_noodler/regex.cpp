@@ -1009,6 +1009,10 @@ namespace smt::noodler::regex {
             return;
         }
 
+        if (!(m_util_s.str.is_replace_all(ex) || m_util_s.str.is_replace_re_all(ex))) {
+            return;
+        }
+
         STRACE(str_gather_transducer_constraints, tout << "Gather transducer for " << mk_pp(ex,m) << "\n";);
 
         // check if we have not constructed this transducer already 

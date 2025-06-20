@@ -958,7 +958,7 @@ namespace smt::noodler {
             // we only need the length dependency between variables given by the transducers, therefore we can replace all symbols in the transducer by one symbol
             // except for code-point variables, for these we need exact value (but still dependency of this variable on other non-code-point variables is only
             // trough lengths)
-            mata::nft::Nft one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer.get_one_letter_aut(levels_of_code_subst_vars)).trim()).trim();
+            mata::nft::Nft one_symbol_transducer = transducer.get_one_letter_aut(levels_of_code_subst_vars);
 
             one_symbol_transducer = mata::nft::reduce(mata::nft::remove_epsilon(one_symbol_transducer).trim()).trim();
 
