@@ -1802,12 +1802,15 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Unify transducers. For transducer constraints having the same arguments, intersect them and use 
-     * only the intersected one. For instance T(x,y) && S(x,y) --> T'(x,y) where T'= T \cap S
+     * @brief Check if the formula contains unsat transducer constraints. 
+     * It focuses on constraints of the form T_1(x,y) && T_2(x,y). The preprocessing
+     * reduces unsatifiability checking by transforming to checking if there is 
+     * some (w,w) in the language of the transducer.
      */
     bool FormulaPreprocessor::has_unsat_transducers() {
         std::map<Predicate, std::vector<std::shared_ptr<mata::nft::Nft>>> mp{};
         std::set<size_t> rem_ids {};
+        // collect transducers with the identical parameters 
         for(const auto& [id, pred] : this->formula.get_predicates()) {
             if(!pred.is_transducer()) {
                 continue;
@@ -1824,13 +1827,21 @@ namespace smt::noodler {
 
             auto nfa = this->aut_ass.at(pred.get_left_side()[0]);
 
+            // restrict the input variable --> T_1(Aut(x), y)
+            // it is not necessary for correctness, but it makes the heuristics later more succesful
             mata::nft::Nft lang_nft(*nfa, 2);
             nft = mata::nft::compose(lang_nft, nft, 0, 0, true);
+            // compose first tapes of all transducers with identical parameters (and project out the synchronizing tape)
+            // nft = [T_1(y), T_2(y), ...]
             for(size_t i = 1; i < trans.size(); i++) {
                 auto tr = mata::nft::compose(lang_nft, *trans[1], 0, 0, true);
                 nft = mata::nft::compose(nft, tr, 0, 0, true);
             }
             
+            // now it suffices to check if there is some word (w,w) in L(nft)
+            // If not, the constraint is unsatifiable
+            // We use heuristics removing transitions i -[a/b]-> .. where i is an initial state and a != b and a != eps and b != eps
+            // then, we check it the language is empty
             std::vector<mata::nft::Transition> to_remove {};
             for(mata::nft::State state : nft.initial) {
                 for(const auto& post : nft.delta[state]) {
