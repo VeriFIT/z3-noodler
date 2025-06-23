@@ -1700,7 +1700,7 @@ namespace smt::noodler {
         init_solving_state.substitution_map = std::move(this->init_substitution_map);
 
         if (!equations_and_transducers.get_predicates().empty()) {
-            FormulaGraph incl_graph = FormulaGraph::create_inclusion_graph(equations_and_transducers);
+            FormulaGraph incl_graph = FormulaGraph::create_inclusion_graph(equations_and_transducers, init_solving_state.length_sensitive_vars);
             for (const FormulaGraphNode &node : incl_graph.get_nodes()) {
                 Predicate node_pred = node.get_real_predicate();
                 if (node_pred.is_equation()) { // inclusion
