@@ -426,7 +426,7 @@ TEST_CASE("Inclusion graph with transducers", "[noodler]") {
         graph = FormulaGraph::create_inclusion_graph(formula);
 
         CHECK(graph.get_nodes().size() == 2);
-        CHECK(graph.get_num_of_edges() == 0);
+        CHECK(graph.get_num_of_edges() == 1);
         CHECK(!graph.is_cyclic());
     }
 }
