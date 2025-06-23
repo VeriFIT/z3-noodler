@@ -34,15 +34,17 @@ namespace smt::noodler::util {
         app* ex_app{ to_app(ex) };
         if(pred_map != nullptr) {
             expr* rpl;
-            if(pred_map->find(ex_app, rpl)) {
+            if(pred_map->find(ex_app, rpl) && !(m_util_s.str.is_replace_all(rpl) || m_util_s.str.is_replace_re_all(rpl))) {
                 get_str_variables(rpl, m_util_s, m, res, pred_map);
             }
         }
 
-        for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
-            SASSERT(is_app(ex_app->get_arg(i)));
-            app *arg = to_app(ex_app->get_arg(i));
-            get_str_variables(arg, m_util_s, m, res, pred_map);
+        if (!(m_util_s.str.is_replace_all(ex) || m_util_s.str.is_replace_re_all(ex))) {
+            for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
+                SASSERT(is_app(ex_app->get_arg(i)));
+                app *arg = to_app(ex_app->get_arg(i));
+                get_str_variables(arg, m_util_s, m, res, pred_map);
+            }
         }
     }
 
