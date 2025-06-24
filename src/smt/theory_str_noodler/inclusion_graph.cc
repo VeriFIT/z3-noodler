@@ -158,11 +158,21 @@ FormulaGraph smt::noodler::FormulaGraph::create_inclusion_graph(FormulaGraph& si
 }
 
 void FormulaGraph::print_to_dot(std::ostream &output_stream) const {
+    auto escape_quotes = [](const std::string& s) {
+        std::string escaped;
+        for (char c : s) {
+            if (c == '"')
+                escaped += "\\\"";
+            else
+                escaped += c;
+        }
+        return escaped;
+    };
     output_stream << "digraph inclusionGraph {\nnode [shape=none];\n";
     for (const FormulaGraphNode& node : nodes) {
-        output_stream << "\"" << node.print() << "\" -> {";
+        output_stream << "\"" << escape_quotes(node.print()) << "\" -> {";
         for (const FormulaGraphNode& target : get_edges_from(node)) {
-            output_stream << "\"" << target.print() << "\" ";
+            output_stream << "\"" << escape_quotes(target.print()) << "\" ";
         }
         output_stream << "} [label=\"\"]\n";
     }
