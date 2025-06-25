@@ -122,7 +122,7 @@ FormulaGraph smt::noodler::FormulaGraph::create_inclusion_graph(FormulaGraph& si
 
         auto best_score_it = init_nodes_with_score.begin();
         for (auto it = init_nodes_with_score.begin(); it != init_nodes_with_score.end(); ++it) {
-            if (it->second < best_score_it->second) { //score of this node is better
+            if (it->second > best_score_it->second) { //score of this node is better
                 best_score_it = it;
             }
         }
