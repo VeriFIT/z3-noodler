@@ -300,7 +300,7 @@ def cp_vs_runtimes():
     cp_vs_runtime(False)
 
 def cp_license(x64):
-    shutil.copy("LICENSE.txt", os.path.join(DIST_DIR, get_dist_path(x64)))
+    shutil.copy("LICENSE_Z3.txt", os.path.join(DIST_DIR, get_dist_path(x64)))
 
 def cp_licenses():
     cp_license(True)

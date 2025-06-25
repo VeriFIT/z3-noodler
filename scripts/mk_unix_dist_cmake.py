@@ -255,7 +255,7 @@ def cp_license():
         print("copy licence")
     path = get_build_dist_path()
     mk_dir(path)
-    shutil.copy("LICENSE.txt", path)
+    shutil.copy("LICENSE_Z3.txt", path)
 
 # Entry point
 def main():
