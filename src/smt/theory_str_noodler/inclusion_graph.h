@@ -270,7 +270,7 @@ namespace smt::noodler {
         /**
          * @brief Create an inclusion graph from splitting graph
          */
-        static FormulaGraph create_inclusion_graph(FormulaGraph& simplified_splitting_graph);
+        static FormulaGraph create_inclusion_graph(FormulaGraph& simplified_splitting_graph, std::unordered_set<BasicTerm> length_vars = {});
 
 
         /**
@@ -284,7 +284,7 @@ namespace smt::noodler {
          * @param formula must contain only equations and transducers
          * @return the inclusion graph 
          */
-        static FormulaGraph create_inclusion_graph(const Formula& formula);
+        static FormulaGraph create_inclusion_graph(const Formula& formula, std::unordered_set<BasicTerm> length_vars = {});
 
         /**
          * Print the inclusion graph in a DOT format.
