@@ -170,6 +170,7 @@ namespace smt::noodler {
                 std::vector<BasicTerm> right_vars,
                 std::vector<std::vector<BasicTerm>> right_vars_divisions,
                 bool is_predicate_on_cycle) {
+            has_noodles = true;
             noodles.noodles_for_inclusion = std::move(noodles_for_inclusion);
             noodles.next_noodle_for_inclusion_it = noodles.noodles_for_inclusion.begin();
             noodles.left_or_output_vars = left_vars;
@@ -187,6 +188,7 @@ namespace smt::noodler {
                 std::vector<BasicTerm> input_vars,
                 std::vector<std::vector<BasicTerm>> input_vars_divisions,
                 bool is_predicate_on_cycle) {
+            has_noodles = true;
             noodles.noodles_for_transducer = std::move(noodles_for_transducer);
             noodles.next_noodle_for_transducer_it = noodles.noodles_for_transducer.begin();
             noodles.left_or_output_vars = output_vars;
