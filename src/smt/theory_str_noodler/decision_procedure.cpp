@@ -581,7 +581,7 @@ namespace smt::noodler {
         mata::strings::seg_nfa::NoodleWithEpsilonsCounter& noodle = solving_state.noodles.get_next_inclusion_noodle();
     
         STRACE("str", tout << "Processing noodle" << (is_trace_enabled("str-nfa") ? " with automata:" : "") << std::endl;);
-        SolvingState new_element = solving_state;
+        SolvingState new_element = solving_state.make_copy();
 
         /* Explanation of the next code on an example:
          * Left side has variables x_1, x_2, x_3, x_2 while the right side has variables x_4, x_1, x_5, x_6, where x_1
@@ -760,7 +760,7 @@ namespace smt::noodler {
         // and the result is also a set of simple transducers 
         STRACE("str", tout << "Processing a transducer noodle" << std::endl;);
 
-        SolvingState new_element = solving_state;
+        SolvingState new_element = solving_state.make_copy();
 
         std::vector<std::vector<BasicTerm>> input_vars_to_new_input_vars(solving_state.noodles.right_or_input_vars_divisions.size());
         std::vector<std::vector<BasicTerm>> output_vars_to_new_output_vars(solving_state.noodles.left_or_output_vars.size());

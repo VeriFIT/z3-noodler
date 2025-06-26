@@ -160,8 +160,12 @@ namespace smt::noodler {
         // the variables that have length constraint on them in the rest of formula
         std::unordered_set<BasicTerm> length_sensitive_vars;
 
+        SolvingState make_copy() {
+            return SolvingState(aut_ass, predicates_to_process, inclusions, transducers,
+                predicates_not_on_cycle, length_sensitive_vars, substitution_map);
+        }
+
         bool has_noodles = false;
-        unsigned noodlification_no = 0;
         Noodles noodles;
         void set_noodles(
                 std::vector<mata::strings::seg_nfa::NoodleWithEpsilonsCounter> noodles_for_inclusion,
