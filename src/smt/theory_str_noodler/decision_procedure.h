@@ -104,6 +104,38 @@ namespace smt::noodler {
         virtual ~AbstractDecisionProcedure()=default;
     };
 
+    struct Noodles {
+        bool is_transducer;
+        std::vector<mata::strings::seg_nfa::NoodleWithEpsilonsCounter> noodles_for_inclusion{};
+        std::vector<mata::strings::seg_nfa::NoodleWithEpsilonsCounter>::iterator next_noodle_for_inclusion_it = noodles_for_inclusion.end();
+        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles_for_transducer{};
+        std::vector<mata::strings::seg_nfa::TransducerNoodle>::iterator next_noodle_for_transducer_it = noodles_for_transducer.end();
+
+        std::vector<BasicTerm> left_or_output_vars;
+        std::vector<std::vector<BasicTerm>> left_or_output_vars_divisions;
+        std::vector<BasicTerm> right_or_input_vars;
+        std::vector<std::vector<BasicTerm>> right_or_input_vars_divisions;
+
+        bool is_predicate_on_cycle;
+
+        bool has_next() {
+            return (next_noodle_for_inclusion_it != noodles_for_inclusion.end() || next_noodle_for_transducer_it != noodles_for_transducer.end());
+        }
+
+        mata::strings::seg_nfa::NoodleWithEpsilonsCounter& get_next_inclusion_noodle() {
+            mata::strings::seg_nfa::NoodleWithEpsilonsCounter& ret = *next_noodle_for_inclusion_it;
+            ++next_noodle_for_inclusion_it;
+            return ret;
+        }
+
+        mata::strings::seg_nfa::TransducerNoodle& get_next_transducer_noodle() {
+            mata::strings::seg_nfa::TransducerNoodle& ret = *next_noodle_for_transducer_it;
+            ++next_noodle_for_transducer_it;
+            return ret;
+        }
+
+    };
+
     /// A state of decision procedure that can lead to a solution
     struct SolvingState {
         // aut_ass[x] assigns variable x to some automaton while substitution_map[x] maps variable x to
@@ -128,6 +160,42 @@ namespace smt::noodler {
         // the variables that have length constraint on them in the rest of formula
         std::unordered_set<BasicTerm> length_sensitive_vars;
 
+        bool has_noodles = false;
+        unsigned noodlification_no = 0;
+        Noodles noodles;
+        void set_noodles(
+                std::vector<mata::strings::seg_nfa::NoodleWithEpsilonsCounter> noodles_for_inclusion,
+                std::vector<BasicTerm> left_vars,
+                std::vector<std::vector<BasicTerm>> left_vars_divisions,
+                std::vector<BasicTerm> right_vars,
+                std::vector<std::vector<BasicTerm>> right_vars_divisions,
+                bool is_predicate_on_cycle) {
+            noodles.noodles_for_inclusion = std::move(noodles_for_inclusion);
+            noodles.next_noodle_for_inclusion_it = noodles.noodles_for_inclusion.begin();
+            noodles.left_or_output_vars = left_vars;
+            noodles.left_or_output_vars_divisions = left_vars_divisions;
+            noodles.right_or_input_vars = right_vars;
+            noodles.right_or_input_vars_divisions = right_vars_divisions;
+            noodles.is_predicate_on_cycle = is_predicate_on_cycle;
+            noodles.is_transducer = false;
+        }
+
+        void set_noodles(
+                std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles_for_transducer,
+                std::vector<BasicTerm> output_vars,
+                std::vector<std::vector<BasicTerm>> output_vars_divisions,
+                std::vector<BasicTerm> input_vars,
+                std::vector<std::vector<BasicTerm>> input_vars_divisions,
+                bool is_predicate_on_cycle) {
+            noodles.noodles_for_transducer = std::move(noodles_for_transducer);
+            noodles.next_noodle_for_transducer_it = noodles.noodles_for_transducer.begin();
+            noodles.left_or_output_vars = output_vars;
+            noodles.left_or_output_vars_divisions = output_vars_divisions;
+            noodles.right_or_input_vars = input_vars;
+            noodles.right_or_input_vars_divisions = input_vars_divisions;
+            noodles.is_predicate_on_cycle = is_predicate_on_cycle;
+            noodles.is_transducer = true;
+        }
 
         SolvingState() = default;
         SolvingState(AutAssignment aut_ass,
@@ -520,13 +588,20 @@ namespace smt::noodler {
         std::vector<Predicate> replace_disequality(Predicate diseq);
 
         void process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state);
+        void process_next_inclusion_noodle(SolvingState& solving_state);
         void process_transducer(const Predicate& transducer_to_process, SolvingState& solving_state);
+        void process_next_transducer_noodle(SolvingState& solving_state);
 
-        void push_to_worklist(SolvingState solving_state, bool to_back) {
+        void push_to_worklist(SolvingState solving_state, bool to_back, bool push_solution_always_to_front = true) {
             std::string old_DOT_name = solving_state.DOT_name;
             solving_state.set_new_DOT_name();
-            STRACE("str-noodle-dot", tout << solving_state.print_to_DOT() << std::endl << old_DOT_name << " -> " << solving_state.DOT_name << ";\n");
-            if (to_back) {
+            STRACE("str-noodle-dot",
+                if (!solving_state.has_noodles) {
+                    tout << solving_state.print_to_DOT() << std::endl << old_DOT_name << " -> " << solving_state.DOT_name << ";\n";
+                }
+            );
+            if (to_back && !(push_solution_always_to_front && solving_state.predicates_to_process.empty())) {
+                // if there is nothing to process then solving_state is a possible solution so it is better to push it to front so we can immediately handle it
                 worklist.push_back(std::move(solving_state));
             } else {
                 worklist.push_front(std::move(solving_state));
@@ -537,8 +612,12 @@ namespace smt::noodler {
         SolvingState pop_from_worklist() {
             SolvingState element_to_process = std::move(worklist.front());
             worklist.pop_front();
-            STRACE("str-noodle-dot", tout << element_to_process.DOT_name << " -> " << element_to_process.DOT_name << " [penwidth=0,dir=none,label=" << num_of_popped_elements << "];\n";);
-            ++num_of_popped_elements;
+            STRACE("str-noodle-dot",
+                if (!element_to_process.has_noodles) {
+                    tout << element_to_process.DOT_name << " -> " << element_to_process.DOT_name << " [penwidth=0,dir=none,label=" << num_of_popped_elements << "];\n";
+                    ++num_of_popped_elements;
+                }
+            );
             return element_to_process;
         }
 
