@@ -1819,7 +1819,9 @@ namespace smt::noodler {
         }
 
         for(const auto& [pred, trans] : mp) {
-            assert(trans.size() >= 1);
+            if(trans.size() == 1) {
+                continue;
+            }
             if(pred.get_left_side().size() > 1) {
                 continue;
             }
