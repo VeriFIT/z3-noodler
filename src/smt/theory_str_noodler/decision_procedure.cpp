@@ -747,7 +747,7 @@ namespace smt::noodler {
 
     void DecisionProcedure::process_next_transducer_noodle(SolvingState& solving_state) {
         SASSERT(solving_state.has_noodles);
-        mata::strings::seg_nfa::TransducerNoodle& noodle = solving_state.noodles.get_next_transducer_noodle();
+        mata::strings::seg_nfa::TransducerNoodle noodle = solving_state.noodles.get_next_transducer_noodle();
         
         // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
         //      - T is a transducer, which will take one input and one output var: xo = T(xi)

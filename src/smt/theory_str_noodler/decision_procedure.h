@@ -106,10 +106,8 @@ namespace smt::noodler {
 
     struct Noodles {
         bool is_transducer;
-        std::vector<mata::strings::seg_nfa::NoodleWithEpsilonsCounter> noodles_for_inclusion{};
-        std::vector<mata::strings::seg_nfa::NoodleWithEpsilonsCounter>::iterator next_noodle_for_inclusion_it = noodles_for_inclusion.end();
-        std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles_for_transducer{};
-        std::vector<mata::strings::seg_nfa::TransducerNoodle>::iterator next_noodle_for_transducer_it = noodles_for_transducer.end();
+        mata::strings::seg_nfa::EquationNoodlificator noodles_for_inclusion;
+        mata::strings::seg_nfa::TransducerNoodlificator noodles_for_transducer;
 
         std::vector<BasicTerm> left_or_output_vars;
         std::vector<std::vector<BasicTerm>> left_or_output_vars_divisions;
@@ -119,19 +117,19 @@ namespace smt::noodler {
         bool is_predicate_on_cycle;
 
         bool has_next() {
-            return (next_noodle_for_inclusion_it != noodles_for_inclusion.end() || next_noodle_for_transducer_it != noodles_for_transducer.end());
+            if (is_transducer) {
+                return noodles_for_transducer.has_next_noodle();
+            } else {
+                return noodles_for_inclusion.has_next_noodle();
+            }
         }
 
         mata::strings::seg_nfa::NoodleWithEpsilonsCounter& get_next_inclusion_noodle() {
-            mata::strings::seg_nfa::NoodleWithEpsilonsCounter& ret = *next_noodle_for_inclusion_it;
-            ++next_noodle_for_inclusion_it;
-            return ret;
+            return noodles_for_inclusion.get_next_noodle();
         }
 
-        mata::strings::seg_nfa::TransducerNoodle& get_next_transducer_noodle() {
-            mata::strings::seg_nfa::TransducerNoodle& ret = *next_noodle_for_transducer_it;
-            ++next_noodle_for_transducer_it;
-            return ret;
+        mata::strings::seg_nfa::TransducerNoodle get_next_transducer_noodle() {
+            return noodles_for_transducer.get_next_noodle();
         }
 
     };
@@ -168,7 +166,7 @@ namespace smt::noodler {
         bool has_noodles = false;
         Noodles noodles;
         void set_noodles(
-                std::vector<mata::strings::seg_nfa::NoodleWithEpsilonsCounter> noodles_for_inclusion,
+                mata::strings::seg_nfa::EquationNoodlificator noodles_for_inclusion,
                 std::vector<BasicTerm> left_vars,
                 std::vector<std::vector<BasicTerm>> left_vars_divisions,
                 std::vector<BasicTerm> right_vars,
@@ -176,7 +174,6 @@ namespace smt::noodler {
                 bool is_predicate_on_cycle) {
             has_noodles = true;
             noodles.noodles_for_inclusion = std::move(noodles_for_inclusion);
-            noodles.next_noodle_for_inclusion_it = noodles.noodles_for_inclusion.begin();
             noodles.left_or_output_vars = left_vars;
             noodles.left_or_output_vars_divisions = left_vars_divisions;
             noodles.right_or_input_vars = right_vars;
@@ -186,7 +183,7 @@ namespace smt::noodler {
         }
 
         void set_noodles(
-                std::vector<mata::strings::seg_nfa::TransducerNoodle> noodles_for_transducer,
+                mata::strings::seg_nfa::TransducerNoodlificator noodles_for_transducer,
                 std::vector<BasicTerm> output_vars,
                 std::vector<std::vector<BasicTerm>> output_vars_divisions,
                 std::vector<BasicTerm> input_vars,
@@ -194,7 +191,6 @@ namespace smt::noodler {
                 bool is_predicate_on_cycle) {
             has_noodles = true;
             noodles.noodles_for_transducer = std::move(noodles_for_transducer);
-            noodles.next_noodle_for_transducer_it = noodles.noodles_for_transducer.begin();
             noodles.left_or_output_vars = output_vars;
             noodles.left_or_output_vars_divisions = output_vars_divisions;
             noodles.right_or_input_vars = input_vars;
