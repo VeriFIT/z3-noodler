@@ -1849,6 +1849,9 @@ namespace smt::noodler {
                 for(const auto& post : nft.delta[state]) {
                     for(const auto& target : post.targets) {
                         bool symbol_found = false;
+                        if(target == state) {
+                            continue; // skip self-loops
+                        }
                         for(const auto& mv : nft.delta[target]) {
                             if(mv.symbol == post.symbol || mata::nft::EPSILON == post.symbol || mata::nft::EPSILON == mv.symbol) {
                                 symbol_found = true;
