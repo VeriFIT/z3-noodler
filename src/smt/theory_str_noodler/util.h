@@ -158,6 +158,25 @@ namespace smt::noodler::util {
     mata::Word get_mata_word_zstring(const zstring& word);
 
     /**
+     * @brief Checks if the transducer contains an identity mappin for a word of given length (w,w).
+     *
+     * This function explores the transducer as a multi-tape automaton and checks if there exists a path
+     * from an initial state to a final state such that the sequence of symbols on all tapes is identical
+     * (i.e., the transducer realizes the identity relation for some word of the given length).
+     *
+     * The search is performed using BFS over a state space where each state consists of:
+     *   - the current automaton state
+     *   - the sequence of symbols read/written on each tape so far
+     *
+     * The function returns true if such a path exists, false otherwise.
+     *
+     * @param transducer The NFT (non-deterministic finite transducer) to check.
+     * @param length The length of the word to check for identity mapping.
+     * @return true if the transducer may contains an identity mapping of the given length, false if there is surely no such mapping.
+     */
+    bool contains_trans_identity(const mata::nft::Nft& transducer, unsigned length);
+
+    /**
      * @brief Create a vector of inclusions of the form left_sides[i] ⊆ right_sides[i] for all i.
      * 
      * Assumes that @p left_sides and @p right_sides have the same size.

@@ -163,4 +163,128 @@ TEST_CASE("theory_str_noodler::util") {
                                                           to_app(var3)->get_name().str() });
         }
     }
+
+    SECTION("util::contains_trans_identity()") {
+        // Helper: create a simple identity transducer for a given alphabet and length
+        auto make_identity_transducer = [](const std::set<mata::Symbol>& alphabet, unsigned length) {
+            unsigned num_states = length + 1;
+            mata::nft::Nft transducer {num_states};
+            transducer.num_of_levels = 2; // input and output tapes
+            transducer.initial.insert(0);
+            transducer.final.insert(num_states - 1);
+            for (unsigned i = 0; i < length; ++i) {
+                for (auto sym : alphabet) {
+                    // Identity: input symbol == output symbol
+                    transducer.add_transition(i, {sym, sym}, i + 1);
+                }
+            }
+            return transducer;
+        };
+
+        // Test: identity transducer should return true
+        {
+            std::set<mata::Symbol> alphabet = { 'a', 'b' };
+            unsigned length = 3;
+            auto transducer = make_identity_transducer(alphabet, length);
+            CHECK(util::contains_trans_identity(transducer, length));
+        }
+
+        // Test: transducer with non-identity mapping should return false
+        {
+            mata::nft::Nft transducer {2};
+            transducer.num_of_levels = 2;
+            transducer.initial.insert(0);
+            transducer.final.insert(1);
+            // Only non-identity transition
+            transducer.add_transition(0, {'a', 'b'}, 1);
+            CHECK(!util::contains_trans_identity(transducer, 1));
+        }
+
+        // Test: empty transducer (no transitions, no initial/final)
+        {
+            mata::nft::Nft transducer {1};
+            transducer.num_of_levels = 2;
+            CHECK(!util::contains_trans_identity(transducer, 1));
+        }
+
+        // Test: identity for length 0 (initial is final)
+        {
+            mata::nft::Nft transducer {1};
+            transducer.num_of_levels = 2;
+            transducer.initial.insert(0);
+            transducer.final.insert(0);
+            CHECK(util::contains_trans_identity(transducer, 0));
+        }
+
+        // Test: self-loop on initial state with identity symbol, length 1, should not accept unless final is reached
+        {
+            mata::nft::Nft transducer {2};
+            transducer.num_of_levels = 2;
+            transducer.initial.insert(0);
+            transducer.final.insert(1);
+            // Self-loop on initial state (identity)
+            transducer.add_transition(0, {'a', 'a'}, 0);
+            // Proper transition to final
+            transducer.add_transition(0, {'a', 'a'}, 1);
+            CHECK(util::contains_trans_identity(transducer, 1));
+        }
+
+        // Test: self-loop on initial state only, no path to final, should not accept
+        {
+            mata::nft::Nft transducer {2};
+            transducer.num_of_levels = 2;
+            transducer.initial.insert(0);
+            transducer.final.insert(1);
+            // Only self-loop, no transition to final
+            transducer.add_transition(0, {'a', 'b'}, 0);
+            transducer.add_transition(0, {'a', 'b'}, 1);
+            CHECK(!util::contains_trans_identity(transducer, 1));
+        }
+
+        // Test: self-loop on initial state, but final is also initial, length 1, should accept for length 0 only
+        {
+            mata::nft::Nft transducer {1};
+            transducer.num_of_levels = 2;
+            transducer.initial.insert(0);
+            transducer.final.insert(0);
+            // Self-loop
+            transducer.add_transition(0, {'a', 'a'}, 0);
+            CHECK(util::contains_trans_identity(transducer, 0));
+            CHECK(util::contains_trans_identity(transducer, 1));
+        }
+
+        // Test: self-loop on initial state with non-identity symbol, should not accept
+        {
+            mata::nft::Nft transducer {2};
+            transducer.num_of_levels = 2;
+            transducer.initial.insert(0);
+            transducer.final.insert(1);
+            // Self-loop with non-identity
+            transducer.add_transition(0, {'a', 'b'}, 0);
+            // Proper transition to final with identity
+            transducer.add_transition(0, {'a', 'a'}, 1);
+            CHECK(util::contains_trans_identity(transducer, 1));
+            // If only non-identity self-loop, should not accept
+            mata::nft::Nft t2 {2};
+            t2.num_of_levels = 2;
+            t2.initial.insert(0);
+            t2.final.insert(1);
+            t2.add_transition(0, {'a', 'b'}, 0);
+            CHECK(!util::contains_trans_identity(t2, 1));
+        }
+
+        // Test: longer self-loop chain, only identity path should be accepted
+        {
+            mata::nft::Nft transducer {3};
+            transducer.num_of_levels = 2;
+            transducer.initial.insert(0);
+            transducer.final.insert(2);
+            // Self-loop on 0
+            transducer.add_transition(0, {'a', 'a'}, 0);
+            // Path: 0 --('a','a')--> 1 --('b','b')--> 2
+            transducer.add_transition(0, {'a', 'a'}, 1);
+            transducer.add_transition(1, {'b', 'b'}, 2);
+            CHECK(util::contains_trans_identity(transducer, 2));
+        }
+    }
 }

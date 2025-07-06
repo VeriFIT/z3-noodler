@@ -1839,37 +1839,8 @@ namespace smt::noodler {
                 auto tr = mata::nft::compose(lang_nft, *trans[1], 0, 0, true);
                 nft = mata::nft::compose(nft, tr, 0, 0, true);
             }
-            
-            // now it suffices to check if there is some word (w,w) in L(nft)
-            // If not, the constraint is unsatifiable
-            // We use heuristics removing transitions i -[a/b]-> .. where i is an initial state and a != b and a != eps and b != eps
-            // then, we check it the language is empty
-            std::vector<mata::nft::Transition> to_remove {};
-            for(mata::nft::State state : nft.initial) {
-                for(const auto& post : nft.delta[state]) {
-                    for(const auto& target : post.targets) {
-                        bool symbol_found = false;
-                        if(target == state) {
-                            continue; // skip self-loops
-                        }
-                        for(const auto& mv : nft.delta[target]) {
-                            if(mv.symbol == post.symbol || mata::nft::EPSILON == post.symbol || mata::nft::EPSILON == mv.symbol) {
-                                symbol_found = true;
-                                break;
-                            }
-                        }
-                        if(!symbol_found) {
-                            to_remove.push_back(mata::nft::Transition(state, post.symbol, target));
-                        }
-                    }
-                }
-            }
-            for(const auto& tr : to_remove) {
-                nft.delta.remove(tr);
-            }
 
-            nft = nft.trim();
-            if(nft.is_lang_empty()) {
+            if(!util::contains_trans_identity(nft, 4)) {
                 return true;
             }
         }
