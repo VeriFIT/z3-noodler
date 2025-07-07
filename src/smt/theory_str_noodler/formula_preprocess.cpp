@@ -1840,7 +1840,7 @@ namespace smt::noodler {
                 nft = mata::nft::compose(nft, tr, 0, 0, true);
             }
 
-            if(!util::contains_trans_identity(nft, 10)) {
+            if(!util::contains_trans_identity(nft, 4)) {
                 return true;
             }
         }
