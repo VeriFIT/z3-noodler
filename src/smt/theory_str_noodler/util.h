@@ -158,7 +158,7 @@ namespace smt::noodler::util {
     mata::Word get_mata_word_zstring(const zstring& word);
 
     /**
-     * @brief Checks if the transducer contains an identity mappin for a word of given length (w,w).
+     * @brief Checks if the transducer contains an identity mapping for a word of given length (w,w).
      *
      * This function explores the transducer as a multi-tape automaton and checks if there exists a path
      * from an initial state to a final state such that the sequence of symbols on all tapes is identical
