@@ -318,10 +318,10 @@ namespace smt::noodler::util {
         return true;
     }
 
-    bool contains_trans_identity(const mata::nft::Nft& transducer, unsigned length) {
+    lbool contains_trans_identity(const mata::nft::Nft& transducer, unsigned length) {
         // State represents a node in the BFS: automaton state + tape histories
         struct State {
-            mata::nfa::State state; // current automaton state
+            mata::nft::State state; // current automaton state
             std::vector<std::vector<mata::Symbol>> tapes; // history of symbols for each tape
 
             /**
@@ -330,7 +330,7 @@ namespace smt::noodler::util {
              * @param num_tapes The number of tapes (levels) in the transducer.
              * Initializes each tape's history as an empty vector.
              */
-            State(mata::nfa::State s, unsigned num_tapes) : state(s), tapes(num_tapes) {}
+            State(mata::nft::State s, unsigned num_tapes) : state(s), tapes(num_tapes) {}
 
             /**
              * Equality operator for State.
@@ -361,6 +361,9 @@ namespace smt::noodler::util {
 
             /**
              * Checks if any tape differs from the first tape at any position (i.e., not a prefix of identity).
+             * In other words the tapes cannot cannot be extended to something having same symbols on all tapes 
+             * (e.g., [a, ab] is ok, but [ab, ac] is not).
+             * TODO: so-far the function is not able to detect e.g., [ abc, abce, abcd ]
              * @return True if any tape is not a prefix of the first tape; false otherwise.
              */
             bool is_not_prefix() const {
@@ -368,7 +371,7 @@ namespace smt::noodler::util {
                 for(size_t i = 0; i < sz; i++) {
                     for(size_t j = 1; j < tapes.size(); j++) {
                         if(tapes[j].size() <= i) {
-                            return false;
+                            continue;
                         } 
                         if (tapes[j][i] != tapes[0][i]) {
                             return true;
@@ -445,11 +448,11 @@ namespace smt::noodler::util {
             }
             // Accept if in final state and all tapes are identical of required length
             if(transducer.final.contains(current_state.state) && current_state.is_identity()) {
-                return true;
+                return l_true;
             }
             // If any tape exceeds the required length, stop exploring this path
             if(current_state.max_length() > length) {
-                return true;
+                return l_undef;
             }
             // Explore all transitions from current state
             for(const auto& post : transducer.delta[current_state.state]) {
@@ -460,6 +463,6 @@ namespace smt::noodler::util {
                 }
             }
         }
-        return false;
+        return l_false;
     }
 }

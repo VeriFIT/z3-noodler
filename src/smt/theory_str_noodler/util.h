@@ -172,9 +172,9 @@ namespace smt::noodler::util {
      *
      * @param transducer The NFT (non-deterministic finite transducer) to check.
      * @param length The length of the word to check for identity mapping.
-     * @return true if the transducer may contains an identity mapping of the given length, false if there is surely no such mapping.
+     * @return true if the transducer contains an identity mapping of the given length, false if there is surely no such mapping.
      */
-    bool contains_trans_identity(const mata::nft::Nft& transducer, unsigned length);
+    lbool contains_trans_identity(const mata::nft::Nft& transducer, unsigned length);
 
     /**
      * @brief Create a vector of inclusions of the form left_sides[i] ⊆ right_sides[i] for all i.

@@ -1823,6 +1823,8 @@ namespace smt::noodler {
             if(trans.size() == 1) {
                 continue;
             }
+            // TODO: for simplicity, we assume only one input variable in the concatenation. It could be generalized 
+            // to multiple input variables by concatenating NFAs for them, removing epsilons and composing with the transducer.
             if(pred.get_left_side().size() > 1) {
                 continue;
             }
@@ -1841,7 +1843,7 @@ namespace smt::noodler {
                 nft = mata::nft::compose(nft, tr, 0, 0, true);
             }
 
-            if(!util::contains_trans_identity(nft, 4)) {
+            if(util::contains_trans_identity(nft, 4) == l_false) {
                 return true;
             }
         }
