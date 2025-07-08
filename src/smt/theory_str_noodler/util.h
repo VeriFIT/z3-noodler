@@ -168,7 +168,9 @@ namespace smt::noodler::util {
      *   - the current automaton state
      *   - the sequence of symbols read/written on each tape so far
      *
-     * The function returns true if such a path exists, false otherwise.
+     * The function returns l_true if such a path exists, l_false if there is definitely no such path, l_undef otherwise.
+     * 
+     * TODO: the function cannot handle transducers with jump transitions.
      *
      * @param transducer The NFT (non-deterministic finite transducer) to check.
      * @param length The length of the word to check for identity mapping.
