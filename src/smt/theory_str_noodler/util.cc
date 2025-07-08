@@ -320,7 +320,6 @@ namespace smt::noodler::util {
 
     bool contains_trans_identity(const mata::nft::Nft& transducer, unsigned length) {
         // State represents a node in the BFS: automaton state + tape histories
-        // State represents a node in the BFS: automaton state + tape histories
         struct State {
             mata::nfa::State state; // current automaton state
             std::vector<std::vector<mata::Symbol>> tapes; // history of symbols for each tape
