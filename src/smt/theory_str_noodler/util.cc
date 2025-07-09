@@ -317,4 +317,152 @@ namespace smt::noodler::util {
         }
         return true;
     }
+
+    lbool contains_trans_identity(const mata::nft::Nft& transducer, unsigned length) {
+        // State represents a node in the BFS: automaton state + tape histories
+        struct State {
+            mata::nft::State state; // current automaton state
+            std::vector<std::vector<mata::Symbol>> tapes; // history of symbols for each tape
+
+            /**
+             * Constructor for State.
+             * @param s The current automaton state.
+             * @param num_tapes The number of tapes (levels) in the transducer.
+             * Initializes each tape's history as an empty vector.
+             */
+            State(mata::nft::State s, unsigned num_tapes) : state(s), tapes(num_tapes) {}
+
+            /**
+             * Equality operator for State.
+             * @param other The state to compare with.
+             * @return True if both the automaton state and all tape histories are equal.
+             */
+            bool operator==(const State& other) const {
+                if (state != other.state) {
+                    return false;
+                }
+                return tapes == other.tapes;
+            }
+
+            /**
+             * Ordering operator for State (for use in std::set).
+             * @param other The state to compare with.
+             * @return True if this state is ordered before the other.
+             */
+            bool operator<(const State& other) const {
+                if (state < other.state) {
+                    return true;
+                }
+                if (state > other.state) {
+                    return false;
+                }
+                return tapes < other.tapes;
+            }
+
+            /**
+             * Checks if any tape differs from the first tape at any position (i.e., not a prefix of identity).
+             * In other words the tapes cannot cannot be extended to something having same symbols on all tapes 
+             * (e.g., [a, ab] is ok, but [ab, ac] is not).
+             * TODO: so-far the function is not able to detect e.g., [ abc, abce, abcd ]
+             * @return True if any tape is not a prefix of the first tape; false otherwise.
+             */
+            bool is_not_prefix() const {
+                size_t sz = tapes[0].size();
+                for(size_t i = 0; i < sz; i++) {
+                    for(size_t j = 1; j < tapes.size(); j++) {
+                        if(tapes[j].size() <= i) {
+                            continue;
+                        } 
+                        if (tapes[j][i] != tapes[0][i]) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            /**
+             * Checks if all tapes are of equal length and have identical symbols at each position (i.e., identity relation).
+             * @return True if all tapes are identical; false otherwise.
+             */
+            bool is_identity() const {
+                size_t sz = tapes[0].size();
+                for(size_t i = 0; i < sz; i++) {
+                    for(size_t j = 1; j < tapes.size(); j++) {
+                        if(tapes[j].size() != sz) {
+                            return false;
+                        }
+                        if (tapes[j][i] != tapes[0][i]) {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+
+            /**
+             * Returns a new State after reading/writing a symbol on the given tape.
+             * @param sym The symbol to write (if not EPSILON).
+             * @param tape The tape index to write the symbol to.
+             * @return A new State with the updated tape history.
+             */
+            State step_state(mata::Symbol sym, unsigned tape) {
+                State copy(*this);
+                if(sym != mata::nft::EPSILON) {
+                    copy.tapes[tape].push_back(sym);
+                }
+                return copy;
+            }
+
+            /**
+             * Returns the maximum length of any tape in this state.
+             * @return The maximum tape length.
+             */
+            size_t max_length() {
+                size_t length = 0;
+                for(size_t i = 0; i < tapes.size(); i++) {
+                    if(tapes[i].size() > length) {
+                        length = tapes[i].size();
+                    }
+                }
+                return length;
+            }
+        };
+
+        // BFS over state space: (automaton state, tape histories)
+        std::set<State> visited_states;
+        std::deque<State> queue;
+        for(mata::nft::State initial_state : transducer.initial) {
+            queue.emplace_back(initial_state, transducer.num_of_levels);
+        }
+        while(!queue.empty()) {
+            State current_state = queue.front();
+            queue.pop_front();
+            if(visited_states.contains(current_state)) {
+                continue;
+            }
+            visited_states.insert(current_state);
+            // Prune if not a prefix of identity
+            if(current_state.is_not_prefix()) {
+                continue;
+            }
+            // Accept if in final state and all tapes are identical of required length
+            if(transducer.final.contains(current_state.state) && current_state.is_identity()) {
+                return l_true;
+            }
+            // If any tape exceeds the required length, stop exploring this path
+            if(current_state.max_length() > length) {
+                return l_undef;
+            }
+            // Explore all transitions from current state
+            for(const auto& post : transducer.delta[current_state.state]) {
+                for(mata::nft::State dest : post.targets) {
+                    State next_state = current_state.step_state(post.symbol, transducer.levels[current_state.state]);
+                    next_state.state = dest;
+                    queue.push_back(next_state);
+                }
+            }
+        }
+        return l_false;
+    }
 }

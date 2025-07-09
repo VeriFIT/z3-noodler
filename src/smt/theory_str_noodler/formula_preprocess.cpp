@@ -1802,6 +1802,55 @@ namespace smt::noodler {
     }
 
     /**
+     * @brief Check if the formula contains unsat transducer constraints. 
+     * It focuses on constraints of the form T_1(x,y) && T_2(x,y). The preprocessing
+     * reduces unsatifiability checking by transforming to checking if there is 
+     * some (w,w) in the language of the transducer.
+     */
+    bool FormulaPreprocessor::has_unsat_transducers() {
+        // map groups transducers by their inputs/outputs (i.e., the equation formed by their input and output concatenation)
+        std::map<Predicate, std::vector<std::shared_ptr<mata::nft::Nft>>> transducers_by_io{};
+        std::set<size_t> rem_ids {};
+        // collect transducers with the identical parameters 
+        for(const auto& [id, pred] : this->formula.get_predicates()) {
+            if(!pred.is_transducer()) {
+                continue;
+            }
+            transducers_by_io[Predicate::create_equation(pred.get_input(), pred.get_output())].push_back(pred.get_transducer());
+        }
+
+        for(const auto& [pred, trans] : transducers_by_io) {
+            if(trans.size() == 1) {
+                continue;
+            }
+            // TODO: for simplicity, we assume only one input variable in the concatenation. It could be generalized 
+            // to multiple input variables by concatenating NFAs for them, removing epsilons and composing with the transducer.
+            if(pred.get_left_side().size() > 1) {
+                continue;
+            }
+            mata::nft::Nft nft = *(trans[0]);
+
+            auto nfa = this->aut_ass.at(pred.get_left_side()[0]);
+
+            // restrict the input variable --> T_1(Aut(x), y)
+            // it is not necessary for correctness, but it makes the heuristics later more succesful
+            mata::nft::Nft lang_nft(*nfa, 2);
+            nft = mata::nft::compose(lang_nft, nft, 0, 0, true);
+            // compose first tapes of all transducers with identical parameters (and project out the synchronizing tape)
+            // nft = [T_1(y), T_2(y), ...]
+            for(size_t i = 1; i < trans.size(); i++) {
+                auto tr = mata::nft::compose(lang_nft, *trans[i], 0, 0, true);
+                nft = mata::nft::compose(nft, tr, 0, 0, true);
+            }
+
+            if(util::contains_trans_identity(nft, 4) == l_false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Remove not contains predicates that are of the form:
      * u1 notcontains x
      * u2 notcontains x

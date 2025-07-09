@@ -405,6 +405,7 @@ namespace smt::noodler {
         void common_prefix_propagation();
         void common_suffix_propagation();
         void conversions_validity(std::vector<TermConversion>& conversions);
+        bool has_unsat_transducers();
 
         void underapprox_var_language(const BasicTerm& var);
         void refine_languages();

@@ -1777,6 +1777,9 @@ namespace smt::noodler {
         prep_handler.remove_trivial();
         prep_handler.reduce_regular_sequence(3);
         prep_handler.remove_regular();
+        if(prep_handler.has_unsat_transducers()) {
+            return l_false;
+        }
 
         // the following should help with Leetcode
         /// TODO: should be simplyfied? So many preprocessing steps now
