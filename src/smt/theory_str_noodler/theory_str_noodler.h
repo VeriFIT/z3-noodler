@@ -337,6 +337,8 @@ namespace smt::noodler {
         void handle_replace_all(expr *e);
         void handle_replace_re_all(expr *e);
 
+        void mark_expression_as_length(expr *e);
+
         // methods for assigning boolean values to predicates
         void assign_not_contains(expr *e);
 

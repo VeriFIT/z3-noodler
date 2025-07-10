@@ -802,7 +802,7 @@ namespace smt::noodler {
         // add the replacement charat -> v
         predicate_replace.insert(e, fresh.get());
         // update length variables
-        util::get_str_variables(s, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+        mark_expression_as_length(s);
         this->len_vars.insert(x);
     }
 
@@ -842,7 +842,7 @@ namespace smt::noodler {
 
             // add the replacement substr -> v
             this->predicate_replace.insert(e, v.get());
-            util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+            mark_expression_as_length(s);
             return;
         }
 
@@ -905,7 +905,7 @@ namespace smt::noodler {
              // add the replacement substr -> v
             this->predicate_replace.insert(e, v.get());
             // update length variables
-            util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+            mark_expression_as_length(s);
             // add length |v| = l. This is not true entirely, because there could be a case that v = eps. 
             // but this case is handled by epsilon propagation preprocessing (this variable will not in the system
             // after that)
@@ -930,7 +930,7 @@ namespace smt::noodler {
             add_axiom({mk_eq(v, e, false)});
             this->predicate_replace.insert(e, v.get());
             // update length variables
-            util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+            mark_expression_as_length(s);
             this->var_eqs.add(expr_ref(l, m), v);
             return;
         } else {
@@ -967,7 +967,7 @@ namespace smt::noodler {
         // add the replacement substr -> v
         this->predicate_replace.insert(e, v.get());
         // update length variables
-        util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+        mark_expression_as_length(s);
         // add length |v| = l. This is not true entirely, because there could be a case that v = eps. 
         // but this case is handled by epsilon propagation preprocessing (this variable will not in the system
         // after that)
@@ -1133,7 +1133,7 @@ namespace smt::noodler {
         // add the replacement substr -> v
         this->predicate_replace.insert(e, v.get());
         // update length variables
-        util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+        mark_expression_as_length(s);
         this->len_vars.insert(v);
         if(vars.size() > 0) {
             this->var_eqs.add(expr_ref(pred, m), xvar);
@@ -1452,7 +1452,7 @@ namespace smt::noodler {
             add_axiom({offset_ge_0, i_eq_m1});
 
             // update length variables
-            util::get_str_variables(t, this->m_util_s, m, this->len_vars);
+            mark_expression_as_length(t);
             this->len_vars.insert(x);
         }
     }
@@ -1719,8 +1719,8 @@ namespace smt::noodler {
         add_axiom({lit_e, len_y_gt_len_x, eq_mx_my});
 
         // update length variables
-        util::get_str_variables(x, this->m_util_s, m, this->len_vars, &this->predicate_replace);
-        util::get_str_variables(y, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+        mark_expression_as_length(x);
+        mark_expression_as_length(y);
         this->var_eqs.add(expr_ref(m_util_a.mk_int(1), m), expr_ref(my, m));
         this->var_eqs.add(expr_ref(m_util_a.mk_int(1), m), expr_ref(mx, m));
     }
@@ -1827,8 +1827,8 @@ namespace smt::noodler {
         add_axiom({lit_e, len_y_gt_len_x, eq_mx_my});
 
         // update length variables
-        util::get_str_variables(x, this->m_util_s, m, this->len_vars, &this->predicate_replace);
-        util::get_str_variables(y, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+        mark_expression_as_length(x);
+        mark_expression_as_length(y);
         // my and mx are in the same length-equivalence class: 1
         this->var_eqs.add(expr_ref(m_util_a.mk_int(1), m), my);
         this->var_eqs.add(expr_ref(m_util_a.mk_int(1), m), mx);
@@ -2371,5 +2371,28 @@ namespace smt::noodler {
         }
 
         return expr_ref(refinement, m);
+    }
+
+    void theory_str_noodler::mark_expression_as_length(expr *e) {
+        if(m_util_s.str.is_string(e)) {
+            return;
+        }
+
+        if(util::is_str_variable(e, m_util_s)) {
+            len_vars.insert(e);
+            return;
+        }
+
+        SASSERT(is_app(e));
+        app* ex_app{ to_app(e) };
+        if (m_util_s.str.is_concat(e)) {
+            for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
+                mark_expression_as_length(ex_app->get_arg(i));
+            }
+        } else {
+            expr* rpl;
+            VERIFY(predicate_replace.find(ex_app, rpl));
+            mark_expression_as_length(rpl);
+        }
     }
 }
