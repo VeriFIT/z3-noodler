@@ -144,7 +144,9 @@ namespace smt::noodler {
                 obj_hashtable<app> lens;
                 util::get_len_exprs(ctx.get_asserted_formula(i), m_util_s, m, lens);
                 for (app* const a : lens) {
-                    util::get_str_variables(a, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+                    expr* len_arg;
+                    VERIFY(m_util_s.str.is_length(a, len_arg));
+                    mark_expression_as_length(len_arg);
                 }
             }
             ctx.mark_as_relevant(ex);
@@ -434,6 +436,11 @@ namespace smt::noodler {
                 predicate_replace.insert(e, fresh.get());
                 add_axiom({mk_eq(fresh, e, false)});
             }
+        }
+
+        if (initial_len_expressions.contains(n)) {
+            SASSERT(predicate_replace.find(n));
+            len_vars.insert(predicate_replace[n]);
         }
     }
 
@@ -2391,8 +2398,11 @@ namespace smt::noodler {
             }
         } else {
             expr* rpl;
-            VERIFY(predicate_replace.find(ex_app, rpl));
-            mark_expression_as_length(rpl);
+            if (predicate_replace.find(ex_app, rpl)) {
+                mark_expression_as_length(rpl);
+            } else {
+                initial_len_expressions.insert(e);
+            }
         }
     }
     
