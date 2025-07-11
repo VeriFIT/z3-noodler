@@ -2395,4 +2395,12 @@ namespace smt::noodler {
             mark_expression_as_length(rpl);
         }
     }
+    
+    void theory_str_noodler::print_len_vars(std::ostream& os) {
+        os << "Current length vars:";
+        for (expr* e : len_vars) {
+            os << " " << mk_pp(e,m);
+        }
+        os << std::endl;
+    }
 }
