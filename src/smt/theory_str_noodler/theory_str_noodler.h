@@ -88,6 +88,8 @@ namespace smt::noodler {
 
         // variables whose lengths are important
         obj_hashtable<expr> len_vars;
+        // string terms s that are under (str.len s) at the beginning (we need to add them to len_vars but we do not have their vars yet)
+        obj_hashtable<expr> initial_len_expressions;
 
         // used in final_check_eh, maps noodler string variables to z3 string variables
         // AND int variables to predicates they represent (see handle_conversion)
