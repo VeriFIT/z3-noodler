@@ -339,6 +339,8 @@ namespace smt::noodler {
 
         void mark_expression_as_length(expr *e);
 
+        void print_len_vars(std::ostream& os);
+
         // methods for assigning boolean values to predicates
         void assign_not_contains(expr *e);
 
