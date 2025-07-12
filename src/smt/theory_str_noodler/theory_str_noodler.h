@@ -339,6 +339,16 @@ namespace smt::noodler {
         void handle_replace_all(expr *e);
         void handle_replace_re_all(expr *e);
 
+        /**
+         * @brief Marks a string term @p e as length-aware
+         * If the string term has a corresponding variable in predicate_replace,
+         * the variable is added to len_vars, otherwise the string term is added
+         * to initial_len_expressions and when a corresponding variable is created
+         * (in relevant_eh), it should be added to len_vars.
+         * If @p e is a concatenation, we mark their arguments instead.
+         * 
+         * @param e The string term to mark
+         */
         void mark_expression_as_length(expr *e);
 
         void print_len_vars(std::ostream& os);
