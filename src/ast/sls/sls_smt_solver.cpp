@@ -54,12 +54,12 @@ namespace sls {
             if (m_on_save_model)
                 return r;
             flet<bool> _on_save_model(m_on_save_model, true);
-            CTRACE("sls", unsat().empty(), display(tout));
+            CTRACE(sls, unsat().empty(), display(tout));
             while (unsat().empty()) {
                 r = m_context.check();
                 if (!m_new_constraint)
                     break;
-                TRACE("sls", display(tout));
+                TRACE(sls, display(tout));
                 //m_ddfw.simplify();
                 m_ddfw.reinit();
                 m_new_constraint = false;
@@ -67,8 +67,12 @@ namespace sls {
             return r;
         }
 
-        void on_model(model_ref& mdl) override {           
+        void on_model(model_ref& mdl) override {
             m_model = mdl;
+        }
+
+        bool is_external(sat::bool_var v) override {
+            return m_context.is_external(v);
         }
 
         void register_atom(sat::bool_var v, expr* e) {
@@ -84,14 +88,20 @@ namespace sls {
         vector<sat::clause_info> const& clauses() const override { return m_ddfw.clauses(); }
         sat::clause_info const& get_clause(unsigned idx) const override { return m_ddfw.get_clause_info(idx); }
         ptr_iterator<unsigned> get_use_list(sat::literal lit) override { return m_ddfw.use_list(lit); }
-        void flip(sat::bool_var v) override { if (m_dirty) m_ddfw.reinit(), m_dirty = false;  m_ddfw.flip(v); }
-        double reward(sat::bool_var v) override { return m_ddfw.get_reward(v); }
+        void flip(sat::bool_var v) override { if (m_dirty) m_ddfw.reinit(), m_dirty = false;  m_ddfw.external_flip(v); }
+        sat::bool_var external_flip() override { if (m_dirty) m_ddfw.reinit(), m_dirty = false; return m_ddfw.external_flip(); }
+        bool try_rotate(sat::bool_var v, sat::bool_var_set& rotated, unsigned& budget) override { if (m_dirty) m_ddfw.reinit(), m_dirty = false; return m_ddfw.try_rotate(v, rotated, budget); }
+        double reward(sat::bool_var v) override { return m_ddfw.reward(v); }
         double get_weigth(unsigned clause_idx) override { return m_ddfw.get_clause_info(clause_idx).m_weight; }
         bool is_true(sat::literal lit) override { return m_ddfw.get_value(lit.var()) != lit.sign(); }
         unsigned num_vars() const override { return m_ddfw.num_vars(); }
         indexed_uint_set const& unsat() const override { return m_ddfw.unsat_set(); }
+        indexed_uint_set const& unsat_vars() const override { return m_ddfw.unsat_vars(); }
+        unsigned num_external_in_unsat_vars() const override { return m_ddfw.num_external_in_unsat_vars(); }
         sat::bool_var add_var() override { m_dirty = true;  return m_ddfw.add_var(); }  
-        void add_clause(expr* f) { m_context.add_clause(f); }
+        void add_input_assertion(expr* f) { m_context.add_input_assertion(f); }
+        reslimit& rlimit() override { return m_ddfw.rlimit(); }
+        void shift_weights() override { m_ddfw.shift_weights(); }
 
         void force_restart() override { m_ddfw.force_restart(); }
 
@@ -145,7 +155,7 @@ namespace sls {
     
     lbool smt_solver::check() {        
         for (auto f : m_assertions) 
-            m_solver_ctx->add_clause(f);        
+            m_solver_ctx->add_input_assertion(f);        
         IF_VERBOSE(10, m_solver_ctx->display(verbose_stream()));
         return m_ddfw.check(0, nullptr);
     }

@@ -9,7 +9,6 @@ Author:
 #include "util/vector.h"
 #include <string>
 #include <utility>
-#include "math/lp/lp_core_solver_base.h"
 #include <algorithm>
 #include "math/lp/indexed_vector.h"
 #include "math/lp/lp_primal_core_solver.h"
@@ -22,19 +21,21 @@ class lar_core_solver  {
     vector<numeric_pair<mpq>> m_right_sides_dummy;
     vector<mpq> m_costs_dummy;
     stacked_value<simplex_strategy_enum> m_stacked_simplex_strategy;
+    vector<impq> m_r_x;  // the solution
+    vector<impq> m_backup_x;
 
 public:
     
     stacked_vector<column_type> m_column_types;
     // r - solver fields, for rational numbers
-    vector<numeric_pair<mpq>> m_r_x; // the solution
-    stacked_vector<numeric_pair<mpq>> m_r_lower_bounds;
-    stacked_vector<numeric_pair<mpq>> m_r_upper_bounds;
+
+    vector<numeric_pair<mpq>> m_r_lower_bounds;
+    vector<numeric_pair<mpq>> m_r_upper_bounds;
     static_matrix<mpq, numeric_pair<mpq>> m_r_A;
     stacked_vector<unsigned> m_r_pushed_basis;
     vector<unsigned>         m_r_basis;
     vector<unsigned>         m_r_nbasis;
-    vector<int>              m_r_heading;
+    std_vector<int>          m_r_heading;
     
 
     lp_primal_core_solver<mpq, numeric_pair<mpq>> m_r_solver; // solver in rational numbers
@@ -71,9 +72,23 @@ public:
         
         m_r_solver.print_column_bound_info(m_r_solver.m_basis[row_index], out);        
     }
-    
-    
+
+
     void prefix_r();
+    
+    // access to x:
+
+    void backup_x() { m_backup_x = m_r_x; }
+
+    void restore_x() {
+        m_r_x = m_backup_x;
+        m_r_x.reserve(m_m());
+    }
+
+    vector<impq> const& r_x() const { return m_r_x; }
+    impq& r_x(unsigned j) { return m_r_x[j]; }
+    impq const& r_x(unsigned j) const { return m_r_x[j]; }
+    void resize_x(unsigned n) { m_r_x.resize(n); }
 
     unsigned m_m() const { return m_r_A.row_count();  }
 
@@ -101,20 +116,16 @@ public:
     void fill_not_improvable_zero_sum();
 
     void push() {
-        lp_assert(m_r_solver.basis_heading_is_correct());
-        lp_assert(m_column_types.size() == m_r_A.column_count());
+        SASSERT(m_r_solver.basis_heading_is_correct());
+        SASSERT(m_column_types.size() == m_r_A.column_count());
         m_stacked_simplex_strategy = settings().simplex_strategy();
         m_stacked_simplex_strategy.push();
         m_column_types.push();
-        // rational
-        m_r_lower_bounds.push();
-        m_r_upper_bounds.push();        
+        // rational     
     }
 
     void pop(unsigned k) {
         // rationals
-        m_r_lower_bounds.pop(k);
-        m_r_upper_bounds.pop(k);
         m_column_types.pop(k);
         
         m_r_x.resize(m_r_A.column_count());
@@ -124,20 +135,20 @@ public:
         m_stacked_simplex_strategy.pop(k);
         m_r_solver.m_settings.simplex_strategy() = m_stacked_simplex_strategy;
         m_infeasible_linear_combination.reset();
-        lp_assert(m_r_solver.basis_heading_is_correct());
+        SASSERT(m_r_solver.basis_heading_is_correct());
     }
     
     bool r_basis_is_OK() const {
 #ifdef Z3DEBUG
         
         for (unsigned j : m_r_solver.m_basis) {
-            lp_assert(m_r_solver.m_A.m_columns[j].size() == 1);
+            SASSERT(m_r_solver.m_A.m_columns[j].size() == 1);
         }
         for (unsigned j =0; j < m_r_solver.m_basis_heading.size(); j++) {
             if (m_r_solver.m_basis_heading[j] >= 0) continue;
             if (m_r_solver.m_column_types[j] == column_type::fixed) continue;
-            lp_assert(static_cast<unsigned>(- m_r_solver.m_basis_heading[j] - 1) < m_r_solver.m_column_types.size());
-            lp_assert( m_r_solver.m_basis_heading[j] <= -1);
+            SASSERT(static_cast<unsigned>(- m_r_solver.m_basis_heading[j] - 1) < m_r_solver.m_column_types.size());
+            SASSERT( m_r_solver.m_basis_heading[j] <= -1);
         }
 #endif
         return true;
@@ -175,14 +186,14 @@ public:
     }
 
     void update_delta(mpq& delta, numeric_pair<mpq> const& l, numeric_pair<mpq> const& u) const {
-        lp_assert(l <= u);
+        SASSERT(l <= u);
         if (l.x < u.x && l.y > u.y) {
             mpq delta1 = (u.x - l.x) / (l.y - u.y);
             if (delta1 < delta) {
                 delta = delta1;
             }
         }
-        lp_assert(l.x + delta * l.y <= u.x + delta * u.y);
+        SASSERT(l.x + delta * l.y <= u.x + delta * u.y);
     }
 
 
@@ -218,14 +229,14 @@ public:
 
     
     const impq & lower_bound(unsigned j) const {
-        lp_assert(m_column_types()[j] == column_type::fixed ||
+        SASSERT(m_column_types()[j] == column_type::fixed ||
                     m_column_types()[j] == column_type::boxed ||
                     m_column_types()[j] == column_type::lower_bound);
         return m_r_lower_bounds[j];
     }
 
     const impq & upper_bound(unsigned j) const {
-        lp_assert(m_column_types()[j] == column_type::fixed ||
+        SASSERT(m_column_types()[j] == column_type::fixed ||
                     m_column_types()[j] == column_type::boxed ||
                     m_column_types()[j] == column_type::upper_bound);
         return m_r_upper_bounds[j];

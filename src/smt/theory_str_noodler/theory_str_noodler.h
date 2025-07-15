@@ -17,10 +17,10 @@ Eternal glory to Yu-Fang.
 #include <unordered_set>
 #include <vector>
 
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/seq_decl_plugin.h"
-#include "smt/params/theory_str_noodler_params.h"
+#include "params/theory_str_noodler_params.h"
 #include "smt/smt_kernel.h"
 #include "smt/smt_theory.h"
 #include "smt/smt_arith_value.h"
@@ -88,6 +88,8 @@ namespace smt::noodler {
 
         // variables whose lengths are important
         obj_hashtable<expr> len_vars;
+        // string terms s that are under (str.len s) at the beginning (we need to add them to len_vars but we do not have their vars yet)
+        obj_hashtable<expr> initial_len_expressions;
 
         // used in final_check_eh, maps noodler string variables to z3 string variables
         // AND int variables to predicates they represent (see handle_conversion)
@@ -336,6 +338,20 @@ namespace smt::noodler {
         void handle_lex_lt(expr *e);
         void handle_replace_all(expr *e);
         void handle_replace_re_all(expr *e);
+
+        /**
+         * @brief Marks a string term @p e as length-aware
+         * If the string term has a corresponding variable in predicate_replace,
+         * the variable is added to len_vars, otherwise the string term is added
+         * to initial_len_expressions and when a corresponding variable is created
+         * (in relevant_eh), it should be added to len_vars.
+         * If @p e is a concatenation, we mark their arguments instead.
+         * 
+         * @param e The string term to mark
+         */
+        void mark_expression_as_length(expr *e);
+
+        void print_len_vars(std::ostream& os);
 
         // methods for assigning boolean values to predicates
         void assign_not_contains(expr *e);

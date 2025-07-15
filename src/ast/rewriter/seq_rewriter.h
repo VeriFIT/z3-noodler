@@ -322,9 +322,11 @@ class seq_rewriter {
     bool reduce_non_overlap(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& eqs);
     bool reduce_subsequence(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& eqs);
     bool reduce_by_length(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& eqs);
+    bool reduce_extract(expr* l, expr* r, expr_ref_vector& res);
     bool has_var(expr_ref_vector const& es);
     bool reduce_itos(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_pair_vector& eqs);
-    bool reduce_eq_empty(expr* l, expr* r, expr_ref& result);    
+    bool reduce_eq_empty(expr* l, expr* r, expr_ref& result);
+    bool reduce_arith_eq(expr* l, expr* r, expr_ref_vector& constraints);
     std::pair<bool, unsigned> min_length(expr_ref_vector const& es);
     std::pair<bool, unsigned> min_length(expr* e);
     std::pair<bool, unsigned> min_length(unsigned sz, expr* const* es);
@@ -352,6 +354,9 @@ class seq_rewriter {
     class seq_util::str const& str() const { return u().str; }
 
     void intersect(unsigned lo, unsigned hi, svector<std::pair<unsigned, unsigned>>& ranges);
+
+    bool get_bounds(expr* e, unsigned& low, unsigned& high);
+    lbool some_string_in_re(expr_mark& visited, expr* r, unsigned_vector& str);
 
 public:
     seq_rewriter(ast_manager & m, params_ref const & p = params_ref()):
@@ -432,5 +437,12 @@ public:
     expr_ref mk_regex_union_normalize(expr* r1, expr* r2);
     /* Apply simplifications to the intersection to keep it normalized (r1 and r2 are not normalized)*/
     expr_ref mk_regex_inter_normalize(expr* r1, expr* r2);
+
+    /*
+    * Extract some string that is a member of r. 
+    * Return true if a valid string was extracted.
+    * Return false when giving up or the regular expression is empty.
+    */
+    lbool some_string_in_re(expr* r, zstring& s);
 };
 

@@ -81,14 +81,14 @@ namespace sat {
     void ddfw::log() {
         double sec = m_stopwatch.get_current_seconds();        
         double kflips_per_sec = sec > 0 ? (m_flips - m_last_flips) / (1000.0 * sec) : 0.0;
-        if (m_last_flips == 0) {
-            IF_VERBOSE(1, verbose_stream() << "(sat.ddfw :unsat :models :kflips/sec  :flips  :restarts  :reinits  :unsat_vars  :shifts";
+        if (m_logs++ % 30 == 0) {
+            IF_VERBOSE(2, verbose_stream() << "(sat.ddfw :unsat :models :kflips/sec   :flips :restarts   :reinits  :unsat_vars  :shifts";
                        verbose_stream() << ")\n");
         }
-        IF_VERBOSE(1, verbose_stream() << "(sat.ddfw " 
+        IF_VERBOSE(2, verbose_stream() << "(sat.ddfw " 
                    << std::setw(07) << m_min_sz 
                    << std::setw(07) << m_models.size()
-                   << std::setw(10) << kflips_per_sec
+                   << std::setw(11) << std::fixed << std::setprecision(4) << kflips_per_sec
                    << std::setw(10) << m_flips 
                    << std::setw(10) << m_restart_count
                    << std::setw(11) << m_reinit_count
@@ -97,6 +97,16 @@ namespace sat {
                    verbose_stream() << ")\n");
         m_stopwatch.start();
         m_last_flips = m_flips;
+    }
+
+    sat::bool_var ddfw::external_flip() {
+        flet<bool> _in_external_flip(m_in_external_flip, true);
+        double reward = 0;
+        bool_var v = pick_var(reward);
+        if (apply_flip(v, reward))
+            return v;
+        shift_weights();
+        return sat::null_bool_var;
     }
 
     bool ddfw::do_flip() {
@@ -125,7 +135,9 @@ namespace sat {
         bool_var v0 = null_bool_var;
         for (bool_var v : m_unsat_vars) {
             r = reward(v);
-            if (r > 0.0)    
+            if (m_in_external_flip && m_plugin->is_external(v))
+                ;
+            else if (r > 0.0)    
                 sum_pos += score(r);            
             else if (r == 0.0 && sum_pos == 0 && (m_rand() % (n++)) == 0) 
                 v0 = v;            
@@ -134,6 +146,8 @@ namespace sat {
             double lim_pos = ((double) m_rand() / (1.0 + m_rand.max_value())) * sum_pos;                
             for (bool_var v : m_unsat_vars) {
                 r = reward(v);
+                if (m_in_external_flip && m_plugin->is_external(v))
+                    continue;
                 if (r > 0) {
                     lim_pos -= score(r);
                     if (lim_pos <= 0) 
@@ -145,6 +159,8 @@ namespace sat {
         if (v0 != null_bool_var) 
             return v0;
         if (m_unsat_vars.empty())
+            return null_bool_var;
+        if (m_in_external_flip)
             return null_bool_var;
         return m_unsat_vars.elem_at(m_rand(m_unsat_vars.size()));
     }
@@ -198,6 +214,10 @@ namespace sat {
     }
 
     void ddfw::init(unsigned sz, literal const* assumptions) {
+        if (sz == 0 && m_initialized) {            
+            m_stopwatch.start();
+            return;
+        }
         m_assumptions.reset();
         m_assumptions.append(sz, assumptions);
         add_assumptions();
@@ -212,13 +232,15 @@ namespace sat {
         m_reinit_next = m_config.m_reinit_base;
 
         m_restart_count = 0;
-        m_restart_next = m_config.m_restart_base*2;
+        m_restart_next = m_config.m_restart_base;
 
         m_min_sz = m_clauses.size();
         m_flips = 0;
         m_last_flips = 0;
         m_shifts = 0;
         m_stopwatch.start();
+        if (sz == 0)        
+            m_initialized = true;
     }
 
     void ddfw::reinit() {
@@ -233,13 +255,20 @@ namespace sat {
         m_use_list_clauses = m_clauses.size();
         m_use_list_index.reset();
         m_flat_use_list.reset();
+        m_use_list.reserve(2 * num_vars());
         for (auto const& ul : m_use_list) {
             m_use_list_index.push_back(m_flat_use_list.size());
             m_flat_use_list.append(ul);
         }
         m_use_list_index.push_back(m_flat_use_list.size());
         init_clause_data();
+        SASSERT(2 * num_vars() + 1 == m_use_list_index.size());
         return true;
+    }
+
+    void ddfw::external_flip(bool_var v) {
+        flet<bool> _external_flip(m_in_external_flip, true);
+        flip(v);
     }
 
     void ddfw::flip(bool_var v) {
@@ -329,9 +358,10 @@ namespace sat {
     void ddfw::init_clause_data() {
         for (unsigned v = 0; v < num_vars(); ++v) {
             make_count(v) = 0;
-            reward(v) = 0;
+            m_vars[v].m_reward = 0;
         }        
         m_unsat_vars.reset();
+        m_num_external_in_unsat_vars = 0;
         m_unsat.reset();
         unsigned sz = m_clauses.size();
         for (unsigned i = 0; i < sz; ++i) {
@@ -400,8 +430,10 @@ namespace sat {
         for (unsigned i = 0; i < num_vars(); ++i) 
             m_model[i] = to_lbool(value(i));
         save_priorities();
-        if (m_plugin)
-            m_last_result = m_plugin->on_save_model();   
+        if (m_plugin && !m_in_external_flip && m_restart_count == 0 && m_model_save_count++ % 10 == 0)
+            m_plugin->on_restart(); // import values if there are any updated ones.
+        if (m_plugin && !m_in_external_flip)
+            m_last_result = m_plugin->on_save_model();
     }
 
     void ddfw::save_best_values() {
@@ -526,6 +558,7 @@ namespace sat {
     void ddfw::shift_weights() {
         ++m_shifts;
         bool shifted = false;
+        flatten_use_list();
         for (unsigned to_idx : m_unsat) {
             SASSERT(!m_clauses[to_idx].is_true());
             unsigned from_idx = select_max_same_sign(to_idx);
@@ -590,6 +623,44 @@ namespace sat {
             m_use_list[(~unit).index()].reset();        
     }
 
+    bool ddfw::try_rotate(bool_var v, bool_var_set& rotated, unsigned& budget) {
+        if (m_rotate_tabu.contains(v))
+            return false;
+        if (budget == 0)
+            return false;
+        --budget;
+        rotated.insert(v);
+        m_rotate_tabu.insert(v);
+        flip(v);
+        switch (m_unsat.size()) {
+        case 0:
+            m_rotate_tabu.reset();
+            m_new_tabu_vars.reset();
+            return true;
+        case 1: 
+            for (unsigned cl : m_unsat) {
+                unsigned sz = m_new_tabu_vars.size();
+                for (literal lit : get_clause(cl)) {
+                    if (m_rotate_tabu.contains(lit.var()))
+                        continue;
+                    if (try_rotate(lit.var(), rotated, budget))
+                        return true;
+                    m_rotate_tabu.insert(lit.var());
+                    m_new_tabu_vars.push_back(lit.var());
+                }
+                while (m_new_tabu_vars.size() > sz)
+                    m_rotate_tabu.remove(m_new_tabu_vars.back()), m_new_tabu_vars.pop_back();
+            }
+            break;
+        default:
+            break;
+        }
+        rotated.remove(v); 
+        m_rotate_tabu.remove(v);
+        flip(v);
+        return false;
+    }
+
     std::ostream& ddfw::display(std::ostream& out) const {
         unsigned num_cls = m_clauses.size();
         for (unsigned i = 0; i < num_cls; ++i) {
@@ -598,7 +669,7 @@ namespace sat {
             out << ci.m_num_trues << " w: " << ci.m_weight << "\n";
         }
         for (unsigned v = 0; v < num_vars(); ++v) 
-            out << (is_true(literal(v, false)) ? "" : "-") << v << " rw: " << get_reward(v) << "\n";        
+            out << (is_true(literal(v, false)) ? "" : "-") << v << " rw: " << reward(v) << "\n";        
         out << "unsat vars: ";
         for (bool_var v : m_unsat_vars) 
             out << v << " ";        

@@ -53,7 +53,7 @@ namespace sls {
         ast_manager& m;
         ast_manager  m_sls;
         ast_manager  m_sync;
-        ast_translation m_smt2sync_tr, m_smt2sls_tr, m_sls2sync_tr, m_sls2smt_tr;
+        ast_translation m_smt2sync_tr, m_smt2sls_tr, m_sls2sync_tr, m_sls2smt_tr, m_sync2sls_tr;
         expr_ref_vector m_sync_uninterp, m_sls_uninterp; 
         expr_ref_vector m_sync_values;
         sat::ddfw* m_ddfw = nullptr;
@@ -63,6 +63,9 @@ namespace sls {
         std::thread m_thread;
         std::mutex  m_mutex;
 
+        unsigned m_value_smt2sls_delay = 0;
+        unsigned m_value_smt2sls_delay_threshold = 50;
+
         sat::literal_vector m_units;
         model_ref m_sls_model;
 
@@ -70,11 +73,13 @@ namespace sls {
         unsigned m_min_unsat_size = UINT_MAX;
         obj_map<expr, expr*> m_sls2sync_uninterp; // hashtable from sls-uninterp to sync uninterp
         obj_map<expr, expr*> m_smt2sync_uninterp; // hashtable from external uninterp to sync uninterp
+        vector<std::pair<expr_ref, expr_ref>> m_sync_var_values;
         std::atomic<bool> m_has_new_sls_values = false;
         uint_set m_shared_bool_vars, m_shared_terms;
         svector<bool> m_sat_phase;
         std::atomic<bool> m_has_new_sat_phase = false;
         std::atomic<bool> m_has_new_sls_phase = false;
+        std::atomic<bool> m_has_new_smt_values = false;
         svector<bool> m_sls_phase;
         svector<double> m_rewards;
         svector<sat::bool_var> m_smt_bool_var2sls_bool_var, m_sls_bool_var2smt_bool_var;
@@ -88,6 +93,7 @@ namespace sls {
 
         void import_phase_from_smt();
         void import_values_from_sls();
+        void export_values_to_sls();
         void export_values_from_sls();
         void export_phase_from_sls();
         void import_activity_from_sls();
@@ -124,6 +130,8 @@ namespace sls {
                 m_ddfw->reinit();
         }
 
+        void shift_weights() override { m_ddfw->shift_weights(); }
+
         lbool on_save_model() override;
 
         void on_model(model_ref& mdl) override {
@@ -131,7 +139,17 @@ namespace sls {
             m_sls_model = mdl;
         }
 
+        sat::bool_var external_flip() override {
+            return m_ddfw->external_flip();
+        }
+
+        bool is_external(sat::bool_var v) override {
+            return m_context.is_external(v);
+        }
+
         void on_rescale() override {}
+
+        reslimit& rlimit() override { return m_ddfw->rlimit(); }
 
         void smt_phase_to_sls();
         void smt_values_to_sls();
@@ -146,15 +164,20 @@ namespace sls {
         sat::clause_info const& get_clause(unsigned idx) const override { return m_ddfw->get_clause_info(idx); }
         ptr_iterator<unsigned> get_use_list(sat::literal lit) override { return m_ddfw->use_list(lit); }
         void flip(sat::bool_var v) override { 
-            m_ddfw->flip(v);
+            m_ddfw->external_flip(v);
         }
-        double reward(sat::bool_var v) override { return m_ddfw->get_reward(v); }
+        bool try_rotate(sat::bool_var v, sat::bool_var_set& rotated, unsigned& budget) override {
+            return m_ddfw->try_rotate(v, rotated, budget);
+        }
+        double reward(sat::bool_var v) override { return m_ddfw->reward(v); }
         double get_weigth(unsigned clause_idx) override { return m_ddfw->get_clause_info(clause_idx).m_weight; }
         bool is_true(sat::literal lit) override { 
             return m_ddfw->get_value(lit.var()) != lit.sign(); 
         }
         unsigned num_vars() const override { return m_ddfw->num_vars(); }
         indexed_uint_set const& unsat() const override { return m_ddfw->unsat_set(); }
+        indexed_uint_set const& unsat_vars() const override { return m_ddfw->unsat_vars(); }
+        unsigned num_external_in_unsat_vars() const override { return m_ddfw->num_external_in_unsat_vars(); }
         sat::bool_var add_var() override { 
             return m_ddfw->add_var(); 
         }

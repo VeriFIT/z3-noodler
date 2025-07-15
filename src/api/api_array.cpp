@@ -282,15 +282,15 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    Z3_ast Z3_mk_set_member(Z3_context c, Z3_ast elem, Z3_ast set) {
+    Z3_ast Z3_API Z3_mk_set_member(Z3_context c, Z3_ast elem, Z3_ast set) {
         return Z3_mk_select(c, set, elem);
     }
 
-    Z3_ast Z3_mk_set_add(Z3_context c, Z3_ast set, Z3_ast elem) {
+    Z3_ast Z3_API Z3_mk_set_add(Z3_context c, Z3_ast set, Z3_ast elem) {
         return Z3_mk_store(c, set, elem, Z3_mk_true(c));
     }
 
-    Z3_ast Z3_mk_set_del(Z3_context c, Z3_ast set, Z3_ast elem) {
+    Z3_ast Z3_API Z3_mk_set_del(Z3_context c, Z3_ast set, Z3_ast elem) {
         return Z3_mk_store(c, set, elem, Z3_mk_false(c));
     }
 
@@ -298,6 +298,19 @@ extern "C" {
         return 
             to_sort(t)->get_family_id() == mk_c(c)->get_array_fid() &&
             to_sort(t)->get_decl_kind() == ARRAY_SORT;
+    }
+
+    unsigned Z3_API Z3_get_array_arity(Z3_context c, Z3_sort s) {
+        Z3_TRY;
+        LOG_Z3_get_array_arity(c, s);
+        RESET_ERROR_CODE();
+        sort * a = to_sort(s);
+        if (Z3_get_sort_kind(c, s) != Z3_ARRAY_SORT) {
+            SET_ERROR_CODE(Z3_INVALID_ARG, "sort should be an array");
+            return 0;
+        }
+        return get_array_arity(a);
+        Z3_CATCH_RETURN(0);
     }
 
     Z3_sort Z3_API Z3_get_array_sort_domain(Z3_context c, Z3_sort t) {

@@ -36,11 +36,10 @@ namespace sat {
     class local_search_plugin {
     public:
         virtual ~local_search_plugin() {}
-        //virtual void init_search() = 0;
-        //virtual void finish_search() = 0;
         virtual void on_rescale() = 0;
         virtual lbool on_save_model() = 0;
         virtual void on_restart() = 0;
+        virtual bool is_external(sat::bool_var v) = 0;
     };
     
     class ddfw {
@@ -98,8 +97,10 @@ namespace sat {
         uint64_t         m_last_flips_for_shift = 0;
         unsigned         m_num_non_binary_clauses = 0;
         unsigned         m_restart_count = 0, m_reinit_count = 0;
+        unsigned         m_model_save_count = 0;
         uint64_t         m_restart_next = 0, m_reinit_next = 0;
         uint64_t         m_flips = 0, m_last_flips = 0, m_shifts = 0;
+        unsigned         m_logs = 0;
         unsigned         m_min_sz = UINT_MAX;
         u_map<unsigned>  m_models;
         stopwatch        m_stopwatch;
@@ -123,7 +124,7 @@ namespace sat {
 
         inline bool value(bool_var v) const { return m_vars[v].m_value; }
 
-        inline double& reward(bool_var v) { return m_vars[v].m_reward; }        
+        // inline double reward(bool_var v) { return m_vars[v].m_reward; }        
 
 
         unsigned value_hash() const;
@@ -140,37 +141,48 @@ namespace sat {
 
         unsigned select_max_same_sign(unsigned cf_idx);
 
+        unsigned m_num_external_in_unsat_vars = 0;
+
         inline void inc_make(literal lit) { 
             bool_var v = lit.var(); 
-            if (make_count(v)++ == 0) m_unsat_vars.insert_fresh(v); 
+            if (make_count(v)++ == 0) {
+                m_unsat_vars.insert_fresh(v);
+                if (m_plugin && m_plugin->is_external(v))
+                    ++m_num_external_in_unsat_vars;
+            }
         }
 
         inline void dec_make(literal lit) { 
             bool_var v = lit.var(); 
-            if (--make_count(v) == 0) m_unsat_vars.remove(v); 
+            if (--make_count(v) == 0) {
+                if (m_unsat_vars.contains(v)) {
+                    m_unsat_vars.remove(v);
+                    if (m_plugin && m_plugin->is_external(v))
+                        --m_num_external_in_unsat_vars;
+                }
+            }
         }
 
-        inline void inc_reward(literal lit, double w) { reward(lit.var()) += w; }
+        inline void inc_reward(literal lit, double w) { m_vars[lit.var()].m_reward += w; }
 
-        inline void dec_reward(literal lit, double w) { reward(lit.var()) -= w; }
+        inline void dec_reward(literal lit, double w) { m_vars[lit.var()].m_reward -= w; }
 
         void check_with_plugin();
         void check_without_plugin();
 
-        // flip activity
+        // flip 
         bool do_flip();
 
         bool_var pick_var(double& reward);     
 
         bool apply_flip(bool_var v, double reward);
 
-
         void save_best_values();
         void save_model();
         void save_priorities();
 
         // shift activity
-        void shift_weights();
+
         inline double calculate_transfer_weight(double w);
 
         // reinitialize weights activity
@@ -200,6 +212,14 @@ namespace sat {
         inline void transfer_weight(unsigned from, unsigned to, double w);
 
         inline bool disregard_neighbor();
+
+        bool_var_set m_rotate_tabu;
+        bool_var_vector m_new_tabu_vars;
+
+        void flip(bool_var v);
+        bool m_in_external_flip = false;
+        bool m_initialized = false;
+
 
     public:
 
@@ -238,6 +258,10 @@ namespace sat {
 
         indexed_uint_set const& unsat_set() const { return m_unsat; }
 
+        indexed_uint_set const& unsat_vars() const { return m_unsat_vars; }
+
+        unsigned num_external_in_unsat_vars() const { return m_num_external_in_unsat_vars; }
+
         vector<clause_info> const& clauses() const { return m_clauses; }
 
         clause_info& get_clause_info(unsigned idx) { return m_clauses[idx]; }
@@ -246,9 +270,14 @@ namespace sat {
 
         void remove_assumptions();
 
-        void flip(bool_var v);
+        void external_flip(sat::bool_var v);
+        sat::bool_var external_flip();
 
-        inline double get_reward(bool_var v) const { return m_vars[v].m_reward; }
+        void shift_weights();
+
+        inline double reward(bool_var v) const { return m_vars[v].m_reward; }
+
+        void set_reward(bool_var v, double r) { m_vars[v].m_reward = r; }
 
         double get_reward_avg(bool_var v) const { return m_vars[v].m_reward_avg; }
 
@@ -268,6 +297,7 @@ namespace sat {
 
         void simplify();
 
+        bool try_rotate(bool_var v, bool_var_set& rotated, unsigned& budget);
 
         ptr_iterator<unsigned> use_list(literal lit) { 
             flatten_use_list();

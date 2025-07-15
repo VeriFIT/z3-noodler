@@ -2,7 +2,7 @@
 #define _QUANT_LIA_SOLVER_H_
 
 #include "smt/smt_kernel.h"
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 #include "smt/smt_context.h"
 #include "smt/theory_arith.h"
 #include "solver/tactic2solver.h"
@@ -65,13 +65,13 @@ namespace smt::noodler {
                 expr_ref_vector Assigns(m);
                 ctx.get_assignments(Assigns);
                 for (unsigned i = 0; i < ctx.get_num_asserted_formulas(); ++i) {
-                    STRACE("str-lia", tout<< "check_sat context from asserted: " << mk_pp(ctx.get_asserted_formula(i),m) << std::endl);
+                    STRACE(str_lia, tout<< "check_sat context from asserted: " << mk_pp(ctx.get_asserted_formula(i),m) << std::endl);
                     assert_expr(ctx.get_asserted_formula(i));
                 }
                 if (include_ass) {
                     for (auto & e : Assigns){
                         if(ctx.is_relevant(e)) {
-                            STRACE("str-lia", tout << "check_sat context from assign: " << mk_pp(e, m) << std::endl);
+                            STRACE(str_lia, tout << "check_sat context from assign: " << mk_pp(e, m) << std::endl);
                             assert_expr(e);
                         }
                     }

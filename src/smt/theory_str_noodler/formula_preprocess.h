@@ -11,7 +11,7 @@
 #include <mata/nfa/nfa.hh>
 
 #include "util/trace.h"
-#include "smt/params/theory_str_noodler_params.h"
+#include "params/theory_str_noodler_params.h"
 
 #include "formula.h"
 #include "aut_assignment.h"

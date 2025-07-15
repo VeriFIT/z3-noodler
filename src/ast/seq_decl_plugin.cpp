@@ -70,7 +70,7 @@ bool seq_decl_plugin::match(ptr_vector<sort>& binding, sort* s, sort* sP) {
         return true;
     }
     else {
-        TRACE("seq", tout << "Could not match " << mk_pp(s, *m_manager) << " and " << mk_pp(sP, *m_manager) << "\n";);
+        TRACE(seq, tout << "Could not match " << mk_pp(s, *m_manager) << " and " << mk_pp(sP, *m_manager) << "\n";);
         return false;
     }
 }
@@ -105,7 +105,7 @@ void seq_decl_plugin::match_assoc(psig& sig, unsigned dsz, sort *const* dom, sor
         if (range) {
             strm << " and range: " << mk_pp(range, m);
         }
-        STRACE("str", strm.str());
+        STRACE(str, strm.str());
         m.raise_exception(strm.str());
     }
     range_out = apply_binding(binding, sig.m_range);
@@ -1665,7 +1665,7 @@ seq_util::rex::info seq_util::rex::get_info_rec(expr* e) const {
     else 
         result = mk_info_rec(to_app(e));
     m_infos.setx(e->get_id(), result, invalid_info);
-    STRACE("re_info", tout << "compute_info(" << pp(u.re, e, false) << ")=" << result << std::endl;);
+    STRACE(re_info, tout << "compute_info(" << pp(u.re, e, false) << ")=" << result << std::endl;);
     return result;
 }
 

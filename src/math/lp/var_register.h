@@ -23,8 +23,8 @@ namespace lp  {
 
 
 class ext_var_info {
-    unsigned m_external_j;
-    bool m_is_integer;
+    unsigned m_external_j = 0;
+    bool m_is_integer = false;
     std::string m_name;
 public:
     ext_var_info() = default;
@@ -74,7 +74,7 @@ public:
         return ret;
     }
 
-    // returns UINT_MAX if 
+    // returns UINT_MAX if local_var is greater than or equal than the number of local variables  
     unsigned local_to_external(unsigned local_var) const {
         unsigned k = local_var;
         if (k >= m_local_to_external.size())
@@ -91,7 +91,7 @@ public:
 
     unsigned external_to_local(unsigned j) const {
         auto it = m_external_to_local.find(j);
-        lp_assert(it != m_external_to_local.end());
+        SASSERT(it != m_external_to_local.end());
         return it->second;
     }
 

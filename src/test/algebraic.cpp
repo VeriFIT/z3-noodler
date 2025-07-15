@@ -25,18 +25,18 @@ Notes:
 static void display_anums(std::ostream & out, scoped_anum_vector const & rs) {
     out << "numbers in decimal:\n";
     algebraic_numbers::manager & m = rs.m();
-    for (unsigned i = 0; i < rs.size(); i++) {
-        m.display_decimal(out, rs[i], 10);
+    for (const auto& r : rs) {
+        m.display_decimal(out, r, 10);
         out << "\n";
     }
     out << "numbers as root objects\n";
-    for (unsigned i = 0; i < rs.size(); i++) {
-        m.display_root(out, rs[i]);
+    for (const auto& r : rs) {
+        m.display_root(out, r);
         out << "\n";
     }
     out << "numbers as intervals\n";
-    for (unsigned i = 0; i < rs.size(); i++) {
-        m.display_interval(out, rs[i]);
+    for (const auto& r : rs) {
+        m.display_interval(out, r);
         out << "\n";
     }
 }
@@ -336,7 +336,7 @@ static void tst_eval_sign(polynomial_ref const & p, anum_manager & am,
 }
 
 static void tst_eval_sign() {
-    enable_trace("anum_eval_sign");
+    // enable_trace("anum_eval_sign");
     reslimit rl;
     unsynch_mpq_manager        qm;
     polynomial::manager        pm(rl, qm);
@@ -417,7 +417,7 @@ static void tst_isolate_roots(polynomial_ref const & p, anum_manager & am,
 }
 
 static void tst_isolate_roots() {
-    enable_trace("isolate_roots");
+    // enable_trace("isolate_roots");
     reslimit rl;
     unsynch_mpq_manager        qm;
     polynomial::manager        pm(rl, qm);

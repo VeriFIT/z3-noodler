@@ -17,6 +17,7 @@ Notes:
 
 --*/
 #include "ast/ast_pp.h"
+#include "ast/ast_ll_pp.h"
 #include "ast/pb_decl_plugin.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/rewriter/rewriter_def.h"
@@ -24,6 +25,7 @@ Notes:
 #include "ast/ast_util.h"
 #include "ast/ast_pp_util.h"
 #include "tactic/tactical.h"
+#include "params/tactic_params.hpp"
 #include "ast/simplifiers/bound_manager.h"
 #include "ast/converters/generic_model_converter.h"
 
@@ -82,7 +84,7 @@ class lia2card_tactic : public tactic {
             else {
                 return BR_FAILED;
             }
-            TRACE("pbsum", tout << expr_ref(m.mk_app(f, sz, es), m) << " ==>\n" <<  result << "\n";);
+            TRACE(pbsum, tout << expr_ref(m.mk_app(f, sz, es), m) << " ==>\n" <<  result << "\n";);
 
             return BR_DONE;
         }
@@ -115,7 +117,8 @@ public:
     mutable ptr_vector<expr>*        m_todo;
     bounds_map                       m_bounds;
     bool                             m_compile_equality;
-    unsigned                         m_max_ub;
+    unsigned                         m_max_range = 101;
+    unsigned                         m_max_ite_nesting = 1;
     ref<generic_model_converter>     m_mc;
 
     lia2card_tactic(ast_manager & _m, params_ref const & p):
@@ -125,7 +128,7 @@ public:
         m_pb(m),
         m_todo(alloc(ptr_vector<expr>)),
         m_compile_equality(true) {
-        m_max_ub = 100;
+        updt_params(p);
     }
 
     ~lia2card_tactic() override {
@@ -136,7 +139,11 @@ public:
 
     void updt_params(params_ref const & p) override {
         m_params.append(p);
+        tactic_params tp(p);
+
         m_compile_equality = m_params.get_bool("compile_equality", true);
+        m_max_range = tp.lia2card_max_range();
+        m_max_ite_nesting = tp.lia2card_max_ite_nesting();
     }
 
     expr_ref mk_bounded(expr_ref_vector& axioms, app* x, unsigned lo, unsigned hi) {
@@ -191,11 +198,11 @@ public:
             if (a.is_int(x) &&
                 is_uninterp_const(x) &&
                 bounds.has_lower(x, lo, s1) && !s1 && lo.is_unsigned() &&
-                bounds.has_upper(x, hi, s2) && !s2 && hi.is_unsigned() && hi.get_unsigned() - lo.get_unsigned() <= m_max_ub) {
+                bounds.has_upper(x, hi, s2) && !s2 && hi.is_unsigned() && hi.get_unsigned() - lo.get_unsigned() <= m_max_range) {
                 expr_ref b = mk_bounded(axioms, to_app(x), lo.get_unsigned(), hi.get_unsigned());
                 rep.insert(x, b);
                 m_bounds.insert(x, bound(lo.get_unsigned(), hi.get_unsigned(), b));
-                TRACE("pb", tout << "add bound " << lo << " " << hi << ": " << mk_pp(x, m) << "\n";);
+                TRACE(pb, tout << "add bound " << lo << " " << hi << ": " << mk_pp(x, m) << "\n";);
             }
         }
         for (unsigned i = 0; !g->inconsistent() && i < g->size(); i++) {
@@ -259,7 +266,7 @@ public:
 
     expr* mk_ge(unsigned sz, rational const* weights, expr* const* args, rational const& w) {
         if (sz == 0) {
-            return w.is_pos()?m.mk_false():m.mk_true();
+            return w.is_pos() ? m.mk_false() : m.mk_true();
         }
         if (sz == 1 && weights[0].is_one() && w.is_one()) {
             return args[0];
@@ -276,51 +283,54 @@ public:
 
     bool get_pb_sum(expr* x, rational const& mul, expr_ref_vector& args, vector<rational>& coeffs, rational& coeff) {
         expr_ref_vector conds(m);
-        return get_sum(x, mul, conds, args, coeffs, coeff);
+        return get_sum(0, x, mul, conds, args, coeffs, coeff);
     }
 
-    bool get_sum(expr* x, rational const& mul, expr_ref_vector& conds, expr_ref_vector& args, vector<rational>& coeffs, rational& coeff) {
+    bool get_sum(unsigned nesting, expr* x, rational const& mul, expr_ref_vector& conds, expr_ref_vector& args, vector<rational>& coeffs, rational& coeff) {
         checkpoint();
 
         expr *y, *z, *u;
         rational r, q;
-        if (!is_app(x)) return false;
+        if (!is_app(x)) 
+            return false;
+        if (nesting > m_max_ite_nesting && !is_numeral(x, r))
+            return false;
         app* f = to_app(x);
         bool ok = true;
-        if (a.is_add(x)) {
+        if (is_numeral(x, r)) {
+            insert_arg(mul * r, conds, m.mk_true(), args, coeffs, coeff);
+        }
+        else if (a.is_add(x)) {
             for (unsigned i = 0; ok && i < f->get_num_args(); ++i) {
-                ok = get_sum(f->get_arg(i), mul, conds, args, coeffs, coeff);
+                ok = get_sum(nesting, f->get_arg(i), mul, conds, args, coeffs, coeff);
             }
         }
         else if (a.is_sub(x, y, z)) {
-            ok = get_sum(y, mul, conds, args, coeffs, coeff);
-            ok = ok && get_sum(z, -mul, conds, args, coeffs, coeff);
+            ok = get_sum(nesting, y, mul, conds, args, coeffs, coeff);
+            ok = ok && get_sum(nesting, z, -mul, conds, args, coeffs, coeff);
         }
         else if (a.is_uminus(x, y)) {
-            ok = get_sum(y, -mul, conds, args, coeffs, coeff);
+            ok = get_sum(nesting, y, -mul, conds, args, coeffs, coeff);
         }
         else if (a.is_mul(x, y, z) && is_numeral(y, r)) {
-            ok = get_sum(z, r*mul, conds, args, coeffs, coeff);
+            ok = get_sum(nesting, z, r*mul, conds, args, coeffs, coeff);
         }
         else if (a.is_mul(x, z, y) && is_numeral(y, r)) {
-            ok = get_sum(z, r*mul, conds, args, coeffs, coeff);
+            ok = get_sum(nesting, z, r*mul, conds, args, coeffs, coeff);
         }
         else if (a.is_to_real(x, y)) {
-            ok = get_sum(y, mul, conds, args, coeffs, coeff);
+            ok = get_sum(nesting, y, mul, conds, args, coeffs, coeff);
         }
         else if (m.is_ite(x, y, z, u)) {
             conds.push_back(y);
-            ok = get_sum(z, mul, conds, args, coeffs, coeff);
+            ok = get_sum(nesting + 1, z, mul, conds, args, coeffs, coeff);
             conds.pop_back();
             conds.push_back(m.mk_not(y));
-            ok &= get_sum(u, mul, conds, args, coeffs, coeff);
+            ok &= get_sum(nesting + 1, u, mul, conds, args, coeffs, coeff);
             conds.pop_back();
         }
-        else if (is_numeral(x, r)) {
-            insert_arg(mul*r, conds, m.mk_true(), args, coeffs, coeff);
-        }
         else {
-            TRACE("pb", tout << "Can't handle " << mk_pp(x, m) << "\n";);
+            TRACE(pb, tout << "Can't handle " << mk_pp(x, m) << "\n";);
             ok = false;
         }
         return ok;

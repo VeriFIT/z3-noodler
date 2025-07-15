@@ -190,11 +190,11 @@ public:
         for (auto const& kv : m_int2bv) {
             rational offset;
             VERIFY (m_bv2offset.find(kv.m_value, offset));
-            expr_ref value(m_bv.mk_bv2int(m.mk_const(kv.m_value)), m);
+            expr_ref value(m_bv.mk_ubv2int(m.mk_const(kv.m_value)), m);
             if (!offset.is_zero()) {
                 value = m_arith.mk_add(value, m_arith.mk_numeral(offset, true));
             }
-            TRACE("int2bv", tout << mk_pp(kv.m_key, m) << " " << value << "\n";);
+            TRACE(int2bv, tout << mk_pp(kv.m_key, m) << " " << value << "\n";);
             mc->add(kv.m_key, value);
         }
         return mc;
@@ -212,6 +212,7 @@ public:
     ast_manager& get_manager() const override { return m;  }
     expr* congruence_next(expr* e) override { return m_solver->congruence_next(e); }
     expr* congruence_root(expr* e) override { return m_solver->congruence_root(e); }
+    expr_ref congruence_explain(expr* a, expr* b) override { return m_solver->congruence_explain(a, b); }
     expr_ref_vector cube(expr_ref_vector& vars, unsigned backtrack_level) override { flush_assertions(); return m_solver->cube(vars, backtrack_level); }
     lbool find_mutexes(expr_ref_vector const& vars, vector<expr_ref_vector>& mutexes) override { return m_solver->find_mutexes(vars, mutexes); }
     lbool get_consequences_core(expr_ref_vector const& asms, expr_ref_vector const& vars, expr_ref_vector& consequences) override {
@@ -292,15 +293,15 @@ private:
                     VERIFY(m_bv2offset.find(fbv, offset));
                 }
                 expr_ref t(m.mk_const(fbv), m);
-                t = m_bv.mk_bv2int(t);
+                t = m_bv.mk_ubv2int(t);
                 if (!offset.is_zero()) {
                     t = m_arith.mk_add(t, m_arith.mk_numeral(offset, true));
                 }
-                TRACE("pb", tout << lo << " <= " << hi << " offset: " << offset << "\n"; tout << mk_pp(e, m) << " |-> " << t << "\n";);
+                TRACE(pb, tout << lo << " <= " << hi << " offset: " << offset << "\n"; tout << mk_pp(e, m) << " |-> " << t << "\n";);
                 sub.insert(e, t);
             }
             else {
-                TRACE("pb", 
+                TRACE(pb, 
                       tout << "unprocessed entry: " << mk_pp(e, m) << "\n";
                       if (bm.has_lower(e, lo, s1)) {
                           tout << "lower: " << lo << " " << s1 << "\n";
@@ -332,7 +333,7 @@ private:
         bound_manager& bm = *m_bounds.back();
         for (expr* a : m_assertions) 
             bm(a, nullptr, nullptr);        
-        TRACE("int2bv", bm.display(tout););
+        TRACE(int2bv, bm.display(tout););
         expr_safe_replace sub(m);
         accumulate_sub(sub);
         proof_ref proof(m);
@@ -349,7 +350,7 @@ private:
                     return;
                 }
                 m_solver->assert_expr(fml2);
-                TRACE("int2bv", tout << fml2 << "\n";);
+                TRACE(int2bv, tout << fml2 << "\n";);
             }
         }
         m_assertions.reset();

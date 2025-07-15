@@ -38,7 +38,7 @@ private:
         ++mem;
         value * r = reinterpret_cast<value*>(mem);
         SASSERT(capacity(r) == c);
-        TRACE("parray_mem", tout << "allocated values[" << c << "]: " << r << "\n";);
+        TRACE(parray_mem, tout << "allocated values[" << c << "]: " << r << "\n";);
         return r;
     }
 
@@ -46,7 +46,7 @@ private:
         if (vs == nullptr)
             return;
         size_t c     = capacity(vs);
-        TRACE("parray_mem", tout << "deallocated values[" << c << "]: " << vs << "\n";);
+        TRACE(parray_mem, tout << "deallocated values[" << c << "]: " << vs << "\n";);
         size_t * mem = reinterpret_cast<size_t*>(vs);
         --mem;
         m_allocator.deallocate(sizeof(value)*c + sizeof(size_t), mem);
@@ -72,7 +72,7 @@ private:
         unsigned size() const { SASSERT(kind() == ROOT); return m_size; }
         cell * next() const { SASSERT(kind() != ROOT); return m_next; }
         value const & elem() const { SASSERT(kind() == SET || kind() == PUSH_BACK); return m_elem; }
-        cell(enum ckind k):m_ref_count(1), m_kind(k), m_size(0), m_values(nullptr) {}
+        cell(enum ckind k):m_ref_count(1), m_kind(k), m_size(0), m_elem(), m_values(nullptr) {}
     };
 
     value_manager &  m_vmanager;
@@ -98,7 +98,7 @@ private:
 
     cell * mk(ckind k) {
         cell * r = new (m_allocator.allocate(sizeof(cell))) cell(k);
-        TRACE("parray_mem", tout << "allocated cell: " << r << "\n";);
+        TRACE(parray_mem, tout << "allocated cell: " << r << "\n";);
         return r;
     }
 
@@ -119,7 +119,7 @@ private:
                 deallocate_values(c->m_values);
                 break;
             }
-            TRACE("parray_mem", tout << "deallocated cell: " << c << "\n";);
+            TRACE(parray_mem, tout << "deallocated cell: " << c << "\n";);
             c->~cell();
             m_allocator.deallocate(sizeof(cell), c);
             if (next == nullptr)
@@ -139,7 +139,7 @@ private:
 
     void dec_ref(cell * c) {
         if (!c) return;
-        TRACE("parray_mem", tout << "dec_ref(" << c << "), ref_count: " << c->m_ref_count << "\n";);
+        TRACE(parray_mem, tout << "dec_ref(" << c << "), ref_count: " << c->m_ref_count << "\n";);
         SASSERT(c->m_ref_count > 0);
         c->m_ref_count--;
         if (c->m_ref_count == 0)
@@ -414,6 +414,7 @@ public:
     void push_back(ref & r, value const & v) {
         if (r.m_ref == nullptr)
             mk(r);
+        SASSERT(r.m_ref);
         if (r.root()) {
             if (r.unshared()) {
                 rpush_back(r.m_ref, v);

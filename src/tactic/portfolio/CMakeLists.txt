@@ -1,5 +1,6 @@
 z3_add_component(portfolio
   SOURCES
+    euf_completion_tactic.cpp
     default_tactic.cpp
     smt_strategic_solver.cpp
     solver2lookahead.cpp
@@ -15,7 +16,9 @@ z3_add_component(portfolio
     subpaving_tactic
     ufbv_tactic
     fd_solver
+    simplifiers
   TACTIC_HEADERS
+    euf_completion_tactic.h
     default_tactic.h
     solver_subsumption_tactic.h
 

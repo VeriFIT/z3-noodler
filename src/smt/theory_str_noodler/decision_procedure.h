@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <functional>
 
-#include "smt/params/theory_str_noodler_params.h"
+#include "params/theory_str_noodler_params.h"
 #include "formula.h"
 #include "inclusion_graph.h"
 #include "aut_assignment.h"
@@ -525,7 +525,7 @@ namespace smt::noodler {
         void push_to_worklist(SolvingState solving_state, bool to_back) {
             std::string old_DOT_name = solving_state.DOT_name;
             solving_state.set_new_DOT_name();
-            STRACE("str-noodle-dot", tout << solving_state.print_to_DOT() << std::endl << old_DOT_name << " -> " << solving_state.DOT_name << ";\n");
+            STRACE(str_noodle_dot, tout << solving_state.print_to_DOT() << std::endl << old_DOT_name << " -> " << solving_state.DOT_name << ";\n");
             if (to_back) {
                 worklist.push_back(std::move(solving_state));
             } else {
@@ -537,7 +537,7 @@ namespace smt::noodler {
         SolvingState pop_from_worklist() {
             SolvingState element_to_process = std::move(worklist.front());
             worklist.pop_front();
-            STRACE("str-noodle-dot", tout << element_to_process.DOT_name << " -> " << element_to_process.DOT_name << " [penwidth=0,dir=none,label=" << num_of_popped_elements << "];\n";);
+            STRACE(str_noodle_dot, tout << element_to_process.DOT_name << " -> " << element_to_process.DOT_name << " [penwidth=0,dir=none,label=" << num_of_popped_elements << "];\n";);
             ++num_of_popped_elements;
             return element_to_process;
         }
@@ -690,7 +690,7 @@ namespace smt::noodler {
             if (solution.aut_ass.contains(var)) {
                 solution.aut_ass[var] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(computed_model));
             }
-            STRACE("str-model-res", tout << "Model for " << var << ": " << computed_model << std::endl);
+            STRACE(str_model_res, tout << "Model for " << var << ": " << computed_model << std::endl);
             return computed_model;
         };
 

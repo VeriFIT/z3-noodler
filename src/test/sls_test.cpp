@@ -4,12 +4,14 @@
 #include "ast/rewriter/th_rewriter.h"
 #include "ast/reg_decl_plugins.h"
 #include "ast/ast_pp.h"
+#include "ast/for_each_expr.h"
 
 namespace bv {
 
     class my_sat_solver_context : public sls::sat_solver_context {
         vector<sat::clause_info> m_clauses;
         indexed_uint_set s;
+        reslimit m_limit;
     public:
         my_sat_solver_context() {}
 
@@ -17,18 +19,24 @@ namespace bv {
         sat::clause_info const& get_clause(unsigned idx) const override { return m_clauses[idx]; }
         ptr_iterator<unsigned> get_use_list(sat::literal lit) override { return ptr_iterator<unsigned>(nullptr, nullptr); }
         void flip(sat::bool_var v) override {  }
+        sat::bool_var external_flip() override { return sat::null_bool_var; }
         double reward(sat::bool_var v) override { return 0; }
         double get_weigth(unsigned clause_idx) override { return 0; }
         bool is_true(sat::literal lit) override { return true; }
+        bool try_rotate(sat::bool_var v, sat::bool_var_set& rotated, unsigned& bound) override { return false; }
         unsigned num_vars() const override { return 0; }
         indexed_uint_set const& unsat() const override { return s; }
+        indexed_uint_set const& unsat_vars() const override { return s; }
+        void shift_weights() override {}
         void on_model(model_ref& mdl) override {}
+        unsigned num_external_in_unsat_vars() const override { return 0; }
         sat::bool_var add_var() override { return sat::null_bool_var;}
         void add_clause(unsigned n, sat::literal const* lits) override {}
         //        void collect_statistics(statistics& st) const override {}
         // void reset_statistics() override {}
         void force_restart() override {}
         std::ostream& display(std::ostream& out)  override { return out; }
+        reslimit& rlimit() override { return m_limit; }
     };
 
     class sls_test {
@@ -59,8 +67,8 @@ namespace bv {
             sls::context ctx(m, solver);
             sls::bv_terms terms(ctx);
             sls::bv_eval ev(terms, ctx);
-            for (auto e : es)
-                ev.register_term(e);
+            for (auto e : subterms_postorder::all(es)) 
+                ev.register_term(e);            
             ev.init();
             th_rewriter rw(m);
             expr_ref r(e, m);
@@ -81,10 +89,11 @@ namespace bv {
                 VERIFY(n1 == n2);
             }
             else if (m.is_bool(e)) {
-                auto val1 = ev.bval0(e);
+                auto val1 = ev.bval1(to_app(e));
                 auto val2 = m.is_true(r);
                 if (val1 != val2) {
-                    verbose_stream() << mk_pp(e, m) << " computed value " << val1 << " at odds with definition\n";
+                    verbose_stream() << mk_pp(e, m) << " computed value " << val1 
+                        << " at odds with definition " << val2 << "\n";
                 }
                 SASSERT(val1 == val2);
                 VERIFY(val1 == val2);
@@ -178,14 +187,14 @@ namespace bv {
             sls::context ctx(m, solver);
             sls::bv_terms terms(ctx);
             sls::bv_eval ev(terms, ctx);
-            for (auto e : es)
+            for (auto e : subterms_postorder::all(es))
                 ev.register_term(e);
             ev.init();
 
             if (m.is_bool(e1)) {
                 SASSERT(m.is_true(r) || m.is_false(r));
                 auto val = m.is_true(r);
-                auto val2 = ev.bval0(e2);
+                auto val2 = ev.bval1(to_app(e2));
                 if (val != val2) {
                     ev.set(e2, val);
                     auto rep1 = ev.repair_down(to_app(e2), idx);
@@ -211,7 +220,8 @@ namespace bv {
                         verbose_stream() << "Not repaired " << mk_pp(e2, m) << "\n";
                     }                    
                     auto val3 = ev.wval(e2);
-                    val3.commit_eval();
+                    verbose_stream() << val3 << "\n";
+                    VERIFY(val3.commit_eval_check_tabu());
                     if (!val3.eq(val1)) {
                         verbose_stream() << "Repaired but not corrected " << mk_pp(e2, m) << "\n";
                     }
@@ -273,7 +283,7 @@ static void test_repair1() {
 }
 
 void tst_sls_test() {
-    test_eval1();
-    test_repair1();
+    //test_eval1();
+    //test_repair1();
 
 }

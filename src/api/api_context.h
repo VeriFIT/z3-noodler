@@ -32,7 +32,7 @@ Revision History:
 #include "ast/recfun_decl_plugin.h"
 #include "ast/special_relations_decl_plugin.h"
 #include "ast/rewriter/seq_rewriter.h"
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 #include "smt/smt_kernel.h"
 #include "smt/smt_solver.h"
 #include "cmd_context/tactic_manager.h"
@@ -199,9 +199,7 @@ namespace api {
 
         // Store a copy of str in m_string_buffer, and return a reference to it.
         // This method is used to communicate local/internal strings with the "external world"
-        char * mk_external_string(char const * str, unsigned n);
-        char * mk_external_string(char const * str);
-        char * mk_external_string(std::string && str);
+        const char * mk_external_string(std::string && str);
         sbuffer<char>              m_char_buffer;
 
 

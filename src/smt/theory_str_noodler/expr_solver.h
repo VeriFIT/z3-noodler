@@ -7,7 +7,7 @@ Eternal glory to Yu-Fang.
 #define _EXPR_INT_SOLVER_H_
 
 #include "smt/smt_kernel.h"
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 #include "smt/smt_context.h"
 
 namespace smt::noodler {

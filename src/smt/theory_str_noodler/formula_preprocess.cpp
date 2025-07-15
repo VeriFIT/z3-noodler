@@ -306,7 +306,7 @@ namespace smt::noodler {
      * is the automaton assigned to variable X.
      */
     void FormulaPreprocessor::remove_regular() {
-        STRACE("str-prep", tout << "Preprocessing step - remove_regular\n";);
+        STRACE(str_prep, tout << "Preprocessing step - remove_regular\n";);
         std::vector<std::pair<size_t, Predicate>> regs;
         this->formula.get_side_regulars(regs);
         std::deque<std::pair<size_t, Predicate>> worklist(regs.begin(), regs.end());
@@ -319,7 +319,7 @@ namespace smt::noodler {
 
             if (removed.contains(pr.first)) continue; // if the equation was already removed, we do not remove it again
 
-            STRACE("str-prep-remove_regular", tout << "Remove regular:" << pr.second << std::endl;);
+            STRACE(str_prep_remove_regular, tout << "Remove regular:" << pr.second << std::endl;);
 
             assert(pr.second.get_left_side().size() == 1);
 
@@ -359,7 +359,7 @@ namespace smt::noodler {
 
             this->formula.remove_predicate(pr.first);
             removed.insert(pr.first);
-            STRACE("str-prep-remove_regular", tout << "removed" << std::endl;);
+            STRACE(str_prep_remove_regular, tout << "removed" << std::endl;);
 
             // check if by removing the regular equation, some other equations did not become regular
             // we only need to check this for left_var, as the variables from the right side do not occur
@@ -374,7 +374,7 @@ namespace smt::noodler {
                 }
             }
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -382,7 +382,7 @@ namespace smt::noodler {
      * (find all Y in the formula and replace with X).
      */
     void FormulaPreprocessor::propagate_variables() {
-        STRACE("str-prep", tout << "Preprocessing step - propagate_variables\n";);
+        STRACE(str_prep, tout << "Preprocessing step - propagate_variables\n";);
         std::vector<std::pair<size_t, Predicate>> regs;
         this->formula.get_simple_eqs(regs);
         std::deque<size_t> worklist;
@@ -446,7 +446,7 @@ namespace smt::noodler {
         // Not true: you can have equation of two, literals which is not removed 
         //assert(!this->formula.contains_simple_eqs());
 
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -524,7 +524,7 @@ namespace smt::noodler {
      * (b) X1 X X2 = Z and Z = X1 Y X2 => X = Y. Where each term can be both literal and variable.
      */
     void FormulaPreprocessor::generate_identities() {
-        STRACE("str-prep", tout << "Preprocessing step - generate_identities\n";);
+        STRACE(str_prep, tout << "Preprocessing step - generate_identities\n";);
         std::set<std::pair<size_t, Predicate>> new_preds;
         std::set<size_t> rem_ids;
         size_t index = this->formula.get_max_index() + 1;
@@ -575,7 +575,7 @@ namespace smt::noodler {
         for(const auto &pr : new_preds) {
             this->formula.add_predicate(pr.second, pr.first);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -667,7 +667,7 @@ namespace smt::noodler {
      * @param mn Minimum number of occurrences of a regular sequence to be replaced with a fresh variable.
      */
     void FormulaPreprocessor::reduce_regular_sequence(unsigned mn) {
-        STRACE("str-prep", tout << "Preprocessing step - reduce_regular_sequence\n";);
+        STRACE(str_prep, tout << "Preprocessing step - reduce_regular_sequence\n";);
         std::map<Concat, unsigned> regs;
         std::set<Predicate> new_eqs;
         get_regular_sublists(regs);
@@ -686,7 +686,7 @@ namespace smt::noodler {
             this->formula.add_predicate(eq);
             // We do not add dependency
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -715,7 +715,7 @@ namespace smt::noodler {
      * literal remove from the formula and set the corresponding languages appropriately.
      */
     void FormulaPreprocessor::propagate_eps() {
-        STRACE("str-prep", tout << "Preprocessing step - propagate_eps\n";);
+        STRACE(str_prep, tout << "Preprocessing step - propagate_eps\n";);
         std::set<BasicTerm> eps_set;
         get_eps_terms(eps_set);
         std::deque<size_t> worklist;
@@ -774,7 +774,7 @@ namespace smt::noodler {
             this->dependency[pr.first].insert(eps_eq_id.begin(), eps_eq_id.end());
         }
 
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -844,7 +844,7 @@ namespace smt::noodler {
      * @brief Separate equations.
      */
     void FormulaPreprocessor::separate_eqs() {
-        STRACE("str-prep", tout << "Preprocessing step - separate_eqs\n";);
+        STRACE(str_prep, tout << "Preprocessing step - separate_eqs\n";);
         std::set<Predicate> add_eqs;
         std::set<size_t> rem_ids;
 
@@ -868,7 +868,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -903,7 +903,7 @@ namespace smt::noodler {
      * the end of the equation).
      */
     void FormulaPreprocessor::remove_extension() {
-        STRACE("str-prep", tout << "Preprocessing step - remove_extension\n";);
+        STRACE(str_prep, tout << "Preprocessing step - remove_extension\n";);
         std::set<BasicTerm> begin_star, end_star;
         gather_extended_vars(Predicate::EquationSideType::Left, begin_star);
         gather_extended_vars(Predicate::EquationSideType::Right, end_star);
@@ -986,14 +986,14 @@ namespace smt::noodler {
         for(const auto& pr : updates) {
             this->update_predicate(pr.first, pr.second);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
      * @brief Remove trivial equations of the form X = X
      */
     void FormulaPreprocessor::remove_trivial() {
-        STRACE("str-prep", tout << "Preprocessing step - remove_trivial\n";);
+        STRACE(str_prep, tout << "Preprocessing step - remove_trivial\n";);
         std::set<size_t> rem_ids;
         for(const auto& pr : this->formula.get_predicates()) {
             if(!pr.second.is_equation())
@@ -1007,7 +1007,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1061,7 +1061,7 @@ namespace smt::noodler {
      * variables but also literals.
      */
     void FormulaPreprocessor::refine_languages() {
-        STRACE("str-prep", tout << "Preprocessing step - refine_languages\n";);
+        STRACE(str_prep, tout << "Preprocessing step - refine_languages\n";);
         std::set<BasicTerm> ineq_vars;
         for(const auto& pr : this->formula.get_predicates()) {
             if(!pr.second.is_inequation())
@@ -1108,7 +1108,7 @@ namespace smt::noodler {
                 this->aut_ass[pr.first] = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(inters));
             }
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     void FormulaPreprocessor::reduce_automata() {
@@ -1126,7 +1126,7 @@ namespace smt::noodler {
      * we need to do proper splitting).
      */
     void FormulaPreprocessor::skip_len_sat() {
-        STRACE("str-prep", tout << "Preprocessing step - skip_len_sat\n";);
+        STRACE(str_prep, tout << "Preprocessing step - skip_len_sat\n";);
         std::set<size_t> rem_ids;
 
         auto is_sigma_star = [&](const std::set<BasicTerm>& bts) {
@@ -1191,7 +1191,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1201,7 +1201,7 @@ namespace smt::noodler {
      * @param ec Equivalence class containing length-equivalent variables.
      */
     void FormulaPreprocessor::generate_equiv(const BasicTermEqiv& ec) {
-        STRACE("str-prep", tout << "Preprocessing step - generate_equiv\n";);
+        STRACE(str_prep, tout << "Preprocessing step - generate_equiv\n";);
         std::set<Predicate> new_preds;
         size_t index = this->formula.get_max_index() + 1;
 
@@ -1262,7 +1262,7 @@ namespace smt::noodler {
         for(const auto &pr : new_preds) {
             this->formula.add_predicate(pr);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1296,7 +1296,7 @@ namespace smt::noodler {
      * W = Z1 "A" Z3 where "A" not in L(Y1) and "A" not in L(Z1)
      */
     void FormulaPreprocessor::infer_alignment() {
-        STRACE("str-prep", tout << "Preprocessing step - infer_alignment\n";);
+        STRACE(str_prep, tout << "Preprocessing step - infer_alignment\n";);
         using VarSeparator = std::map<BasicTerm, std::set<BasicTerm>>;
         // separators for each variable: map of literals -> set of basic terms: 
         // for each literal (L) contains terms (T) that preceeds that literal: there is equation ... = T L
@@ -1336,7 +1336,7 @@ namespace smt::noodler {
                 }
             }
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1395,7 +1395,7 @@ namespace smt::noodler {
      * infer Y = W3 W4
      */
     void FormulaPreprocessor::common_prefix_propagation() {
-        STRACE("str-prep", tout << "Preprocessing step - common_prefix_propagation\n";);
+        STRACE(str_prep, tout << "Preprocessing step - common_prefix_propagation\n";);
         TermReplaceMap replace_map = construct_replace_map();
         std::set<size_t> rem_ids;
         size_t i = 0;
@@ -1443,7 +1443,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1459,7 +1459,7 @@ namespace smt::noodler {
      * infer Y = W3 W4
      */
     void FormulaPreprocessor::common_suffix_propagation() {
-        STRACE("str-prep", tout << "Preprocessing step - common_suffix_propagation\n";);
+        STRACE(str_prep, tout << "Preprocessing step - common_suffix_propagation\n";);
         TermReplaceMap replace_map = construct_replace_map();
         std::set<size_t> rem_ids;
         int i = 0, j = 0;
@@ -1509,7 +1509,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1560,7 +1560,7 @@ namespace smt::noodler {
      * setting their languages to \Sigma^*.
      */
     void FormulaPreprocessor::underapprox_languages() {
-        STRACE("str-prep", tout << "Preprocessing step - underapprox_languages\n";);
+        STRACE(str_prep, tout << "Preprocessing step - underapprox_languages\n";);
         for(const Predicate& pred : this->formula.get_predicates_set()) {
             for(const BasicTerm& var : pred.get_vars()) {
                 if(this->aut_ass.is_co_finite(var)) {
@@ -1568,7 +1568,7 @@ namespace smt::noodler {
                 }
             }
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     } 
 
     void FormulaPreprocessor::underapprox_var_language(const BasicTerm& var) {
@@ -1583,7 +1583,7 @@ namespace smt::noodler {
      * @brief Reduce the number of diseqalities.
      */
     void FormulaPreprocessor::reduce_diseqalities() {
-        STRACE("str-prep", tout << "Preprocessing step - reduce_diseqalities\n";);
+        STRACE(str_prep, tout << "Preprocessing step - reduce_diseqalities\n";);
         std::set<size_t> rem_ids;
 
         for(const auto& pr : this->formula.get_predicates()) {
@@ -1628,7 +1628,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1726,7 +1726,7 @@ namespace smt::noodler {
      * @param conversions 
      */
     void FormulaPreprocessor::conversions_validity(std::vector<TermConversion>& conversions) {
-        STRACE("str-prep", tout << "Preprocessing step - conversions_validity\n";);
+        STRACE(str_prep, tout << "Preprocessing step - conversions_validity\n";);
         mata::nfa::Nfa sigma_aut = aut_ass.sigma_automaton();
         mata::nfa::Nfa only_digits_aut = AutAssignment::digit_automaton();
 
@@ -1737,7 +1737,7 @@ namespace smt::noodler {
                     len_formula.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{conv.int_var, -1});
                 }
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**
@@ -1764,7 +1764,7 @@ namespace smt::noodler {
      * @return false if a not(contains) is unsatisfiable 
      */
     bool FormulaPreprocessor::replace_not_contains() {
-        STRACE("str-prep", tout << "Preprocessing step - replace_not_contains\n";);
+        STRACE(str_prep, tout << "Preprocessing step - replace_not_contains\n";);
         std::set<size_t> rem_ids;
         for(const auto& [id, pred] : this->formula.get_predicates()) {
             if(!pred.is_not_cont()) continue;
@@ -1797,7 +1797,7 @@ namespace smt::noodler {
         for(const size_t & i : rem_ids) {
             this->formula.remove_predicate(i);
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
         return true;
     }
 
@@ -1866,7 +1866,7 @@ namespace smt::noodler {
      * We keep the inclusion u1.u2.u3...uN.'a' ⊆ x for model generation.
      */
     void FormulaPreprocessor::simplify_not_contains_to_equations() {
-        STRACE("str-prep", tout << "Preprocessing step - simplify_not_contains_to_equations\n";);
+        STRACE(str_prep, tout << "Preprocessing step - simplify_not_contains_to_equations\n";);
         bool something_changed = true;
         while (something_changed) {
             something_changed = false;
@@ -1906,7 +1906,7 @@ namespace smt::noodler {
                 }
             }
         }
-        STRACE("str-prep", tout << print_info(is_trace_enabled("str-nfa")));
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
 
     /**

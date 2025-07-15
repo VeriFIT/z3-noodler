@@ -57,7 +57,6 @@ add_subdirectory(ast/simplifiers)
 add_subdirectory(tactic)
 add_subdirectory(qe/mbp)
 add_subdirectory(qe/lite)
-add_subdirectory(smt/params)
 add_subdirectory(parsers/util)
 add_subdirectory(math/grobner)
 add_subdirectory(sat)
@@ -301,6 +300,18 @@ if (Z3_BUILD_JAVA_BINDINGS)
       "You either need to disable Z3_BUILD_JAVA_BINDINGS or enable Z3_BUILD_LIBZ3_SHARED")
   endif()
   add_subdirectory(api/java)
+endif()
+
+################################################################################
+# OCaml bindings
+################################################################################
+option(Z3_BUILD_OCAML_BINDINGS "Build OCaml bindings for Z3" OFF)
+if (Z3_BUILD_OCAML_BINDINGS)
+  if (NOT Z3_BUILD_LIBZ3_SHARED)
+    message(FATAL_ERROR "The OCaml bindings will not work with a static libz3. "
+      "You either need to disable Z3_BUILD_OCAML_BINDINGS or enable Z3_BUILD_LIBZ3_SHARED")
+  endif()
+  add_subdirectory(api/ml)
 endif()
 
 ################################################################################

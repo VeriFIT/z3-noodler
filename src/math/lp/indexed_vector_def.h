@@ -33,15 +33,13 @@ void print_vector_as_doubles(const vector<mpq> & t, std::ostream & out) {
 
 template <typename T>
 void indexed_vector<T>::resize(unsigned data_size) {
-    clear();
     m_data.resize(data_size, numeric_traits<T>::zero());
-
 }
 
 template <typename T>
 void indexed_vector<T>::set_value(const T& value, unsigned index) {
     m_data[index] = value;
-    lp_assert(std::find(m_index.begin(), m_index.end(), index) == m_index.end());
+    SASSERT(std::find(m_index.begin(), m_index.end(), index) == m_index.end());
     m_index.push_back(index);
 }
 
@@ -53,7 +51,7 @@ void indexed_vector<T>::clear() {
 }
 template <typename T>
 void indexed_vector<T>::clear_all() {
-    unsigned i = m_data.size();
+    unsigned i = static_cast<unsigned>(m_data.size());
     while (i--)  m_data[i] = numeric_traits<T>::zero();
     m_index.resize(0);
 }
@@ -63,6 +61,16 @@ void indexed_vector<T>::erase_from_index(unsigned j) {
     if (it != m_index.end())
         m_index.erase(it);
 }
+
+template <typename T>
+void indexed_vector<T>::erase(unsigned j) {
+    auto it = std::find(m_index.begin(), m_index.end(), j);
+    if (it != m_index.end()) {
+        m_data[j] = 0;
+        m_index.erase(it);
+    }
+}
+
 
 template <typename T>
 void indexed_vector<T>::print(std::ostream & out) {

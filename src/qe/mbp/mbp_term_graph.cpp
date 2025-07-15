@@ -32,7 +32,6 @@ Notes:
 #include "ast/occurs.h"
 #include "ast/rewriter/th_rewriter.h"
 #include "model/model_evaluator.h"
-#include "qe/mbp/mbp_arrays.h"
 #include "util/bit_vector.h"
 #include "util/obj_pair_hashtable.h"
 #include "util/uint_set.h"
@@ -167,7 +166,7 @@ class term {
     };
     class_props m_class_props;
 
-  public:
+public:
     term(expr_ref const &v, u_map<term *> &app2term)
         : m_expr(v), m_root(this), m_repr(nullptr), m_next(this), m_mark(false),
           m_mark2(false), m_interpreted(false),
@@ -184,13 +183,13 @@ class term {
             t->get_root().m_parents.push_back(this);
             m_children.push_back(t);
         }
-        m_is_peq = is_partial_eq(to_app(m_expr));
+        m_is_peq = is_partial_eq(m_expr);
     }
 
     class parents {
         term const &t;
 
-      public:
+    public:
         parents(term const &_t) : t(_t) {}
         parents(term const *_t) : t(*_t) {}
         ptr_vector<term>::const_iterator begin() const {
@@ -204,7 +203,7 @@ class term {
     class children {
         term const &t;
 
-      public:
+    public:
         children(term const &_t) : t(_t) {}
         children(term const *_t) : t(*_t) {}
         ptr_vector<term>::const_iterator begin() const {
@@ -391,7 +390,7 @@ void term_graph::add_deq_proc::inc_count() {
 bool term_graph::is_variable_proc::operator()(const expr *e) const {
     if (!is_app(e)) return false;
     const app *a = ::to_app(e);
-    TRACE("qe_verbose", tout << a->get_family_id() << " "
+    TRACE(qe_verbose, tout << a->get_family_id() << " "
                              << m_solved.contains(a->get_decl()) << " "
                              << m_decls.contains(a->get_decl()) << "\n";);
     return a->get_family_id() == null_family_id &&
@@ -577,8 +576,9 @@ term *term_graph::internalize_term(expr *t) {
     }
     merge_flush();
     SASSERT(res);
-    if (m.is_not(t) && is_app(to_app(t)->get_arg(0)) && is_partial_eq(to_app(to_app(t)->get_arg(0)))) {
-        term* p = get_term(to_app(t)->get_arg(0));
+    expr* arg = nullptr;
+    if (m.is_not(t, arg) && is_partial_eq(arg)) {
+        term* p = get_term(arg);
         SASSERT(p);
         p->set_npeq_child();
     }
@@ -773,7 +773,7 @@ void term_graph::mk_qe_lite_equalities(term &t, expr_ref_vector &out,
     rep = mk_app(t);
     if (contains_nc(rep)) {
         TRACE(
-            "qe_debug", tout << "repr not in core " << t;
+            qe_debug, tout << "repr not in core " << t;
             for (term *it = &t.get_next(); it != &t;
                  it = &it->get_next()) { tout << *it << "\n"; };);
         DEBUG_CODE(
@@ -879,8 +879,7 @@ void term_graph::pick_repr_class(term *t) {
 void term_graph::pick_repr() {
     // invalidates cache
     m_term2app.reset();
-    DEBUG_CODE(for (term *t
-                    : m_terms)
+    DEBUG_CODE(for (term *t : m_terms)
                    SASSERT(t->deg() == 0 || !t->all_children_ground() ||
                            t->is_cgr()););
     for (term *t : m_terms) t->reset_repr();
@@ -1017,19 +1016,19 @@ void term_graph::to_lits(expr_ref_vector &lits, bool all_equalities,
 // assumes that representatives have already been picked
 void term_graph::to_lits_qe_lite(expr_ref_vector &lits,
                                  std::function<bool(expr *)> *non_core) {
-    DEBUG_CODE(for (auto t : m_terms) SASSERT(t->get_repr()););
-    DEBUG_CODE(for (auto t
-                    : m_terms)
-                   SASSERT(!t->is_cgr() || t->get_repr()->is_cgr()););
+    SASSERT(all_of(m_terms, [](term* t) { return !!t->get_repr(); }));
+    SASSERT(all_of(m_terms, [](term* t) { return !t->is_cgr() || t->get_repr()->is_cgr(); }));
     is_non_core not_in_core(non_core);
     check_pred contains_nc(not_in_core, m, false);
     // literals other than eq, neq, distinct
     for (expr *a : m_lits) {
-        if (!is_internalized(a)) continue;
-        if (m_explicit_eq && get_term(a)->is_eq_or_neq()) continue;
-        expr_ref r(m);
-        r = mk_app(a);
-        if (non_core == nullptr || !contains_nc(r)) lits.push_back(r);
+        if (!is_internalized(a)) 
+            continue;
+        if (m_explicit_eq && get_term(a)->is_eq_or_neq()) 
+            continue;
+        expr_ref r(mk_app(a), m);        
+        if (non_core == nullptr || !contains_nc(r)) 
+            lits.push_back(r);
     }
 
     // equalities
@@ -1055,7 +1054,8 @@ void term_graph::to_lits_qe_lite(expr_ref_vector &lits,
             d = mk_app(*(c->get_repr()));
             if (non_core == nullptr || !contains_nc(d)) args.push_back(d);
         }
-        if (args.size() < 2) continue;
+        if (args.size() < 2) 
+            continue;
         if (args.size() == 2)
             distinct = mk_neq(m, args.get(0), args.get(1));
         else
@@ -1087,29 +1087,31 @@ class term_graph::projector {
     u_map<expr *> m_root2rep;
     th_rewriter m_rewriter;
 
-    model_ref m_model;
+    model* m_model = nullptr;
     expr_ref_vector m_pinned; // tracks expr in the maps
 
     expr *mk_pure(term const &t) {
-        TRACE("qe", t.display(tout););
+        TRACE(qe, t.display(tout));
         expr *e = nullptr;
-        if (find_term2app(t, e)) return e;
+        if (find_term2app(t, e))
+            return e;
         e = t.get_expr();
-        if (!is_app(e)) return nullptr;
+        if (!is_app(e))
+            return nullptr;
         app *a = ::to_app(e);
         expr_ref_buffer kids(m);
         for (term *ch : term::children(t)) {
             // prefer a node that resembles current child,
             // otherwise, pick a root representative, if present.
-            if (find_term2app(*ch, e)) { kids.push_back(e); }
-            else if (m_root2rep.find(ch->get_root().get_id(), e)) {
+            if (find_term2app(*ch, e))
+                kids.push_back(e); 
+            else if (m_root2rep.find(ch->get_root().get_id(), e)) 
                 kids.push_back(e);
-            }
-            else { return nullptr; }
-            TRACE("qe_verbose", tout << *ch << " -> " << mk_pp(e, m) << "\n";);
+            else
+                return nullptr; 
+            TRACE(qe_verbose, tout << *ch << " -> " << mk_pp(e, m) << "\n";);
         }
-        expr_ref pure =
-            m_rewriter.mk_app(a->get_decl(), kids.size(), kids.data());
+        expr_ref pure = m_rewriter.mk_app(a->get_decl(), kids.size(), kids.data());
         m_pinned.push_back(pure);
         add_term2app(t, pure);
         return pure;
@@ -1165,7 +1167,7 @@ class term_graph::projector {
         m_tg.reset_marks();
     }
 
-    bool find_app(term &t, expr *&res) {
+    bool find_app(term const &t, expr *&res) {
         return find_term2app(t, res) ||
                m_root2rep.find(t.get_root().get_id(), res);
     }
@@ -1178,10 +1180,10 @@ class term_graph::projector {
 
     void mk_lits(expr_ref_vector &res) {
         expr *e = nullptr;
-        for (auto *lit : m_tg.m_lits) {
-            if (!m.is_eq(lit) && find_app(lit, e)) res.push_back(e);
-        }
-        TRACE("qe", tout << "literals: " << res << "\n";);
+        for (auto *lit : m_tg.m_lits) 
+            if (!m.is_eq(lit) && find_app(lit, e))
+                res.push_back(e);
+        TRACE(qe, tout << "literals: " << res << "\n";);
     }
 
     void lits2pure(expr_ref_vector &res) {
@@ -1192,14 +1194,14 @@ class term_graph::projector {
                     if (p1 != p2) res.push_back(m.mk_eq(p1, p2));
                 }
                 else
-                    TRACE("qe", tout << "skipping " << mk_pp(lit, m) << "\n";);
+                    TRACE(qe, tout << "skipping " << mk_pp(lit, m) << "\n";);
             }
             else if (m.is_not(lit, e) && m.is_eq(e, e1, e2)) {
                 if (find_app(e1, p1) && find_app(e2, p2)) {
                     res.push_back(mk_neq(m, p1, p2));
                 }
                 else
-                    TRACE("qe", tout << "skipping " << mk_pp(lit, m) << "\n";);
+                    TRACE(qe, tout << "skipping " << mk_pp(lit, m) << "\n";);
             }
             else if (m.is_distinct(lit)) {
                 ptr_buffer<expr> diff;
@@ -1208,24 +1210,24 @@ class term_graph::projector {
                 if (diff.size() > 1)
                     res.push_back(m.mk_distinct(diff.size(), diff.data()));
                 else
-                    TRACE("qe", tout << "skipping " << mk_pp(lit, m) << "\n";);
+                    TRACE(qe, tout << "skipping " << mk_pp(lit, m) << "\n";);
             }
             else if (find_app(lit, p1))
                 res.push_back(p1);
             else
-                TRACE("qe", tout << "skipping " << mk_pp(lit, m) << "\n";);
+                TRACE(qe, tout << "skipping " << mk_pp(lit, m) << "\n";);
         }
         remove_duplicates(res);
-        TRACE("qe", tout << "literals: " << res << "\n";);
+        TRACE(qe, tout << "literals: " << res << "\n";);
     }
 
     void remove_duplicates(expr_ref_vector &v) {
-        obj_hashtable<expr> seen;
+        expr_fast_mark1 seen;
         unsigned j = 0;
         for (expr *e : v) {
-            if (!seen.contains(e)) {
+            if (!seen.is_marked(e)) {
                 v[j++] = e;
-                seen.insert(e);
+                seen.mark(e);
             }
         }
         v.shrink(j);
@@ -1289,7 +1291,7 @@ class term_graph::projector {
                 if (roots.size() > 1) {
                     ptr_buffer<expr> args;
                     for (expr *r : roots) { args.push_back(r); }
-                    TRACE("qe", tout << "function: " << d->get_name() << "\n";);
+                    TRACE(qe, tout << "function: " << d->get_name() << "\n";);
                     res.push_back(m.mk_distinct(args.size(), args.data()));
                 }
             }
@@ -1299,7 +1301,7 @@ class term_graph::projector {
     void mk_distinct(expr_ref_vector &res) {
         collect_decl2terms();
         args_are_distinct(res);
-        TRACE("qe", tout << res << "\n";);
+        TRACE(qe, tout << res << "\n";);
     }
 
     void mk_pure_equalities(const term &t, expr_ref_vector &res) {
@@ -1351,7 +1353,7 @@ class term_graph::projector {
             else
                 mk_unpure_equalities(*t, res);
         }
-        TRACE("qe", tout << "literals: " << res << "\n";);
+        TRACE(qe, tout << "literals: " << res << "\n";);
     }
 
     void mk_pure_equalities(expr_ref_vector &res) { mk_equalities<true>(res); }
@@ -1410,7 +1412,7 @@ class term_graph::projector {
                 res.push_back(m.mk_distinct(j - i, reps.data() + i));
             i = j;
         }
-        TRACE("qe", tout << "after distinct: " << res << "\n";);
+        TRACE(qe, tout << "after distinct: " << res << "\n";);
     }
 
     std::ostream &display(std::ostream &out) const {
@@ -1426,7 +1428,7 @@ class term_graph::projector {
         return out;
     }
 
-  public:
+public:
     projector(term_graph &tg)
         : m_tg(tg), m(m_tg.m), m_rewriter(m), m_pinned(m) {}
 
@@ -1440,9 +1442,9 @@ class term_graph::projector {
         return m_term2app.find(t.get_id(), r);
     }
 
-    expr *find_term2app(term const &t) {
+    expr* rep_of(term const &t) {
         expr *r = nullptr;
-        find_term2app(t, r);
+        find_app(t, r);
         return r;
     }
 
@@ -1455,7 +1457,7 @@ class term_graph::projector {
         m_term2app.reset();
         m_root2rep.reset();
         m_pinned.reset();
-        m_model.reset();
+        m_model = nullptr;
     }
 
     expr_ref_vector project() {
@@ -1565,7 +1567,7 @@ class term_graph::projector {
             if (!pure) continue;
 
             add_term2app(*t, pure);
-            TRACE("qe_verbose",
+            TRACE(qe_verbose,
                   tout << "purified " << *t << " " << mk_pp(pure, m) << "\n";);
             expr *rep = nullptr; // ensure that the root has a representative
             m_root2rep.find(t->get_root().get_id(), rep);
@@ -1590,7 +1592,7 @@ class term_graph::projector {
         // and can be mined using other means, such as theory
         // aware core minimization
         m_tg.reset_marks();
-        TRACE("qe", display(tout << "after purify\n"););
+        TRACE(qe, display(tout << "after purify\n"););
     }
 };
 
@@ -1599,32 +1601,20 @@ class term_graph::projector {
 //  modifies `vars` to keep the variables that could not be eliminated
 void term_graph::qel(app_ref_vector &vars, expr_ref &fml,
                      std::function<bool(expr *)> *non_core) {
-    unsigned i = 0;
-    for (auto v : vars) {
-        if (is_internalized(v)) { vars[i++] = v; }
-    }
-    vars.shrink(i);
+
+    filter(vars, [this](auto v) { return is_internalized(v); });
     pick_repr();
     refine_repr();
 
     expr_ref_vector lits(m);
     to_lits_qe_lite(lits, non_core);
-    if (lits.size() == 0)
-        fml = m.mk_true();
-    else if (lits.size() == 1)
-        fml = lits[0].get();
-    else
-        fml = m.mk_and(lits);
+    fml = mk_and(lits);
 
     // Remove all variables that are do not appear in the formula
     expr_sparse_mark mark;
     mark_all_sub_expr marker(mark);
     quick_for_each_expr(marker, fml);
-    i = 0;
-    for (auto v : vars) {
-        if (mark.is_marked(v)) vars[i++] = v;
-    }
-    vars.shrink(i);
+    filter(vars, [&mark](auto v) { return mark.is_marked(v); });
 }
 
 void term_graph::set_vars(func_decl_ref_vector const &decls, bool exclude) {
@@ -1699,7 +1689,7 @@ void term_graph::add_model_based_terms(model &mdl,
         }
     }
     TRACE(
-        "qe", for (auto &es
+        qe, for (auto &es
                    : equivs) {
             tout << "equiv: ";
             for (expr *t : es) tout << expr_ref(t, m) << " ";
@@ -1710,15 +1700,15 @@ void term_graph::add_model_based_terms(model &mdl,
     m_projector->purify();
 }
 
-expr *term_graph::rep_of(expr *e) {
+expr* term_graph::rep_of(expr *e) {
     SASSERT(m_projector);
     term *t = get_term(e);
     SASSERT(t && "only get representatives");
-    return m_projector->find_term2app(*t);
+    return m_projector->rep_of(*t);    
 }
 
 expr_ref_vector term_graph::dcert(model &mdl, expr_ref_vector const &lits) {
-    TRACE("qe", tout << "dcert " << lits << "\n";);
+    TRACE(qe, tout << "dcert " << lits << "\n";);
     struct pair_t {
         expr *a, *b;
         pair_t() : a(nullptr), b(nullptr) {}
@@ -1816,7 +1806,7 @@ expr_ref_vector term_graph::dcert(model &mdl, expr_ref_vector const &lits) {
             }
         }
     }
-    TRACE("qe", tout << result << "\n";);
+    TRACE(qe, tout << result << "\n";);
     return result;
 }
 
@@ -1835,15 +1825,14 @@ void term_graph::cground_percolate_up(term *t) {
 }
 
 void term_graph::cground_percolate_up(ptr_vector<term> &todo) {
-    term *t;
-
     while (!todo.empty()) {
-        t = todo.back();
+        term* t = todo.back();
         todo.pop_back();
         t->set_cgr(true);
         t->set_class_gr(true);
         for (auto p : term::parents(t->get_root()))
-            if (!p->is_cgr() && p->all_children_ground()) todo.push_back(p);
+            if (!p->is_cgr() && p->all_children_ground())
+                todo.push_back(p);
     }
 }
 
@@ -1853,12 +1842,11 @@ void term_graph::compute_cground() {
         t->set_class_gr(false);
     }
     ptr_vector<term> todo;
-    for (auto t : m_terms) {
-        if (t->is_gr()) { todo.push_back(t); }
-    }
+    for (auto t : m_terms) 
+        if (t->is_gr())
+            todo.push_back(t); 
     cground_percolate_up(todo);
-    DEBUG_CODE(for (auto t
-                    : m_terms) {
+    DEBUG_CODE(for (auto t : m_terms) {
         bool isclsg = true;
         for (auto c : term::children(t)) isclsg &= c->is_class_gr();
         SASSERT(t->deg() == 0 || !isclsg || t->is_cgr());

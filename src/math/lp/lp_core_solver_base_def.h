@@ -31,7 +31,7 @@ lp_core_solver_base(static_matrix<T, X> & A,
                     // vector<X> & b, // the right side vector
                     vector<unsigned> & basis,
                     vector<unsigned> & nbasis,
-                    vector<int> & heading,
+                    std_vector<int> & heading,
                     vector<X> & x,
                     vector<T> & costs,
                     lp_settings & settings,
@@ -60,7 +60,7 @@ lp_core_solver_base(static_matrix<T, X> & A,
     m_tracing_basis_changes(false),
     m_touched_rows(nullptr),
     m_look_for_feasible_solution_only(false) {
-    lp_assert(bounds_for_boxed_are_set_correctly());    
+    SASSERT(bounds_for_boxed_are_set_correctly());    
     init();
     init_basis_heading_and_non_basic_columns_vector();
 }
@@ -68,7 +68,7 @@ lp_core_solver_base(static_matrix<T, X> & A,
 template <typename T, typename X> void lp_core_solver_base<T, X>::
 allocate_basis_heading() { // the rest of initialization will be handled by the factorization class
     init_basis_heading_and_non_basic_columns_vector();
-    lp_assert(basis_heading_is_correct());
+    SASSERT(basis_heading_is_correct());
 }
 template <typename T, typename X> void lp_core_solver_base<T, X>::
 init() {    
@@ -116,11 +116,11 @@ pretty_print(std::ostream & out) {
 template <typename T, typename X> void lp_core_solver_base<T, X>::
 add_delta_to_entering(unsigned entering, const X& delta) {
     m_x[entering] += delta;  
-    TRACE("lar_solver_feas", tout << "not tracking feas entering = " << entering << " = " << m_x[entering] << (column_is_feasible(entering) ? " feas" : " non-feas") << "\n";); 
+    TRACE(lar_solver_feas, tout << "not tracking feas entering = " << entering << " = " << m_x[entering] << (column_is_feasible(entering) ? " feas" : " non-feas") << "\n";); 
     for (const auto & c : m_A.m_columns[entering]) {
         unsigned i = c.var();
         m_x[m_basis[i]] -= delta * m_A.get_val(c);
-        TRACE("lar_solver_feas", tout << "not tracking feas m_basis[i] = " << m_basis[i] << " = " << m_x[m_basis[i]] << (column_is_feasible(m_basis[i]) ? " feas" : " non-feas") << "\n";);
+        TRACE(lar_solver_feas, tout << "not tracking feas m_basis[i] = " << m_basis[i] << " = " << m_x[m_basis[i]] << (column_is_feasible(m_basis[i]) ? " feas" : " non-feas") << "\n";);
     }
 }
 
@@ -201,7 +201,7 @@ template <typename T, typename X> bool lp_core_solver_base<T, X>::calc_current_x
     unsigned j = this->m_n();
     while (j--) {
         if (!column_is_feasible(j)) {
-            TRACE("lar_solver", tout << "infeasible column: "; print_column_info(j, tout) << "\n";);
+            TRACE(lar_solver, tout << "infeasible column: "; print_column_info(j, tout) << "\n";);
             return false;
         }
     }
@@ -213,7 +213,7 @@ template <typename T, typename X> bool lp_core_solver_base<T, X>::inf_heap_is_co
         bool belongs_to_set = m_inf_heap.contains(j);
         bool is_feas = column_is_feasible(j);
         if (is_feas == belongs_to_set) {
-            TRACE("lp_core", tout << "incorrectly set column in inf set "; print_column_info(j, tout) << "\n";);
+            TRACE(lp_core, tout << "incorrectly set column in inf set "; print_column_info(j, tout) << "\n";);
             return false;
         }
     }
@@ -225,7 +225,7 @@ template <typename T, typename X> bool lp_core_solver_base<T, X>::
 divide_row_by_pivot(unsigned pivot_row, unsigned pivot_col) {
     int pivot_index = -1;
     auto & row = m_A.m_rows[pivot_row];
-    unsigned size = row.size();
+    unsigned size = static_cast<unsigned>(row.size());
     for (unsigned j = 0; j < size; j++) {
         auto & c = row[j];
         if (c.var() == pivot_col) {
@@ -267,7 +267,7 @@ pivot_column_tableau(unsigned j, unsigned piv_row_index) {
         return false;
         
     if (pivot_col_cell_index != 0) {
-        lp_assert(column.size() > 1);
+        SASSERT(column.size() > 1);
         // swap the pivot column cell with the head cell
         auto c = column[0];
         column[0]  = column[pivot_col_cell_index];
@@ -278,7 +278,7 @@ pivot_column_tableau(unsigned j, unsigned piv_row_index) {
     }
     while (column.size() > 1) {
         auto & c = column.back();
-        lp_assert(c.var() != piv_row_index);
+        SASSERT(c.var() != piv_row_index);
         if(! m_A.pivot_row_to_row_given_cell(piv_row_index, c, j)) {
             return false;
         }
@@ -324,7 +324,7 @@ non_basis_is_correctly_represented_in_heading(std::list<unsigned>* non_basis_lis
     
     for (unsigned j = 0; j < m_A.column_count(); j++) 
         if (m_basis_heading[j] >= 0)
-            lp_assert(static_cast<unsigned>(m_basis_heading[j]) < m_A.row_count() && m_basis[m_basis_heading[j]] == j);
+            SASSERT(static_cast<unsigned>(m_basis_heading[j]) < m_A.row_count() && m_basis[m_basis_heading[j]] == j);
 
     if (non_basis_list == nullptr) return true;
 	
@@ -333,12 +333,12 @@ non_basis_is_correctly_represented_in_heading(std::list<unsigned>* non_basis_lis
         nbasis_set.insert(j);
     
     if (non_basis_list->size() != nbasis_set.size()) {
-        TRACE("lp_core", tout << "non_basis_list.size() = " << non_basis_list->size() << ", nbasis_set.size() = " << nbasis_set.size() << "\n";);
+        TRACE(lp_core, tout << "non_basis_list.size() = " << non_basis_list->size() << ", nbasis_set.size() = " << nbasis_set.size() << "\n";);
         return false;
     }
     for (auto it = non_basis_list->begin(); it != non_basis_list->end(); it++) {
         if (nbasis_set.find(*it) == nbasis_set.end()) {
-            TRACE("lp_core", tout << "column " << *it << " is in m_non_basis_list but not in m_nbasis\n";);
+            TRACE(lp_core, tout << "column " << *it << " is in m_non_basis_list but not in m_nbasis\n";);
             return false;
         }
     }
@@ -347,7 +347,7 @@ non_basis_is_correctly_represented_in_heading(std::list<unsigned>* non_basis_lis
     nbasis_set.clear();
     for (auto it = non_basis_list->begin(); it != non_basis_list->end(); it++) {
         if (nbasis_set.find(*it) != nbasis_set.end()) {
-            TRACE("lp_core", tout << "column " << *it << " is in m_non_basis_list twice\n";);
+            TRACE(lp_core, tout << "column " << *it << " is in m_non_basis_list twice\n";);
             return false;
         }
         nbasis_set.insert(*it);
@@ -361,9 +361,9 @@ template <typename T, typename X> bool lp_core_solver_base<T, X>::
     if ( m_A.column_count() > 10 )  // for the performance reason
         return true;
     
-    lp_assert(m_basis_heading.size() == m_A.column_count());
-    lp_assert(m_basis.size() == m_A.row_count());
-    lp_assert(m_nbasis.size() <= m_A.column_count() - m_A.row_count()); // for the dual the size of non basis can be smaller
+    SASSERT(m_basis_heading.size() == m_A.column_count());
+    SASSERT(m_basis.size() == m_A.row_count());
+    SASSERT(m_nbasis.size() <= m_A.column_count() - m_A.row_count()); // for the dual the size of non basis can be smaller
 
     if (!basis_has_no_doubles()) 
         return false;
@@ -391,8 +391,8 @@ template <typename T, typename X>  void lp_core_solver_base<T, X>::transpose_row
 }
 // entering is the new base column, leaving - the column leaving the basis
 template <typename T, typename X> bool lp_core_solver_base<T, X>::pivot_column_general(unsigned entering, unsigned leaving, indexed_vector<T> & w) {
-    lp_assert(m_basis_heading[entering] < 0);
-    lp_assert(m_basis_heading[leaving] >= 0);
+    SASSERT(m_basis_heading[entering] < 0);
+    SASSERT(m_basis_heading[leaving] >= 0);
     unsigned row_index = m_basis_heading[leaving];
     // the tableau case
     if (!pivot_column_tableau(entering, row_index))

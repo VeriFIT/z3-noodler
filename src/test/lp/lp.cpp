@@ -132,7 +132,7 @@ void test_basic_lemma_for_mon_neutral_from_factors_to_monomial();
 
 void test_cn_on_expr(nex_sum *t, cross_nested &cn) {
     t = to_sum(cn.get_nex_creator().simplify(t));
-    TRACE("nla_test", tout << "t=" << *t << '\n';);
+    TRACE(nla_test, tout << "t=" << *t << '\n';);
     cn.run(t);
 }
 
@@ -183,7 +183,7 @@ void test_simplify() {
     nex_creator r;
     cross_nested cn(
         [](const nex *n) {
-            TRACE("nla_cn_test", tout << *n << "\n";);
+            TRACE(nla_cn_test, tout << *n << "\n";);
             return false;
         },
         [](unsigned) { return false; }, []() { return 1; },  // for random
@@ -203,7 +203,7 @@ void test_simplify() {
     auto a_plus_bc = r.mk_sum(a, bc);
     auto two_a_plus_bc = r.mk_mul(r.mk_scalar(rational(2)), a_plus_bc);
     auto simp_two_a_plus_bc = r.simplify(two_a_plus_bc);
-    TRACE("nla_test", tout << *simp_two_a_plus_bc << "\n";);
+    TRACE(nla_test, tout << *simp_two_a_plus_bc << "\n";);
     ENSURE(nex_creator::equal(simp_two_a_plus_bc, two_a_plus_bc));
     auto simp_a_plus_bc = r.simplify(a_plus_bc);
     ENSURE(to_sum(simp_a_plus_bc)->size() > 1);
@@ -211,46 +211,46 @@ void test_simplify() {
     auto three_ab = r.mk_mul(r.mk_scalar(rational(3)), a, b);
     auto three_ab_square = r.mk_mul(three_ab, three_ab, three_ab);
 
-    TRACE("nla_test", tout << "before simplify " << *three_ab_square << "\n";);
+    TRACE(nla_test, tout << "before simplify " << *three_ab_square << "\n";);
     three_ab_square = to_mul(r.simplify(three_ab_square));
-    TRACE("nla_test", tout << *three_ab_square << "\n";);
+    TRACE(nla_test, tout << *three_ab_square << "\n";);
     const rational &s = three_ab_square->coeff();
     ENSURE(s == rational(27));
     auto m = r.mk_mul(a, a);
-    TRACE("nla_test_", tout << "m = " << *m << "\n";);
+    TRACE(nla_test_, tout << "m = " << *m << "\n";);
     /*
   auto n = r.mk_mul(b, b, b, b, b, b, b);
   n->add_child_in_power(b, 7);
   n->add_child(r.mk_scalar(rational(3)));
   n->add_child_in_power(r.mk_scalar(rational(2)), 2);
   n->add_child(r.mk_scalar(rational(1)));
-  TRACE("nla_test_", tout << "n = " << *n << "\n";);
+  TRACE(nla_test_, tout << "n = " << *n << "\n";);
   m->add_child_in_power(n, 3);
   n->add_child_in_power(r.mk_scalar(rational(1, 3)), 2);
-  TRACE("nla_test_", tout << "m = " << *m << "\n";);
+  TRACE(nla_test_, tout << "m = " << *m << "\n";);
 
   nex_sum * e = r.mk_sum(a, r.mk_sum(b, m));
-  TRACE("nla_test", tout << "before simplify e = " << *e << "\n";);
+  TRACE(nla_test, tout << "before simplify e = " << *e << "\n";);
   e = to_sum(r.simplify(e));
-  TRACE("nla_test", tout << "simplified e = " << *e << "\n";);
+  TRACE(nla_test, tout << "simplified e = " << *e << "\n";);
   ENSURE(e->children().size() > 2);
   nex_sum * e_m = r.mk_sum();
   for (const nex* ex: to_sum(e)->children()) {
       nex* ce = r.mk_mul(r.clone(ex), r.mk_scalar(rational(3)));
-      TRACE("nla_test", tout << "before simpl ce = " << *ce << "\n";);
+      TRACE(nla_test, tout << "before simpl ce = " << *ce << "\n";);
       ce = r.simplify(ce);
-      TRACE("nla_test", tout << "simplified ce = " << *ce << "\n";);
+      TRACE(nla_test, tout << "simplified ce = " << *ce << "\n";);
       e_m->add_child(ce);
   }
   e->add_child(e_m);
-  TRACE("nla_test", tout << "before simplify sum e = " << *e << "\n";);
+  TRACE(nla_test, tout << "before simplify sum e = " << *e << "\n";);
   e = to_sum(r.simplify(e));
-  TRACE("nla_test", tout << "simplified sum e = " << *e << "\n";);
+  TRACE(nla_test, tout << "simplified sum e = " << *e << "\n";);
 
   nex * pr = r.mk_mul(a, b, b);
-  TRACE("nla_test", tout << "before simplify pr = " << *pr << "\n";);
+  TRACE(nla_test, tout << "before simplify pr = " << *pr << "\n";);
   r.simplify(pr);
-  TRACE("nla_test", tout << "simplified sum e = " << *pr << "\n";);
+  TRACE(nla_test, tout << "simplified sum e = " << *pr << "\n";);
   */
 #endif
 }
@@ -260,7 +260,7 @@ void test_cn_shorter() {
     //     nex_creator cr;
     //     cross_nested cn(
     //         [](const nex* n) {
-    //             TRACE("nla_test", tout <<"cn form = " <<  *n << "\n";
+    //             TRACE(nla_test, tout <<"cn form = " <<  *n << "\n";
 
     // );
     //             return false;
@@ -295,7 +295,7 @@ void test_cn_shorter() {
     //     rational(3); nex* _6aad = cr.mk_mul(cr.mk_scalar(rational(6)), a, a,
     //     d); clone = to_sum(cr.clone(cr.mk_sum(_6aad, abcd, eae, three_eac)));
     //     clone = to_sum(cr.simplify(clone));
-    //     TRACE("nla_test", tout << "clone = " << *clone << "\n";);
+    //     TRACE(nla_test, tout << "clone = " << *clone << "\n";);
     //     //    test_cn_on_expr(cr.mk_sum(aad,  abcd, aaccd, add, eae, eac, ed),
     //     cn); test_cn_on_expr(clone, cn);
     //     */
@@ -307,7 +307,7 @@ void test_cn() {
     //     nex_creator cr;
     //     cross_nested cn(
     //         [](const nex* n) {
-    //             TRACE("nla_test", tout <<"cn form = " <<  *n << "\n";);
+    //             TRACE(nla_test, tout <<"cn form = " <<  *n << "\n";);
     //             return false;
     //         } ,
     //         [](unsigned) { return false; },
@@ -352,14 +352,14 @@ void test_cn() {
     //     nex* _6aad = cr.mk_mul(cr.mk_scalar(rational(6)), a, a, d);
     //     nex * clone = cr.clone(cr.mk_sum(_6aad, abcd, aaccd, add, eae, eac,
     //     ed)); clone = cr.simplify(clone); ENSURE(cr.is_simplified(clone));
-    //     TRACE("nla_test", tout << "clone = " << *clone << "\n";);
+    //     TRACE(nla_test, tout << "clone = " << *clone << "\n";);
     //     //    test_cn_on_expr(cr.mk_sum(aad,  abcd, aaccd, add, eae, eac, ed),
-    //     cn); test_cn_on_expr(to_sum(clone), cn); TRACE("nla_test", tout <<
+    //     cn); test_cn_on_expr(to_sum(clone), cn); TRACE(nla_test, tout <<
     //     "done\n";); test_cn_on_expr(cr.mk_sum(abd,  abc, cbd, acd), cn);
-    //     TRACE("nla_test", tout << "done\n";);*/
+    //     TRACE(nla_test, tout << "done\n";);*/
     // #endif
     //     // test_cn_on_expr(a*b*b*d*d + a*b*b*c*d + c*b*b*d);
-    //     // TRACE("nla_test", tout << "done\n";);
+    //     // TRACE(nla_test, tout << "done\n";);
     //     // test_cn_on_expr(a*b*d + a*b*c + c*b*d);
 }
 
@@ -384,7 +384,7 @@ vector<int> allocate_basis_heading(
 
 void init_basic_part_of_basis_heading(vector<unsigned> &basis,
                                       vector<int> &basis_heading) {
-    lp_assert(basis_heading.size() >= basis.size());
+    SASSERT(basis_heading.size() >= basis.size());
     unsigned m = basis.size();
     for (unsigned i = 0; i < m; i++) {
         unsigned column = basis[i];
@@ -468,6 +468,7 @@ bool contains(std::string const &s, char const *pattern) {
 }
 
 void setup_args_parser(argument_parser &parser) {
+    parser.add_option_with_help_string("-add_rows", "test add_rows of static matrix");
     parser.add_option_with_help_string("-monics", "test emonics");
     parser.add_option_with_help_string("-nex_order", "test nex order");
     parser.add_option_with_help_string("-nla_cn", "test cross nornmal form");
@@ -491,6 +492,7 @@ void setup_args_parser(argument_parser &parser) {
         "-nla_blnt_fm",
         "test_basic_lemma_for_mon_neutral_from_factors_to_monomial");
     parser.add_option_with_help_string("-hnf", "test hermite normal form");
+    parser.add_option_with_help_string("-dio", "dioph equalities");
     parser.add_option_with_help_string("-gomory", "gomory");
     parser.add_option_with_help_string("-intd", "test integer_domain");
     parser.add_option_with_help_string("-xyz_sample",
@@ -575,7 +577,7 @@ void test_stacked_unsigned() {
     v = 3;
     v = 4;
     v.pop();
-    lp_assert(v == 2);
+    SASSERT(v == 2);
     v++;
     v++;
     std::cout << "before push v=" << v << std::endl;
@@ -585,7 +587,7 @@ void test_stacked_unsigned() {
     v += 1;
     std::cout << "v = " << v << std::endl;
     v.pop(2);
-    lp_assert(v == 4);
+    SASSERT(v == 4);
     const unsigned &rr = v;
     std::cout << rr << std::endl;
 }
@@ -749,22 +751,23 @@ void test_numeric_pair() {
     numeric_pair<lp::mpq> c(0.1, 0.5);
     a += 2 * c;
     a -= c;
-    lp_assert(a == b + c);
+    SASSERT(a == b + c);
     numeric_pair<lp::mpq> d = a * 2;
     std::cout << a << std::endl;
-    lp_assert(b == b);
-    lp_assert(b < a);
-    lp_assert(b <= a);
-    lp_assert(a > b);
-    lp_assert(a != b);
-    lp_assert(a >= b);
-    lp_assert(-a < b);
-    lp_assert(a < 2 * b);
-    lp_assert(b + b > a);
-    lp_assert(lp::mpq(2.1) * b + b > a);
-    lp_assert(-b * lp::mpq(2.1) - b < lp::mpq(0.99) * a);
+    SASSERT(b == b);
+    SASSERT(b < a);
+    SASSERT(b <= a);
+    SASSERT(a > b);
+    SASSERT(a != b);
+    SASSERT(a >= b);
+    SASSERT(-a < b);
+    SASSERT(a < 2 * b);
+    SASSERT(b + b > a);
+    SASSERT(lp::mpq(2.1) * b + b > a);
+    SASSERT(-b * lp::mpq(2.1) - b < lp::mpq(0.99) * a);
     std::cout << -b * lp::mpq(2.1) - b << std::endl;
-    lp_assert(-b * (lp::mpq(2.1) + 1) == -b * lp::mpq(2.1) - b);
+    SASSERT(-b * (lp::mpq(2.1) + 1) == -b * lp::mpq(2.1) - b);
+    std::cout << -b * (lp::mpq(2.1) + 1) << std::endl;
 }
 
 void get_matrix_dimensions(std::ifstream &f, unsigned &m, unsigned &n) {
@@ -827,7 +830,7 @@ void test_term() {
                   << t.second.get_double() << ",";
     }
 
-    std::cout << "\ntableu after cube\n";
+    std::cout << "\ntableau after cube\n";
     solver.pp(std::cout).print();
     std::cout << "Ax_is_correct = " << solver.ax_is_correct() << "\n";
 }
@@ -852,7 +855,7 @@ void test_evidence_for_total_inf_simple(argument_parser &args_parser) {
     auto status = solver.solve();
     std::cout << lp_status_to_string(status) << std::endl;
     std::unordered_map<lpvar, mpq> model;
-    lp_assert(solver.get_status() == lp_status::INFEASIBLE);
+    SASSERT(solver.get_status() == lp_status::INFEASIBLE);
 }
 void test_bound_propagation_one_small_sample1() {
     /*
@@ -1058,8 +1061,8 @@ void test_total_case_l() {
     // ls.solve();
     // my_bound_propagator bp(ls);
     // ls.propagate_bounds_for_touched_rows(bp);
-    // lp_assert(ev.size() == 4);
-    // lp_assert(contains_j_kind(x, GE, - one_of_type<mpq>(), ev));
+    // SASSERT(ev.size() == 4);
+    // SASSERT(contains_j_kind(x, GE, - one_of_type<mpq>(), ev));
 }
 void test_bound_propagation() {
     test_total_case_u();
@@ -1075,14 +1078,14 @@ void test_int_set() {
     indexed_uint_set s;
     s.insert(1);
     s.insert(2);
-    lp_assert(s.contains(2));
-    lp_assert(s.size() == 2);
+    SASSERT(s.contains(2));
+    SASSERT(s.size() == 2);
     s.remove(2);
-    lp_assert(s.size() == 1);
+    SASSERT(s.size() == 1);
     s.insert(3);
     s.insert(2);
     s.reset();
-    lp_assert(s.size() == 0);
+    SASSERT(s.size() == 0);
     std::cout << "done test_int_set\n";
 }
 
@@ -1190,13 +1193,13 @@ void get_random_interval(bool &neg_inf, bool &pos_inf, int &x, int &y) {
         pos_inf = false;
         if (!neg_inf) {
             y = x + my_random() % (101 - x);
-            lp_assert(y >= x);
+            SASSERT(y >= x);
         } else {
             y = my_random() % 100;
         }
     }
-    lp_assert((neg_inf || (0 <= x && x <= 100)) &&
-              (pos_inf || (0 <= y && y <= 100)));
+    SASSERT((neg_inf || (0 <= x && x <= 100)) &&
+            (pos_inf || (0 <= y && y <= 100)));
 }
 
 void test_gomory_cut_0() {
@@ -1605,6 +1608,7 @@ void test_larger_generated_hnf() {
     std::cout << "test_larger_generated_rank_hnf passed" << std::endl;
 }
 #endif
+
 void test_maximize_term() {
     std::cout << "test_maximize_term\n";
     lar_solver solver;
@@ -1625,7 +1629,7 @@ void test_maximize_term() {
     solver.add_var_bound(term_x_min_y, LE, zero_of_type<mpq>());
     solver.add_var_bound(term_2x_pl_2y, LE, mpq(5));
     solver.find_feasible_solution();
-    lp_assert(solver.get_status() == lp_status::OPTIMAL);
+    SASSERT(solver.get_status() == lp_status::OPTIMAL);
     std::cout << solver.constraints();
     std::unordered_map<lpvar, mpq> model;
     solver.get_model(model);
@@ -1645,6 +1649,67 @@ void test_maximize_term() {
     for (auto p : model) {
         std::cout << "v[" << p.first << "] = " << p.second << std::endl;
     }
+}
+
+void test_dio() {
+    std::cout << "test dio\n";
+    lar_solver solver;
+    int_solver i_solver(solver); 
+    lp::explanation exp;
+    i_solver.set_expl(&exp);
+    unsigned _x1 = 0;
+    unsigned _x2 = 1;
+    unsigned _x3 = 2;
+    unsigned _fx_7 = 3;
+    unsigned _fx_17 = 4;
+/*
+    3x1 + 3x2 + 14x3 − 7 = 0
+    7x1 + 12x2 + 31x3 − 17 = 0
+*/
+    lpvar x1 = solver.add_var(_x1, true);
+    lpvar x2 = solver.add_var(_x2, true);
+    lpvar x3 = solver.add_var(_x3, true);
+    lpvar fx_7 = solver.add_var(_fx_7, true);
+    lpvar fx_17 = solver.add_var(_fx_17, true);
+    vector<std::pair<mpq, lpvar>> term_ls;
+    /* 3x1 + 3x2 +```cpp
+    14x3 − 7 */
+    term_ls.push_back(std::pair<mpq, lpvar>(mpq(3), x1));
+    term_ls.push_back(std::pair<mpq, lpvar>(mpq(3), x2));
+    term_ls.push_back(std::pair<mpq, lpvar>(mpq(14), x3));
+    term_ls.push_back(std::pair<mpq, lpvar>(mpq(-1), fx_7));
+    for (auto & p: term_ls) {
+        p.first = -p.first;
+    }
+    unsigned t0 = solver.add_term(term_ls, 10);
+    term_ls.clear();
+    /* 7x1 + 12x2 + 31x3 − 17 = 0*/
+    term_ls.push_back(std::pair<mpq, lpvar>(mpq(7), x1));
+    term_ls.push_back(std::pair<mpq, lpvar>(mpq(12), x2));
+    term_ls.push_back(std::pair<mpq, lpvar>(mpq(31), x3));
+    term_ls.push_back(std::pair<mpq, lpvar>(mpq(-1), fx_17));
+    
+    for (auto & p: term_ls) {
+        p.first = -p.first;
+    }
+    unsigned t1 = solver.add_term(term_ls, 11);
+
+    solver.add_var_bound(fx_7, LE, mpq(-7));
+    solver.add_var_bound(fx_7, GE, mpq(-7));
+    solver.add_var_bound(fx_17, LE, mpq(-17));
+    solver.add_var_bound(fx_17, GE, mpq(-17));
+    solver.add_var_bound(t0, LE, mpq(0));
+    solver.add_var_bound(t0, GE, mpq(0));
+    solver.add_var_bound(t1, LE, mpq(0));
+    solver.add_var_bound(t1, GE, mpq(0));
+//    solver.find_feasible_solution();
+    //SASSERT(solver.get_status() == lp_status::OPTIMAL);
+    enable_trace("dioph_eq");
+    enable_trace("dioph_eq_fresh");
+#ifdef Z3DEBUG     
+    auto r = i_solver.dio_test();
+#endif    
+    
 }
 #ifdef Z3DEBUG
 void test_hnf() {
@@ -1668,6 +1733,33 @@ void test_gomory_cut() {
     test_gomory_cut_1();
 }
 
+    void test_add_rows() {
+// Create a static_matrix object
+        lp::static_matrix<mpq, impq> matrix;
+        matrix.init_empty_matrix(3, 3);
+
+        // Populate the matrix with initial values
+        matrix.set(0, 0, mpq(1));
+        matrix.set(0, 1, mpq(2));
+        matrix.set(1, 0, mpq(3));
+        matrix.set(1, 2, mpq(4));
+        matrix.set(2, 1, mpq(5));
+        matrix.set(2, 2, mpq(6));
+
+        // Perform add_rows operation
+        matrix.add_rows(mpq(2), 0, 1); // row 1 = row 1 + 2 * row 0
+
+        // Verify the results
+        SASSERT(matrix.get_elem(1, 0) == 5); // 3 + 2*1
+        SASSERT(matrix.get_elem(1, 1) == 4); // 0 + 2*2
+        SASSERT(matrix.get_elem(1, 2) == 4); // unchanged
+
+        matrix.add_rows(mpq(-2), 0, 1);
+        SASSERT(matrix.get_elem(1, 0) == 3); // 5 - 2*1
+        SASSERT(matrix.get_elem(1, 1) == 0); // 4 - 2*2
+        SASSERT(matrix.get_elem(1, 2) == 4); // unchanged
+    }
+    
 void test_nla_order_lemma() { nla::test_order_lemma(); }
 
 void test_lp_local(int argn, char **argv) {
@@ -1684,6 +1776,10 @@ void test_lp_local(int argn, char **argv) {
     }
 
     args_parser.print();
+    if (args_parser.option_is_used("-add_rows")) {
+        test_add_rows();
+        return finalize(0);
+    }
     if (args_parser.option_is_used("-monics")) {
         nla::test_monics();
         return finalize(0);
@@ -1814,13 +1910,13 @@ void asserts_on_patching(const rational &x, const rational &alpha) {
     auto a2 = denominator(alpha);
     auto x1 = numerator(x);
     auto x2 = denominator(x);
-    lp_assert(a1.is_pos());
-    lp_assert(abs(a1) < abs(a2));
-    lp_assert(coprime(a1, a2));
-    lp_assert(x1.is_pos());
-    lp_assert(x1 < x2);
-    lp_assert(coprime(x1, x2));
-    lp_assert((a2 / x2).is_int());
+    SASSERT(a1.is_pos());
+    SASSERT(abs(a1) < abs(a2));
+    SASSERT(coprime(a1, a2));
+    SASSERT(x1.is_pos());
+    SASSERT(x1 < x2);
+    SASSERT(coprime(x1, x2));
+    SASSERT((a2 / x2).is_int());
 }
 void get_patching_deltas(const rational &x, const rational &alpha, rational &delta_0, rational &delta_1) {
     std::cout << "get_patching_deltas(" << x << ", " << alpha << ")" << std::endl;
@@ -1828,7 +1924,7 @@ void get_patching_deltas(const rational &x, const rational &alpha, rational &del
     auto a2 = denominator(alpha);
     auto x1 = numerator(x);
     auto x2 = denominator(x);
-    lp_assert(divides(x2, a2));
+    SASSERT(divides(x2, a2));
     // delta has to be integral.
     // We need to find delta such that x1/x2 + (a1/a2)*delta is integral.
     // Then a2*x1/x2 + a1*delta is integral, that means that t = a2/x2 is integral.
@@ -1842,17 +1938,17 @@ void get_patching_deltas(const rational &x, const rational &alpha, rational &del
     // We know that a2 and a1 are coprime, and x2 divides a2, so x2 and a1 are coprime.
     rational u, v;
     auto g = gcd(a1, x2, u, v);
-    lp_assert(g.is_one() && u.is_int() && v.is_int() && g == u * a1 + v * x2);
+    SASSERT(g.is_one() && u.is_int() && v.is_int() && g == u * a1 + v * x2);
     std::cout << "u = " << u << ", v = " << v << std::endl;
     std::cout << "x= " << (x1 / x2) << std::endl;
     std::cout << "x + (a1 / a2) * (-u * t) * x1 = " << x + (a1 / a2) * (-u * t) * x1 << std::endl;
-    lp_assert((x + (a1 / a2) * (-u * t) * x1).is_int());
+    SASSERT((x + (a1 / a2) * (-u * t) * x1).is_int());
     // 1 = (u- l*x2 ) * a1 + (v + l*a1)*x2, for every integer l.
     rational d = u * t * x1;
     delta_0 = mod(d, a2);
-    lp_assert(delta_0 > 0);
+    SASSERT(delta_0 > 0);
     delta_1 = delta_0 - a2;
-    lp_assert(delta_1 < 0);
+    SASSERT(delta_1 < 0);
     std::cout << "delta_0 = " << delta_0 << std::endl;
     std::cout << "delta_1 = " << delta_1 << std::endl;
 }
@@ -1880,10 +1976,10 @@ void test_patching_alpha(const rational &x, const rational &alpha) {
     rational delta_0, delta_1;
     get_patching_deltas(x, alpha, delta_0, delta_1);
 
-    lp_assert(delta_0 * delta_1 < 0);
+    SASSERT(delta_0 * delta_1 < 0);
 
-    lp_assert((x - alpha * delta_0).is_int());
-    lp_assert((x - alpha * delta_1).is_int());
+    SASSERT((x - alpha * delta_0).is_int());
+    SASSERT((x - alpha * delta_1).is_int());
     try_find_smaller_delta(x, alpha, delta_0, delta_1);
     // std::cout << "delta_minus = " << delta_minus << ", delta_1 = " << delta_1 << "\n";
     // std::cout << "x + alpha*delta_minus = " << x + alpha * delta_minus << "\n";
@@ -1894,7 +1990,7 @@ void find_a1_x1_x2_and_fix_a2(int &x1, int &x2, int &a1, int &a2) {
     x2 = (rand() % a2) + (int)(a2 / 3);
     auto g = gcd(rational(a2), rational(x2));
     a2 *= (x2 / numerator(g).get_int32());
-    lp_assert(rational(a2, x2).is_int());
+    SASSERT(rational(a2, x2).is_int());
     do {
         x1 = rand() % (unsigned)x2 + 1;
     } while (!coprime(x1, x2));
@@ -1903,6 +1999,7 @@ void find_a1_x1_x2_and_fix_a2(int &x1, int &x2, int &a1, int &a2) {
         a1 = rand() % (unsigned)a2 + 1;
     } while (!coprime(a1, a2));
 }
+
 
 void test_patching() {
     srand(1);

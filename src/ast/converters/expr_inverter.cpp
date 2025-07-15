@@ -20,6 +20,8 @@ Author:
 #include "ast/ast_util.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/seq_decl_plugin.h"
+#include "ast/pb_decl_plugin.h"
+#include "ast/rewriter/seq_rewriter.h"
 #include "ast/converters/expr_inverter.h"
 
 class basic_expr_inverter : public iexpr_inverter {
@@ -743,11 +745,90 @@ public:
     }
 };
 
+#if 0
+class pb_expr_inverter : public iexpr_inverter {
+    pb_util pb;
+public:
+    pb_expr_inverter(ast_manager& m) : iexpr_inverter(m), pb(m) {}
+
+    family_id get_fid() const override { return pb.get_family_id(); }
+
+    bool operator()(func_decl* f, unsigned num, expr* const* args, expr_ref& r) override {
+        rational k, c;
+        unsigned new_k = 0;
+        expr_ref_vector new_args(m), uncnstr_args(m);
+        vector<rational> coeffs;
+        switch (f->get_decl_kind()) {
+        case OP_AT_MOST_K:
+            // a' + b' + c  + d <= 3 -> r := c + d <= 1
+            // a' + b' + c  + d <= 1 -> r := c + d <= 1
+            // a' + b' + c' + d <= 2 -> r := fresh        
+            // a', b', c' := ~r
+            k = pb.get_k(f);
+            if (!k.is_unsigned())
+                return false;
+            for (unsigned i = 0; i < num; ++i)
+                if (uncnstr(args[i]))
+                    uncnstr_args.push_back(args[i]);
+                else
+                    new_args.push_back(args[i]);
+            if (uncnstr_args.empty())
+                return false;
+            if (new_args.size() <= k && uncnstr_args.size() > k) 
+                mk_fresh_uncnstr_var_for(f, r);         
+            else if (new_args.size() <= k) // k >= uncnstr_args.size()
+                r = pb.mk_at_most_k(new_args, k.get_unsigned() - uncnstr_args.size());            
+            else // |new_args| > k
+                r = pb.mk_at_most_k(new_args, k.get_unsigned());
+            if (m_mc) {
+                for (unsigned i = 0; i < uncnstr_args.size(); ++i)
+                    add_def(uncnstr_args.get(i), m.mk_not(r));
+            }
+            return true;
+        case OP_AT_LEAST_K:
+            k = pb.get_k(f);
+            if (!k.is_unsigned())
+                return false;
+            for (unsigned i = 0; i < num; ++i)
+                if (uncnstr(args[i]))
+                    uncnstr_args.push_back(args[i]);
+                else
+                    new_args.push_back(args[i]);
+            if (uncnstr_args.empty())
+                return false;
+            // cases k <= uncstr_args.size()
+            // k > uncstr_args.size()
+            return false;
+        case OP_PB_LE:
+            // 2*x + 3*y + z + 2*u <= k -> r
+            // r := z + 2u <= 
+            // 
+            k = pb.get_k(f);
+            for (unsigned i = 0; i < num; ++i)
+                if (uncnstr(args[i]))
+                    uncnstr_args.push_back(args[i]), c += pb.get_coeff(f, i);
+                else
+                    new_args.push_back(args[i]), coeffs.push_back(pb.get_coeff(f, i));
+            if (uncnstr_args.empty())
+                return false;
+            return false;
+        default:
+            return false;
+        }
+    }
+
+    bool mk_diff(expr* t, expr_ref& r) override {
+         return false;
+    }
+};
+#endif
+
 
 class seq_expr_inverter : public iexpr_inverter {
     seq_util seq;
+    seq_rewriter rw;
 public:
-    seq_expr_inverter(ast_manager& m) : iexpr_inverter(m), seq(m) {}
+    seq_expr_inverter(ast_manager& m) : iexpr_inverter(m), seq(m), rw(m) {}
     
     family_id get_fid() const override { return seq.get_family_id(); }
 
@@ -799,7 +880,27 @@ public:
                 return true;
             }
             return false;
+        case OP_SEQ_IN_RE:
+            if (uncnstr(args[0]) && seq.re.is_ground(args[1]) && seq.is_string(args[0]->get_sort())) {
+                zstring s1;
+                expr* re = args[1];
+                if (l_true != rw.some_string_in_re(re, s1))
+                    return false;
+                zstring s2;
+                expr_ref not_re(seq.re.mk_complement(re), m);
+                if (l_true != rw.some_string_in_re(not_re, s2))
+                    return false;
+
+                mk_fresh_uncnstr_var_for(f, r);
+                expr_ref witness1 = expr_ref(seq.str.mk_string(s1), m);
+                expr_ref witness2 = expr_ref(seq.str.mk_string(s2), m);
+                if (m_mc)
+                    add_def(args[0], m.mk_ite(r, witness1, witness2));
+                return true;
+            }
+            return false;
         default:
+            verbose_stream() << mk_pp(f, m) << "\n";
             return false;                
             
         }
@@ -870,6 +971,7 @@ expr_inverter::expr_inverter(ast_manager& m): iexpr_inverter(m) {
     add(alloc(dt_expr_inverter, m));
     add(alloc(basic_expr_inverter, m, *this));
     add(alloc(seq_expr_inverter, m));
+    //add(alloc(pb_expr_inverter, m));
 }
 
 

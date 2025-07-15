@@ -217,27 +217,25 @@ extern "C" {
             if (mk_c(c)->fpautil().is_rm_numeral(to_expr(a), rm)) {
                 switch (rm) {
                 case MPF_ROUND_NEAREST_TEVEN:
-                    return mk_c(c)->mk_external_string("roundNearestTiesToEven");
+                    return "roundNearestTiesToEven";
                     break;
                 case MPF_ROUND_NEAREST_TAWAY:
-                    return mk_c(c)->mk_external_string("roundNearestTiesToAway");
+                    return "roundNearestTiesToAway";
                     break;
                 case MPF_ROUND_TOWARD_POSITIVE:
-                    return mk_c(c)->mk_external_string("roundTowardPositive");
+                    return "roundTowardPositive";
                     break;
                 case MPF_ROUND_TOWARD_NEGATIVE:
-                    return mk_c(c)->mk_external_string("roundTowardNegative");
+                    return "roundTowardNegative";
                     break;
                 case MPF_ROUND_TOWARD_ZERO:
                 default:
-                    return mk_c(c)->mk_external_string("roundTowardZero");
+                    return "roundTowardZero";
                     break;
                 }
             }
             else if (mk_c(c)->fpautil().is_numeral(to_expr(a), tmp)) {
-                std::ostringstream buffer;
-                fu.fm().display_smt2(buffer, tmp, false);
-                return mk_c(c)->mk_external_string(std::move(buffer).str());
+                return mk_c(c)->mk_external_string(fu.fm().to_rational_string(tmp));
             }
             else {
                 SET_ERROR_CODE(Z3_INVALID_ARG, nullptr);
@@ -320,6 +318,10 @@ extern "C" {
         LOG_Z3_get_numeral_small(c, a, num, den);
         RESET_ERROR_CODE();
         CHECK_IS_EXPR(a, false);
+        if (!num || !den) {
+            SET_ERROR_CODE(Z3_INVALID_ARG, nullptr);
+            return false;
+        }
         rational r;
         bool ok = Z3_get_numeral_rational(c, a, r);
         if (ok) {

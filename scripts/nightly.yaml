@@ -1,7 +1,7 @@
 variables:
   Major: '4'
-  Minor: '13'
-  Patch: '4'
+  Minor: '15'
+  Patch: '1'
   ReleaseVersion: $(Major).$(Minor).$(Patch)
   AssemblyVersion: $(Major).$(Minor).$(Patch).$(Build.BuildId)
   NightlyVersion: $(AssemblyVersion)-$(Build.buildId)
@@ -11,6 +11,7 @@ stages:
   jobs:
   - job: MacBuild
     displayName: "Mac Build"
+    timeoutInMinutes: 90
     pool:
       vmImage: "macOS-13"
     steps:
@@ -53,6 +54,7 @@ stages:
 
   - job: UbuntuBuild
     displayName: "Ubuntu build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "ubuntu-latest"
     steps:
@@ -82,6 +84,7 @@ stages:
 
   - job: UbuntuArm64
     displayName: "Ubuntu ARM64 build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "ubuntu-latest"
     steps:
@@ -105,6 +108,7 @@ stages:
 
   - job: UbuntuDoc
     displayName: "Ubuntu Doc build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "ubuntu-latest"
     steps:
@@ -142,6 +146,7 @@ stages:
 
   - job: "ManylinuxPythonBuildAmd64"
     displayName: "Python bindings (manylinux Centos AMD64) build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "ubuntu-latest"
     container: "quay.io/pypa/manylinux2014_x86_64:latest"
@@ -163,6 +168,7 @@ stages:
 
   - job: ManyLinuxPythonBuildArm64
     displayName: "Python bindings (manylinux Centos ARM64 cross) build"
+    timeoutInMinutes: 90    
     variables:
       name: ManyLinux
       python: "/opt/python/cp37-cp37m/bin/python"
@@ -447,7 +453,7 @@ stages:
   - job: Python
     displayName: "Python packaging"
     pool:
-      vmImage: "ubuntu-latest"
+      vmImage: "ubuntu-24.04"
     steps:
     - task: DownloadPipelineArtifact@2
       displayName: 'Download macOS Build'
@@ -562,23 +568,23 @@ stages:
       inputs:
         artifactName: 'NuGet32'
         targetPath: tmp
-    - task: GitHubRelease@0
+    - task: GitHubRelease@1
       continueOnError: true 
       inputs:
         gitHubConnection: Z3Prover
         repositoryName: 'Z3Prover/z3'
         action: 'delete'
 #     target: '$(Build.SourceVersion)'
-        tagSource: 'manual'
+        tagSource: 'userSpecifiedTag'
         tag: 'Nightly'
-    - task: GitHubRelease@0
+    - task: GitHubRelease@1
       continueOnError: true 
       inputs:
         gitHubConnection: Z3Prover
         repositoryName: 'Z3Prover/z3'
         action: 'create'
 #     target: '$(Build.SourceVersion)'
-        tagSource: 'manual'
+        tagSource: 'userSpecifiedTag'
         tag: 'Nightly'
         title: 'Nightly'
         releaseNotesSource: 'input'

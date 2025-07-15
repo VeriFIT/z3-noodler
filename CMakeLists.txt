@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 set(CMAKE_USER_MAKE_RULES_OVERRIDE_CXX "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cxx_compiler_flags_overrides.cmake")
-project(Z3 VERSION 4.13.4.0 LANGUAGES CXX)
+project(Z3 VERSION 4.15.1.0 LANGUAGES CXX)
 
 ################################################################################
 # Project version
@@ -304,6 +304,16 @@ list(APPEND Z3_DEPENDENT_LIBS Threads::Threads)
 # Compiler warnings
 ################################################################################
 include(${PROJECT_SOURCE_DIR}/cmake/compiler_warnings.cmake)
+
+
+################################################################################
+# Address sanitization
+################################################################################
+option(Z3_ADDRESS_SANITIZE "Set address sanitization." OFF)
+
+if (Z3_ADDRESS_SANITIZE)
+  z3_add_cxx_flag("-fsanitize=address" REQUIRED)
+endif()
 
 ################################################################################
 # Save Clang optimization records

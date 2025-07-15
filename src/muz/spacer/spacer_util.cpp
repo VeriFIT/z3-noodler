@@ -50,7 +50,7 @@ Notes:
 #include "model/model_evaluator.h"
 #include "model/model_pp.h"
 #include "model/model_smt2_pp.h"
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 
 #include "qe/lite/qel.h"
 #include "qe/mbp/mbp_plugin.h"
@@ -152,6 +152,7 @@ void qe_project_z3(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
     params_ref p;
     p.set_bool("reduce_all_selects", reduce_all_selects);
     p.set_bool("dont_sub", dont_sub);
+    TRACE(qe, tout << "qe-project-z3\n");
 
     qe::mbproj mbp(m, p);
     mbp.spacer(vars, mdl, fml);
@@ -166,9 +167,8 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
                        model &mdl, bool reduce_all_selects, bool use_native_mbp,
                        bool dont_sub) {
     th_rewriter rw(m);
-    TRACE("spacer_mbp", tout << "Before projection:\n"; tout << fml << "\n";
-          tout << "Vars:\n"
-               << vars;);
+    TRACE(spacer_mbp, tout << "Before projection:\n"; tout << fml << "\n";
+          tout << "Vars:" << vars << "\n";);
 
     {
         // Ensure that top-level AND of fml is flat
@@ -182,6 +182,7 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
 
     app_ref_vector arith_vars(m);
     app_ref_vector array_vars(m);
+    app_ref_vector other_vars(m);
     array_util arr_u(m);
     arith_util ari_u(m);
     expr_safe_replace bool_sub(m);
@@ -193,9 +194,8 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
         qe(vars, fml);
         rw(fml);
 
-        TRACE("spacer_mbp", tout << "After qe_lite:\n";
-              tout << mk_pp(fml, m) << "\n"; tout << "Vars:\n"
-                                                  << vars;);
+        TRACE(spacer_mbp, tout << "After qe_lite:\n";
+              tout << mk_pp(fml, m) << "\nVars:" << vars << "\n";);
 
         SASSERT(!m.is_false(fml));
 
@@ -206,12 +206,13 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
                 // using model completion
                 model::scoped_model_completion _sc_(mdl, true);
                 bool_sub.insert(v, mdl(v));
-            } else if (arr_u.is_array(v)) {
-                array_vars.push_back(v);
-            } else {
-                SASSERT(ari_u.is_int(v) || ari_u.is_real(v));
-                arith_vars.push_back(v);
             }
+            else if (arr_u.is_array(v)) 
+                array_vars.push_back(v);
+            else if (ari_u.is_int(v) || ari_u.is_real(v)) 
+                arith_vars.push_back(v);
+            else
+                other_vars.push_back(v);
         }
 
         // substitute Booleans
@@ -220,17 +221,16 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
             // -- bool_sub is not simplifying
             rw(fml);
             SASSERT(!m.is_false(fml));
-            TRACE("spacer_mbp", tout << "Projected Booleans:\n"
-                                     << fml << "\n";);
+            TRACE(spacer_mbp, tout << "Projected Booleans:\n" << fml << "\n";);
             bool_sub.reset();
         }
 
-        TRACE("spacer_mbp", tout << "Array vars:\n"; tout << array_vars;);
+        TRACE(spacer_mbp, tout << "Array vars:\n"; tout << array_vars;);
 
         vars.reset();
 
         // project arrays
-        {
+        if (!array_vars.empty()) {
             scoped_no_proof _sp(m);
             // -- local rewriter that is aware of current proof mode
             th_rewriter srw(m);
@@ -241,16 +241,17 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
             SASSERT(!m.is_false(fml));
         }
 
-        TRACE("spacer_mbp", tout << "extended model:\n"; model_pp(tout, mdl);
+        TRACE(spacer_mbp, tout << "extended model:\n"; model_pp(tout, mdl);
               tout << "Auxiliary variables of index and value sorts:\n";
-              tout << vars;);
+              tout << vars << "\n";);
 
-        if (vars.empty()) { break; }
+        if (vars.empty())
+            break;        
     }
 
     // project reals and ints
     if (!arith_vars.empty()) {
-        TRACE("spacer_mbp", tout << "Arith vars:\n" << arith_vars;);
+        TRACE(spacer_mbp, tout << "Arith vars:" << arith_vars << "\n";);
 
         if (use_native_mbp) {
             qe::mbproj mbp(m);
@@ -260,24 +261,24 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
             mbp(true, arith_vars, mdl, fmls);
             fml = mk_and(fmls);
             SASSERT(arith_vars.empty());
-        } else {
+        }
+        else {
             scoped_no_proof _sp(m);
             spacer_qe::arith_project(mdl, arith_vars, fml);
         }
 
-        TRACE("spacer_mbp", tout << "Projected arith vars:\n"
-                                 << fml << "\n";
-              tout << "Remaining arith vars:\n"
-                   << arith_vars << "\n";);
+        TRACE(spacer_mbp, tout << "Projected arith vars: "<< fml << "\n";
+              tout << "Remaining arith vars:" << arith_vars << "\n";);
         SASSERT(!m.is_false(fml));
     }
 
-    if (!arith_vars.empty()) { mbqi_project(mdl, arith_vars, fml); }
+    if (!arith_vars.empty())
+        mbqi_project(mdl, arith_vars, fml); 
 
     // substitute any remaining arith vars
     if (!dont_sub && !arith_vars.empty()) {
         subst_vars(m, arith_vars, mdl, fml);
-        TRACE("spacer_mbp",
+        TRACE(spacer_mbp,
               tout << "After substituting remaining arith vars:\n";
               tout << mk_pp(fml, m) << "\n";);
         // an extra round of simplification because subst_vars is not
@@ -289,26 +290,30 @@ void qe_project_spacer(ast_manager &m, app_ref_vector &vars, expr_ref &fml,
                SASSERT(mev.is_true(fml)););
 
     vars.reset();
-    if (dont_sub && !arith_vars.empty()) { vars.append(arith_vars); }
+    vars.append(other_vars);
+    if (dont_sub && !arith_vars.empty())
+        vars.append(arith_vars);
+    TRACE(qe, tout << "after projection: " << fml << ": " << vars << "\n");
 }
 
 static expr *apply_accessor(ast_manager &m, ptr_vector<func_decl> const &acc,
                             unsigned j, func_decl *f, expr *c) {
-    if (is_app(c) && to_app(c)->get_decl() == f) {
+    if (is_app(c) && to_app(c)->get_decl() == f) 
         return to_app(c)->get_arg(j);
-    } else {
+    else 
         return m.mk_app(acc[j], c);
-    }
 }
 
 void qe_project(ast_manager &m, app_ref_vector &vars, expr_ref &fml, model &mdl,
                 bool reduce_all_selects, bool use_native_mbp, bool dont_sub) {
-    if (use_native_mbp)
-        qe_project_z3(m, vars, fml, mdl, reduce_all_selects, use_native_mbp,
-                      dont_sub);
-    else
+    if (!use_native_mbp) 
         qe_project_spacer(m, vars, fml, mdl, reduce_all_selects, use_native_mbp,
                           dont_sub);
+
+    if (!vars.empty())
+        qe_project_z3(m, vars, fml, mdl, reduce_all_selects, use_native_mbp,
+                      dont_sub);        
+
 }
 
 void expand_literals(ast_manager &m, expr_ref_vector &conjs) {
@@ -320,7 +325,7 @@ void expand_literals(ast_manager &m, expr_ref_vector &conjs) {
     rational r;
     unsigned bv_size;
 
-    TRACE("spacer_expand", tout << "begin expand\n" << conjs << "\n";);
+    TRACE(spacer_expand, tout << "begin expand\n" << conjs << "\n";);
 
     for (unsigned i = 0; i < conjs.size(); ++i) {
         expr *e = conjs[i].get();
@@ -329,12 +334,14 @@ void expand_literals(ast_manager &m, expr_ref_vector &conjs) {
             conjs[i] = arith.mk_le(e1, e2);
             if (i + 1 == conjs.size()) {
                 conjs.push_back(arith.mk_ge(e1, e2));
-            } else {
+            }
+            else {
                 conjs.push_back(conjs[i + 1].get());
                 conjs[i + 1] = arith.mk_ge(e1, e2);
             }
             ++i;
-        } else if ((m.is_eq(e, c, val) && is_app(val) &&
+        }
+        else if ((m.is_eq(e, c, val) && is_app(val) &&
                     dt.is_constructor(to_app(val))) ||
                    (m.is_eq(e, val, c) && is_app(val) &&
                     dt.is_constructor(to_app(val)))) {
@@ -346,8 +353,9 @@ void expand_literals(ast_manager &m, expr_ref_vector &conjs) {
                 conjs.push_back(m.mk_eq(apply_accessor(m, acc, j, f, c),
                                         to_app(val)->get_arg(j)));
             }
-        } else if ((m.is_eq(e, c, val) && bv.is_numeral(val, r, bv_size)) ||
-                   (m.is_eq(e, val, c) && bv.is_numeral(val, r, bv_size))) {
+        }
+        else if ((m.is_eq(e, c, val) && bv.is_numeral(val, r, bv_size)) ||
+                 (m.is_eq(e, val, c) && bv.is_numeral(val, r, bv_size))) {
             rational two(2);
             for (unsigned j = 0; j < bv_size; ++j) {
                 parameter p(j);
@@ -355,15 +363,14 @@ void expand_literals(ast_manager &m, expr_ref_vector &conjs) {
                                   bv.mk_extract(j, j, c));
                 if ((r % two).is_zero()) { e = m.mk_not(e); }
                 r = div(r, two);
-                if (j == 0) {
+                if (j == 0) 
                     conjs[i] = e;
-                } else {
+                else 
                     conjs.push_back(e);
-                }
             }
         }
     }
-    TRACE("spacer_expand", tout << "end expand\n" << conjs << "\n";);
+    TRACE(spacer_expand, tout << "end expand\n" << conjs << "\n";);
 }
 
 namespace {
@@ -424,8 +431,7 @@ class implicant_picker {
 
         expr *na = nullptr, *f1 = nullptr, *f2 = nullptr, *f3 = nullptr;
 
-        SASSERT(!m.is_false(a));
-        if (m.is_true(a)) {
+        if (m.is_true(a)|| m.is_false(a)) {
             // noop
         } else if (a->get_family_id() != m.get_basic_family_id()) {
             add_literal(a, out);
@@ -656,7 +662,7 @@ bool is_normalized(expr_ref e, bool use_simplify_bounds, bool use_factor_eqs) {
     expr_ref out0 = out;
     if (e != out) { normalize(out, out, use_simplify_bounds, use_factor_eqs); }
 
-    CTRACE("inherit_bug", e != out,
+    CTRACE(inherit_bug, e != out,
            tout << "e==out0: " << (e == out0) << " e==out: " << (e == out)
                 << " out0==out: " << (out0 == out) << "\n";
            tout << "e: " << e << "\n"
@@ -705,11 +711,11 @@ void normalize(expr *e, expr_ref &out, bool use_simplify_bounds,
             // sort arguments of the top-level and
             std::stable_sort(v.data(), v.data() + v.size(), ast_lt_proc());
 
-            TRACE("spacer_normalize", tout << "Normalized:\n"
+            TRACE(spacer_normalize, tout << "Normalized:\n"
                                            << out << "\n"
                                            << "to\n"
                                            << mk_and(v) << "\n";);
-            TRACE("spacer_normalize", {
+            TRACE(spacer_normalize, {
                 mbp::term_graph egraph(m);
                 for (expr *e : v) egraph.add_lit(to_app(e));
                 tout << "Reduced app:\n" << mk_pp(egraph.to_expr(), m) << "\n";
@@ -852,26 +858,26 @@ bool mbqi_project_var(model &mdl, app *var, expr_ref &fml) {
     expr_ref val(m);
     val = mdl(var);
 
-    TRACE("mbqi_project_verbose", tout << "MBQI: var: " << mk_pp(var, m) << "\n"
+    TRACE(mbqi_project_verbose, tout << "MBQI: var: " << mk_pp(var, m) << "\n"
                                        << "fml: " << fml << "\n";);
     expr_ref_vector terms(m);
     index_term_finder finder(m, var, terms);
     for_each_expr(finder, fml);
 
-    TRACE("mbqi_project_verbose", tout << "terms:\n" << terms << "\n";);
+    TRACE(mbqi_project_verbose, tout << "terms:\n" << terms << "\n";);
 
     for (expr *term : terms) {
         expr_ref tval(m);
         tval = mdl(term);
 
-        TRACE("mbqi_project_verbose", tout << "term: " << mk_pp(term, m)
+        TRACE(mbqi_project_verbose, tout << "term: " << mk_pp(term, m)
                                            << " tval: " << tval
                                            << " val: " << val << "\n";);
 
         // -- if the term does not contain an occurrence of var
         // -- and is in the same equivalence class in the model
         if (tval == val && !occurs(var, term)) {
-            TRACE("mbqi_project", tout << "MBQI: replacing " << mk_pp(var, m)
+            TRACE(mbqi_project, tout << "MBQI: replacing " << mk_pp(var, m)
                                        << " with " << mk_pp(term, m) << "\n";);
             expr_safe_replace sub(m);
             sub.insert(var, term);
@@ -880,7 +886,7 @@ bool mbqi_project_var(model &mdl, app *var, expr_ref &fml) {
         }
     }
 
-    TRACE("mbqi_project", tout << "MBQI: failed to eliminate " << mk_pp(var, m)
+    TRACE(mbqi_project, tout << "MBQI: failed to eliminate " << mk_pp(var, m)
                                << " from " << fml << "\n";);
 
     return false;

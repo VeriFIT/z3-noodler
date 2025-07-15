@@ -135,7 +135,7 @@ namespace smt {
         if (m.are_distinct(a, b))
             return false_literal;
         app_ref eq(ctx.mk_eq_atom(a, b), get_manager());
-        TRACE("mk_var_bug", tout << "mk_eq: " << eq->get_id() << " " << a->get_id() << " " << b->get_id() << "\n";
+        TRACE(mk_var_bug, tout << "mk_eq: " << eq->get_id() << " " << a->get_id() << " " << b->get_id() << "\n";
               tout << mk_ll_pp(a, get_manager()) << "\n" << mk_ll_pp(b, get_manager()););		
         ctx.internalize(eq, gate_ctx);
         return ctx.get_literal(eq);
@@ -211,7 +211,7 @@ namespace smt {
         symbol const & family_name = m.get_family_name(get_family_id());
 
         if (pattern_id == UINT_MAX) {
-            out << "[inst-discovered] theory-solving " << static_cast<void *>(nullptr) << " " << family_name << "#";
+            out << "[inst-discovered] theory-solving 0x0 " << family_name << "#";
             if (axiom_id != UINT_MAX)
                 out << axiom_id;
             for (unsigned i = 0; i < num_bindings; ++i) {

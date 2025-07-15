@@ -164,7 +164,7 @@ void bv2int_translator::translate_app(app* e) {
         expr* r = m.mk_app(f, m_args);
         if (has_bv_sort) {
             ctx.push(push_back_vector(m_vars));
-            r = bv.mk_bv2int(r);
+            r = bv.mk_ubv2int(r);
         }
         set_translated(e, r);
         return;
@@ -424,7 +424,7 @@ void bv2int_translator::translate_bv(app* e) {
         ctx.push(push_back_vector(m_int2bv));
         r = arg(0);
         break;
-    case OP_BV2INT:
+    case OP_UBV2INT:
         m_bv2int.push_back(e);
         ctx.push(push_back_vector(m_bv2int));
         r = umod(e->get_arg(0), 0);
@@ -687,7 +687,7 @@ void bv2int_translator::translate_eq(expr* e) {
         set_translated(e, m.mk_eq(umod(x, 0), a.mk_int(0)));
     }
     m_preds.push_back(e);
-    TRACE("bv", tout << mk_pp(e, m) << " " << mk_pp(translated(e), m) << "\n");
+    TRACE(bv, tout << mk_pp(e, m) << " " << mk_pp(translated(e), m) << "\n");
     ctx.push(push_back_vector(m_preds));
 
 }

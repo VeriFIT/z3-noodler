@@ -9,6 +9,8 @@ callgrind.out.*
 .env
 .z3-trace
 .env
+genaisrc/jsconfig.json
+genaisrc/genaiscript.d.ts
 .genaiscript
 package-lock.json
 package.json
@@ -110,3 +112,7 @@ dbg/**
 *.wsp
 CppProperties.json
 test-input
+genaisrc/genblogpost.genai.mts
+*.mts
+# Bazel generated files
+bazel-*

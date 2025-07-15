@@ -6,7 +6,7 @@
 trigger: none
 
 variables:
-  ReleaseVersion: '4.13.4'
+  ReleaseVersion: '4.15.1'
 
 stages:
 
@@ -16,6 +16,7 @@ stages:
 
   - job: MacBuild
     displayName: "Mac Build"
+    timeoutInMinutes: 90
     pool:
       vmImage: "macOS-13"
     steps:
@@ -45,6 +46,7 @@ stages:
 
   - job: MacBuildArm64
     displayName: "Mac ARM64 Build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "macOS-13"
     steps:
@@ -88,6 +90,7 @@ stages:
 
   - job: UbuntuArm64
     displayName: "Ubuntu ARM64 build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "ubuntu-latest"
     steps:
@@ -111,6 +114,7 @@ stages:
 
   - job: UbuntuDoc
     displayName: "Ubuntu Doc build"
+    timeoutInMinutes: 90    
     pool:
       vmImage: "ubuntu-latest"
     steps:
@@ -147,6 +151,7 @@ stages:
 
   - job: "ManylinuxPythonBuildAmd64"
     displayName: "Python bindings (manylinux Centos AMD64) build"
+    timeoutInMinutes: 90
     pool:
       vmImage: "ubuntu-latest"
     container: "quay.io/pypa/manylinux2014_x86_64:latest"
@@ -168,6 +173,7 @@ stages:
 
   - job: ManyLinuxPythonBuildArm64
     displayName: "Python bindings (manylinux Centos ARM64 cross) build"
+    timeoutInMinutes: 90    
     variables:
       name: ManyLinux
       python: "/opt/python/cp37-cp37m/bin/python"
@@ -448,7 +454,7 @@ stages:
   - job: Python
     displayName: "Python packaging"
     pool:
-      vmImage: "ubuntu-latest"
+      vmImage: "ubuntu-24.04"
     steps:
     - task: DownloadPipelineArtifact@2
       displayName: 'Download macOS Build'
@@ -564,16 +570,16 @@ stages:
       inputs:
         artifact: 'NuGet32'
         path: $(Agent.TempDirectory)	
-    - task: GitHubRelease@0
+    - task: GitHubRelease@1
       inputs:
         gitHubConnection: Z3Prover
         repositoryName: $(Build.Repository.Name)
         action: 'create'
         target: '$(Build.SourceVersion)'
-        tagSource: 'manual'
+        tagSource: 'userSpecifiedTag'
         tag: 'z3-$(ReleaseVersion)'
         title: 'z3-$(ReleaseVersion)'
-        releaseNotesSource: 'input'
+        releaseNotesSource: 'inline'
         releaseNotes: '$(ReleaseVersion) release'
         assets: '$(Agent.TempDirectory)/*.*'
         isDraft: true
@@ -581,7 +587,7 @@ stages:
 
      
   - job: NuGetPublish
-    condition: eq(0,1)
+    condition: eq(1,0)
     displayName: "Publish to NuGet.org"
     steps:
     - task: DownloadPipelineArtifact@2
@@ -602,7 +608,7 @@ stages:
 
   # Enable on release:
   - job: PyPIPublish
-    condition: eq(1,1)
+    condition: eq(0,1)
     displayName: "Publish to PyPI"
     pool:
       vmImage: "ubuntu-latest"

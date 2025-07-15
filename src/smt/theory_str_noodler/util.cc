@@ -159,10 +159,10 @@ namespace smt::noodler::util {
     }
 
     bool split_word_to_automata(const zstring& word, const std::vector<std::shared_ptr<mata::nfa::Nfa>>& automata, std::vector<zstring>& words) {
-        STRACE("str-split-word-to-automata",
+        STRACE(str_split_word_to_automata,
             tout << "split_word_to_automata with word:\n" << word << "\n";
             tout << "and " << automata.size() << " automata\n";
-            if (is_trace_enabled("str-nfa")) {
+            if (is_trace_enabled(TraceTag::str_nfa)) {
                 for (auto aut : automata) {
                     tout << *aut << "\n";
                 }
@@ -192,17 +192,17 @@ namespace smt::noodler::util {
         };
 
         while (current_automaton != NUM_OF_AUTOMATA || index_in_word != LENGTH_OF_WORD) {
-            STRACE("str-split-word-to-automata", tout << "Current automaton and index in word: " << current_automaton << " " << index_in_word << "\n";);
+            STRACE(str_split_word_to_automata, tout << "Current automaton and index in word: " << current_automaton << " " << index_in_word << "\n";);
 
             // if we did not backtrack, we need to first check whether we can currently accept (if we are backtracking, we need to instead get longer word for the current automaton)
             // also if the current automaton is the last automaton, we need to finish reading the word, so in that case, we only check after we read the whole word
             if (!is_backtracked && (current_automaton != NUM_OF_AUTOMATA-1 || index_in_word == LENGTH_OF_WORD) && automata[current_automaton]->final.intersects_with(current_states)) {
                 // if we can accept, we save the current index, states, and word and move to the next automaton
-                STRACE("str-split-word-to-automata", tout << "Moving to next automaton\n";);
+                STRACE(str_split_word_to_automata, tout << "Moving to next automaton\n";);
                 backtracking_indexes.push_back(index_in_word);
                 backtracking_state_sets.push_back(current_states);
                 words.push_back(current_word);
-                STRACE("str-split-word-to-automata",
+                STRACE(str_split_word_to_automata,
                     tout << "Current words:";
                     for (const auto& word : words) {
                         tout << " " << word;
@@ -222,7 +222,7 @@ namespace smt::noodler::util {
             if (index_in_word == LENGTH_OF_WORD) {
                 // we read the whole word, but we have still some automata left, we need to backtrack
                 if (current_automaton == 0) { return false; } // we cannot backtrack, i.e., the word is not accepted by the concatenation of automata
-                STRACE("str-split-word-to-automata", tout << "Backtracking at the end of the word\n";);
+                STRACE(str_split_word_to_automata, tout << "Backtracking at the end of the word\n";);
                 backtrack();
                 continue;
             }
@@ -242,11 +242,11 @@ namespace smt::noodler::util {
             if (new_current_states.empty()) {
                 // we need to backtrack, the word is not accepted by the current automaton
                 if (current_automaton == 0) { return false; } // we cannot backtrack, i.e., the word is not accepted by the concatenation of automata
-                STRACE("str-split-word-to-automata", tout << "Backtracking because the current automaton does not accept\n";);
+                STRACE(str_split_word_to_automata, tout << "Backtracking because the current automaton does not accept\n";);
                 backtrack();
             } else {
                 // otherwise we just move to the next symbol
-                STRACE("str-split-word-to-automata", tout << "Moving to the next symbol\n";);
+                STRACE(str_split_word_to_automata, tout << "Moving to the next symbol\n";);
                 ++index_in_word;
                 current_states = new_current_states;
                 current_word = current_word + zstring(current_symbol);
@@ -254,8 +254,8 @@ namespace smt::noodler::util {
             }
         }
 
-        STRACE("str-split-word-to-automata",
-            tout << "str-split-word-to-automata ended with the following words:";
+        STRACE(str_split_word_to_automata,
+            tout << "str_split_word_to_automata ended with the following words:";
             for (const auto& word : words) {
                 tout << " " << word;
             }

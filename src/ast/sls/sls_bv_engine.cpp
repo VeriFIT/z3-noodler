@@ -84,7 +84,7 @@ bool sls_engine::full_eval(model & mdl) {
         if (!m_manager.inc())
             return false;
         if (!mdl.is_true(a)) {
-            TRACE("sls", tout << "Evaluation: false\n";);
+            TRACE(sls, tout << "Evaluation: false\n";);
             return false;
         }
     }    
@@ -96,8 +96,7 @@ double sls_engine::top_score() {
     for (expr* e : m_assertions) {
         top_sum += m_tracker.get_score(e);
     }
-
-    TRACE("sls_top", tout << "Score distribution:";
+    TRACE(sls_top, tout << "Score distribution:";
           for (expr* e : m_assertions) 
               tout << " " << m_tracker.get_score(e);
           tout << " AVG: " << top_sum / (double)m_assertions.size() << std::endl;);
@@ -153,7 +152,7 @@ bool sls_engine::what_if(
     else
         r = incremental_score(fd, temp);
 #ifdef Z3DEBUG
-    TRACE("sls_whatif", tout << "WHAT IF " << fd->get_name() << " WERE " << m_mpz_manager.to_string(temp) <<
+    TRACE(sls_whatif, tout << "WHAT IF " << fd->get_name() << " WERE " << m_mpz_manager.to_string(temp) <<
             " --> " << r << std::endl;);
 
     m_mpz_manager.del(old_value);
@@ -269,7 +268,7 @@ void sls_engine::mk_random_move(ptr_vector<func_decl> & unsat_constants)
             NOT_IMPLEMENTED_YET();
         }
 
-        TRACE("sls", tout << "Randomization candidates: ";
+        TRACE(sls, tout << "Randomization candidates: ";
         for (unsigned i = 0; i < unsat_constants.size(); i++)
             tout << unsat_constants[i]->get_name() << ", ";
         tout << std::endl;
@@ -397,13 +396,12 @@ double sls_engine::find_best_move_mc(ptr_vector<func_decl> & to_evaluate, double
 // main search loop
 lbool sls_engine::search() {
     lbool res = l_undef;
-    double score = 0.0, old_score = 0.0;
+    double score = 0.0;
     unsigned new_const = (unsigned)-1, new_bit;
     mpz new_value;
     move_type move;
 
     score = rescore();
-    unsigned sz = m_assertions.size();
 
     while (check_restart(m_stats.m_moves)) {
         if (!m_manager.inc())
@@ -436,7 +434,6 @@ lbool sls_engine::search() {
             continue;
         }
 
-        old_score = score;
         new_const = (unsigned)-1;
 
         // find best increasing move
@@ -466,7 +463,6 @@ lbool sls_engine::search() {
 
         // randomize if no increasing move was found
         if (new_const == static_cast<unsigned>(-1)) {
-            score = old_score;
             if (m_walksat_repick)
                 m_evaluator.randomize_local(m_assertions);
             else
@@ -477,22 +473,20 @@ lbool sls_engine::search() {
             // update assertion weights if a weighting is enabled (sp < 1024)
             if (m_paws)
             {
-                for (unsigned i = 0; i < sz; i++)
-                {
-                    expr * q = m_assertions[i];
+                for (auto q : m_assertions) {
                     // smooth weights with probability sp / 1024
                     if (m_tracker.get_random_uint(10) < m_paws_sp)
                     {
-                        if (m_mpz_manager.eq(m_tracker.get_value(q),m_one))
+                        if (m_mpz_manager.eq(m_tracker.get_value(q), m_one))
                             m_tracker.decrease_weight(q);
                     }
                     // increase weights otherwise
                     else
                     {
-                        if (m_mpz_manager.eq(m_tracker.get_value(q),m_zero))
+                        if (m_mpz_manager.eq(m_tracker.get_value(q), m_zero))
                             m_tracker.increase_weight(q);
                     }
-                }
+                }                  
             }
         }
         // otherwise, apply most increasing move

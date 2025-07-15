@@ -20,6 +20,7 @@ Author:
 #include "ast/for_each_expr.h"
 #include "ast/ast_pp.h"
 #include "ast/arith_decl_plugin.h"
+#include "ast/bv_decl_plugin.h"
 #include "ast/simplifiers/extract_eqs.h"
 #include "ast/simplifiers/bound_manager.h"
 #include "params/tactic_params.hpp"
@@ -32,6 +33,40 @@ namespace euf {
         bool m_ite_solver = true;
         bool m_allow_bool = true;
 
+        bool is_eq_of(expr* x, expr* y, expr*& z, expr*& s, expr*& t) {
+            expr* x1 = nullptr, *x2 = nullptr, *y1 = nullptr, *y2 = nullptr;
+            if (!m.is_eq(x, x1, x2))
+                return false;
+            if (!m.is_eq(y, y1, y2))
+                return false;
+            if (x1 == y1) {
+                z = x1;
+                s = x2;
+                t = y2;
+                return true;
+            }
+            if (x1 == y2) {
+                z = x1;
+                s = x2;
+                t = y1;
+                return true;
+            }
+            if (x2 == y1) {
+                z = x2;
+                s = x1;
+                t = y2;
+                return true;
+            }
+            return false;
+        }
+        bool is_complementary(expr* x, expr* y) {
+            expr* z = nullptr;
+            if (m.is_not(x, z) && z == y)
+                return true;
+            if (m.is_not(y, z) && z == x)
+                return true;
+            return false;
+        }
     public:
         basic_extract_eq(ast_manager& m) : m(m) {}
 
@@ -41,7 +76,7 @@ namespace euf {
 
         void get_eqs(dependent_expr const& e, dep_eq_vector& eqs) override {
             auto [f, p, d] = e();
-            expr* x, * y;
+            expr* x = nullptr, * y = nullptr;
             if (m.is_eq(f, x, y)) {
                 if (x == y)
                     return;
@@ -52,7 +87,7 @@ namespace euf {
                 if (is_uninterp_const(y))
                     eqs.push_back(dependent_eq(e.fml(), to_app(y), expr_ref(x, m), d));
             }
-            expr* c, * th, * el, * x1, * y1, * x2, * y2;
+            expr* c = nullptr, * th = nullptr, * el = nullptr, * x1, * y1 = nullptr, * x2 = nullptr, * y2 = nullptr;
             if (m_ite_solver && m.is_ite(f, c, th, el)) {
                 if (m.is_eq(th, x1, y1) && m.is_eq(el, x2, y2)) {
                     if (!m_allow_bool && m.is_bool(x1))
@@ -67,6 +102,30 @@ namespace euf {
                         eqs.push_back(dependent_eq(e.fml(), to_app(x1), expr_ref(m.mk_ite(c, y1, y2), m), d));
                 }
             }
+            // (or (and a (= x t)) (and (not a) (= x s)))
+            // -> x = if a s t
+            if (m.is_or(f, x1, y1) && m.is_and(x1, x1, x2) && m.is_and(y1, y1, y2)) {
+                expr* z = nullptr, *t = nullptr, *s = nullptr;
+                if (is_eq_of(x1, y1, z, s, t) && is_complementary(x2, y2)) 
+                    eqs.push_back(dependent_eq(e.fml(), to_app(z), expr_ref(m.mk_ite(x2, s, t), m), d));
+                if (is_eq_of(x1, y2, z, s, t) && is_complementary(x2, y1))
+                    eqs.push_back(dependent_eq(e.fml(), to_app(z), expr_ref(m.mk_ite(x2, s, t), m), d));
+                if (is_eq_of(x2, y2, z, s, t) && is_complementary(x1, y1))
+                    eqs.push_back(dependent_eq(e.fml(), to_app(z), expr_ref(m.mk_ite(x1, s, t), m), d));
+                if (is_eq_of(x2, y1, z, s, t) && is_complementary(x1, y2))
+                    eqs.push_back(dependent_eq(e.fml(), to_app(z), expr_ref(m.mk_ite(x1, s, t), m), d));
+            }
+            if (m.is_and(f, x1, y1) && m.is_or(x, x1, x2) && m.is_or(y1, y1, y2)) {
+                expr* z = nullptr, *t = nullptr, *s = nullptr;
+                if (is_eq_of(x1, y1, z, s, t) && is_complementary(x2, y2)) 
+                    eqs.push_back(dependent_eq(e.fml(), to_app(z), expr_ref(m.mk_ite(y2, s, t), m), d));
+                if (is_eq_of(x1, y2, z, s, t) && is_complementary(x2, y1))
+                    eqs.push_back(dependent_eq(e.fml(), to_app(z), expr_ref(m.mk_ite(y1, s, t), m), d));
+                if (is_eq_of(x2, y2, z, s, t) && is_complementary(x1, y1))
+                    eqs.push_back(dependent_eq(e.fml(), to_app(z), expr_ref(m.mk_ite(y1, s, t), m), d));
+                if (is_eq_of(x2, y1, z, s, t) && is_complementary(x1, y2))
+                    eqs.push_back(dependent_eq(e.fml(), to_app(z), expr_ref(m.mk_ite(y2, s, t), m), d));
+            }
             if (!m_allow_bool)
                 return;
             if (is_uninterp_const(f))
@@ -79,6 +138,85 @@ namespace euf {
             tactic_params tp(p);
             m_ite_solver = p.get_bool("ite_solver", tp.solve_eqs_ite_solver());
         }
+    };
+
+    class bv_extract_eq : public extract_eq {
+        ast_manager&       m;
+        bv_util            bv;
+        bool               m_enabled = true;
+
+        
+        void solve_add(expr* orig, expr* x, expr* y, expr_dependency* d, dep_eq_vector& eqs) {
+            if (!bv.is_bv_add(x))
+                return;
+            expr_ref term(m);
+            auto mk_term = [&](unsigned i) {
+                term = y;
+                unsigned j = 0;
+                for (expr* arg2 : *to_app(x)) {
+                    if (i != j)
+                        term = bv.mk_bv_sub(term, arg2);
+                    ++j;
+                }
+            };
+            expr* u = nullptr, *z = nullptr;
+            rational r;
+            unsigned i = 0;
+            for (expr* arg : *to_app(x)) {
+                if (is_uninterp_const(arg)) {
+                    mk_term(i);
+                    eqs.push_back(dependent_eq(orig, to_app(arg), term, d));
+                }
+                else if (bv.is_bv_mul(arg, u, z) && bv.is_numeral(u, r) && is_uninterp_const(z) && r.is_odd()) {
+                    mk_term(i);
+                    unsigned sz = bv.get_bv_size(z);
+                    rational inv_r;
+                    VERIFY(r.mult_inverse(sz, inv_r));
+                    term = bv.mk_bv_mul(bv.mk_numeral(inv_r, sz), term);
+                    eqs.push_back(dependent_eq(orig, to_app(z), term, d));
+                }
+                ++i;
+            }
+        }
+
+        void solve_mul(expr* orig, expr* x, expr* y, expr_dependency* d, dep_eq_vector& eqs) {
+            expr* u = nullptr, *z = nullptr;
+            rational r, inv_r;
+            if (bv.is_bv_mul(x, u, z) && bv.is_numeral(u, r) && is_uninterp_const(z) && r.is_odd()) {
+                unsigned sz = bv.get_bv_size(z);
+                VERIFY(r.mult_inverse(sz, inv_r));
+                auto term = expr_ref(bv.mk_bv_mul(bv.mk_numeral(inv_r, sz), y), m);
+                eqs.push_back(dependent_eq(orig, to_app(z), term, d));                
+            }
+        }
+
+        void solve_eq(expr* orig, expr* x, expr* y, expr_dependency* d, dep_eq_vector& eqs) {
+            solve_add(orig, x, y, d, eqs);
+            solve_mul(orig, x, y, d, eqs);
+        }
+
+        
+    public:
+        bv_extract_eq(ast_manager& m) : m(m), bv(m) {}
+
+        void get_eqs(dependent_expr const& e, dep_eq_vector& eqs) override {
+            if (!m_enabled)
+                return;
+            auto [f, p, d] = e();
+            expr* x = nullptr, * y = nullptr;
+            if (m.is_eq(f, x, y) && bv.is_bv(x)) {
+                solve_eq(f, x, y, d, eqs);
+                solve_eq(f, y, x, d, eqs);
+            }
+
+        }
+
+        void pre_process(dependent_expr_state& fmls) override {
+        }
+
+        void updt_params(params_ref const& p) override {
+        }
+        
     };
 
     class arith_extract_eq : public extract_eq {
@@ -95,7 +233,7 @@ namespace euf {
         void solve_mod(expr* orig, expr* x, expr* y, expr_dependency* d, dep_eq_vector& eqs) {
             if (!m_eliminate_mod)
                 return;
-            expr* u, * z;
+            expr* u = nullptr, * z = nullptr;
             rational r1, r2;
             if (!a.is_mod(x, u, z))
                 return;
@@ -113,7 +251,7 @@ namespace euf {
         }
 
         void solve_to_real(expr* orig, expr* x, expr* y, expr_dependency* d, dep_eq_vector& eqs) {
-            expr* z, *u;
+            expr* z = nullptr, *u = nullptr;
             rational r;            
             if (!a.is_to_real(x, z) || !is_uninterp_const(z))
                 return;
@@ -132,7 +270,7 @@ namespace euf {
         void solve_add(expr* orig, expr* x, expr* y, expr_dependency* d, dep_eq_vector& eqs) {
             if (!a.is_add(x))
                 return;
-            expr* u, * z;
+            expr* u = nullptr, * z = nullptr;
             rational r;
             expr_ref term(m);
             unsigned i = 0;
@@ -269,7 +407,7 @@ break;
             if (!m_enabled)
                 return;
             auto [f, p, d] = e();
-            expr* x, * y;
+            expr* x = nullptr, * y = nullptr;
             if (m.is_eq(f, x, y) && a.is_int_real(x)) {
                 solve_eq(f, x, y, d, eqs);
                 solve_eq(f, y, x, d, eqs);
@@ -311,5 +449,6 @@ break;
     void register_extract_eqs(ast_manager& m, scoped_ptr_vector<extract_eq>& ex) {
         ex.push_back(alloc(arith_extract_eq, m));
         ex.push_back(alloc(basic_extract_eq, m));
+        ex.push_back(alloc(bv_extract_eq, m));
     }
 }

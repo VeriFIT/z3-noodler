@@ -40,7 +40,7 @@ namespace smt::noodler {
 
     void theory_str_noodler::init() {
         theory::init();
-        STRACE("str", tout << "init" << std::endl;);
+        STRACE(str, tout << "init" << std::endl;);
     }
 
     enode *theory_str_noodler::ensure_enode(expr *e) {
@@ -70,11 +70,11 @@ namespace smt::noodler {
 
     bool theory_str_noodler::internalize_atom(app *const atom, const bool gate_ctx) {
         (void) gate_ctx;
-        STRACE("str", tout << "internalize_atom: gate_ctx is " << gate_ctx << ", "
+        STRACE(str, tout << "internalize_atom: gate_ctx is " << gate_ctx << ", "
                            << mk_pp(atom, get_manager()) << '\n';);
         context &ctx = get_context();
         if (ctx.b_internalized(atom)) {
-            STRACE("str", tout << "done before\n";);
+            STRACE(str, tout << "done before\n";);
             return true;
         }
         return internalize_term(atom);
@@ -124,7 +124,7 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::collect_statistics(::statistics & st) const {
-        STRACE("str", tout << "collecting statistics" << std::endl;);
+        STRACE(str, tout << "collecting statistics" << std::endl;);
         st.update("noodler-final_checks", num_of_solving_final_checks);
         for (const auto& [heur_name, heur_stats] : this->statistics) {
             st.update(statistics_bullshit_names.at(heur_name)[0], heur_stats.num_start);
@@ -134,30 +134,32 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::init_search_eh() {
-        STRACE("str", tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
+        STRACE(str, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
         context &ctx = get_context();
         unsigned nFormulas = ctx.get_num_asserted_formulas();
         for (unsigned i = 0; i < nFormulas; ++i) {
-            STRACE("str-init-formula", tout << "Initial asserted formula " << i << ": " << expr_ref(ctx.get_asserted_formula(i), m) << std::endl;);
+            STRACE(str_init_formula, tout << "Initial asserted formula " << i << ": " << expr_ref(ctx.get_asserted_formula(i), m) << std::endl;);
             expr *ex = ctx.get_asserted_formula(i);
             if (!add_len_num_axioms(ex)) {
                 obj_hashtable<app> lens;
                 util::get_len_exprs(ctx.get_asserted_formula(i), m_util_s, m, lens);
                 for (app* const a : lens) {
-                    util::get_str_variables(a, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+                    expr* len_arg;
+                    VERIFY(m_util_s.str.is_length(a, len_arg));
+                    mark_expression_as_length(len_arg);
                 }
             }
             ctx.mark_as_relevant(ex);
             string_theory_propagation(ex, true, false);  
         }
         add_conversion_num_axioms();
-        STRACE("str", tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
+        STRACE(str, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
 
     }
 
     void theory_str_noodler::string_theory_propagation(expr *expr, bool init, bool neg, bool var_lengths) {
-        STRACE("str", tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
-        STRACE("str-propagation", tout << mk_pp(expr, get_manager()) << std::endl;);
+        STRACE(str, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
+        STRACE(str_propagation, tout << mk_pp(expr, get_manager()) << std::endl;);
 
         context &ctx = get_context();
 
@@ -217,13 +219,13 @@ namespace smt::noodler {
             }
         }
 
-        STRACE("str", tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
+        STRACE(str, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
 
     }
 
     // for concatenation xy create axiom |xy| = |x| + |y| where x, y are some string expressions
     void theory_str_noodler::propagate_concat_axiom(enode *cat) {
-        STRACE("str", tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
+        STRACE(str, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
 
         app *a_cat = cat->get_expr();
         SASSERT(m_util_s.str.is_concat(a_cat));
@@ -251,7 +253,7 @@ namespace smt::noodler {
         len_x_plus_len_y = m_util_a.mk_add(len_x, len_y);
         SASSERT(len_x_plus_len_y);
 
-        STRACE("str-concat",
+        STRACE(str_concat,
             tout << "[Concat Axiom] " << mk_pp(len_xy, m) << " = " << mk_pp(len_x, m) << " + " << mk_pp(len_y, m)
                  << std::endl;
         );
@@ -261,7 +263,7 @@ namespace smt::noodler {
         SASSERT(eq);
         add_axiom(eq);
         this->axiomatized_len_axioms.push_back(eq);
-        STRACE("str", tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
+        STRACE(str, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
 
     }
 
@@ -273,7 +275,7 @@ namespace smt::noodler {
             sort *a_sort = str->get_expr()->get_sort();
             sort *str_sort = m_util_s.str.mk_string_sort();
             if (a_sort != str_sort) {
-                STRACE("str",
+                STRACE(str,
                        tout << "WARNING: not setting up string axioms on non-string term " << mk_pp(str->get_expr(), m)
                             << std::endl;);
                 return;
@@ -282,7 +284,7 @@ namespace smt::noodler {
 
         // TESTING: attempt to avoid a crash here when a variable goes out of scope
         if (str->get_iscope_lvl() > ctx.get_scope_level()) {
-            STRACE("str", tout << "WARNING: skipping axiom setup on out-of-scope string term" << std::endl;);
+            STRACE(str, tout << "WARNING: skipping axiom setup on out-of-scope string term" << std::endl;);
             return;
         }
 
@@ -291,7 +293,7 @@ namespace smt::noodler {
 
         // len(str) = |str| for explicit string str
         if (m_util_s.str.is_string(a_str)) {
-            STRACE("str-axiom", tout << "[ConstStr Axiom] " << mk_pp(a_str, m) << std::endl);
+            STRACE(str_axiom, tout << "[ConstStr Axiom] " << mk_pp(a_str, m) << std::endl);
 
             expr_ref len_str(m_util_s.str.mk_length(a_str), m);
             SASSERT(len_str);
@@ -307,7 +309,7 @@ namespace smt::noodler {
         } else if(!m.is_ite(a_str)) {
             // axiom |t| >= 0 where t is a string term
             { 
-                STRACE("str-axiom", tout << "[Non-Zero Axiom] " << mk_pp(a_str, m) << std::endl);
+                STRACE(str_axiom, tout << "[Non-Zero Axiom] " << mk_pp(a_str, m) << std::endl);
                 // build LHS
                 expr_ref len_str(m);
                 len_str = m_util_s.str.mk_length(a_str);
@@ -320,14 +322,14 @@ namespace smt::noodler {
                 app_ref lhs_ge_rhs(m_util_a.mk_ge(len_str, zero), m);
                 ctx.internalize(lhs_ge_rhs, false);
                 SASSERT(lhs_ge_rhs);
-                STRACE("str-axiom", tout << "string axiom 1: " << mk_ismt2_pp(lhs_ge_rhs, m) << std::endl;);
+                STRACE(str_axiom, tout << "string axiom 1: " << mk_ismt2_pp(lhs_ge_rhs, m) << std::endl;);
 
                 add_axiom({mk_literal(lhs_ge_rhs)});
                 this->axiomatized_len_axioms.push_back(lhs_ge_rhs);
             }
             // axiom |t| <= 0 -> t = eps; if var_lengths is set add also t = eps -> |t| = 0
             {
-                STRACE("str-axiom", tout << "[Zero iff Empty Axiom] " << mk_pp(a_str, m) << std::endl);
+                STRACE(str_axiom, tout << "[Zero iff Empty Axiom] " << mk_pp(a_str, m) << std::endl);
 
                 // build LHS of iff
                 expr_ref len_str(m);
@@ -368,7 +370,7 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::relevant_eh(app *const n) {
-        STRACE("str", tout << "relevant: " << mk_pp(n, get_manager()) << " with family id " << n->get_family_id() << ", sort " << n->get_sort()->get_name() << " and decl kind " << n->get_decl_kind() << std::endl;);
+        STRACE(str, tout << "relevant: " << mk_pp(n, get_manager()) << " with family id " << n->get_family_id() << ", sort " << n->get_sort()->get_name() << " and decl kind " << n->get_decl_kind() << std::endl;);
 
         if (m_util_s.str.is_length(n)) { // str.len
             add_length_axiom(n);
@@ -435,6 +437,11 @@ namespace smt::noodler {
                 add_axiom({mk_eq(fresh, e, false)});
             }
         }
+
+        if (initial_len_expressions.contains(n)) {
+            SASSERT(predicate_replace.find(n));
+            len_vars.insert(predicate_replace[n]);
+        }
     }
 
     /*
@@ -456,8 +463,8 @@ namespace smt::noodler {
 
     void theory_str_noodler::assign_eh(bool_var v, const bool is_true) {
         ast_manager &m = get_manager();
-        STRACE("str", tout << "assign enter\n";);
-        STRACE("str-assign", tout << "assign: bool_var #" << v << " is " << is_true << ", "
+        STRACE(str, tout << "assign enter\n";);
+        STRACE(str_assign, tout << "assign: bool_var #" << v << " is " << is_true << ", "
                             << mk_pp(get_context().bool_var2expr(v), m) << "@ scope level:" << m_scope_level << '\n';);
         context &ctx = get_context();
         expr *e = ctx.bool_var2expr(v);
@@ -481,9 +488,9 @@ namespace smt::noodler {
             handle_in_re(e, is_true);
         } else if(m.is_bool(e)) {
             ensure_enode(e);
-            TRACE("str-assign", tout << "bool literal " << mk_pp(e, m) << " " << is_true << "\n" );
+            TRACE(str_assign, tout << "bool literal " << mk_pp(e, m) << " " << is_true << "\n" );
         } else {
-            TRACE("str-assign", tout << "unhandled literal " << mk_pp(e, m) << "\n";);
+            TRACE(str_assign, tout << "unhandled literal " << mk_pp(e, m) << "\n";);
             UNREACHABLE();
         }
     }
@@ -493,7 +500,7 @@ namespace smt::noodler {
         expr_ref l{get_enode(x)->get_expr(), m};
         expr_ref r{get_enode(y)->get_expr(), m};
 
-        STRACE("str", tout << "new_eq: " << l <<  " = " << r << std::endl;);
+        STRACE(str, tout << "new_eq: " << l <<  " = " << r << std::endl;);
 
         app* equation = m.mk_eq(l, r);
 
@@ -542,7 +549,7 @@ namespace smt::noodler {
         // This is to handle the case containing ite inside disequations
         // TODO explain better
         if(!ctx.e_internalized(equation)) {
-            STRACE("str", tout << "relevanting: " << mk_pp(disequation, m) << std::endl;);
+            STRACE(str, tout << "relevanting: " << mk_pp(disequation, m) << std::endl;);
             ctx.mark_as_relevant(disequation);
         }
         ctx.internalize(disequation, false);
@@ -564,7 +571,7 @@ namespace smt::noodler {
             }
         }
 
-        STRACE("str",
+        STRACE(str,
             tout << ctx.find_assignment(equation) << " " << ctx.find_assignment(disequation) << std::endl
                  << "new_diseq: " << l << " != " << r
                  << " @" << m_scope_level<< " " << ctx.get_bool_var(equation) << " "
@@ -588,7 +595,7 @@ namespace smt::noodler {
         m_membership_todo.push_scope();
         m_not_contains_todo.push_scope();
         m_conversion_todo.push_scope();
-        STRACE("str", tout << "push_scope: " << m_scope_level << '\n';);
+        STRACE(str, tout << "push_scope: " << m_scope_level << '\n';);
     }
 
     void theory_str_noodler::pop_scope_eh(const unsigned num_scopes) {
@@ -609,17 +616,17 @@ namespace smt::noodler {
             last_run_was_sat = false;
             scope_with_last_run_was_sat = -1;
         }
-        STRACE("str",
+        STRACE(str,
             tout << "pop_scope: " << num_scopes << " (back to level " << m_scope_level << ")\n";);
     }
     
     void theory_str_noodler::restart_eh() {
-        STRACE("str", tout << "restart\n");
+        STRACE(str, tout << "restart\n");
     }
 
     void theory_str_noodler::reset_eh() {
         // FIXME should here be something?
-        STRACE("str", tout << "reset" << '\n';);
+        STRACE(str, tout << "reset" << '\n';);
     }
 
     lbool theory_str_noodler::validate_unsat_core(expr_ref_vector &unsat_core) {
@@ -655,7 +662,7 @@ namespace smt::noodler {
 
     bool_var theory_str_noodler::mk_bool_var(expr *const e) {
         ast_manager &m = get_manager();
-        STRACE("str", tout << "mk_bool_var: " << mk_pp(e, m) << '\n';);
+        STRACE(str, tout << "mk_bool_var: " << mk_pp(e, m) << '\n';);
         if (!m.is_bool(e)) {
             return null_bool_var;
         }
@@ -668,7 +675,7 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::add_axiom(expr *const e) {
-        STRACE("str_axiom", tout << __LINE__ << " " << __FUNCTION__ << mk_pp(e, get_manager()) << std::endl;);
+        STRACE(str_axiom, tout << __LINE__ << " " << __FUNCTION__ << mk_pp(e, get_manager()) << std::endl;);
 
         if (!axiomatized_terms.contains(e)) {
             axiomatized_terms.insert(e);
@@ -681,12 +688,12 @@ namespace smt::noodler {
             literal l{ctx.get_literal(e)};
             ctx.mark_as_relevant(l);
             ctx.mk_th_axiom(get_id(), 1, &l);
-            STRACE("str", ctx.display_literal_verbose(tout << "[Assert_e]\n", l) << '\n';);
+            STRACE(str, ctx.display_literal_verbose(tout << "[Assert_e]\n", l) << '\n';);
         }
     }
 
     void theory_str_noodler::add_axiom(std::vector<literal> ls) {
-        STRACE("str", tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
+        STRACE(str, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
         context &ctx = get_context();
         literal_vector lv;
         for (const auto &l : ls) {
@@ -696,8 +703,8 @@ namespace smt::noodler {
             }
         }
         ctx.mk_th_axiom(get_id(), lv, lv.size());
-        STRACE("str_axiom", ctx.display_literals_verbose(tout << "[Assert_c]\n", lv) << '\n';);
-        STRACE("str", tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
+        STRACE(str_axiom, ctx.display_literals_verbose(tout << "[Assert_c]\n", lv) << '\n';);
+        STRACE(str, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
     }
 
     /**
@@ -716,7 +723,7 @@ namespace smt::noodler {
      * @param e str.at(s, i)
      */
     void theory_str_noodler::handle_char_at(expr *e) {
-        STRACE("str", tout << "handle-charat: " << mk_pp(e, m) << '\n';);
+        STRACE(str, tout << "handle-charat: " << mk_pp(e, m) << '\n';);
         if (axiomatized_persist_terms.contains(e))
             return;
 
@@ -802,7 +809,7 @@ namespace smt::noodler {
         // add the replacement charat -> v
         predicate_replace.insert(e, fresh.get());
         // update length variables
-        util::get_str_variables(s, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+        mark_expression_as_length(s);
         this->len_vars.insert(x);
     }
 
@@ -842,7 +849,7 @@ namespace smt::noodler {
 
             // add the replacement substr -> v
             this->predicate_replace.insert(e, v.get());
-            util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+            mark_expression_as_length(s);
             return;
         }
 
@@ -905,7 +912,7 @@ namespace smt::noodler {
              // add the replacement substr -> v
             this->predicate_replace.insert(e, v.get());
             // update length variables
-            util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+            mark_expression_as_length(s);
             // add length |v| = l. This is not true entirely, because there could be a case that v = eps. 
             // but this case is handled by epsilon propagation preprocessing (this variable will not in the system
             // after that)
@@ -930,7 +937,7 @@ namespace smt::noodler {
             add_axiom({mk_eq(v, e, false)});
             this->predicate_replace.insert(e, v.get());
             // update length variables
-            util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+            mark_expression_as_length(s);
             this->var_eqs.add(expr_ref(l, m), v);
             return;
         } else {
@@ -967,7 +974,7 @@ namespace smt::noodler {
         // add the replacement substr -> v
         this->predicate_replace.insert(e, v.get());
         // update length variables
-        util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+        mark_expression_as_length(s);
         // add length |v| = l. This is not true entirely, because there could be a case that v = eps. 
         // but this case is handled by epsilon propagation preprocessing (this variable will not in the system
         // after that)
@@ -993,7 +1000,7 @@ namespace smt::noodler {
      * @param e str.substr(s, i, l)
      */
     void theory_str_noodler::handle_substr(expr *e) {
-        STRACE("str", tout << "handle-substr: " << mk_pp(e, m) << '\n';);
+        STRACE(str, tout << "handle-substr: " << mk_pp(e, m) << '\n';);
         if (axiomatized_persist_terms.contains(e))
             return;
 
@@ -1133,7 +1140,7 @@ namespace smt::noodler {
         // add the replacement substr -> v
         this->predicate_replace.insert(e, v.get());
         // update length variables
-        util::get_str_variables(s, this->m_util_s, m, this->len_vars);
+        mark_expression_as_length(s);
         this->len_vars.insert(v);
         if(vars.size() > 0) {
             this->var_eqs.add(expr_ref(pred, m), xvar);
@@ -1159,7 +1166,7 @@ namespace smt::noodler {
      * @param r replace term
      */
     void theory_str_noodler::handle_replace(expr *r) {
-        STRACE("str", tout << "handle-replace: " << mk_pp(r, m) << '\n';);
+        STRACE(str, tout << "handle-replace: " << mk_pp(r, m) << '\n';);
 
         if(axiomatized_persist_terms.contains(r))
             return;
@@ -1222,8 +1229,9 @@ namespace smt::noodler {
         // str.replace "A" s t where a = "A"
         if(m_util_s.str.is_string(a, str_a) && str_a.length() == 1) {
             // s = emp -> v = t.a
-            // NOTE: if we use ~s_emp, this diseqation does not become relevant
-            add_axiom({mk_literal(m.mk_not(m.mk_eq(s, eps))), mk_literal(m.mk_eq(r, mk_concat(t, a)))});
+            // NOTE: we add it twice in different forms because Z3 for some reason ignores one of them sometimes, see https://github.com/VeriFIT/z3-noodler/pull/236
+            add_axiom({~s_emp, mk_literal(m.mk_eq(v, mk_concat(t, a)))});
+            add_axiom({mk_literal(m.mk_not(m.mk_eq(s, eps))), mk_literal(m.mk_eq(v, mk_concat(t, a)))});
             // s = a -> v = t
             // NOTE: if we use ~mk_eq(s, a), this diseqation does not become relevant
             add_axiom({mk_literal(m.mk_not(m.mk_eq(s, a))), mk_eq(v, t,false)});
@@ -1293,7 +1301,7 @@ namespace smt::noodler {
      * @param e replace_re term
      */
     void theory_str_noodler::handle_replace_re(expr *e) {
-        STRACE("str", tout << "handle-replace: " << mk_pp(e, m) << '\n';);
+        STRACE(str, tout << "handle-replace: " << mk_pp(e, m) << '\n';);
 
         if(axiomatized_persist_terms.contains(e))
             return;
@@ -1365,7 +1373,7 @@ namespace smt::noodler {
      * @param i indexof term
      */
     void theory_str_noodler::handle_index_of(expr *i) {
-        STRACE("str", tout << "handle-indexof: " << mk_pp(i, m) << '\n';);
+        STRACE(str, tout << "handle-indexof: " << mk_pp(i, m) << '\n';);
         if(axiomatized_persist_terms.contains(i))
             return;
 
@@ -1452,7 +1460,7 @@ namespace smt::noodler {
             add_axiom({offset_ge_0, i_eq_m1});
 
             // update length variables
-            util::get_str_variables(t, this->m_util_s, m, this->len_vars);
+            mark_expression_as_length(t);
             this->len_vars.insert(x);
         }
     }
@@ -1512,7 +1520,7 @@ namespace smt::noodler {
      * @param e replace_all
      */
     void theory_str_noodler::handle_replace_all(expr *e) {
-        STRACE("str", tout << "handle-replace-all: " << mk_pp(e, m) << '\n';);
+        STRACE(str, tout << "handle-replace-all: " << mk_pp(e, m) << '\n';);
         if (axiomatized_persist_terms.contains(e))
             return;
 
@@ -1536,7 +1544,7 @@ namespace smt::noodler {
      * @param e replace_re_all
      */
     void theory_str_noodler::handle_replace_re_all(expr *e) {
-        STRACE("str", tout << "handle-replace-re-all: " << mk_pp(e, m) << '\n';);
+        STRACE(str, tout << "handle-replace-re-all: " << mk_pp(e, m) << '\n';);
         if (axiomatized_persist_terms.contains(e))
             return;
 
@@ -1719,8 +1727,8 @@ namespace smt::noodler {
         add_axiom({lit_e, len_y_gt_len_x, eq_mx_my});
 
         // update length variables
-        util::get_str_variables(x, this->m_util_s, m, this->len_vars, &this->predicate_replace);
-        util::get_str_variables(y, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+        mark_expression_as_length(x);
+        mark_expression_as_length(y);
         this->var_eqs.add(expr_ref(m_util_a.mk_int(1), m), expr_ref(my, m));
         this->var_eqs.add(expr_ref(m_util_a.mk_int(1), m), expr_ref(mx, m));
     }
@@ -1827,8 +1835,8 @@ namespace smt::noodler {
         add_axiom({lit_e, len_y_gt_len_x, eq_mx_my});
 
         // update length variables
-        util::get_str_variables(x, this->m_util_s, m, this->len_vars, &this->predicate_replace);
-        util::get_str_variables(y, this->m_util_s, m, this->len_vars, &this->predicate_replace);
+        mark_expression_as_length(x);
+        mark_expression_as_length(y);
         // my and mx are in the same length-equivalence class: 1
         this->var_eqs.add(expr_ref(m_util_a.mk_int(1), m), my);
         this->var_eqs.add(expr_ref(m_util_a.mk_int(1), m), mx);
@@ -1846,7 +1854,7 @@ namespace smt::noodler {
             return;
 
         axiomatized_persist_terms.insert(e);
-        STRACE("str", tout  << "handle contains " << mk_pp(e, m) << std::endl;);
+        STRACE(str, tout  << "handle contains " << mk_pp(e, m) << std::endl;);
         ast_manager &m = get_manager();
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_contains(e, x, y));
@@ -1895,7 +1903,7 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_contains(e, x, y));
 
-        STRACE("str", tout  << "handle not(contains) " << mk_pp(e, m) << std::endl;);
+        STRACE(str, tout  << "handle not(contains) " << mk_pp(e, m) << std::endl;);
         zstring s;
         if(m_util_s.str.is_string(y, s)) {
             expr_ref re(m_util_s.re.mk_in_re(x, m_util_s.re.mk_concat(m_util_s.re.mk_star(m_util_s.re.mk_full_char(nullptr)),
@@ -1919,7 +1927,7 @@ namespace smt::noodler {
         expr* cont = this->m.mk_not(e);
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_contains(e, x, y));
-        STRACE("str", tout  << "assign not(contains) " << mk_pp(e, m) << std::endl;);
+        STRACE(str, tout  << "assign not(contains) " << mk_pp(e, m) << std::endl;);
 
         zstring s;
         // not(contains) was not axiomatized in handle_not_contains
@@ -1937,7 +1945,7 @@ namespace smt::noodler {
      * @param e str.<= predicate
      */
     void theory_str_noodler::handle_lex_leq(expr *e) {
-        STRACE("str", tout  << "handle str.<= " << mk_pp(e, m) << std::endl;);
+        STRACE(str, tout  << "handle str.<= " << mk_pp(e, m) << std::endl;);
 
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_le(e, x, y));
@@ -1968,7 +1976,7 @@ namespace smt::noodler {
      * @param e str.< predicate
      */
     void theory_str_noodler::handle_lex_lt(expr *e) {
-        STRACE("str", tout  << "handle str.< " << mk_pp(e, m) << std::endl;);
+        STRACE(str, tout  << "handle str.< " << mk_pp(e, m) << std::endl;);
 
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_lt(e, x, y));
@@ -2029,7 +2037,7 @@ namespace smt::noodler {
         expr *s = nullptr, *re = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, s, re));
         ast_manager& m = get_manager();
-        STRACE("str", tout  << "handle_in_re " << mk_pp(e, m) << " " << is_true << std::endl;);
+        STRACE(str, tout  << "handle_in_re " << mk_pp(e, m) << " " << is_true << std::endl;);
 
         app_ref re_constr(to_app(s), m);
         expr_ref re_atom(e, m);
@@ -2331,7 +2339,7 @@ namespace smt::noodler {
         const auto& js = ext_theory_conflict_justification{
                 get_id(), ctx, lv.size(), lv.data(), 0, nullptr, 0, nullptr};
         ctx.set_conflict(ctx.mk_justification(js));
-        STRACE("str", ctx.display_literals_verbose(tout << "[Conflict]\n", lv) << '\n';);
+        STRACE(str, ctx.display_literals_verbose(tout << "[Conflict]\n", lv) << '\n';);
     }
 
     expr_ref theory_str_noodler::construct_refinement() {
@@ -2339,7 +2347,7 @@ namespace smt::noodler {
 
         ast_manager& m = get_manager();
         expr *refinement = nullptr;
-        STRACE("str", tout << "[Constructing refinement]\n";);
+        STRACE(str, tout << "[Constructing refinement]\n";);
         for (const auto& we : this->m_word_eq_todo_rel) {
             // we create the equation according to we
             expr *const e = ctx.mk_eq_atom(we.first, we.second);
@@ -2371,5 +2379,39 @@ namespace smt::noodler {
         }
 
         return expr_ref(refinement, m);
+    }
+
+    void theory_str_noodler::mark_expression_as_length(expr *e) {
+        if(m_util_s.str.is_string(e)) {
+            return;
+        }
+
+        if(util::is_str_variable(e, m_util_s)) {
+            len_vars.insert(e);
+            return;
+        }
+
+        SASSERT(is_app(e));
+        app* ex_app{ to_app(e) };
+        if (m_util_s.str.is_concat(e)) {
+            for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
+                mark_expression_as_length(ex_app->get_arg(i));
+            }
+        } else {
+            expr* rpl;
+            if (predicate_replace.find(ex_app, rpl)) {
+                mark_expression_as_length(rpl);
+            } else {
+                initial_len_expressions.insert(e);
+            }
+        }
+    }
+    
+    void theory_str_noodler::print_len_vars(std::ostream& os) {
+        os << "Current length vars:";
+        for (expr* e : len_vars) {
+            os << " " << mk_pp(e,m);
+        }
+        os << std::endl;
     }
 }

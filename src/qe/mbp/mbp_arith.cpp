@@ -39,7 +39,6 @@ namespace mbp {
         bool              m_check_purified = true;  // check that variables are properly pure 
         bool              m_apply_projection = false;
 
-
         imp(ast_manager& m) :
             m(m), a(m) {}
 
@@ -65,7 +64,7 @@ namespace mbp {
             expr* e1, * e2;
             DEBUG_CODE(expr_ref val(m);
             eval(lit, val);
-            CTRACE("qe", !m.is_true(val), tout << mk_pp(lit, m) << " := " << val << "\n";);
+            CTRACE(qe, !m.is_true(val), tout << mk_pp(lit, m) << " := " << val << "\n";);
             if (m.is_false(val))
                 return false;
             SASSERT(m.limit().is_canceled() || !m.is_false(val)););
@@ -73,7 +72,7 @@ namespace mbp {
             if (!m.inc())
                 return false;
 
-            TRACE("opt", tout << mk_pp(lit, m) << " " << a.is_lt(lit) << " " << a.is_gt(lit) << "\n";);
+            TRACE(opt, tout << mk_pp(lit, m) << " " << a.is_lt(lit) << " " << a.is_gt(lit) << "\n";);
             bool is_not = m.is_not(lit, lit);
             if (is_not) {
                 mul.neg();
@@ -116,7 +115,7 @@ namespace mbp {
                 vector<std::pair<expr*, rational> > nums;
                 for (expr* arg : *alit) {
                     val = eval(arg);
-                    TRACE("qe", tout << mk_pp(arg, m) << " " << val << "\n";);
+                    TRACE(qe, tout << mk_pp(arg, m) << " " << val << "\n";);
                     if (!a.is_numeral(val, r)) return false;
                     nums.push_back(std::make_pair(arg, r));
                 }
@@ -139,7 +138,7 @@ namespace mbp {
                     expr* arg1 = to_app(lit)->get_arg(i), * arg2 = nullptr;
                     rational r;
                     expr_ref val = eval(arg1);
-                    TRACE("qe", tout << mk_pp(arg1, m) << " " << val << "\n";);
+                    TRACE(qe, tout << mk_pp(arg1, m) << " " << val << "\n";);
                     if (!a.is_numeral(val, r)) return false;
                     if (values.find(r, arg2)) {
                         ty = opt::t_eq;
@@ -169,7 +168,7 @@ namespace mbp {
                         return true;
                     }
                 }
-                TRACE("qe", tout << "Skipping " << mk_pp(lit, m) << "\n";);
+                TRACE(qe, tout << "Skipping " << mk_pp(lit, m) << "\n";);
                 return false;
             }
             else if (m.is_and(lit) && is_not) {
@@ -179,11 +178,11 @@ namespace mbp {
                         return true;
                     }
                 }
-                TRACE("qe", tout << "Skipping " << mk_pp(lit, m) << "\n";);
+                TRACE(qe, tout << "Skipping " << mk_pp(lit, m) << "\n";);
                 return false;
             }
             else {
-                TRACE("qe", tout << "Skipping " << mk_pp(lit, m) << "\n";);
+                TRACE(qe, tout << "Skipping " << mk_pp(lit, m) << "\n";);
                 return false;
             }
             vars coeffs;
@@ -231,7 +230,7 @@ namespace mbp {
 
             else if (m.is_ite(t, t1, t2, t3)) {
                 val = eval(t1);
-                TRACE("qe", tout << mk_pp(t1, m) << " := " << val << "\n";);
+                TRACE(qe, tout << mk_pp(t1, m) << " := " << val << "\n";);
                 if (m.is_true(val)) {
                     linearize(mbo, eval, mul, t2, c, fmls, ts, tids);
                     fmls.push_back(t1);
@@ -259,7 +258,7 @@ namespace mbp {
                 rational c0 = add_def(t1, mul1, coeffs);
                 tids.insert(t, mbo.add_div(coeffs, c0, mul1));
             }
-            else if (a.is_mod(t, t1, t2) && is_numeral(t2, mul1) && !mul1.is_zero()) {
+            else if (a.is_mod(t, t1, t2) && is_numeral(t2, mul1) && mul1 > 0) {
                 rational r;
                 val = eval(t);
                 if (!a.is_numeral(val, r)) {
@@ -275,12 +274,8 @@ namespace mbp {
                 extract_coefficients(mbo, eval, ts0, tids, coeffs);
                 mbo.add_divides(coeffs, c0, mul1);
             }
-            else if (a.is_to_real(t))
-                throw default_exception("mbp to-real");
-            else if (a.is_to_int(t))
-                throw default_exception("mbp to-int");
             else {
-                TRACE("qe", tout << "insert mul " << mk_pp(t, m) << "\n");
+                TRACE(qe, tout << "insert mul " << mk_pp(t, m) << "\n");
                 insert_mul(t, mul, ts);
             }
         }
@@ -329,7 +324,7 @@ namespace mbp {
             if (!has_arith)
                 return true;
             model_evaluator eval(model);
-            TRACE("qe", tout << model;);
+            TRACE(qe, tout << model;);
             eval.set_model_completion(true);
             model.set_inline();
             compute_def |= m_apply_projection;
@@ -338,12 +333,12 @@ namespace mbp {
             obj_map<expr, unsigned> tids;
             expr_ref_vector pinned(m);
             unsigned j = 0;
-            TRACE("qe", tout << "vars: " << vars << "\n";
+            TRACE(qe, tout << "vars: " << vars << "\n";
             for (expr* f : fmls) tout << mk_pp(f, m) << " := " << model(f) << "\n";);
             for (unsigned i = 0; i < fmls.size(); ++i) {
                 expr* fml = fmls.get(i);
                 if (!linearize(mbo, eval, fml, fmls, tids)) {
-                    TRACE("qe", tout << "could not linearize: " << mk_pp(fml, m) << "\n";);
+                    TRACE(qe, tout << "could not linearize: " << mk_pp(fml, m) << "\n";);
                     fmls[j++] = fml;
                 }
                 else {
@@ -351,7 +346,7 @@ namespace mbp {
                 }
             }
             fmls.shrink(j);
-            TRACE("qe", tout << "formulas\n" << fmls << "\n";
+            TRACE(qe, tout << "formulas\n" << fmls << "\n";
             for (auto const& [e, id] : tids)
                 tout << mk_pp(e, m) << " -> " << id << "\n";);
 
@@ -375,7 +370,7 @@ namespace mbp {
                         IF_VERBOSE(1, verbose_stream() << "mbp failed on " << mk_pp(v, m) << " := " << val << "\n");
                         throw default_exception("evaluation did not produce a numeral");
                     }
-                    TRACE("qe", tout << mk_pp(v, m) << " " << val << "\n";);
+                    TRACE(qe, tout << mk_pp(v, m) << " " << val << "\n";);
                     tids.insert(v, mbo.add_var(r, a.is_int(v)));
                 }
             }
@@ -419,10 +414,10 @@ namespace mbp {
             }
             vars.shrink(j);
 
-            TRACE("qe", tout << "remaining vars: " << vars << "\n";
+            TRACE(qe, tout << "remaining vars: " << vars << "\n";
             for (unsigned v : real_vars) tout << "v" << v << " " << mk_pp(index2expr[v], m) << "\n";
             mbo.display(tout););
-            vector<opt::model_based_opt::def> defs = mbo.project(real_vars.size(), real_vars.data(), compute_def);
+            vector<opt::model_based_opt::def_ref> defs = mbo.project(real_vars.size(), real_vars.data(), compute_def);
 
 
             vector<row> rows;
@@ -435,8 +430,8 @@ namespace mbp {
                     def_vars.insert(r.m_id, r);
             }
             rows2fmls(def_vars, rows, index2expr, fmls);
-            TRACE("qe", mbo.display(tout << "mbo result\n");
-            for (auto const& d : defs) tout << "def: " << d << "\n";
+            TRACE(qe, mbo.display(tout << "mbo result\n");
+            for (auto const& d : defs) if (d) tout << "def: " << *d << "\n";
             tout << fmls << "\n";);
 
             if (compute_def)
@@ -444,7 +439,7 @@ namespace mbp {
             if (m_apply_projection && !apply_projection(eval, result, fmls))
                 return false;
 
-            TRACE("qe",
+            TRACE(qe,
                 for (auto const& [v, t] : result)
                     tout << v << " := " << t << "\n";
                   for (auto* f : fmls)
@@ -453,30 +448,46 @@ namespace mbp {
             return true;
         }
 
-        void optdefs2mbpdef(u_map<row> const& def_vars, vector<opt::model_based_opt::def> const& defs, ptr_vector<expr> const& index2expr, unsigned_vector const& real_vars, vector<def>& result) {
+        expr_ref from_def(u_map<row> const& def_vars, opt::model_based_opt::def const& d, bool is_int, ptr_vector<expr> const& index2expr) {
+            if (d.is_add()) {
+                return expr_ref(
+                    a.mk_add(from_def(def_vars, *d.to_add().x, is_int, index2expr),
+                             from_def(def_vars, *d.to_add().y, is_int, index2expr)), m); 
+
+            }
+            if (d.is_mul()) {
+                return expr_ref(
+                    a.mk_mul(from_def(def_vars, *d.to_mul().x, is_int, index2expr),
+                        from_def(def_vars, *d.to_mul().y, is_int, index2expr)), m);
+            }
+            if (d.is_const()) 
+                return expr_ref(a.mk_numeral(d.to_const().c, is_int), m);
+            if (d.is_var()) {
+                auto t = id2expr(def_vars, index2expr, d.to_var().v.m_id);
+                if (d.to_var().v.m_coeff != 1)
+                    t = a.mk_mul(a.mk_numeral(d.to_var().v.m_coeff, is_int), t);
+                return expr_ref(t, m);
+            }
+            if (d.is_div()) {
+                auto t = from_def(def_vars, *d.to_div().x, is_int, index2expr);
+                if (is_int)
+                    t = a.mk_idiv(t, a.mk_numeral(d.to_div().m_div, is_int));
+                else
+                    t = a.mk_div(t, a.mk_numeral(d.to_div().m_div, is_int));
+                return expr_ref(t, m);
+            }
+            UNREACHABLE();
+            return expr_ref(nullptr, m);
+        }
+
+        void optdefs2mbpdef(u_map<row> const& def_vars, vector<opt::model_based_opt::def_ref> const& defs, ptr_vector<expr> const& index2expr, unsigned_vector const& real_vars, vector<def>& result) {
             SASSERT(defs.size() == real_vars.size());
             for (unsigned i = 0; i < defs.size(); ++i) {
                 auto const& d = defs[i];
                 expr* x = index2expr[real_vars[i]];
                 bool is_int = a.is_int(x);
-                expr_ref_vector ts(m);
-                expr_ref t(m);
-                for (var const& v : d.m_vars) {
-                    t = id2expr(def_vars, index2expr, v.m_id);
-                    if (v.m_coeff != 1)
-                        t = a.mk_mul(a.mk_numeral(v.m_coeff, a.is_int(t)), t);
-                    ts.push_back(t);
-                }
-                if (!d.m_coeff.is_zero())
-                    ts.push_back(a.mk_numeral(d.m_coeff, is_int));
-                if (ts.empty())
-                    ts.push_back(a.mk_numeral(rational(0), is_int));
-                t = mk_add(ts);
-                if (!d.m_div.is_one() && is_int)
-                    t = a.mk_idiv(t, a.mk_numeral(d.m_div, is_int));
-                else if (!d.m_div.is_one() && !is_int)
-                    t = a.mk_div(t, a.mk_numeral(d.m_div, is_int));
-                result.push_back(def(expr_ref(x, m), t));
+                auto t = from_def(def_vars, *d, is_int, index2expr);
+                result.push_back({ expr_ref(x, m), t });
             }
         }
 
@@ -618,7 +629,7 @@ namespace mbp {
                     mdl.register_decl(f, val);
                 }
                 else {
-                    TRACE("qe", tout << "omitting model update for non-uninterpreted constant " << mk_pp(e, m) << "\n";);
+                    TRACE(qe, tout << "omitting model update for non-uninterpreted constant " << mk_pp(e, m) << "\n";);
                 }
             }
             expr_ref val(a.mk_numeral(value.get_rational(), false), m);
@@ -649,7 +660,7 @@ namespace mbp {
                 expr_ref val = eval(fml);
                 if (!m.is_true(val)) {
                     valid = false;
-                    TRACE("qe", tout << mk_pp(fml, m) << " := " << val << "\n";);
+                    TRACE(qe, tout << mk_pp(fml, m) << " := " << val << "\n";);
                 }
             }
             return valid;
@@ -665,14 +676,14 @@ namespace mbp {
                     rational r;
                     expr_ref val = eval(v);
                     if (!a.is_numeral(val, r)) {
-                        TRACE("qe", tout << eval.get_model() << "\n";);
+                        TRACE(qe, tout << eval.get_model() << "\n";);
                         IF_VERBOSE(1, verbose_stream() << "mbp failed on " << mk_pp(v, m) << " := " << val << "\n");
                         throw default_exception("mbp evaluation was only partial");
                     }
                     id = mbo.add_var(r, a.is_int(v));
                     tids.insert(v, id);
                 }
-                CTRACE("qe", kv.m_value.is_zero(), tout << mk_pp(v, m) << " has coefficient 0\n";);
+                CTRACE(qe, kv.m_value.is_zero(), tout << mk_pp(v, m) << " has coefficient 0\n";);
                 if (!kv.m_value.is_zero()) {
                     coeffs.push_back(var(id, kv.m_value));
                 }
@@ -714,7 +725,7 @@ namespace mbp {
         return m_imp->project1(model, var, vars, lits);
     }
 
-    bool arith_project_plugin::operator()(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
+    bool arith_project_plugin::project(model& model, app_ref_vector& vars, expr_ref_vector& lits) {
         vector<def> defs;
         return m_imp->project(model, vars, lits, defs, false);
     }

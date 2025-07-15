@@ -95,18 +95,28 @@ Equality solving using stochastic Nelson.
 #include "ast/sls/sls_seq_plugin.h"
 #include "ast/sls/sls_context.h"
 #include "ast/ast_pp.h"
-#include "ast/rewriter/seq_rewriter.h"
-#include "ast/rewriter/th_rewriter.h"
+#include "params/sls_params.hpp"
 
 
 namespace sls {
+
+    struct zstring_hash_proc {
+        unsigned operator()(zstring const & s) const {
+            auto str = s.encode();
+            return string_hash(str.c_str(), static_cast<unsigned>(s.length()), 17);
+        }
+    };
     
     seq_plugin::seq_plugin(context& c):
         plugin(c),
         seq(c.get_manager()),
-        a(c.get_manager()) 
+        a(c.get_manager()),
+        rw(c.get_manager()),
+        thrw(c.get_manager())
     {
         m_fid = seq.get_family_id();
+        sls_params p(c.get_params());
+        m_str_update_strategy = (edit_distance_strategy)p.str_update_strategy();
     }
     
     void seq_plugin::propagate_literal(sat::literal lit) {
@@ -114,10 +124,10 @@ namespace sls {
         auto e = ctx.atom(lit.var());
         if (!is_seq_predicate(e))
             return;
-        auto a = to_app(e);
         if (bval1(e) != lit.sign())
             return;
-        ctx.new_value_eh(e);        
+        // Literal not currently satisfied => report back to context
+        ctx.new_value_eh(e);
     }
     
     expr_ref seq_plugin::get_value(expr* e) {
@@ -138,6 +148,7 @@ namespace sls {
         for (expr* e : ctx.subterms()) {
             expr* x, * y, * z = nullptr;
             rational r;
+            // std::cout << "Checking "<< mk_pp(e, m) << std::endl;
             // coherence between string / integer functions is delayed
             // so we check and enforce it here.
             if (seq.str.is_length(e, x) && seq.is_string(x->get_sort())) {
@@ -148,20 +159,22 @@ namespace sls {
                 // set e to length of x or
                 // set x to a string of length e
 
-                if (r == 0 || sx.length() == 0) {
-                    verbose_stream() << "todo-create lemma: len(x) = 0 <=> x = \"\"\n";
-                    // create a lemma: len(x) = 0 => x = ""
-                }
+                if (r == 0 || sx.length() == 0)
+                    // create lemma: len(x) = 0 <=> x = ""
+                    ctx.add_constraint(m.mk_eq(m.mk_eq(e, a.mk_int(0)), m.mk_eq(x, seq.str.mk_string(""))));
+
                 if (ctx.rand(2) == 0 && update(e, rational(sx.length())))
                     return false;
+                // TODO: Why from the beginning? We can take any subsequence of given length
                 if (r < sx.length() && update(x, sx.extract(0, r.get_unsigned())))
                     return false;
                 if (update(e, rational(sx.length())))
                     return false;
-                if (r > sx.length() && update(x, sx + zstring(m_chars[ctx.rand(m_chars.size())])))
+                if (r > sx.length() && update(x, sx + zstring(random_char())))
                     return false;
-                verbose_stream() << mk_pp(x, m) << " = " << sx << " " << ve << "\n";
-                NOT_IMPLEMENTED_YET();
+                // This case seems to imply unsat
+                verbose_stream() << "The input might be unsat\n"; // example to trigger: (assert (and (>= (str.len X) 2) (= (str.substr X 0 1) "")))
+                VERIFY(false);
                 return false;
             }
 
@@ -184,8 +197,27 @@ namespace sls {
                     update(e, rational(sx.indexofu(sy, val_z.get_unsigned())));
                 return false;
             }
-            // last-index-of
-            // str-to-int
+            if (seq.str.is_last_index(e, x, y) && seq.is_string(x->get_sort())) {
+                // TODO
+                NOT_IMPLEMENTED_YET();
+            }
+            if (seq.str.is_stoi(e, x) && seq.is_string(x->get_sort())) {
+                auto sx = strval0(x);
+                rational val_e;
+                VERIFY(a.is_numeral(ctx.get_value(e), val_e));
+                // std::cout << "stoi: \"" << sx << "\" -> " << val_e << std::endl;
+                if (!is_num_string(sx)) {
+                    if (val_e == -1)
+                        continue;
+                    update(e, rational(-1));
+                    return false;
+                }
+                rational val_x(sx.encode().c_str());
+                if (val_e == val_x)
+                    continue;
+                update(e, val_x);
+                return false;
+            }
         }
         return true;
     }
@@ -244,7 +276,7 @@ namespace sls {
     ptr_vector<expr> const& seq_plugin::lhs(expr* eq) {
         auto& ev = get_eval(eq);
         if (ev.lhs.empty()) {
-            expr* x, * y;
+            expr* x = nullptr, * y = nullptr;
             VERIFY(m.is_eq(eq, x, y));
             seq.str.get_concat(x, ev.lhs);
             seq.str.get_concat(y, ev.rhs);
@@ -265,6 +297,7 @@ namespace sls {
         return e.rhs;
     }
 
+    // Gets the currently assumed value for e
     zstring& seq_plugin::strval0(expr* e) {
         SASSERT(seq.is_string(e->get_sort()));
         return get_eval(e).val0.svalue;
@@ -299,7 +332,7 @@ namespace sls {
     }
 
     bool seq_plugin::bval1_seq(app* e) {
-        expr* a, *b;
+        expr* a = nullptr, *b = nullptr;
         SASSERT(e->get_family_id() == seq.get_family_id());
         switch (e->get_decl_kind()) {
         case OP_SEQ_CONTAINS: 
@@ -343,8 +376,8 @@ namespace sls {
         return false;
     }
 
+    // Evaluate e using the assumed values of its arguments and cache + return the result
     zstring const& seq_plugin::strval1(expr* e) {
-        SASSERT(is_app(e));
         SASSERT(seq.is_string(e->get_sort()));
         auto & ev = get_eval(e);
         if (ev.is_value)
@@ -366,7 +399,8 @@ namespace sls {
                     ev.val0.svalue = str;
                     return ev.val0.svalue;
                 }
-                NOT_IMPLEMENTED_YET();                
+                NOT_IMPLEMENTED_YET();  
+                return ev.val0.svalue;
             }
             case OP_SEQ_EMPTY: {
                 ev.val0.svalue = zstring();
@@ -380,7 +414,7 @@ namespace sls {
                 return ev.val1.svalue;
             }
             case OP_SEQ_EXTRACT: {
-                expr* x, * offset, * len;
+                expr* x = nullptr, * offset = nullptr, * len = nullptr;
                 VERIFY(seq.str.is_extract(e, x, offset, len));
                 zstring r = strval0(x);
                 expr_ref offset_e = ctx.get_value(offset);
@@ -399,7 +433,7 @@ namespace sls {
                 }
             }
             case OP_SEQ_AT: {
-                expr* x, * offset;
+                expr* x = nullptr, * offset = nullptr;
                 VERIFY(seq.str.is_at(e, x, offset));
                 zstring r = strval0(x);
                 expr_ref offset_e = ctx.get_value(offset);
@@ -415,7 +449,7 @@ namespace sls {
                 }
             }
             case OP_SEQ_REPLACE: {
-                expr* x, * y, * z;
+                expr* x = nullptr, * y = nullptr, * z = nullptr;
                 VERIFY(seq.str.is_replace(e, x, y, z));
                 zstring r = strval0(x);
                 zstring s = strval0(y);
@@ -423,12 +457,35 @@ namespace sls {
                 ev.val1.svalue = r.replace(s, t);
                 return ev.val1.svalue;
             }
+            case OP_SEQ_REPLACE_ALL: {
+                expr* x = nullptr, * y = nullptr, * z = nullptr;
+                VERIFY(seq.str.is_replace_all(e, x, y, z));
+                zstring s1 = strval0(x);
+                zstring s2 = strval0(y);
+                zstring c = strval0(z);
+                
+                if (s1.length() < s2.length()) 
+                    ev.val1.svalue = s1;
+                else {
+                    zstring r;
+                    for (unsigned i = 0; i < s1.length(); ++i) {
+                        if (s1.length() >= s2.length() + i && 
+                            s2 == s1.extract(i, s2.length())) {
+                            r += c;
+                            i += s2.length() - 1;
+                        }
+                        else 
+                            r += zstring(s1[i]);
+                    }
+                    ev.val1.svalue = r;
+                }
+                return ev.val1.svalue;                                                
+            }
             case OP_SEQ_NTH:
             case OP_SEQ_NTH_I:
             case OP_SEQ_NTH_U:
             case OP_SEQ_REPLACE_RE_ALL:
             case OP_SEQ_REPLACE_RE:
-            case OP_SEQ_REPLACE_ALL:
             case OP_SEQ_MAP:
             case OP_SEQ_MAPI:
             case OP_SEQ_FOLDL:
@@ -505,6 +562,8 @@ namespace sls {
             return true;
         if (seq.is_string(e->get_sort()) && strval0(e) == strval1(e))
             return true;
+        SASSERT(!seq.is_string(e->get_sort()) || strval0(e).length() >= get_eval(e).min_length);
+        SASSERT(!seq.is_string(e->get_sort()) || strval0(e).length() <= get_eval(e).max_length);
         if (e->get_family_id() == m_fid)
             return repair_down_seq(e);
         if (m.is_eq(e))
@@ -516,47 +575,54 @@ namespace sls {
     }
 
     bool seq_plugin::repair_down_str_length(app* e) {
-        expr* x;
+        expr* x = nullptr;
         VERIFY(seq.str.is_length(e, x));
         expr_ref len = ctx.get_value(e);
         rational r;
         unsigned len_u;
         VERIFY(a.is_numeral(len, r));
+        // std::cout << "repair-str-len: " << mk_pp(e, m) << ": " << r << "" << std::endl;
         if (!r.is_unsigned())
             return false;
         zstring val_x = strval0(x);
+        // std::cout << "Arg: \"" << val_x << "\"" << std::endl;
         len_u = r.get_unsigned();
         if (len_u == val_x.length())
             return true;
         if (len_u < val_x.length()) {
-            for (unsigned i = 0; i + len_u < val_x.length(); ++i) 
-                m_str_updates.push_back({ x, val_x.extract(i, len_u), 1 });            
+            for (unsigned i = 0; i + len_u < val_x.length(); ++i) {
+                add_str_update(x, val_x, val_x.extract(i, len_u), 1);
+            }
+            return apply_update();
         }
-        if (!m_chars.empty()) {
-            zstring ch(m_chars[ctx.rand(m_chars.size())]);
-            m_str_updates.push_back({ x, val_x + ch, 1 });
-            m_str_updates.push_back({ x, ch + val_x, 1 });            
+        zstring val_x_new = val_x;
+        for (unsigned i = val_x.length(); i < len_u; ++i) {
+            val_x_new += zstring(random_char());
         }
-        return apply_update();
+        return update(x, val_x_new);
     }
 
     void seq_plugin::repair_up_str_stoi(app* e) {
-        expr* x;
+        expr* x = nullptr;
         VERIFY(seq.str.is_stoi(e, x));
 
         rational val_e;
-        rational val_x(strval0(x).encode().c_str());
         VERIFY(a.is_numeral(ctx.get_value(e), val_e));
-        if (val_e.is_unsigned() && val_e == val_x)
+        // std::cout << "repair-up-str-stoi " << mk_pp(e, m) << ": " << val_e << "; Arg: \""<< strval0(x) << "\"" << std::endl;
+        if (!is_num_string(strval0(x))) {
+            if (val_e == -1)
+                return;
+            update(e, rational(-1));
             return;
-        if (val_x < 0)
-            update(e, rational(0));
-        else
-            update(e, val_x);
+        }
+        rational val_x(strval0(x).encode().c_str());
+        if (val_e == val_x)
+            return;
+        update(e, val_x);
     }
 
     void seq_plugin::repair_up_str_itos(app* e) {
-        expr* x;
+        expr* x = nullptr;
         VERIFY(seq.str.is_itos(e, x));
         rational val_x;
         VERIFY(a.is_numeral(ctx.get_value(x), val_x));
@@ -570,14 +636,14 @@ namespace sls {
     }
 
     void seq_plugin::repair_up_str_length(app* e) {
-        expr* x;
+        expr* x = nullptr;
         VERIFY(seq.str.is_length(e, x));
         zstring val_x = strval0(x);
         update(e, rational(val_x.length()));
     }
 
     void seq_plugin::repair_up_str_indexof(app* e) {
-        expr* x, * y, * z = nullptr;
+        expr* x = nullptr, * y = nullptr, * z = nullptr;
         VERIFY(seq.str.is_index(e, x, y, z) || seq.str.is_index(e, x, y));
         zstring val_x = strval0(x);
         zstring val_y = strval0(y);
@@ -604,35 +670,39 @@ namespace sls {
 
     bool seq_plugin::repair_down_str_eq(app* e) {
         bool is_true = ctx.is_true(e);
-        expr* x, * y;
+        expr* x = nullptr, * y = nullptr;
         VERIFY(m.is_eq(e, x, y));
         IF_VERBOSE(3, verbose_stream() << is_true << ": " << mk_bounded_pp(e, m, 3) << "\n");
         if (ctx.is_true(e)) {
-            if (false && ctx.rand(2) != 0 && repair_down_str_eq_edit_distance_incremental(e))
-                return true;
+            // equality
+            //if (false && ctx.rand(2) != 0 && repair_down_str_eq_edit_distance_incremental(e))
+            //    return true;
             if (ctx.rand(2) != 0 && repair_down_str_eq_edit_distance(e))
                 return true;
             if (ctx.rand(2) != 0 && repair_down_str_eq_unify(e))
                 return true;
             if (!is_value(x))
-                m_str_updates.push_back({ x, strval1(y), 1 });
+                add_str_update(x, strval0(x), strval1(y), 1);
             if (!is_value(y))
-                m_str_updates.push_back({ y, strval1(x), 1 });            
+                add_str_update(y, strval0(y), strval1(x), 1);
+            if (m_str_updates.empty() && repair_down_str_eq_edit_distance(e))
+                return true;
         }
         else {
+            // disequality
             if (!is_value(x) && !m_chars.empty()) {
-                zstring ch(m_chars[ctx.rand(m_chars.size())]);
-                m_str_updates.push_back({ x, strval1(y) + ch, 1 });
-                m_str_updates.push_back({ x, ch + strval1(y), 1 });
-                m_str_updates.push_back({ x, ch, 1 });
-                m_str_updates.push_back({ x, zstring(), 1 });
+                zstring ch(random_char());
+                add_str_update(x, strval0(x), strval1(y) + ch, 1);
+                add_str_update(x, strval0(x), ch + strval1(y), 1);
+                add_str_update(x, strval0(x), ch, 1);
+                add_str_update(x, strval0(x), zstring(), 1);
             }
             if (!is_value(y) && !m_chars.empty()) {
-                zstring ch(m_chars[ctx.rand(m_chars.size())]);
-                m_str_updates.push_back({ y, strval1(x) + ch, 1 });
-                m_str_updates.push_back({ y, ch + strval1(x), 1 });
-                m_str_updates.push_back({ x, ch, 1 });
-                m_str_updates.push_back({ x, zstring(), 1});
+                zstring ch(random_char());
+                add_str_update(y, strval0(y), strval1(x) + ch, 1);
+                add_str_update(y, strval0(y), ch + strval1(x), 1);
+                add_str_update(y, strval0(y), ch, 1);
+                add_str_update(y, strval0(y), zstring(), 1);
             }
         }
         return apply_update();
@@ -662,25 +732,75 @@ namespace sls {
         return d[n][m];
     }
 
+    void seq_plugin::add_edit_updates(ptr_vector<expr> const& w, zstring const& val, zstring const& val_other, uint_set const& chars, unsigned diff) {
+        if (m_str_update_strategy == EDIT_CHAR)
+            add_char_edit_updates(w, val, val_other, chars);
+        else if (m_str_update_strategy == EDIT_SUBSTR)
+            add_substr_edit_updates(w, val, val_other, chars);
+        else {
+            if (val.length() / 3 >= diff - 1)
+                add_char_edit_updates(w, val, val_other, chars);
+            else
+                add_substr_edit_updates(w, val, val_other, chars);
+        }
+    }
 
-    void seq_plugin::add_edit_updates(ptr_vector<expr> const& w, zstring const& val, zstring const& val_other, uint_set const& chars) {
+    void seq_plugin::add_substr_edit_updates(ptr_vector<expr> const& w, zstring const& val, zstring const& val_other, uint_set const& chars) {
+        // all consecutive subsequences of val_other
+        hashtable<zstring, zstring_hash_proc, default_eq<zstring>> set;
+        set.insert(zstring(""));
+        for (unsigned i = 0; i < val_other.length(); ++i) {
+            for (unsigned j = 1; j <= val_other.length() - i; ++j) {
+                zstring sub = val_other.extract(i, j);
+                if (set.contains(sub))
+                    break;
+                set.insert(sub);
+            }
+        }
+
+        for (auto x : w) {
+            if (is_value(x))
+                continue;
+            zstring const& a = strval0(x);
+            for (auto& seq : set) {
+                if (seq == a)
+                    continue;
+                add_str_update(x, a, seq, 1);
+            }
+        }
+    }
+
+    void seq_plugin::add_char_edit_updates(ptr_vector<expr> const& w, zstring const& val, zstring const& val_other, uint_set const& chars) {
         for (auto x : w) {
             if (is_value(x))
                 continue;
             zstring const & a = strval0(x);
             for (auto ch : chars)
-                m_str_updates.push_back({ x, a + zstring(ch), 1 });
+                add_str_update(x, a, a + zstring(ch), 1);
             for (auto ch : chars)
-                m_str_updates.push_back({ x, zstring(ch) + a, 1 });
-            if (a.length() > 0) {
+                add_str_update(x, a, zstring(ch) + a, 1);
+            if (!a.empty()) {
                 zstring b = a.extract(0, a.length() - 1);
-                m_str_updates.push_back({ x, b, 1 }); // truncate a
-                for (auto ch : chars)
-                    m_str_updates.push_back({ x, b + zstring(ch), 1 }); // replace last character in a by ch
-                b = a.extract(1, a.length() - 1);
-                m_str_updates.push_back({ x, b, 1 }); // truncate a
-                for (auto ch : chars)
-                    m_str_updates.push_back({ x, zstring(ch) + b, 1 }); // replace first character in a by ch
+                unsigned remC = a[a.length() - 1];
+                add_str_update(x, a, b, 1); // truncate a
+                for (auto ch : chars) {
+                    if (ch == remC)
+                        // We would end up with the initial string
+                        // => this "no-op" could be spuriously considered a solution (also it does not help)
+                        continue;
+                    add_str_update(x, a, b + zstring(ch), 1); // replace last character in a by ch
+                }
+                if (a.length() > 1) {
+                    // Otw. we just get the same set of candidates another time
+                    b = a.extract(1, a.length() - 1);
+                    remC = a[0];
+                    add_str_update(x, a, b, 1); // truncate a
+                    for (auto ch : chars) {
+                        if (ch == remC)
+                            continue;
+                        add_str_update(x, a, zstring(ch) + b, 1); // replace first character in a by ch
+                    }
+                }
             }
         }
         unsigned first_diff = UINT_MAX;
@@ -699,12 +819,14 @@ namespace sls {
                     if (is_value(x))
                         break;
                     auto new_val = val_x.extract(0, first_diff) + zstring(val_other[first_diff]) + val_x.extract(first_diff + 1, val_x.length());
-                    m_str_updates.push_back({ x, new_val, 1 });
+                    if (val_x != new_val)
+                        add_str_update(x, val_x, new_val, 1);
                     break;
                 }
                 index -= len_x;
             }
         }
+#if 0
         unsigned last_diff = 0;
         for (unsigned i = 1; i <= val.length() && i <= val_other.length(); ++i) {
             if (val[val.length() - i] != val_other[val_other.length() - i]) {
@@ -713,7 +835,7 @@ namespace sls {
             }
         }
 
-#if 0
+
         if (last_diff != 0) {
             unsigned index = last_diff;
             for (auto x : w) {
@@ -723,7 +845,7 @@ namespace sls {
                     if (is_value(x))
                         break;
                     auto new_val = val_x.extract(0, len_x - last_diff) + zstring(val_other[val_other.length() - last_diff]) + val_x.extract(len_x - last_diff + 1, len_x);
-                    m_str_updates.push_back({ x, new_val, 1 });
+                    add_str_update(x, val_x, new_val, 1);
                     break;
                 }
                 index -= len_x;
@@ -815,6 +937,35 @@ namespace sls {
         return u[n][m];
     }
 
+    int seq_plugin::add_str_update(expr* e, zstring const& currVal, zstring const& val, double score) {
+        eval& ev = get_eval(e);
+        zstring new_v = trunc_pad_to_fit(ev.min_length, ev.max_length, val);
+        if (new_v == currVal) {
+            if (new_v.length() > ev.min_length)
+                // Remove a character
+                new_v = trunc_pad_to_fit(new_v.length() - 1, new_v);
+            else if (new_v.length() < ev.max_length)
+                // Add a random character
+                new_v = trunc_pad_to_fit(new_v.length() + 1, new_v);
+            else
+                // We fail
+                return 0;
+        }
+
+        m_str_updates.push_back({ e, new_v, score });
+        return new_v.length() == val.length() ? 0 : (new_v.length() > val.length() ? 1 : -1);
+    }
+
+    zstring seq_plugin::trunc_pad_to_fit(unsigned min_length, unsigned max_length, zstring const& s) const {
+        if (s.length() > max_length)
+            return s.extract(0, max_length);
+        if (s.length() >= min_length)
+            return s;
+        zstring r = s;
+        while (r.length() < min_length)
+            r += zstring(random_char());
+        return r;
+    }
 
     bool seq_plugin::repair_down_str_eq_edit_distance_incremental(app* eq) {        
         auto const& L = lhs(eq);
@@ -861,7 +1012,7 @@ namespace sls {
                     i -= value.length();
                 else {
                     if (!is_value(x))
-                        m_str_updates.push_back({ x, value.extract(0, i) + value.extract(i + 1, value.length()), 1 });
+                        add_str_update(x, value, value.extract(0, i) + value.extract(i + 1, value.length()), 1);
                     break;
                 }
             }
@@ -876,7 +1027,7 @@ namespace sls {
                     continue;
                 }
                 if (!is_value(x))
-                    m_str_updates.push_back({ x, value.extract(0, j) + zstring(ch) + value.extract(j, value.length()), 1 });
+                    add_str_update(x, value, value.extract(0, j) + zstring(ch) + value.extract(j, value.length()), 1);
                 if (j < value.length())
                     break;
             }
@@ -889,7 +1040,7 @@ namespace sls {
                     j -= value.length();
                 else {
                     if (!is_value(x))
-                        m_str_updates.push_back({ x, value.extract(0, j) + zstring(ch) + value.extract(j + 1, value.length()), 1 });
+                        add_str_update(x, value, value.extract(0, j) + zstring(ch) + value.extract(j + 1, value.length()), 1);
                     break;
                 }
             }
@@ -932,15 +1083,17 @@ namespace sls {
                 b_chars.insert(ch);
             b += strval0(y);
         }
+
         if (a == b)
-            return update(eq->get_arg(0), a) && update(eq->get_arg(1), b);    
+            return true;
+        // return update(eq->get_arg(0), a) && update(eq->get_arg(1), b);
 
         unsigned diff = edit_distance(a, b);     
 
         //verbose_stream() << "solve: " << diff << " " << a << " " << b << "\n";
 
-        add_edit_updates(L, a, b, b_chars);
-        add_edit_updates(R, b, a, a_chars);
+        add_edit_updates(L, a, b, b_chars, diff);
+        add_edit_updates(R, b, a, a_chars, diff);
 
         for (auto& [x, s, score] : m_str_updates) {
             a.reset();
@@ -998,9 +1151,9 @@ namespace sls {
             if (vi.length() == i && vj.length() == j) {
                 score *= 2;
                 if (nj + 1 < R.size() && !strval0(R[nj + 1]).empty())
-                    m_str_updates.push_back({ xi, vi + zstring(strval0(R[nj + 1])[0]), score });
+                    add_str_update(xi, vi, vi + zstring(strval0(R[nj + 1])[0]), score);
                 if (ni + 1 < L.size() && !strval0(L[ni + 1]).empty())
-                    m_str_updates.push_back({ yj, vj + zstring(strval0(L[ni + 1])[0]), score });
+                    add_str_update(yj, vj, vj + zstring(strval0(L[ni + 1])[0]), score);
                 i = 0;
                 j = 0;
                 ++ni;
@@ -1010,7 +1163,7 @@ namespace sls {
             if (vi.length() == i) {
                 // xi -> vi + vj[j]
                 SASSERT(j < vj.length());
-                m_str_updates.push_back({ xi, vi + zstring(vj[j]), score});
+                add_str_update(xi, vi, vi + zstring(vj[j]), score);
                 score *= 2;
                 i = 0;
                 ++ni;
@@ -1019,7 +1172,7 @@ namespace sls {
             if (vj.length() == j) {
                 // yj -> vj + vi[i]
                 SASSERT(i < vi.length());
-                m_str_updates.push_back({ yj, vj + zstring(vi[i]), score });
+                add_str_update(yj, vj, vj + zstring(vi[i]), score);
                 score *= 2;
                 j = 0;
                 ++nj;
@@ -1039,22 +1192,22 @@ namespace sls {
                 continue;
             }
             if (!is_value(xi)) {
-                m_str_updates.push_back({ xi, vi.extract(0, i), score });
-                m_str_updates.push_back({ xi, vi.extract(0, i) + zstring(vj[j]), score});                
+                add_str_update(xi, vi, vi.extract(0, i), score);
+                add_str_update(xi, vi, vi.extract(0, i) + zstring(vj[j]), score);
             }
             if (!is_value(yj)) {
-                m_str_updates.push_back({ yj, vj.extract(0, j), score });
-                m_str_updates.push_back({ yj, vj.extract(0, j) + zstring(vi[i]), score });
+                add_str_update(yj, vj, vj.extract(0, j), score);
+                add_str_update(yj, vj, vj.extract(0, j) + zstring(vi[i]), score);
             }
             break;
         }
         for (; ni < L.size(); ++ni) 
             if (!is_value(L[ni]) && !strval0(L[ni]).empty())
-                m_str_updates.push_back({ L[ni], zstring(), 1 });
+                add_str_update(L[ni], strval0(L[ni]), zstring(), 1);
         
         for (; nj < R.size(); ++nj)
             if (!is_value(R[nj]) && !strval0(R[nj]).empty())
-                m_str_updates.push_back({ R[nj], zstring(), 1 });
+                add_str_update(R[nj], strval0(R[nj]), zstring(), 1);
 
         return apply_update();
     }
@@ -1158,17 +1311,17 @@ namespace sls {
     }
 
     bool seq_plugin::repair_down_str_replace(app* e) {
-        expr* x, * y, * z;
+        expr* x = nullptr, * y = nullptr, * z = nullptr;
         VERIFY(seq.str.is_replace(e, x, y, z));
         zstring r = strval0(e);
         if (r == strval1(e))
             return true;
         if (!is_value(x))
-            m_str_updates.push_back({ x, r, 1 });
+            add_str_update(x, strval0(x), r, 1);
         if (!is_value(y))
-            m_str_updates.push_back({ y, zstring(), 1});
+            add_str_update(y, strval0(y), zstring(), 1);
         if (!is_value(z))
-            m_str_updates.push_back({ z, zstring(), 1 });
+            add_str_update(z, strval0(z), zstring(), 1);
 
         // TODO some more possible ways, also deal with y, z if they are not values.
         // apply reverse substitution of r to replace z by y, update x to this value
@@ -1178,7 +1331,7 @@ namespace sls {
     }
 
     bool seq_plugin::repair_down_str_itos(app* e) {
-        expr* x;
+        expr* x = nullptr;
         VERIFY(seq.str.is_itos(e, x));
         zstring se = strval0(e);
         rational r(se.encode().c_str());
@@ -1190,25 +1343,39 @@ namespace sls {
     }
 
     bool seq_plugin::repair_down_str_stoi(app* e) {
-        expr* x;
+        expr* x = nullptr;
         rational r;
         VERIFY(seq.str.is_stoi(e, x));
         VERIFY(a.is_numeral(ctx.get_value(e), r) && r.is_int());
-        if (r < 0)
+        // std::cout << "repair-down " << mk_pp(e, m) << ": \"" << strval0(x) << "\" -> " << r << std::endl;
+        // It might be satisfied already (not checked before, as the value is of integer sort)
+        if (!is_num_string(strval0(x))) {
+            if (r == -1)
+                return true;
+        }
+        else {
+            if (r == rational(strval0(x).encode().c_str()))
+                return true;
+        }
+        if (r == -1)
+            // TODO: Add some random character somewhere or make it empty
+            return false;
+        if (r < -1)
             return false;
         zstring r_val(r.to_string());
-        m_str_updates.push_back({ x, r_val, 1 });
+        add_str_update(x, strval0(x), r_val, 1);
         return apply_update();        
     }
 
     bool seq_plugin::repair_down_str_at(app* e) {
-        expr* x, * y;
+        expr* x = nullptr, * y = nullptr;
         VERIFY(seq.str.is_at(e, x, y));
         zstring se = strval0(e);
-        verbose_stream() << "repair down at " << mk_pp(e, m) << " " << se << "\n";
+        // std::cout << "repair-str-at: " << mk_pp(e, m) << ": \"" << se << "\"" << std::endl;
         if (se.length() > 1)
             return false;
         zstring sx = strval0(x);
+        // std::cout << "Arg: " << sx << std::endl;
         unsigned lenx = sx.length();
         expr_ref idx = ctx.get_value(y);
         rational r;
@@ -1217,9 +1384,9 @@ namespace sls {
         if (se.length() == 0) {
             // index should be out of bounds of a.
             if (!is_value(x)) {
-                m_str_updates.push_back({ x, zstring(), 1 });
+                add_str_update(x, sx, zstring(), 1);
                 if (lenx > r && r >= 0) 
-                    m_str_updates.push_back({ x, sx.extract(0, r.get_unsigned()), 1 });                
+                    add_str_update(x, sx, sx.extract(0, r.get_unsigned()), 1);
             }
             if (!m.is_value(y)) {
                 m_int_updates.push_back({ y, rational(lenx), 1 });
@@ -1232,12 +1399,19 @@ namespace sls {
             // index should be in bounds of a.
             if (!is_value(x)) {
                 if (lenx > r && r >= 0) {
-                    zstring new_x = sx.extract(0, r.get_unsigned()) + se + sx.extract(r.get_unsigned() + 1, lenx);
-                    m_str_updates.push_back({ x, new_x, 1 });
+                    // insert or replace the desired character
+                    zstring p = sx.extract(0, r.get_unsigned()) + se;
+                    zstring new_x = p + sx.extract(r.get_unsigned() + 1, lenx - (r.get_unsigned() + 1));
+                    add_str_update(x, sx, new_x, 1);
+                    new_x = p + sx.extract(r.get_unsigned(), lenx - r.get_unsigned());
+                    add_str_update(x, sx, new_x, 1);
                 }
-                if (lenx <= r) {
-                    zstring new_x = sx + se;
-                    m_str_updates.push_back({ x, new_x, 1 });
+                else {
+                    zstring new_x = sx;
+                    while (new_x.length() < r)
+                        new_x += zstring(random_char());
+                    new_x = trunc_pad_to_fit(get_eval(x).min_length, get_eval(x).max_length, new_x + se);
+                    add_str_update(x, sx, new_x, 1);
                 }
             }
             if (!m.is_value(y)) {
@@ -1251,7 +1425,7 @@ namespace sls {
     }
 
     bool seq_plugin::repair_down_str_indexof(app* e) {
-        expr* x, * y, * offset = nullptr;
+        expr* x = nullptr, * y = nullptr, * offset = nullptr;
         VERIFY(seq.str.is_index(e, x, y, offset) || seq.str.is_index(e, x, y));
         rational value;
         VERIFY(a.is_numeral(ctx.get_value(e), value) && value.is_int());        
@@ -1268,9 +1442,8 @@ namespace sls {
 
         // set to not a member:
         if (value == -1) {
-            m_str_updates.push_back({ y, zstring(m_chars[ctx.rand(m_chars.size())]), 1 });
-            if (lenx > 0)
-                m_str_updates.push_back({ x, zstring(), 1 }); 
+            add_str_update(y, sy, zstring(random_char()), 1);
+            add_str_update(x, sx, zstring(), 1);
         }
         // change x:
         // insert y into x at offset
@@ -1279,7 +1452,7 @@ namespace sls {
             zstring prefix = sx.extract(0, offs);
             for (unsigned i = 0; i <= leny && offs + i < lenx; ++i) {
                 zstring suffix = sx.extract(offs + i, lenx);
-                m_str_updates.push_back({ x, prefix + sy + suffix, 1 });
+                add_str_update(x, sx, prefix + sy + suffix, 1);
             }
         }
 
@@ -1288,7 +1461,7 @@ namespace sls {
         if (offset_r.is_unsigned() && 0 <= value && offset_u + value < lenx) {
             unsigned offs = offset_u + value.get_unsigned();
             for (unsigned i = offs; i < lenx; ++i) 
-                m_str_updates.push_back({ y, sx.extract(offs, i - offs + 1), 1 });            
+                add_str_update(y, sy, sx.extract(offs, i - offs + 1), 1);
         }
 
         // change offset:
@@ -1301,45 +1474,44 @@ namespace sls {
     }
 
     bool seq_plugin::repair_down_str_prefixof(app* e) {
-        expr* a, * b;
+        expr* a = nullptr, * b = nullptr;
         VERIFY(seq.str.is_prefix(e, a, b));
         zstring sa = strval0(a);
         zstring sb = strval0(b);
         unsigned lena = sa.length();
         unsigned lenb = sb.length();
-        verbose_stream() << "repair prefixof " << mk_bounded_pp(e, m) << "\n";
         if (ctx.is_true(e)) {
             unsigned n = std::min(lena, lenb);
             if (!is_value(a)) {                
                 for (unsigned i = 0; i < n; ++i)
-                    m_str_updates.push_back({ a, sb.extract(0, i), 1 });
+                    add_str_update(a, sa, sb.extract(0, i), 1);
             }
             if (!is_value(b)) {
                 zstring new_b = sa + sb.extract(sa.length(), lenb);
-                m_str_updates.push_back({ b, new_b, 1 });
-                m_str_updates.push_back({ b, sa, 1 });
+                add_str_update(b, sb, new_b, 1);
+                add_str_update(b, sb, sa, 1);
             }
         }
         else {
             SASSERT(lena <= lenb);
             if (!is_value(a)) {
-                zstring ch = zstring(m_chars[ctx.rand(m_chars.size())]);
-                m_str_updates.push_back({ a, sa + ch, 1 });
-                m_str_updates.push_back({ a, ch + sa, 1 });
-                m_str_updates.push_back({ a, sb + ch, 1 });
-                m_str_updates.push_back({ a, ch + sb, 1 });
+                zstring ch = zstring(random_char());
+                add_str_update(a, sa, sa + ch, 1);
+                add_str_update(a, sa, ch + sa, 1);
+                add_str_update(a, sa, sb + ch, 1);
+                add_str_update(a, sa, ch + sb, 1);
             }
             if (!is_value(b)) {
-                zstring ch = zstring(m_chars[ctx.rand(m_chars.size())]);
-                m_str_updates.push_back({ b, ch + sb, 1 });
-                m_str_updates.push_back({ b, zstring(), 1});
+                zstring ch = zstring(random_char());
+                add_str_update(b, sb, ch + sb, 1);
+                add_str_update(b, sb, zstring(), 1);
             }
         }
         return apply_update();
     }
 
     bool seq_plugin::repair_down_str_suffixof(app* e) {
-        expr* a, * b;
+        expr* a = nullptr, * b = nullptr;
         VERIFY(seq.str.is_suffix(e, a, b));
         zstring sa = strval0(a);
         zstring sb = strval0(b);
@@ -1350,34 +1522,34 @@ namespace sls {
             unsigned n = std::min(lena, lenb);
             if (!is_value(a)) {
                 for (unsigned i = 0; i < n; ++i)
-                    m_str_updates.push_back({ a, sb.extract(lenb - i, i), 1 });
+                    add_str_update(a, sa, sb.extract(lenb - i, i), 1);
             }
             if (!is_value(b)) {
                 zstring new_b = sb.extract(0, lenb - n) + sa;
-                m_str_updates.push_back({ b, new_b, 1 });
-                m_str_updates.push_back({ b, sa, 1 });
+                add_str_update(b, sb, new_b, 1);
+                add_str_update(b, sb, sa, 1);
             }
         }
         else {
             SASSERT(lena <= lenb);
             if (!is_value(a)) {
-                zstring ch = zstring(m_chars[ctx.rand(m_chars.size())]);
-                m_str_updates.push_back({ a, ch + sa, 1 });
-                m_str_updates.push_back({ a, sa + ch, 1 });
-                m_str_updates.push_back({ a, ch + sb, 1 });
-                m_str_updates.push_back({ a, sb + ch, 1 });
+                zstring ch = zstring(random_char());
+                add_str_update(a, sa, ch + sa, 1);
+                add_str_update(a, sa, sa + ch, 1);
+                add_str_update(a, sa, ch + sb, 1);
+                add_str_update(a, sa, sb + ch, 1);
             }
             if (!is_value(b)) {
-                zstring ch = zstring(m_chars[ctx.rand(m_chars.size())]);
-                m_str_updates.push_back({ b, sb + ch, 1 });
-                m_str_updates.push_back({ b, zstring(), 1 });
+                zstring ch = zstring(random_char());
+                add_str_update(b, sb, sb + ch, 1);
+                add_str_update(b, sb, zstring(), 1);
             }
         }
         return apply_update();
     }
 
     bool seq_plugin::repair_down_str_contains(expr* e) {
-        expr* a, *b;
+        expr* a = nullptr, *b = nullptr;
         VERIFY(seq.str.is_contains(e, a, b));
         zstring sa = strval0(a);
         zstring sb = strval0(b);
@@ -1385,6 +1557,8 @@ namespace sls {
         unsigned lenb = sb.length();
 
         verbose_stream() << "repair contains " << mk_bounded_pp(e, m) << "\n";
+        verbose_stream() << mk_pp(a, m) << ": \"" << sa << "\"\n";
+        verbose_stream() << mk_pp(b, m) << ": \"" << sb << "\"\n";
 
         if (ctx.is_true(e)) {            
             // add b to a in front
@@ -1394,18 +1568,18 @@ namespace sls {
             // reduce size of b
 
             if (!is_value(a)) {
-                m_str_updates.push_back({ a, sb + sa, 1 });
-                m_str_updates.push_back({ a, sa + sb, 1 });
+                add_str_update(a, sa, sb + sa, 1);
+                add_str_update(a, sa, sa + sb, 1);
                 if (lena > 2) {
                     unsigned mid = ctx.rand(lena-2) + 1;
                     zstring sa1 = sa.extract(0, mid);
                     zstring sa2 = sa.extract(mid, lena - mid); 
-                    m_str_updates.push_back({ a, sa1 + sb + sa2, 1});
+                    add_str_update(a, sa, sa1 + sb + sa2, 1);
                 }
             }
             if (!is_value(b) && lenb > 0) {
-                m_str_updates.push_back({ b, sb.extract(0, lenb - 1), 1});
-                m_str_updates.push_back({ b, sb.extract(1, lenb - 1), 1});
+                add_str_update(b, sb, sb.extract(0, lenb - 1), 1);
+                add_str_update(b, sb, sb.extract(1, lenb - 1), 1);
             }
         }
         else {
@@ -1419,21 +1593,20 @@ namespace sls {
                 if (idx > 0)
                     su = sa.extract(0, idx);
                 su = su + sa.extract(idx + sb.length(), sa.length() - idx - sb.length());            
-                m_str_updates.push_back({a, su, 1});
+                add_str_update(a, sa, su, 1);
             }
             if (!m_chars.empty() && !is_value(b)) {
-                zstring sb1 = sb + zstring(m_chars[ctx.rand(m_chars.size())]);
-                zstring sb2 = zstring(m_chars[ctx.rand(m_chars.size())]) + sb;
-                m_str_updates.push_back({b, sb1, 1});
-                m_str_updates.push_back({b, sb2, 1});
+                add_str_update(b, sb, sb + zstring(random_char()), 1);
+                add_str_update(b, sb, zstring(random_char()) + sb, 1);
             }
         }
         return apply_update();
     }
 
     bool seq_plugin::repair_down_str_extract(app* e) {
-        expr* x, * offset, * len;
+        expr* x = nullptr, * offset = nullptr, * len = nullptr;
         VERIFY(seq.str.is_extract(e, x, offset, len));
+        SASSERT(strval0(e) != strval1(e));
         zstring v = strval0(e);
         zstring r = strval0(x);
         expr_ref offset_e = ctx.get_value(offset);
@@ -1441,18 +1614,38 @@ namespace sls {
         rational offset_val, len_val;
         VERIFY(a.is_numeral(offset_e, offset_val));
         VERIFY(a.is_numeral(len_e, len_val));
-        if (offset_val < 0)
-            return false;
-        if (len_val < 0)
-            return false;
-        SASSERT(offset_val.is_unsigned());
-        SASSERT(len_val.is_unsigned());
-        unsigned offset_u = offset_val.get_unsigned();
-        unsigned len_u = len_val.get_unsigned();
+
+        // std::cout << "repair extract " << mk_bounded_pp(e, m) << " := \"" << v << "\"" << std::endl;
+        // std::cout << "Args: \"" << r << "\" " << offset_val << " " << len_val << std::endl;
+
+        unsigned offset_u = offset_val.is_unsigned() ? offset_val.get_unsigned() : 0;
+        unsigned len_u = len_val.is_unsigned() ? len_val.get_unsigned() : 0;
+        bool has_empty = false;
+
+        if (offset_val.is_neg() || offset_val.get_unsigned() >= r.length()) {
+            has_empty = true;
+            for (unsigned i = 0; i < r.length(); i++)
+                m_int_updates.push_back({ offset, rational(i), 1 });
+        }
+
+        if (!len_val.is_pos()) {
+            has_empty = true;
+            for (unsigned i = 1; i + offset_u < r.length(); i++)
+                m_int_updates.push_back({ len, rational(i), 1 });
+        }
+
+        if (has_empty)
+            add_str_update(e, v, zstring(), 1);
+
         zstring prefix = r.extract(0, offset_u);
         zstring suffix = r.extract(offset_u + len_u, r.length());
         zstring new_r = prefix + v + suffix;
-        m_str_updates.push_back({ x, new_r, 1 });
+
+        new_r = trunc_pad_to_fit(get_eval(x).min_length, get_eval(x).max_length, new_r);
+
+        if (new_r != r)
+            add_str_update(x, r, new_r, 1);
+
         return apply_update();
     }
 
@@ -1464,15 +1657,15 @@ namespace sls {
         for (auto const& e : es)
             value += strval0(e);
         if (value == value0)
-            return true;     
+            return true;
         uint_set chars;
 
         for (auto ch : value0) 
-            chars.insert(ch);            
-
-        add_edit_updates(es, value, value0, chars);
+            chars.insert(ch);
 
         unsigned diff = edit_distance(value, value0);
+        add_edit_updates(es, value, value0, chars, diff);
+
         for (auto& [x, s, score] : m_str_updates) {
             value.reset();
             for (auto z : es) {
@@ -1541,6 +1734,7 @@ namespace sls {
 
 
     bool seq_plugin::apply_update() {
+        SASSERT(!m_str_updates.empty() || !m_int_updates.empty());
         double sum_scores = 0;
         for (auto const& [e, val, score] : m_str_updates)
             sum_scores += score;
@@ -1568,14 +1762,16 @@ namespace sls {
             if (!is_str_update) {
                 i = m_int_updates.size();
                 do {
-                    lim -= m_str_updates[--i].m_score;
+                    lim -= m_int_updates[--i].m_score;
                 } while (lim >= 0 && i > 0);
             }
             
             if (is_str_update) {
                 auto [e, value, score] = m_str_updates[i];
 
+                // std::cout << "Trying str-update: " <<  mk_pp(e, m) << " := \"" << value << "\"" << std::endl;
                 if (update(e, value)) {
+                    // std::cout << "Success" << std::endl;
                     IF_VERBOSE(3, verbose_stream() << "set value " << mk_bounded_pp(e, m) << " := \"" << value << "\"\n");
                     m_str_updates.reset();
                     m_int_updates.reset();
@@ -1591,7 +1787,9 @@ namespace sls {
 
                 IF_VERBOSE(3, verbose_stream() << "set value " << mk_bounded_pp(e, m) << " := " << value << "\n");
 
+                // std::cout << "Trying int-update: " <<  mk_pp(e, m) << " := " << value << std::endl;
                 if (update(e, value)) {
+                    // std::cout << "Success" << std::endl;
                     m_int_updates.reset();
                     m_str_updates.reset();
                     return true;
@@ -1602,12 +1800,15 @@ namespace sls {
             }
         }
 
+        // std::cout << "No candidate found" << std::endl;
         return false;
     }
 
     bool seq_plugin::update(expr* e, zstring const& value) {
-        if (value == strval0(e))
-            return true;
+        SASSERT(value != strval0(e));
+        // std::cout << "str-update " << mk_pp(e, m) << " := \"" << value << "\" [\"" << strval0(e) << "\"]" << std::endl;
+        // if (value == strval0(e))
+        //     return true;
         if (is_value(e))
             return false;
         if (get_eval(e).min_length > value.length() || get_eval(e).max_length < value.length())
@@ -1629,7 +1830,7 @@ namespace sls {
         expr_ref val(m);
         for (auto lit : ctx.unit_literals()) {
             auto e = ctx.atom(lit.var());
-            expr* x, * y, * z;
+            expr* x = nullptr, * y = nullptr, * z = nullptr;
             rational r;
             if (!lit.sign() && (a.is_le(e, x, y) || a.is_ge(e, y, x))) {
                 if (a.is_numeral(x, r) && r.is_unsigned() && seq.str.is_length(y, z)) {
@@ -1667,7 +1868,7 @@ namespace sls {
                 auto& ev = get_eval(t);
                 ev.max_length = 1;
             }
-            expr* x, * offset, * len;
+            expr* x = nullptr, * offset = nullptr, * len = nullptr;
             rational len_r;
             if (seq.str.is_extract(t, x, offset, len) && a.is_numeral(len, len_r)) {
                 auto& ev = get_eval(t);
@@ -1690,8 +1891,6 @@ namespace sls {
         auto e = ctx.atom(lit.var());
         if (!is_seq_predicate(e))
             return;
-        auto a = to_app(e);
-        // verbose_stream() << "repair " << lit << " " << mk_pp(e, m) << " " << bval1(e) << "\n";
         if (bval1(e) == lit.sign())
             ctx.flip(lit.var());
     }
@@ -1702,38 +1901,58 @@ namespace sls {
         return m.is_value(e);
     }    
 
+    bool seq_plugin::is_num_string(const zstring& s) {
+        bool is_valid = s.length() > 0;
+        for (unsigned i = 0; is_valid && i < s.length(); ++i) {
+            is_valid = s[i] >= '0' && s[i] <= '9';
+        }
+        return is_valid;
+    }
+
+
+    unsigned seq_plugin::random_char() const {
+        return m_chars.empty() ? 'a' : m_chars[ctx.rand(m_chars.size())];
+    }
+
     // Regular expressions
 
-    bool seq_plugin::is_in_re(zstring const& s, expr* r) {
-        expr_ref sval(seq.str.mk_string(s), m);
-        th_rewriter rw(m);
-        expr_ref in_re(seq.re.mk_in_re(sval, r), m);
-        rw(in_re);
-        SASSERT(m.limit().is_canceled() || m.is_true(in_re) || m.is_false(in_re));
-        return m.is_true(in_re);
+    bool seq_plugin::is_in_re(zstring const& s, expr* _r) {
+        expr_ref r(_r, m);
+        for (unsigned i = 0; i < s.length(); ++i) {
+            expr_ref ch(seq.str.mk_char(s[i]), m);
+            expr_ref r1 = rw.mk_derivative(ch, r);
+            if (seq.re.is_empty(r1))
+                return false;   
+            r = r1;
+        }
+        auto info = seq.re.get_info(r);
+        return info.nullable == l_true;
     }
 
     bool seq_plugin::repair_down_in_re(app* e) {
-        expr* x, * y;
+        expr* x = nullptr, * y = nullptr;
         VERIFY(seq.str.is_in_re(e, x, y));
         auto info = seq.re.get_info(y);
         if (!info.interpreted)
             return false;
         auto s = strval0(x);
-        expr_ref xval(seq.str.mk_string(s), m);
-        expr_ref in_re(seq.re.mk_in_re(xval, y), m);
-        th_rewriter rw(m);
-        rw(in_re);
-        SASSERT(m.limit().is_canceled() || m.is_true(in_re) || m.is_false(in_re));
-        if (m.is_true(in_re) == ctx.is_true(e))
+        bool in_re = is_in_re(s, y);
+        if (in_re == ctx.is_true(e))
             return true;
 
         if (is_value(x))
             return false;
 
+        {
+            zstring s1;
+            if (ctx.is_true(e) && l_true == rw.some_string_in_re(y, s1)) {
+                add_str_update(x, s, s1, 1);
+                return apply_update();
+            }
+        }
+
         vector<lookahead> lookaheads;
         expr_ref d_r(y, m);
-        seq_rewriter seqrw(m);
         for (unsigned i = 0; i < s.length(); ++i) {
             IF_VERBOSE(3, verbose_stream() << "Derivative " << s.extract(0, i) << ": " << d_r << "\n");
             if (seq.re.is_empty(d_r))
@@ -1741,7 +1960,7 @@ namespace sls {
             zstring prefix = s.extract(0, i);
             choose(d_r, 2, prefix, lookaheads);
             expr_ref ch(seq.str.mk_char(s[i]), m);
-            d_r = seqrw.mk_derivative(ch, d_r);            
+            d_r = rw.mk_derivative(ch, d_r);
         }
         unsigned current_min_length = UINT_MAX;
         if (!seq.re.is_empty(d_r)) {
@@ -1769,23 +1988,48 @@ namespace sls {
                 if (min_length < UINT_MAX && s.length() < str.length()) {
                     // reward small lengths
                     // penalize size differences (unless min_length decreases)
-                    score = 1 << (current_min_length - min_length);
+                    // TODO: fix this. this is pow(2.0, min_length - current_min_length) for double precision
+                    // but heuristic could be reconsidered
+                    score = 1 << (current_min_length - min_length); 
                     score /= ((double)abs((int)s.length() - (int)str.length()) + 1);
                 }
                 IF_VERBOSE(3, verbose_stream() << "prefix " << score << " " << min_length << ": " << str << "\n");
-                m_str_updates.push_back({ x, str, score });
+                add_str_update(x, s, str, score);
             }
         }
         else {
             for (auto& [str, min_length] : lookaheads)
-                m_str_updates.push_back({ x, str + zstring(m_chars[ctx.rand(m_chars.size())]), 1});
+                add_str_update(x, s, str + zstring(random_char()), 1);
         }
         return apply_update();
     }
 
     void seq_plugin::next_char(expr* r, unsigned_vector& chars) {
         SASSERT(seq.is_re(r));
-        expr* x, * y;
+#if 0
+        // TODO you can just walk the derivative directly
+        // it is an ite expression of the form
+        // if var = char then r1 else r2
+        // or
+        // if char1 <= var && var << char2 then r1 else r2 (from range expressions)
+        // check if r1 is non-empty.
+        // if r1 is empty, pick some variable other than char, char1, char2
+        // if r1 is non-empty pick char, [char1, char2]
+        seq_rewriter rw(m);
+        expr_ref dr(m);
+        dr = rw.mk_derivative(r);
+        ptr_buffer<expr> todo;
+        todo.push_back(dr);
+        while (!todo.empty()) {
+            expr* x, * y, * z;
+            expr* e = todo.back();
+            todo.pop_back();
+            if (!m.is_ite(e, x, y, z))
+                continue;
+            if (m.is_eq(x, ))
+        }
+#endif
+        expr* x = nullptr, * y = nullptr;
         zstring s;
         if (seq.re.is_concat(r, x, y)) {
             auto info = seq.re.get_info(x);
@@ -1800,6 +2044,13 @@ namespace sls {
         else if (seq.re.is_union(r, x, y)) {
             next_char(x, chars);
             next_char(y, chars);
+        }
+        else if (seq.re.is_intersection(r, x, y)) {
+            next_char(x, chars);
+            next_char(y, chars);
+        }
+        else if (seq.re.is_complement(r, x)) {
+
         }
         else if (seq.re.is_range(r, x, y)) {
             zstring s1, s2;
@@ -1819,12 +2070,14 @@ namespace sls {
         }
         else if (seq.re.is_full_seq(r)) {
             if (!m_chars.empty())
-                chars.push_back(m_chars[ctx.rand(m_chars.size())]);
+                chars.push_back(random_char());
         }
         else if (seq.re.is_full_char(r)) {
             if (!m_chars.empty())
-                chars.push_back(m_chars[ctx.rand(m_chars.size())]);
+                chars.push_back(random_char());
         }
+        else if (seq.re.is_loop(r))             
+            next_char(to_app(r)->get_arg(0), chars);       
         else {
             verbose_stream() << "regex nyi " << mk_bounded_pp(r, m) << "\n";
             NOT_IMPLEMENTED_YET();
@@ -1843,7 +2096,6 @@ namespace sls {
         chars.shrink((unsigned)(it - chars.begin()));
         for (auto ch : chars) {
             expr_ref c(seq.str.mk_char(ch), m);
-            seq_rewriter rw(m);
             expr_ref r2 = rw.mk_derivative(c, r);
             zstring prefix2 = prefix + zstring(ch);
             choose(r2, k - 1, prefix2, result);

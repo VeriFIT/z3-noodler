@@ -209,21 +209,10 @@ namespace api {
             invoke_error_handler(err);
         }
     }
-
-    char * context::mk_external_string(char const * str) {
-        m_string_buffer = str?str:"";
-        return const_cast<char *>(m_string_buffer.c_str());
-    }
-
-    char * context::mk_external_string(char const * str, unsigned n) {
-        m_string_buffer.clear();
-        m_string_buffer.append(str, n);
-        return const_cast<char *>(m_string_buffer.c_str());
-    }
     
-    char * context::mk_external_string(std::string && str) {
+    const char * context::mk_external_string(std::string && str) {
         m_string_buffer = std::move(str);
-        return const_cast<char *>(m_string_buffer.c_str());
+        return m_string_buffer.c_str();
     }
 
     expr * context::mk_numeral_core(rational const & n, sort * s) {
@@ -529,7 +518,7 @@ extern "C" {
         }
     }
 
-    Z3_API char const * Z3_get_error_msg(Z3_context c, Z3_error_code err) {
+    Z3_string Z3_API Z3_get_error_msg(Z3_context c, Z3_error_code err) {
         LOG_Z3_get_error_msg(c, err);
         return _get_error_msg(c, err);
     }

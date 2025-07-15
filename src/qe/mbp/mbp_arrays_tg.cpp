@@ -13,14 +13,12 @@ Author:
 
     Hari Govind V K (hgvk94) 2023-03-07
 
-Revision History:
-
 --*/
 
-#include "qe/mbp/mbp_arrays_tg.h"
 #include "ast/array_decl_plugin.h"
 #include "ast/array_peq.h"
 #include "qe/mbp/mbp_qel_util.h"
+#include "qe/mbp/mbp_arrays_tg.h"
 #include "util/obj_hashtable.h"
 #include "util/obj_pair_hashtable.h"
 
@@ -44,14 +42,15 @@ struct mbp_array_tg::impl {
     obj_pair_hashtable<expr, expr> m_seenp;
 
     // apply rules that split on model
-    bool m_use_mdl;
+    bool m_use_mdl = false;
 
     // m_has_store.is_marked(t) if t has a subterm store(v) where v is a
     // variable to be eliminated
     ast_mark m_has_stores;
     // variables required for applying rules
     vector<expr_ref_vector> indices;
-    expr_ref_vector terms, rdTerms;
+    expr_ref_vector terms;
+    app_ref_vector rdTerms;
 
     bool has_var(expr *t) { return contains_vars(t, m_vars_set, m); }
 
@@ -63,27 +62,25 @@ struct mbp_array_tg::impl {
     bool is_var(expr *t) { return is_uninterp_const(t) && has_var(t); }
 
     bool is_wr_on_rhs(expr *e) {
-        return is_app(e) && is_partial_eq(to_app(e)) &&
+        return is_partial_eq(e) &&
                is_wr_on_rhs(to_app(e)->get_arg(0), to_app(e)->get_arg(1));
     }
 
     bool is_wr_on_rhs(expr *lhs, expr *rhs) {
-        return (is_arr_write(rhs) && !is_arr_write(lhs));
+        return is_arr_write(rhs) && !is_arr_write(lhs);
     }
 
     bool is_arr_write(expr *t) {
-        return m_array_util.is_store1(t) && has_var(to_app(t));
-    }
-
-    bool is_arr_write(expr *t, expr*& a, expr*& i, expr*& v) {
-        return m_array_util.is_store1(t, a, i, v) && has_var(to_app(t));
+        return m_array_util.is_store(t) && has_var(to_app(t));
     }
 
     // Returns true if e has a subterm store(v) where v is a variable to be
     // eliminated. Recurses on subexpressions of ee
     bool has_stores(expr *e) {
-        if (m_has_stores.is_marked(e)) return true;
-        if (!is_app(e)) return false;
+        if (m_has_stores.is_marked(e)) 
+            return true;
+        if (!is_app(e)) 
+            return false;
         if (m_array_util.is_store(e) && is_var(to_app(e)->get_arg(0))) {
             m_has_stores.mark(e, true);
             return true;
@@ -93,7 +90,7 @@ struct mbp_array_tg::impl {
             return true;
         }
         //recurse
-        for(auto c : *(to_app(e))) {
+        for (auto c : *(to_app(e))) {
             if (has_stores(c)) {
                 m_has_stores.mark(e, true);
                 return true;
@@ -107,19 +104,10 @@ struct mbp_array_tg::impl {
     // Note that select may take more than two arguments in general.
     //
     bool is_rd_wr(expr *t) {
-        expr* a, *idx;
-        return m_array_util.is_select1(t, a, idx) &&
-            m_array_util.is_store(a) &&
-            has_stores(a);        
-    }
-
-    bool is_rd_wr(expr* t, expr*& wr_ind, expr*& rd_ind, expr*& b, expr*& v) {
-        if (!is_rd_wr(t))
-            return false;
-        expr* a = nullptr;
-        VERIFY(m_array_util.is_select1(t, a, rd_ind));
-        VERIFY(m_array_util.is_store1(a, b, wr_ind, v));
-        return true;
+        expr* a;
+        return 
+            m_array_util.is_select(t) &&
+            (a = to_app(t)->get_arg(0), m_array_util.is_store(a) && has_stores(a));   
     }
 
     bool is_implicit_peq(expr *e) {
@@ -157,7 +145,7 @@ struct mbp_array_tg::impl {
     impl(ast_manager &man, mbp::term_graph &tg, model &mdl,
          obj_hashtable<app> &vars_set, expr_sparse_mark &seen)
         : m(man), m_array_util(m), m_tg(tg), m_mdl(mdl), m_vars_set(vars_set),
-          m_new_vars(m), m_seen(seen), m_use_mdl(false), terms(m), rdTerms(m) {}
+          m_new_vars(m), m_seen(seen), terms(m), rdTerms(m) {}
 
     // create a peq where write terms are preferred  on the left hand side
     peq mk_wr_peq(expr *e1, expr *e2) {
@@ -174,61 +162,83 @@ struct mbp_array_tg::impl {
     }
 
     // rewrite          store(x, j, elem) \peq_{indices} y
-    // into either      j = i && x \peq_{indices} y        (for some i in
-    // indices) or               &&_{i \in indices} j \neq i &&
+    // into either      j = i && x \peq_{indices} y  (for some i in indices) 
+    // or               &&_{i \in indices} j \neq i &&
     //                        x \peq_{indices, j} y &&
     //                        select(y, j) = elem
     // rewrite negation !(store(x, j, elem) \peq_{indices} y) into
-    // into either      j = i && !(x \peq_{indices} y)        (for some i in
-    // indices) or               &&_{i \in indices} j \neq i &&
+    // into either      j = i && !(x \peq_{indices} y)        (for some i in indices) 
+    // or               &&_{i \in indices} j \neq i &&
     //                        !(x \peq_{indices, j} y) &&
-    // or              &&_{i \in indices} j \neq i &&
+    // or               &&_{i \in indices} j \neq i &&
     //                        !(select(y, j) = elem)
     void elimwreq(peq p, bool is_neg) {
-        expr* a = nullptr, *j = nullptr, *elem = nullptr;
-        VERIFY(is_arr_write(p.lhs(), a, j, elem));
-        TRACE("mbp_tg",
-              tout << "applying elimwreq on " << expr_ref(p.mk_peq(), m) << " is neg: " << is_neg;);
+       
+        SASSERT(m_array_util.is_store(p.lhs()));
+        expr* a = to_app(p.lhs())->get_arg(0);
+        auto  js = array_store_indices(to_app(p.lhs()));
+        auto  elem = array_store_elem(to_app(p.lhs()));
+       
+        TRACE(mbp_tg,
+              tout << "applying elimwreq on " << expr_ref(p.mk_peq(), m) << " is neg: " << is_neg << "\n");
         vector<expr_ref_vector> indices;
         bool in = false;
-        p.get_diff_indices(indices);
-        expr_ref eq_index(m);
-        expr_ref_vector deq(m);
+        p.get_diff_indices(indices);        
+        unsigned eq_index = UINT_MAX, idx = 0;
+        svector<std::pair<expr*, expr*>> deq;
         for (expr_ref_vector &e : indices) {
-            for (expr *i : e) {
-                if (m_mdl.are_equal(j, i)) {
-                    in = true;
-                    // save for later
-                    eq_index = i;
-                    break;
-                } else
-                    deq.push_back(i);
+            auto jit = js.begin();
+            bool is_eq = true;
+            for (expr* i : e) {
+                if (!m_mdl.are_equal(*jit, i)) {
+                    if (is_eq)
+                        deq.push_back({ *jit, i });
+                    is_eq = false;
+                }
+                ++jit;
             }
+            if (is_eq) {
+                in = true;
+                eq_index = idx;
+                break;
+            }  
+            ++idx;
         }
         if (in) {
-            SASSERT(m_mdl.are_equal(j, eq_index));
-            peq p_new =
-                mk_wr_peq(a, p.rhs(), indices);
-            m_tg.add_eq(j, eq_index);
+            peq p_new = mk_wr_peq(a, p.rhs(), indices);
+            auto jit = js.begin();
+            for (expr* i : indices[eq_index]) {
+                m_tg.add_eq(*jit, i);
+                ++jit;
+            }
             expr_ref p_new_expr(m);
             p_new_expr = is_neg ? m.mk_not(p_new.mk_peq()) : p_new.mk_peq();
             m_tg.add_lit(p_new_expr);
             m_tg.add_eq(p_new.mk_peq(), p.mk_peq());
             return;
         }
-        for (expr *d : deq) { m_tg.add_deq(j, d); }
+        for (auto [i, j] : deq) 
+            m_tg.add_deq(i, j);
+        
         expr_ref_vector setOne(m);
-        setOne.push_back(j);
+        for (auto j : js)
+            setOne.push_back(j);
         indices.push_back(setOne);
         peq p_new = mk_wr_peq(a, p.rhs(), indices);
-        expr_ref rd(m_array_util.mk_select(p.rhs(), j), m);
+        ptr_buffer<expr> args;
+        args.push_back(p.rhs());
+        for (auto j : js)
+            args.push_back(j);
+        expr_ref rd(m_array_util.mk_select(args), m);
         if (!is_neg) {
             m_tg.add_lit(p_new.mk_peq());
             m_tg.add_eq(rd, elem);
             m_tg.add_eq(p.mk_peq(), p_new.mk_peq());
-        } else {
+        } 
+        else {
             expr_ref rd_eq(m.mk_eq(rd, elem), m);
-            if (m_mdl.is_false(rd_eq)) { m_tg.add_deq(rd, elem); }
+            if (m_mdl.is_false(rd_eq)) 
+                m_tg.add_deq(rd, elem); 
             else {
                 expr_ref npeq(mk_not(p_new.mk_peq()), m);
                 m_tg.add_lit(npeq);
@@ -241,7 +251,7 @@ struct mbp_array_tg::impl {
     void add_rdVar(expr *rd) {
         // do not assign new variable if rd is already equal to a value
         if (m_tg.has_val_in_class(rd)) return;
-        TRACE("mbp_tg", tout << "applying add_rdVar on " << expr_ref(rd, m););
+        TRACE(mbp_tg, tout << "applying add_rdVar on " << expr_ref(rd, m););
         app_ref u = new_var(to_app(rd)->get_sort(), m);
         m_new_vars.push_back(u);
         m_tg.add_var(u);
@@ -252,7 +262,7 @@ struct mbp_array_tg::impl {
     // given a \peq_{indices} t, where a is a variable, merge equivalence class
     // of a with store(t, indices, elems) where elems are fresh constants
     void elimeq(peq p) {
-        TRACE("mbp_tg",
+        TRACE(mbp_tg,
               tout << "applying elimeq on " << expr_ref(p.mk_peq(), m););
         app_ref_vector aux_consts(m);
         expr_ref eq(m);
@@ -273,43 +283,60 @@ struct mbp_array_tg::impl {
         }
         m_tg.add_lit(eq);
         m_tg.add_eq(p.mk_peq(), m.mk_true());
-        TRACE("mbp_tg", tout << "added lit  " << eq;);
+        TRACE(mbp_tg, tout << "added lit  " << eq;);
     }
 
     // rewrite select(store(a, i, k), j) into either select(a, j) or k
-    void elimrdwr(expr *term) {
-        TRACE("mbp_tg", tout << "applying elimrdwr on " << expr_ref(term, m););
-        expr* wr_ind = nullptr, *rd_ind = nullptr, *b = nullptr, *v = nullptr;
-        VERIFY(is_rd_wr(term, wr_ind, rd_ind, b, v));
-        if (m_mdl.are_equal(wr_ind, rd_ind)) 
-            m_tg.add_eq(wr_ind, rd_ind);
-        else {
-            m_tg.add_deq(wr_ind, rd_ind);
-            v = m_array_util.mk_select(b, rd_ind);
+    void elimrdwr(app *term) {
+        TRACE(mbp_tg, tout << "applying elimrdwr on " << expr_ref(term, m););
+        auto rd_indices = array_select_indices(term);
+        auto store_term = to_app(term->get_arg(0));
+        auto wr_indices = array_store_indices(store_term);
+        auto store_elem = array_store_elem(store_term);
+        auto store_array = store_term->get_arg(0);
+        bool all_eq = true;
+        for (auto rd_idx : rd_indices) {
+            auto wr_idx = *wr_indices;
+            if (m_mdl.are_equal(rd_idx, wr_idx))
+                m_tg.add_eq(rd_idx, wr_idx);
+            else {
+                m_tg.add_deq(rd_idx, wr_idx);
+                all_eq = false;
+            }
+            ++wr_indices;
         }
-        m_tg.add_eq(term, v);
+        expr* v;
+        if (all_eq)
+            v = store_elem;
+        else {
+            ptr_buffer<expr> args;
+            args.push_back(store_array);
+            for (auto rd_idx : rd_indices)
+                args.push_back(rd_idx);
+            v = m_array_util.mk_select(args);
+        }
+        m_tg.add_eq(term, v);        
     }
 
     // iterate through all terms in m_tg and apply all array MBP rules once
     // returns true if any rules were applied
     bool apply() {
-        TRACE("mbp_tg", tout << "Iterating over terms of tg";);
+        TRACE(mbp_tg, tout << "Iterating over terms of tg\n");
         indices.reset();
         rdTerms.reset();
         m_new_vars.reset();
         expr_ref e(m), rdEq(m), rdDeq(m);
-        expr *nt, *term;
+        expr *nt = nullptr;
         bool progress = false, is_neg = false;
 
         // Not resetting terms because get_terms calls resize on terms
         m_tg.get_terms(terms, false);
-        for (unsigned i = 0; i < terms.size(); i++) {
-            term = terms.get(i);
+        for (expr* term : terms) {
             if (m_seen.is_marked(term))
                 continue;
             if (m_tg.is_cgr(term))
                 continue;
-            TRACE("mbp_tg", tout << "processing " << expr_ref(term, m););
+            TRACE(mbp_tg, tout << "processing " << expr_ref(term, m) << "\n");
             expr* a, *b;
             if (is_implicit_peq(term, a, b) || is_neg_peq(term, a, b)) {
                 // rewrite array eq as peq
@@ -325,7 +352,7 @@ struct mbp_array_tg::impl {
             }
             nt = term;
             is_neg = m.is_not(term, nt);
-            if (is_app(nt) && is_partial_eq(to_app(nt))) {
+            if (is_partial_eq(nt)) {
                 peq p(to_app(nt), m);
                 if (m_use_mdl && is_arr_write(p.lhs())) {
                     mark_seen(nt);
@@ -337,7 +364,6 @@ struct mbp_array_tg::impl {
                 if (!m_array_util.is_store(p.lhs()) && has_var(p.lhs()) && !is_neg) {
                     // TODO: don't apply this rule if vars in p.lhs() also
                     // appear in p.rhs()
-
                     mark_seen(p.lhs());
                     mark_seen(nt);
                     mark_seen(term);
@@ -360,7 +386,7 @@ struct mbp_array_tg::impl {
             if (m_use_mdl && is_rd_wr(nt)) {
                 mark_seen(term);
                 progress = true;
-                elimrdwr(nt);
+                elimrdwr(to_app(nt));
                 continue;
             }
         }
@@ -368,34 +394,38 @@ struct mbp_array_tg::impl {
         // iterate over term graph again to collect read terms
         // irrespective of whether they have been marked or not
         rdTerms.reset();
-        for (unsigned i = 0; i < terms.size(); i++) {
-            term = terms.get(i);
+        for (auto term : terms) {
             if (m_array_util.is_select(term) &&
                 has_var(to_app(term)->get_arg(0))) {
-                rdTerms.push_back(term);
-                if (is_seen(term)) continue;
+                rdTerms.push_back(to_app(term));
+                if (is_seen(term)) 
+                    continue;
                 add_rdVar(term);
-                mark_seen(term);
+                // select-store axioms are only introduced during m_use_mdl
+                // so don't mark select-store terms if m_use_mdl is false
+                if (m_use_mdl || !m_array_util.is_store(to_app(term)->get_arg(0)))
+                    mark_seen(term);
             }
         }
-        if (!m_use_mdl) return progress;
-        expr *e1, *e2, *a1, *a2, *i1, *i2;
+        if (!m_use_mdl) 
+            return progress;        
         for (unsigned i = 0; i < rdTerms.size(); i++) {
-            e1 = rdTerms.get(i);
-            a1 = to_app(e1)->get_arg(0);
-            i1 = to_app(e1)->get_arg(1);
+            app* e1 = rdTerms.get(i);
+            expr* a1 = e1->get_arg(0);
             for (unsigned j = i + 1; j < rdTerms.size(); j++) {
-                e2 = rdTerms.get(j);
-                a2 = to_app(e2)->get_arg(0);
-                i2 = to_app(e2)->get_arg(1);
-                if (!is_seen(e1, e2) && a1->get_id() == a2->get_id()) {
+                app* e2 = rdTerms.get(j);
+                if (!is_seen(e1, e2) && a1 == e2) {
                     mark_seen(e1, e2);
                     progress = true;
-                    if (m_mdl.are_equal(i1, i2)) {
-                        m_tg.add_eq(i1, i2);
-                    } else {
-                        SASSERT(!m_mdl.are_equal(i1, i2));
-                        m_tg.add_deq(i1, i2);
+                    for (unsigned k = 1; k < e1->get_num_args(); ++k) {
+                        expr* i1 = e1->get_arg(k);
+                        expr* i2 = e2->get_arg(k);
+                        if (m_mdl.are_equal(i1, i2)) 
+                            m_tg.add_eq(i1, i2);                        
+                        else {
+                            SASSERT(!m_mdl.are_equal(i1, i2));
+                            m_tg.add_deq(i1, i2);
+                        }
                     }
                     continue;
                 }

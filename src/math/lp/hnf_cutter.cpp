@@ -99,7 +99,7 @@ namespace lp  {
             if (is_integer(b[i]))
                 continue;
             if (n == 0) {
-                lp_assert(ret == -1);
+                SASSERT(ret == -1);
                 n = 1;
                 ret = i;
             }
@@ -202,7 +202,7 @@ branch y_i >= ceil(y0_i) is impossible.
         hnf<general_matrix> h(m_A, d);        
         vector<mpq> b = create_b(basis_rows);
 #ifdef Z3DEBUG
-        lp_assert(m_A * x0 == b);
+        SASSERT(m_A * x0 == b);
 #endif
 
         find_h_minus_1_b(h.W(), b);
@@ -251,7 +251,7 @@ branch y_i >= ceil(y0_i) is impossible.
         if (!init_terms_for_hnf_cut()) 
             return lia_move::undef;
         lia.settings().stats().m_hnf_cutter_calls++;
-        TRACE("hnf_cut", tout << "settings().stats().m_hnf_cutter_calls = " << lia.settings().stats().m_hnf_cutter_calls << "\n";
+        TRACE(hnf_cut, tout << "settings().stats().m_hnf_cutter_calls = " << lia.settings().stats().m_hnf_cutter_calls << "\n";
               for (u_dependency* d : constraints_for_explanation()) 
                   for (auto ci : lra.flatten(d))
                       lra.constraints().display(tout, ci);
@@ -260,26 +260,26 @@ branch y_i >= ceil(y0_i) is impossible.
 #ifdef Z3DEBUG
         vector<mpq> x0 = transform_to_local_columns(lra.r_x());
 #endif
-        lia_move r =  create_cut(lia.m_t, lia.m_k, lia.m_ex, lia.m_upper
+        lia_move r =  create_cut(lia.get_term(), lia.offset(), lia.expl(), lia.is_upper()
 #ifdef Z3DEBUG
                                  , x0
 #endif
                                  );
         
         if (r == lia_move::cut) {      
-            TRACE("hnf_cut",
-                  lra.print_term(lia.m_t, tout << "cut:"); 
-                  tout << " <= " << lia.m_k << std::endl;
+            TRACE(hnf_cut,
+                  lra.print_term(lia.get_term(), tout << "cut:"); 
+                  tout << " <= " << lia.offset() << std::endl;
                   for (auto* dep : constraints_for_explanation()) 
                       for (auto ci : lra.flatten(dep))
                           lra.constraints().display(tout, ci);                  
                   );
-            lp_assert(lia.current_solution_is_inf_on_cut());
+            SASSERT(lia.current_solution_is_inf_on_cut());
             lia.settings().stats().m_hnf_cuts++;
-            lia.m_ex->clear();        
+            lia.expl()->clear();        
             for (u_dependency* dep : constraints_for_explanation()) 
                 for (auto ci : lia.lra.flatten(dep))
-                    lia.m_ex->push_back(ci);            
+                    lia.expl()->push_back(ci);            
         } 
         return r;
     }

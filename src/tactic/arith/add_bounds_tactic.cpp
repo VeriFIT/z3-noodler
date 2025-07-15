@@ -41,8 +41,8 @@ struct is_unbounded_proc {
 bool is_unbounded(goal const & g) {
     ast_manager & m = g.m();
     bound_manager bm(m);
-    for (unsigned i = 0; i < g.size(); ++i)
-        bm(g.form(i), g.dep(i), g.pr(i));
+    for (auto [f, d, p] : g)
+        bm(f, d, p);
     is_unbounded_proc proc(bm);
     return test(g, proc);
 }
@@ -125,7 +125,7 @@ class add_bounds_tactic : public tactic {
             if (proc.m_num_bounds > 0) 
                 g->updt_prec(goal::UNDER);
             report_tactic_progress(":added-bounds", proc.m_num_bounds);
-            TRACE("add_bounds", g->display(tout););
+            TRACE(add_bounds, g->display(tout););
         }
     };
 

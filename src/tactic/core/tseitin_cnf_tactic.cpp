@@ -159,7 +159,7 @@ class tseitin_cnf_tactic : public tactic {
                 mk_lit(n, sign, r);
                 return;
             default:
-                TRACE("tseitin_cnf_bug", tout << f->get_name() << "\n";);
+                TRACE(tseitin_cnf_bug, tout << f->get_name() << "\n";);
                 UNREACHABLE();
                 return;
             }
@@ -839,7 +839,7 @@ class tseitin_cnf_tactic : public tactic {
             m_produce_models      = g->models_enabled();
             m_produce_unsat_cores = g->unsat_core_enabled(); 
 
-            TRACE("tseitin_cnf", g->display(tout););
+            TRACE(tseitin_cnf, g->display(tout););
 
             m_occs(*g);
             reset_cache();
@@ -852,10 +852,10 @@ class tseitin_cnf_tactic : public tactic {
             else
                 m_mc = nullptr;
 
-            unsigned size = g->size();
-            for (unsigned idx = 0; idx < size; idx++) {
-                process(g->form(idx), g->dep(idx));
-                g->update(idx, m.mk_true(), nullptr, nullptr); // to save memory
+            unsigned idx = 0;
+            for (const auto& [f, dep, pr] : *g) {
+                process(f, dep);
+                g->update(idx++, m.mk_true(), nullptr, nullptr);
             }
 
             SASSERT(!m_produce_unsat_cores || m_clauses.size() == m_deps.size());

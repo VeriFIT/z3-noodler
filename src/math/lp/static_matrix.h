@@ -2,9 +2,7 @@
 Copyright (c) 2017 Microsoft Corporation
 
 Author:
-
     Lev Nachmanson (levnach)
-
 --*/
 
 #pragma once
@@ -41,10 +39,20 @@ std::ostream& operator<<(std::ostream& out, const row_cell<T>& rc) {
 }
 struct empty_struct {};
 typedef row_cell<empty_struct> column_cell;
-typedef vector<column_cell> column_strip;
+typedef std_vector<column_cell> column_strip;
 
 template <typename T>
-using row_strip = vector<row_cell<T>>; 
+using row_strip = std_vector<row_cell<T>>; 
+template <typename K> mpq get_denominators_lcm(const K & row) {
+    SASSERT(row.size() > 0);
+    mpq r = mpq(1);
+    for (const auto & c : row) 
+        r = lcm(r, denominator(c.coeff()));
+    return r;
+}
+
+
+    
 template <typename T>
 std::ostream& operator<<(std::ostream& out, const row_strip<T>& r) {
     for (auto const& c : r)
@@ -66,10 +74,11 @@ class static_matrix
     };
     std::stack<dim> m_stack;
 public:
-    vector<int> m_vector_of_row_offsets;
+    
+    vector<int> m_work_vector_of_row_offsets;
     indexed_vector<T> m_work_vector;
-    vector<row_strip<T>> m_rows;
-    vector<column_strip> m_columns;
+    std_vector<row_strip<T>> m_rows;
+    std_vector<column_strip> m_columns;
     // starting inner classes
     class ref {
         static_matrix & m_matrix;
@@ -84,16 +93,9 @@ public:
         operator T () const { return m_matrix.get_elem(m_row, m_col); }
     };
 
-    class ref_row {
-        const static_matrix & m_matrix;
-        unsigned        m_row;
-    public:
-        ref_row(const static_matrix & m, unsigned row): m_matrix(m), m_row(row) {}
-        T operator[](unsigned col) const { return m_matrix.get_elem(m_row, col); }
-    };
-
 public:
-
+    const auto & operator[](unsigned i) const { return m_rows[i]; }
+    
     const T & get_val(const column_cell & c) const {
         return m_rows[c.var()][c.offset()].coeff();
     }
@@ -106,14 +108,11 @@ public:
 
         // constructor with no parameters
     static_matrix() = default;
-
     // constructor
-    static_matrix(unsigned m, unsigned n): m_vector_of_row_offsets(n, -1)  {
+    static_matrix(unsigned m, unsigned n): m_work_vector_of_row_offsets(n, -1)  {
         init_row_columns(m, n);
     }
-    // constructor that copies columns of the basis from A
-    static_matrix(static_matrix const &A, unsigned * basis);
-
+    
     void clear();
 
     void init_vector_of_row_offsets();
@@ -128,17 +127,22 @@ public:
 
     void add_new_element(unsigned i, unsigned j, const T & v);
 
+    // adds row i muliplied by coeff to row k
+    void add_rows(const mpq& coeff, unsigned i, unsigned k);
     void add_row() {m_rows.push_back(row_strip<T>());}
     void add_column() {
         m_columns.push_back(column_strip());
-        m_vector_of_row_offsets.push_back(-1);
+        m_work_vector_of_row_offsets.push_back(-1);
     }
 
-    void forget_last_columns(unsigned how_many_to_forget);
+    void add_columns_up_to(unsigned j) { while (j >= column_count()) add_column(); }
 
-    void remove_last_column(unsigned j);
+    void remove_element(std_vector<row_cell<T>> & row, row_cell<T> & elem_to_remove);
 
-    void remove_element(vector<row_cell<T>> & row, row_cell<T> & elem_to_remove);
+    void remove_element(unsigned ei, row_cell<T> & elem_to_remove) {
+        remove_element(m_rows[ei], elem_to_remove);
+    }
+    
     
     void multiply_column(unsigned column, T const & alpha) {
         for (auto & t : m_columns[column]) {
@@ -196,7 +200,7 @@ public:
     T get_elem(unsigned i, unsigned j) const;
 
 
-    unsigned number_of_non_zeroes_in_column(unsigned j) const { return m_columns[j].size(); }
+    unsigned number_of_non_zeroes_in_column(unsigned j) const { return static_cast<unsigned>(m_columns[j].size()); }
 
     unsigned number_of_non_zeroes_in_row(unsigned i) const { return m_rows[i].size(); }
 
@@ -207,8 +211,7 @@ public:
         return ret;
     }
     
-    void scan_row_to_work_vector(unsigned i);
-
+    void scan_row_strip_to_work_vector(const row_strip<T> & rvals);
     void clean_row_work_vector(unsigned i);
 
 
@@ -218,8 +221,6 @@ public:
     virtual void set_number_of_rows(unsigned /*m*/) { }
     virtual void set_number_of_columns(unsigned /*n*/) { }
 #endif
-
-    T get_max_val_in_row(unsigned /* i */) const { UNREACHABLE();   }
 
     T get_balance() const;
 
@@ -231,11 +232,11 @@ public:
         m_stack.push(d);
     }
 
-    void pop_row_columns(const vector<row_cell<T>> & row) {
+    void pop_row_columns(const std_vector<row_cell<T>> & row) {
         for (auto & c : row) {
             unsigned j = c.var();
             auto & col = m_columns[j];
-            lp_assert(col[col.size() - 1].var() == m_rows.size() -1 ); // todo : start here!!!!
+            SASSERT(col[col.size() - 1].var() == m_rows.size() -1 ); // todo : start here!!!!
             col.pop_back();
         }
     }
@@ -252,7 +253,7 @@ public:
             if (m_stack.empty()) break;
             unsigned m = m_stack.top().m_m;
             while (m < row_count()) {
-                unsigned i = m_rows.size() -1 ;
+                unsigned i = static_cast<unsigned>(m_rows.size() -1);
                 auto & row = m_rows[i];
                 pop_row_columns(row);
                 m_rows.pop_back(); // delete the last row
@@ -262,7 +263,7 @@ public:
                 m_columns.pop_back(); // delete the last column
             m_stack.pop();
         }
-        lp_assert(is_correct());
+        SASSERT(is_correct());
     }
 
     void multiply_row(unsigned row, T const & alpha) {
@@ -277,19 +278,23 @@ public:
         }
     }
     
-    T dot_product_with_column(const vector<T> & y, unsigned j) const {
-        lp_assert(j < column_count());
+    T dot_product_with_column(const std_vector<T> & y, unsigned j) const {
+        SASSERT(j < column_count());
         T ret = numeric_traits<T>::zero();
         for (auto & it : m_columns[j]) {
             ret += y[it.var()] * get_val(it); // get_value_of_column_cell(it);
         }
         return ret;
     }
+    template <typename TTerm>
+    void pivot_term_to_row_given_cell(TTerm const & term, column_cell&c, unsigned j, int j_sign);
+    template <typename TTerm>
+    void add_term_to_row(const mpq& coeff, TTerm const & term, unsigned i);
 
-    // pivot row i to row ii
-    bool pivot_row_to_row_given_cell(unsigned i, column_cell& c, unsigned);
-    void scan_row_ii_to_offset_vector(const row_strip<T> & rvals);
 
+// pivot row i to row ii
+    bool pivot_row_to_row_given_cell(unsigned i, column_cell& c, unsigned j);
+    void pivot_row_to_row_given_cell_with_sign(unsigned piv_row_index, column_cell& c, unsigned j, int j_sign);
     void transpose_rows(unsigned i, unsigned ii) {
         auto t = m_rows[i];
         m_rows[i] = m_rows[ii];
@@ -297,17 +302,17 @@ public:
         // now fix the columns
         for (auto & rc : m_rows[i]) {
             column_cell & cc = m_columns[rc.var()][rc.offset()];
-            lp_assert(cc.var() == ii);
+            SASSERT(cc.var() == ii);
             cc.var() = i;
         }
         for (auto & rc : m_rows[ii]) {
             column_cell & cc = m_columns[rc.var()][rc.offset()];
-            lp_assert(cc.var() == i);
+            SASSERT(cc.var() == i);
             cc.var() = ii;
         }
     
     }
-    void fill_last_row_with_pivoting_loop_block(unsigned j, const vector<int> & basis_heading) {
+    void fill_last_row_with_pivoting_loop_block(unsigned j, const std_vector<int> & basis_heading) {
         int row_index = basis_heading[j];
         if (row_index < 0)
             return;
@@ -339,8 +344,9 @@ public:
     template <typename term>
     void fill_last_row_with_pivoting(const term& row,
                                      unsigned bj, // the index of the basis column
-                                     const vector<int> & basis_heading) {
-        lp_assert(row_count() > 0);
+                                     const std_vector<int> & basis_heading) {
+        SASSERT(row_count() > 0);
+        m_work_vector.clear();
         m_work_vector.resize(column_count());
         T a;
          // we use the form -it + 1 = 0
@@ -360,11 +366,11 @@ public:
         for (unsigned j : m_work_vector.m_index) {
             set (last_row, j, m_work_vector.m_data[j]);
         }
-        lp_assert(column_count() > 0);
+        SASSERT(column_count() > 0);
         set(last_row, column_count() - 1, one_of_type<T>());
     }
 
-    void copy_column_to_vector (unsigned j, vector<T> & v) const {
+    void copy_column_to_vector (unsigned j, std_vector<T> & v) const {
         v.resize(row_count(), numeric_traits<T>::zero());
         for (auto & it : m_columns[j]) {
             const T& val = get_val(it);
@@ -374,9 +380,9 @@ public:
     }
     
     template <typename L>
-    L dot_product_with_row(unsigned row, const vector<L> & w) const {
+    L dot_product_with_row(unsigned row, const std_vector<L> & w) const {
         L ret = zero_of_type<L>();
-        lp_assert(row < m_rows.size());
+        SASSERT(row < m_rows.size());
         for (auto & it : m_rows[row]) {
             ret += w[it.var()] * it.coeff();
         }
@@ -431,11 +437,12 @@ public:
         };
 
         const_iterator begin() const {
-            return const_iterator(m_A.m_columns[m_j].begin(), m_A);
+            return const_iterator(m_A.m_columns[m_j].data(), m_A);
         }
         
         const_iterator end() const {
-            return const_iterator(m_A.m_columns[m_j].end(), m_A);
+            const auto & column = m_A.m_columns[m_j];
+            return const_iterator(column.data() + column.size(), m_A);
         }
     };
 
@@ -443,7 +450,6 @@ public:
         return column_container(j, *this);
     }
 
-    ref_row operator[](unsigned i) const { return ref_row(*this, i);}
     typedef T coefftype;
     typedef X argtype;
 };

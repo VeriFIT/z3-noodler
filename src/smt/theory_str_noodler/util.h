@@ -14,10 +14,10 @@
 #include <mata/nft/nft.hh>
 #include <mata/nft/strings.hh>
 
-#include "smt/params/smt_params.h"
+#include "params/smt_params.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/seq_decl_plugin.h"
-#include "smt/params/theory_str_params.h"
+#include "params/theory_str_params.h"
 #include "util/scoped_vector.h"
 #include "util/union_find.h"
 #include "ast/rewriter/seq_rewriter.h"

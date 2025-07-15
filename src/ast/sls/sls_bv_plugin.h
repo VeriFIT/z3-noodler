@@ -30,10 +30,8 @@ namespace sls {
         bv::sls_stats       m_stats;
         bool                m_initialized = false;
 
-        void init_bool_var_assignment(sat::bool_var v);
         std::ostream& trace_repair(bool down, expr* e);
         void trace();
-        bool can_propagate();
         bool is_bv_predicate(expr* e);
 
         void log(expr* e, bool up_down, bool success); 
@@ -43,6 +41,7 @@ namespace sls {
         ~bv_plugin() override {}
         void register_term(expr* e) override;
         expr_ref get_value(expr* e) override;
+        void start_propagation() override;
         void initialize() override;
         void propagate_literal(sat::literal lit) override;
         bool propagate() override;
@@ -55,7 +54,7 @@ namespace sls {
         void on_restart() override {}
         std::ostream& display(std::ostream& out) const override;
         bool set_value(expr* e, expr* v) override;
-        void collect_statistics(statistics& st) const override {}
+        void collect_statistics(statistics& st) const override;
         void reset_statistics() override {}
     };
 

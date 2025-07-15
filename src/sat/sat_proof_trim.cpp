@@ -65,7 +65,7 @@ namespace sat {
     }
     
     void proof_trim::del(literal_vector const& cl, clause* cp) {
-        CTRACE("sat", cp, tout << "del " << *cp << "\n");
+        CTRACE(sat, cp, tout << "del " << *cp << "\n");
         if (cp) 
             s.detach_clause(*cp);
         else 
@@ -191,7 +191,7 @@ namespace sat {
                 s.propagate(false);
             }
             if (!s.inconsistent())
-                IF_VERBOSE(0, s.display(verbose_stream()));
+                IF_VERBOSE(0, s.display(verbose_stream() << "probe on " << cl << "\n"));
             for (unsigned i = trail_size0; i < s.m_trail.size(); ++i)
                 m_propagated[s.m_trail[i].var()] = true;
         }
@@ -226,9 +226,11 @@ namespace sat {
             if (!s.is_marked(v))
                 s.mark(v);
         }
-        else if (s.lvl(v) == 0)  // literal depends on level 0, it is not assumed by ~C
+        else if (s.lvl(v) == 0) { // literal depends on level 0, it is not assumed by ~C
             // inefficient for repeated insertions ? 
-            add_core(v);                       
+            add_core(v);           
+            add_dependency(s.get_justification(v));
+        }
     }
     
     void proof_trim::add_dependency(justification j) {
@@ -314,7 +316,7 @@ namespace sat {
 
     clause* proof_trim::del(literal_vector const& cl) {
         clause* cp = nullptr;
-        TRACE("sat", tout << "del: " << cl << "\n");
+        TRACE(sat, tout << "del: " << cl << "\n");
         if (cl.size() == 2) {
             s.detach_bin_clause(cl[0], cl[1], true);
             return cp;
@@ -325,7 +327,7 @@ namespace sat {
         auto& [clauses, id, in_core] = e->get_data().m_value;
         if (!clauses.empty()) {
             cp = clauses.back();
-            TRACE("sat", tout << "del: " << *cp << "\n");
+            TRACE(sat, tout << "del: " << *cp << "\n");
             s.detach_clause(*cp);
             clauses.pop_back();
         }

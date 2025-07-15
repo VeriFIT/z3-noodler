@@ -443,6 +443,16 @@ extern "C" {
         Z3_CATCH;
     }
 
+    bool Z3_API Z3_is_recursive_datatype_sort(Z3_context c, Z3_sort t) {
+        Z3_TRY;
+        LOG_Z3_is_recursive_datatype_sort(c, t);
+        RESET_ERROR_CODE();
+        sort * s = to_sort(t);
+        datatype_util& dt_util = mk_c(c)->dtutil();
+        return dt_util.is_datatype(s) && dt_util.is_recursive(s);
+        Z3_CATCH_RETURN(false);
+    }
+
     unsigned Z3_API Z3_get_datatype_sort_num_constructors(Z3_context c, Z3_sort t) {
         Z3_TRY;
         LOG_Z3_get_datatype_sort_num_constructors(c, t);
@@ -604,7 +614,7 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    Z3_ast Z3_datatype_update_field(
+    Z3_ast Z3_API Z3_datatype_update_field(
         Z3_context c,  Z3_func_decl f, Z3_ast t, Z3_ast v) {
         Z3_TRY;
         LOG_Z3_datatype_update_field(c, f, t, v);

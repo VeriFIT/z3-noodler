@@ -23,6 +23,7 @@ namespace sls {
         m(ctx.get_manager()),
         ctx(ctx),
         terms(terms),
+        m_lookahead(*this),
         bv(m),
         m_fix(*this, terms, ctx)
     {}   
@@ -45,6 +46,10 @@ namespace sls {
             auto& v = wval(e);
             v.bits().copy_to(v.nw, v.eval);
         }
+    }
+
+    void bv_eval::start_propagation() {
+        m_lookahead.start_propagation();
     }
 
     void bv_eval::add_bit_vector(app* e) {
@@ -87,18 +92,20 @@ namespace sls {
         return r;
     }
 
-
     void bv_eval::init_eval_bv(app* e) {
         if (bv.is_bv(e)) 
-            eval(e).commit_eval();               
+            eval(e).commit_eval_check_tabu();               
     }
     
-    bool bv_eval::can_eval1(app* e) const {
+    bool bv_eval::can_eval1(expr* t) const {
         expr* x, * y;
+        if (!is_app(t))
+            return false;
+        app* e = to_app(t);
         if (m.is_eq(e, x, y))
             return bv.is_bv(x);
         if (m.is_ite(e))
-            return bv.is_bv(e->get_arg(0));
+            return bv.is_bv(e->get_arg(1));
         if (e->get_family_id() == bv.get_fid()) {
             switch (e->get_decl_kind()) {
             case OP_BNEG_OVFL:
@@ -117,24 +124,22 @@ namespace sls {
         return false;
     }
 
-    bool bv_eval::bval1_bv(app* e, bool use_current) const {
+    bool bv_eval::bval1_bv(app* e) const {
         SASSERT(m.is_bool(e));
         SASSERT(e->get_family_id() == bv.get_fid());
 
-        bool use_current1 = use_current || (e->get_num_args() > 0 && !m_on_restore.is_marked(e->get_arg(0)));
-        bool use_current2 = use_current || (e->get_num_args() > 1 && !m_on_restore.is_marked(e->get_arg(1)));
         auto ucompare = [&](std::function<bool(int)> const& f) {
             auto& a = wval(e->get_arg(0)); 
             auto& b = wval(e->get_arg(1)); 
-            return f(mpn.compare(a.tmp_bits(use_current1).data(), a.nw, b.tmp_bits(use_current2).data(), b.nw));
+            return f(mpn.compare(a.bits().data(), a.nw, b.bits().data(), b.nw));
         };
 
         // x <s y <=> x + 2^{bw-1} <u y + 2^{bw-1}
         auto scompare = [&](std::function<bool(int)> const& f) {
             auto& a = wval(e->get_arg(0));
             auto& b = wval(e->get_arg(1));
-            add_p2_1(a, use_current1, m_tmp);
-            add_p2_1(b, use_current2, m_tmp2);
+            add_p2_1(a, m_tmp);
+            add_p2_1(b, m_tmp2);
             return f(mpn.compare(m_tmp.data(), a.nw, m_tmp2.data(), b.nw));
         };
 
@@ -142,7 +147,7 @@ namespace sls {
             SASSERT(e->get_num_args() == 2);
             auto const& a = wval(e->get_arg(0));
             auto const& b = wval(e->get_arg(1));
-            return a.set_mul(m_tmp2, a.tmp_bits(use_current1), b.tmp_bits(use_current2));
+            return a.set_mul(m_tmp2, a.bits(), b.bits());
         };
 
         switch (e->get_decl_kind()) {
@@ -167,7 +172,7 @@ namespace sls {
             unsigned idx;
             VERIFY(bv.is_bit2bool(e, child, idx));
             auto& a = wval(child);
-            return a.tmp_bits(use_current1).get(idx);
+            return a.bits().get(idx);
         }
         case OP_BUMUL_NO_OVFL: 
             return !umul_overflow();
@@ -177,7 +182,7 @@ namespace sls {
             SASSERT(e->get_num_args() == 2);
             auto const& a = wval(e->get_arg(0));
             auto const& b = wval(e->get_arg(1));
-            return a.set_add(m_tmp, a.tmp_bits(use_current1), b.tmp_bits(use_current1));
+            return a.set_add(m_tmp, a.bits(), b.bits());
         }
         case OP_BNEG_OVFL:
         case OP_BSADD_OVFL:         
@@ -194,35 +199,99 @@ namespace sls {
         return false;
     }
 
-    bool bv_eval::bval1(app* e) const {
-        if (e->get_family_id() == bv.get_fid())
-            return bval1_bv(e, true);
-        expr* x, * y;
-        if (m.is_eq(e, x, y) && bv.is_bv(x)) {
-            return wval(x).bits() == wval(y).bits();
+    void bv_eval::set_bool_value_log(expr* e, bool val) {
+        auto id = e->get_id();
+        auto old_val = m_tmp_bool_values.get(id, l_undef);
+        m_tmp_bool_values.setx(id, to_lbool(val), l_undef);
+        m_tmp_bool_value_updates.push_back({ id, old_val });
+        //TRACE(bv, tout << mk_bounded_pp(e, m) << " := " << val << " old: " << old_val << "\n");
+    }
+
+    void bv_eval::set_bool_value_no_log(expr* e, bool val) {
+        auto id = e->get_id();
+        m_tmp_bool_values.setx(id, to_lbool(val), l_undef);
+    }
+
+    bool bv_eval::get_bool_value(expr* e) const {
+        SASSERT(m.is_bool(e));
+        auto id = e->get_id();
+        auto val = m_tmp_bool_values.get(id, l_undef);
+        //TRACE(bv, tout << mk_bounded_pp(e, m) << " == " << val << "\n");
+        if (val != l_undef)
+            return val == l_true;     
+        bool b;
+        auto v = ctx.atom2bool_var(e);
+        if (v != sat::null_bool_var)
+            b = ctx.is_true(v);
+        else
+            b = bval1(e);
+        m_tmp_bool_values.setx(id, to_lbool(b), l_undef);
+        m_tmp_bool_value_updates.push_back({ id, l_undef });
+        //TRACE(bv, tout << mk_bounded_pp(e, m) << " := " << b << " old: " << val << "\n");
+        return b;
+    }
+
+    void bv_eval::restore_bool_values(unsigned r) { 
+        //TRACE(bv, tout << "restore " << m_tmp_bool_value_updates.size() - r << "\n";);
+        for (auto i = m_tmp_bool_value_updates.size(); i-- > r; ) {
+            auto& [id, val] = m_tmp_bool_value_updates[i];
+            m_tmp_bool_values.set(id, val);
         }
-        verbose_stream() << mk_bounded_pp(e, m) << "\n";
-        UNREACHABLE();
+        m_tmp_bool_value_updates.shrink(r);
+    }
+
+    bool bv_eval::bval1_bool(app* e) const {
+        SASSERT(e->get_family_id() == basic_family_id);
+        switch (e->get_decl_kind()) {
+        case OP_AND: {
+            return all_of(*e, [&](expr* arg) { return get_bool_value(arg); });
+        case OP_OR:
+            return any_of(*e, [&](expr* arg) { return get_bool_value(arg); });
+        case OP_NOT:
+            return !get_bool_value(e->get_arg(0));
+        case OP_EQ:
+            if (m.is_iff(e))
+                return get_bool_value(e->get_arg(0)) == get_bool_value(e->get_arg(1));
+            return ctx.get_value(e->get_arg(0)) == ctx.get_value(e->get_arg(1));
+        case OP_IMPLIES:
+            return !get_bool_value(e->get_arg(0)) || get_bool_value(e->get_arg(1));
+        case OP_ITE:
+            return get_bool_value(e->get_arg(0)) ? get_bool_value(e->get_arg(1)) : get_bool_value(e->get_arg(2));
+        case OP_XOR: 
+            return xor_of(*e, [&](expr* arg) { return get_bool_value(arg); });                    
+        case OP_TRUE:
+            return true;
+        case OP_FALSE:
+            return false;
+        case OP_DISTINCT:
+            for (unsigned i = 0; i < e->get_num_args(); ++i)
+                for (unsigned j = i + 1; j < e->get_num_args(); ++j)
+                    if (ctx.get_value(e->get_arg(i)) == ctx.get_value(e->get_arg(j)))
+                        return false;
+            return true;
+        default:
+            UNREACHABLE();
+            break;
+        }
+        }
         return false;
     }
 
-    bool bv_eval::bval1_tmp(app* e) const {
+    bool bv_eval::bval1(expr* t) const {
+        app* e = to_app(t);
         if (e->get_family_id() == bv.get_fid())
-            return bval1_bv(e, false);
+            return bval1_bv(e);
         expr* x, * y;
-        if (m.is_eq(e, x, y) && bv.is_bv(x)) {
-            bool use_current1 = !m_on_restore.is_marked(x);
-            bool use_current2 = !m_on_restore.is_marked(y);
-            return wval(x).tmp_bits(use_current1) == wval(y).tmp_bits(use_current2);
-        }
-        verbose_stream() << mk_bounded_pp(e, m) << "\n";
-        UNREACHABLE();
-        return false;
+        if (m.is_eq(e, x, y) && bv.is_bv(x)) 
+            return wval(x).bits() == wval(y).bits();        
+        if (e->get_family_id() == basic_family_id)
+            return bval1_bool(e);
+        return ctx.is_true(e);
     }
-
-    // unsigned ddt_orig(expr* e);
 
     sls::bv_valuation& bv_eval::eval(app* e) const {
+        SASSERT(m_values.size() > e->get_id());
+        SASSERT(m_values[e->get_id()]);
         auto& val = *m_values[e->get_id()];        
         eval(e, val);
         return val;        
@@ -232,19 +301,21 @@ namespace sls {
         m_values[e->get_id()]->set(val.bits());
     }
 
-    void bv_eval::eval(app* e, sls::bv_valuation& val) const {
+    void bv_eval::eval(expr* t, sls::bv_valuation& val) const {
+        app* e = to_app(t);
         SASSERT(bv.is_bv(e));
         if (m.is_ite(e)) {
             SASSERT(bv.is_bv(e->get_arg(1)));
             auto& val_th = wval(e->get_arg(1));
             auto& val_el = wval(e->get_arg(2));
-            if (bval0(e->get_arg(0)))
+            bool b = m_use_tmp_bool_value ? get_bool_value(e->get_arg(0)) : bval0(e->get_arg(0));
+            if (b)
                 val.set(val_th.bits());
             else
                 val.set(val_el.bits());
             return;
         }
-        if (e->get_family_id() == null_family_id) {
+        if (e->get_family_id() != bv.get_fid()) {
             val.set(wval(e).bits());
             return;
         }
@@ -622,7 +693,8 @@ namespace sls {
             NOT_IMPLEMENTED_YET();
             break;
         case OP_BIT2BOOL:
-        case OP_BV2INT:
+        case OP_UBV2INT:
+        case OP_SBV2INT:
         case OP_BNEG_OVFL:
         case OP_BSADD_OVFL:
         case OP_BUADD_OVFL:
@@ -666,13 +738,22 @@ namespace sls {
         case OP_BSMOD:
         case OP_BSMOD_I:
         case OP_BSMOD0:
+            return true;
+        default:
         case OP_BSDIV:
         case OP_BSDIV_I:
         case OP_BSDIV0:
-            return true;
-        default:
             return false;
         }
+    }
+
+    bool bv_eval::is_lookahead_phase() {
+        ++m_lookahead_steps;
+        if (m_lookahead_steps < m_lookahead_phase_size)
+            return true;
+        if (m_lookahead_steps > 10 * m_lookahead_phase_size)
+            m_lookahead_steps = 0;
+        return false;
     }
     
     bool bv_eval::repair_down(app* e, unsigned i) {  
@@ -691,9 +772,7 @@ namespace sls {
             ctx.new_value_eh(arg);
             return true;
         }
-        if (m.is_eq(e) && bv.is_bv(arg)) {
-            return try_repair_eq_lookahead(e);
-        }
+        
         return false;
     }
 
@@ -746,7 +825,8 @@ namespace sls {
             return false;
         case OP_BIT1:
             return false;
-        case OP_BV2INT:
+        case OP_UBV2INT:
+        case OP_SBV2INT:
             return false;
         case OP_INT2BV:
             return try_repair_int2bv(assign_value(e), e->get_arg(0));          
@@ -851,15 +931,17 @@ namespace sls {
         case OP_BSMUL_OVFL:
             verbose_stream() << mk_pp(e, m) << "\n";
             return false;
+        case OP_BSDIV:
+        case OP_BSDIV_I:
+        case OP_BSDIV0:
+            return try_repair_sdiv(assign_value(e), wval(e, 0), wval(e, 1), i);
         case OP_BSREM:
         case OP_BSREM_I:
         case OP_BSREM0:
         case OP_BSMOD:
         case OP_BSMOD_I:
         case OP_BSMOD0:
-        case OP_BSDIV:
-        case OP_BSDIV_I:
-        case OP_BSDIV0:
+
             UNREACHABLE();
             // these are currently compiled to udiv and urem.
             // there is an equation that enforces equality between the semantics
@@ -881,68 +963,9 @@ namespace sls {
         return false;
     }
 
-    bool bv_eval::try_repair_eq_lookahead(app* e) {
-        return false;
-        auto is_true = bval0(e);
-        if (!is_true)
-            return false;
-        auto const& uninterp = terms.uninterp_occurs(e);
-        if (uninterp.empty())
-            return false;
-//        for (auto e : uninterp)
-//            verbose_stream() << mk_bounded_pp(e, m) << " ";
-//        verbose_stream() << "\n";
-
-        expr* t = uninterp[m_rand() % uninterp.size()];
-
-        auto& v = wval(t);
-        if (v.set_random(m_rand)) {
-            //verbose_stream() << "set random " << mk_bounded_pp(t, m) << "\n";
-            ctx.new_value_eh(t);
-            return true;
-        }
-        return false;
-
-
-        for (auto e : uninterp) {
-            auto& v = wval(e);
-            v.get_variant(m_tmp, m_rand);
-            auto d = lookahead(e, m_tmp);
-            //verbose_stream() << mk_bounded_pp(e, m) << " " << d << "\n";
-        }
-        return false;
-    }
-
     bool bv_eval::try_repair_eq(bool is_true, bvval& a, bvval const& b) {
         if (is_true) {
-#if 0
-            if (bv.is_bv_add(t)) {
-                bvval tmp(b);
-                unsigned start = m_rand();
-                unsigned sz = to_app(t)->get_num_args();
-                for (unsigned i = 0; i < sz; ++i) {
-                    unsigned j = (start + i) % sz;
-                    for (unsigned k = 0; k < sz; ++k) {
-                        if (k == j)
-                            continue;
-                        auto& c = wval(to_app(t)->get_arg(k));
-                        set_sub(tmp, tmp, c.bits());
-                    }
-                    
-                    auto& c = wval(to_app(t)->get_arg(j));
-                    verbose_stream() << "TRY " << c << " := " << tmp << "\n";
-                    
-
-                }
-            }
-#endif
-            if (m_rand(20) != 0) 
-                if (a.try_set(b.bits()))
-                    return true;
-
-            if (m_rand(20) == 0)
-                return a.set_random(m_rand);
-            return false; 
+            return (m_rand(20) != 0 && a.try_set(b.bits())) || a.set_random(m_rand);
         }
         else {
             bool try_above = m_rand(2) == 0;
@@ -965,7 +988,7 @@ namespace sls {
     }
 
     void bv_eval::fold_oper(bvect& out, app* t, unsigned i, std::function<void(bvect&, bvval const&)> const& f) {
-        auto i2 = i == 0 ? 1 : 0;
+        unsigned i2 = i == 0 ? 1 : 0;
         auto const& c = wval(t->get_arg(i2));
         for (unsigned j = 0; j < c.nw; ++j)
             out[j] = c.bits()[j];
@@ -986,7 +1009,7 @@ namespace sls {
 
     bool bv_eval::try_repair_band(bvect const& e, bvval& a, bvval const& b) {
         for (unsigned i = 0; i < a.nw; ++i)
-            m_tmp[i] = ~a.fixed[i] & (e[i] | (~b.bits()[i] & random_bits()));
+            m_tmp[i] = ~a.fixed(i) & (e[i] | (~b.bits()[i] & random_bits()));
         return a.set_repair(random_bool(), m_tmp);
     }
 
@@ -1000,7 +1023,7 @@ namespace sls {
 
         bvval& a = wval(t, i);
         for (unsigned j = 0; j < a.nw; ++j) 
-            m_tmp[j] = ~a.fixed[j] & (e[j] | (~m_tmp2[j] & random_bits()));
+            m_tmp[j] = ~a.fixed(j) & (e[j] | (~m_tmp2[j] & random_bits()));
 
         return a.set_repair(random_bool(), m_tmp);
     }
@@ -1217,6 +1240,49 @@ namespace sls {
         return a.set_random(m_rand);
     }
 
+
+    bool bv_eval::try_repair_sdiv(bvect const& e, bvval& a, bvval& b, unsigned i) {
+
+        bool sign_a = a.sign();
+
+        // y = 0, x >= 0 -> -1
+        if (i == 0 && b.is_zero() && a.is_ones(e) && a.try_set(m_zero))
+            return true;
+        if (i == 0 && b.is_zero() && a.is_ones(e) && a.try_set_bit(a.bw - 1, false))
+            return true;
+
+        if (i == 1 && !sign_a && a.is_ones(e) && b.try_set(m_zero))
+            return true;
+            
+        // y = 0, x < 0 -> 1
+        if (i == 0 && b.is_zero() && a.is_one(e) && a.try_set(m_minus_one))
+            return true;
+
+        if (i == 1 && sign_a && a.is_one(e) && b.try_set(m_zero))
+            return true;
+
+        // x = 0, y != 0 -> 0
+        if (i == 0 && a.is_zero(e) && !b.is_zero() && a.try_set(m_zero))
+            return true;
+        if (i == 1 && a.is_zero(e) && a.is_zero() && b.try_set_bit(ctx.rand(a.bw), true))
+            return true;
+
+        // e = x udiv y
+        // e = 0 => x != ones
+        // y = 0 => e = -1        // nothing to repair on a
+        // e != -1 => max(y) >=u e
+
+        //IF_VERBOSE(0, verbose_stream() << "sdiv " << e << " " << a << " " << b << "\n";);
+
+        // e = udiv(abs(x), abs(y))
+        // x > 0, y < 0 -> -e
+        // x < 0, y > 0 -> -e
+        // x > 0, y > 0 -> e
+        // x < 0, y < 0 -> e
+
+        return try_repair_udiv(e, a, b, i);
+    }
+
     bool bv_eval::try_repair_bnot(bvect const& e, bvval& a) {
         for (unsigned i = 0; i < a.nw; ++i)
             m_tmp[i] = ~e[i];        
@@ -1342,9 +1408,9 @@ namespace sls {
         return r;
     }
 
-    void bv_eval::add_p2_1(bvval const& a, bool use_current, bvect& t) const {
+    void bv_eval::add_p2_1(bvval const& a, bvect& t) const {
         m_zero.set(a.bw - 1, true);
-        a.set_add(t, a.tmp_bits(use_current), m_zero);
+        a.set_add(t, a.bits(), m_zero);
         m_zero.set(a.bw - 1, false);
         a.clear_overflow_bits(t);
     }
@@ -1501,13 +1567,13 @@ namespace sls {
         if (msb > a.msb(t)) {
             unsigned num_flex = 0;
             for (unsigned i = e.bw; i-- >= msb;) 
-                if (!a.fixed.get(i))
+                if (!a.fixed().get(i))
                     ++num_flex;
             if (num_flex == 0)
                 return false;
             unsigned n = m_rand(num_flex);
             for (unsigned i = e.bw; i-- >= msb;) {
-                if (!a.fixed.get(i)) {
+                if (!a.fixed().get(i)) {
                     if (n == 0) {
                         t.set(i, true);
                         break;
@@ -1567,7 +1633,7 @@ namespace sls {
         else {
             for (unsigned i = 0; i < 4; ++i) {
                 for (unsigned i = a.bw; !(t <= clze) && i-- > 0; )
-                    if (!b.fixed.get(i))
+                    if (!b.fixed().get(i))
                         t.set(i, false);
                 if (t <= clze && b.set_repair(random_bool(), t))
                     return true;                
@@ -1702,13 +1768,13 @@ namespace sls {
 
     bool bv_eval::try_repair_udiv(bvect const& e, bvval& a, bvval& b, unsigned i) {
         if (i == 0) {
-            if (a.is_zero(e) && a.is_ones(a.fixed) && a.is_ones())
+            if (a.is_zero(e) && a.is_ones(a.fixed()) && a.is_ones())
                 return false;            
             if (b.is_zero()) 
                 return false;            
             if (!a.is_ones(e)) {
                 for (unsigned i = 0; i < a.nw; ++i)
-                    m_tmp[i] = ~a.fixed[i] | a.bits()[i];
+                    m_tmp[i] = ~a.fixed()[i] | a.bits()[i];
                 a.clear_overflow_bits(m_tmp);
                 if (e > m_tmp)
                     return false;
@@ -1813,14 +1879,14 @@ namespace sls {
     bool bv_eval::add_overflow_on_fixed(bvval const& a, bvect const& t) {
         a.set(m_tmp3, m_zero);
         for (unsigned i = 0; i < a.nw; ++i)
-            m_tmp3[i] = a.fixed[i] & a.bits()[i];
+            m_tmp3[i] = a.fixed(i) & a.bits(i);
         return a.set_add(m_tmp4, t, m_tmp3);
     }
 
     bool bv_eval::mul_overflow_on_fixed(bvval const& a, bvect const& t) {
         a.set(m_tmp3, m_zero);
         for (unsigned i = 0; i < a.nw; ++i)
-            m_tmp3[i] = a.fixed[i] & a.bits()[i];
+            m_tmp3[i] = a.fixed(i) & a.bits(i);
         return a.set_mul(m_tmp4, m_tmp3, t);
     }
 
@@ -1925,7 +1991,20 @@ namespace sls {
         for (unsigned i = 0; i < a.bw; ++i)
             m_tmp.set(i, ve.get(i + bw));
         a.clear_overflow_bits(m_tmp);
-        return a.try_set(m_tmp);
+        bool r = a.try_set(m_tmp);
+        if (!r) {
+            a.add1(m_tmp);
+            r = a.try_set(m_tmp);
+        }
+        if (!r) {
+            r = a.set_repair(random_bool(), m_tmp);
+        }
+        if (!r) {
+            verbose_stream() << "repair concat " << mk_bounded_pp(e, m) << "\n";
+            verbose_stream() << idx << " " << a << "\n" << m_tmp << "\n";
+
+        }
+        return r;
     }
 
     //
@@ -1934,7 +2013,7 @@ namespace sls {
     // set a outside of [hi:lo] to random values with preference to 0 or 1 bits
     // 
     bool bv_eval::try_repair_extract(bvect const& e, bvval& a, unsigned lo) {
-        // verbose_stream() << "repair extract a[" << lo << ":" << lo + e.bw - 1 << "] = " << e << "\n";
+        // IF_VERBOSE(4, verbose_stream() << "repair extract a[" << lo << ":" << lo + e.bw - 1 << "] = " << e << "\n");
         if (false && m_rand(m_config.m_prob_randomize_extract)  <= 100) {
             a.get_variant(m_tmp, m_rand);
             if (0 == (m_rand(2))) {
@@ -1953,13 +2032,11 @@ namespace sls {
         for (unsigned i = 0; i < e.bw; ++i)
             m_tmp.set(i + lo, e.get(i));
         m_tmp.set_bw(a.bw);
-        // verbose_stream() << a << " := " << m_tmp << "\n";
-        if (m_rand(20) != 0 && a.try_set(m_tmp))
+        //verbose_stream() << a << " := " << m_tmp << "\n";
+        if (a.try_set(m_tmp))
             return true;
-        if (m_rand(20) != 0)
-            return false;
         bool ok = a.set_random(m_rand);
-        // verbose_stream() << "set random " << ok << " " << a << "\n";
+        //verbose_stream() << "set random " << ok << " " << a << "\n";
         return ok;
     }
 
@@ -1992,10 +2069,11 @@ namespace sls {
     }
 
     bool bv_eval::repair_up(expr* e) {
-        if (!is_app(e) || !can_eval1(to_app(e)))
+        if (!can_eval1(e))
             return false;
+
         if (m.is_bool(e)) {
-            bool b = bval1(to_app(e));
+            bool b = bval1(e);
             auto v = ctx.atom2bool_var(e);
             if (v == sat::null_bool_var)
                 ctx.set_value(e, b ? m.mk_true() : m.mk_false());
@@ -2006,29 +2084,14 @@ namespace sls {
 
         if (!bv.is_bv(e))
             return false;
+
         auto& v = eval(to_app(e));
-
-        for (unsigned i = 0; i < v.nw; ++i) {
-            if (0 != (v.fixed[i] & (v.bits()[i] ^ v.eval[i]))) {
-                //verbose_stream() << "Fail to set " << mk_bounded_pp(e, m) << " " << i << " " << v.fixed[i] << " " << v.bits()[i] << " " << v.eval[i] << "\n";
-                v.bits().copy_to(v.nw, v.eval);
-
-                return false;
-            }
-        }
-
         if (v.eval == v.bits())
             return true;
-        //verbose_stream() << "repair up " << mk_bounded_pp(e, m) << " " << v << "\n";
-        if (v.commit_eval()) {
-            ctx.new_value_eh(e);
-            return true;
-        }
-        //verbose_stream() << "could not repair up " << mk_bounded_pp(e, m) << " " << v << "\n";
-        //for (expr* arg : *to_app(e))
-        //    verbose_stream() << mk_bounded_pp(arg, m) << " " << wval(arg) << "\n";
-        v.bits().copy_to(v.nw, v.eval);
-        return false;
+
+        v.commit_eval_ignore_tabu();
+        ctx.new_value_eh(e);
+        return true;
     }
 
     sls::bv_valuation& bv_eval::wval(expr* e) const { 
@@ -2040,15 +2103,14 @@ namespace sls {
     void bv_eval::commit_eval(expr* p, app* e) {
         if (!bv.is_bv(e))
             return;
-        SASSERT(wval(e).commit_eval());
-        VERIFY(wval(e).commit_eval());
+        VERIFY(wval(e).commit_eval_check_tabu());
     }
 
     void bv_eval::set_random(app* e) {
         if (bv.is_bv(e)) {
             auto& v = wval(e);
             if (v.set_random(m_rand))
-                VERIFY(v.commit_eval());
+                VERIFY(v.commit_eval_check_tabu());
         }
     }
 
@@ -2078,6 +2140,10 @@ namespace sls {
         return expr_ref(m);
     }
 
+    void bv_eval::collect_statistics(statistics& st) const {
+        m_lookahead.collect_statistics(st);
+    }
+
     std::ostream& bv_eval::display(std::ostream& out) const {
         auto& terms = ctx.subterms();
         for (expr* e : terms) {
@@ -2097,73 +2163,5 @@ namespace sls {
         return out << "?";
     }
 
-    double bv_eval::lookahead(expr* e, bvect const& new_value) {
-        SASSERT(bv.is_bv(e));
-        SASSERT(is_uninterp(e));
-        SASSERT(m_restore.empty());
-
-        bool has_tabu = false;
-        double break_count = 0, make_count = 0;
-
-        wval(e).eval = new_value;
-        if (!insert_update(e)) {
-            restore_lookahead();
-            return -1000000;
-        }
-        insert_update_stack(e);
-        unsigned max_depth = get_depth(e);
-        for (unsigned depth = max_depth; depth <= max_depth; ++depth) {
-            for (unsigned i = 0; !has_tabu && i < m_update_stack[depth].size(); ++i) {
-                e = m_update_stack[depth][i];
-                if (bv.is_bv(e)) {
-                    auto& v = eval(to_app(e));
-                    if (insert_update(e)) {
-                        for (auto p : ctx.parents(e)) {
-                            insert_update_stack(p);
-                            max_depth = std::max(max_depth, get_depth(p));
-                        }
-                    }
-                    else
-                        has_tabu = true;                
-                }
-                else if (m.is_bool(e) && can_eval1(to_app(e))) {
-                    bool is_true = ctx.is_true(e);
-                    bool is_true_new = bval1(to_app(e));
-                    bool is_true_old = bval1_tmp(to_app(e));
-                    // verbose_stream() << "parent " << mk_bounded_pp(e, m) << " " << is_true << " " << is_true_new << " " << is_true_old << "\n";
-                    if (is_true == is_true_new && is_true_new != is_true_old)
-                        ++make_count;
-                    if (is_true == is_true_old && is_true_new != is_true_old)
-                        ++break_count;
-                }
-            }
-            m_update_stack[depth].reset();
-        }
-        restore_lookahead();
-        if (has_tabu)
-            return -10000;
-        return make_count - break_count;
-    }
-
-    bool bv_eval::insert_update(expr* e) {
-        m_restore.push_back(e);
-        m_on_restore.mark(e);
-        auto& v = wval(e);
-        v.save_value();
-        return v.commit_eval();
-    }
-
-    void bv_eval::insert_update_stack(expr* e) {
-        unsigned depth = get_depth(e);
-        m_update_stack.reserve(depth + 1);
-        if (!m_update_stack[depth].contains(e))
-            m_update_stack[depth].push_back(e);
-    }
-
-    void bv_eval::restore_lookahead() {
-        for (auto e : m_restore) 
-            wval(e).restore_value();
-        m_restore.reset();
-        m_on_restore.reset();
-    }
+   
 }

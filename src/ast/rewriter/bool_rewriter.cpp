@@ -272,7 +272,7 @@ br_status bool_rewriter::mk_nflat_or_core(unsigned num_args, expr * const * args
         if (s) {
             if (m_sort_disjunctions) {
                 ast_lt lt;
-                std::sort(buffer.begin(), buffer.end(), lt);
+                std::stable_sort(buffer.begin(), buffer.end(), lt);
             }
             result = m().mk_or(sz, buffer.data());
             return BR_DONE;
@@ -311,7 +311,7 @@ br_status bool_rewriter::mk_flat_or_core(unsigned num_args, expr * const * args,
         if (mk_nflat_or_core(flat_args.size(), flat_args.data(), result) == BR_FAILED) {
             if (m_sort_disjunctions && !ordered) {
                 ast_lt lt;
-                std::sort(flat_args.begin(), flat_args.end(), lt);
+                std::stable_sort(flat_args.begin(), flat_args.end(), lt);
             }
             result = mk_or_app(flat_args.size(), flat_args.data());
         }
@@ -671,20 +671,56 @@ br_status bool_rewriter::try_ite_value(app * ite, app * val, expr_ref & result) 
     expr* cond2 = nullptr, *t2 = nullptr, *e2 = nullptr;
     if (m().is_ite(t, cond2, t2, e2) && m().is_value(t2) && m().is_value(e2) &&
         BR_FAILED != try_ite_value(to_app(t), val, result)) {
-        result = m().mk_ite(cond, result, mk_eq(e, val));
+        result = m().mk_ite(cond, result, mk_eq_plain(e, val));
         return BR_REWRITE2;
     }
     if (m().is_ite(e, cond2, t2, e2) && m().is_value(t2) && m().is_value(e2) && 
         BR_FAILED != try_ite_value(to_app(e), val, result)) {
-        result = m().mk_ite(cond, mk_eq(t, val), result);
+        result = m().mk_ite(cond, mk_eq_plain(t, val), result);
         return BR_REWRITE2;
     }
+
+    result = simplify_eq_ite(val, ite);
+    if (result) 
+        return BR_REWRITE_FULL;            
 
     return BR_FAILED;
 }
 
+// check that all leaves are disjoint.
+expr_ref bool_rewriter::simplify_eq_ite(expr* value, expr* ite) {
+    SASSERT(m().is_value(value));
+    SASSERT(m().is_ite(ite));
+    expr* c = nullptr, * t = nullptr, * e = nullptr;
+    auto& todo = m_todo1;
+    todo.reset();
+    todo.push_back(ite);
+    bool is_disjoint = true;
+    while (!todo.empty()) {
+        expr* arg = todo.back();
+        todo.pop_back();
+        if (m_marked.is_marked(arg))
+            continue;
+        m_marked.mark(arg, true);
+        if (m().is_value(arg) && m().are_distinct(arg, value))
+            continue;
+        if (m().is_ite(arg, c, t, e)) {
+            if (!m_marked.is_marked(t)) 
+                todo.push_back(t);
+            if (!m_marked.is_marked(e))
+                todo.push_back(e);
+            continue;
+        }
+        is_disjoint = false;
+        break;
+    }
+    m_marked.reset();
+    todo.reset();
+    return expr_ref(is_disjoint ? m().mk_false() : nullptr, m());    
+}
 
-app* bool_rewriter::mk_eq(expr* lhs, expr* rhs) {
+
+app* bool_rewriter::mk_eq_plain(expr* lhs, expr* rhs) {
     if (m().are_equal(lhs, rhs))
         return m().mk_true();
     if (m().are_distinct(lhs, rhs))
@@ -729,15 +765,27 @@ br_status bool_rewriter::mk_eq_core(expr * lhs, expr * rhs, expr_ref & result) {
         return BR_REWRITE1;
     
     if (m_ite_extra_rules) {
+        expr* c1, * t1, * e1;
+        expr* c2, * t2, * e2;
         if (m().is_ite(lhs) && m().is_value(rhs)) {
             r = try_ite_value(to_app(lhs), to_app(rhs), result);
-            CTRACE("try_ite_value", r != BR_FAILED,
+            CTRACE(try_ite_value, r != BR_FAILED,
                    tout << mk_bounded_pp(lhs, m()) << "\n" << mk_bounded_pp(rhs, m()) << "\n--->\n" << mk_bounded_pp(result, m()) << "\n";);
         }
         else if (m().is_ite(rhs) && m().is_value(lhs)) {
             r = try_ite_value(to_app(rhs), to_app(lhs), result);
-            CTRACE("try_ite_value", r != BR_FAILED,
+            CTRACE(try_ite_value, r != BR_FAILED,
                    tout << mk_bounded_pp(lhs, m()) << "\n" << mk_bounded_pp(rhs, m()) << "\n--->\n" << mk_bounded_pp(result, m()) << "\n";);
+        }
+        else if (m().is_ite(lhs, c1, t1, e1) && m().is_ite(rhs, c2, t2, e2) &&
+            m().is_value(t1) && m().is_value(e1) && m().is_value(t2) && m().is_value(e2)) {
+            expr_ref_vector args(m());
+            args.push_back(m().mk_or(c1, c2, m().mk_eq(e1, e2)));
+            args.push_back(m().mk_or(m().mk_not(c1), m().mk_not(c2), m().mk_eq(t1, t2)));
+            args.push_back(m().mk_or(m().mk_not(c1), c2, m().mk_eq(t1, e2)));
+            args.push_back(m().mk_or(c1, m().mk_not(c2), m().mk_eq(e1, t2)));
+            result = m().mk_and(args);
+            return BR_REWRITE_FULL;
         }
         if (r != BR_FAILED)
             return r;
