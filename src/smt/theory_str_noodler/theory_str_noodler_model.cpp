@@ -57,6 +57,46 @@ namespace smt::noodler {
         bool length_relevant = false; // do we actually need the length of str_var?
         seq_util& m_util_s;
         arith_util& m_util_a;
+
+        // We generate fresh models for the variables, only in the range of printable ASCII characters
+        // TODO: should we extend this range? could be a problem if we have a lot of variables with the same length
+        static bool get_model_of_length(unsigned length, zstring& result) {
+            static std::map<unsigned,zstring> last_model_of_length;
+            if (last_model_of_length.contains(length)) {
+                // get the next string of this length within the range of printable ASCII
+                const zstring& last_model = last_model_of_length.at(length);
+                std::vector<unsigned> next_model(length);
+                bool still_incrementing = true;
+                for (unsigned position = length; position != 0; --position) {
+                    unsigned real_position = position-1;
+                    if (still_incrementing) {
+                        if (last_model[real_position] < '~') {
+                            // this position can be incremented as we have not reached last printable ascii character '~'
+                            next_model[real_position] = last_model[real_position]+1;
+                            still_incrementing = false;
+                        } else {
+                            // otherwise we go to the beginning of range and we need to increment the character at lower position
+                            next_model[real_position] = '!';
+                        }
+                    } else {
+                        // we are not incrementing anymore, so we just copy the value from last_model
+                        next_model[real_position] = last_model[real_position];
+                    }
+                }
+                if (still_incrementing) {
+                    // we have fully used all strings in the range of printable ASCII characters
+                    return false;
+                }
+                last_model_of_length[length] = zstring(next_model.size(), next_model.data());
+            } else {
+                // the starting model will be filled by the first printable ascii, i.e. character '!'
+                std::vector<unsigned> res(length, '!');
+                last_model_of_length[length] = zstring(res.size(), res.data());
+            }
+            result = last_model_of_length[length];
+            return true;
+        }
+
     public:
         str_var_value_proc(expr* str_var, context& ctx, seq_util& m_util_s, arith_util& m_util_a) : str_var(str_var), m_util_s(m_util_s), m_util_a(m_util_a) {
             if (ctx.e_internalized(m_util_s.str.mk_length(str_var))) {
@@ -74,16 +114,26 @@ namespace smt::noodler {
     
         app * mk_value(model_generator & m, expr_ref_vector const & values) override {
             if (!length_relevant) {
-                // because the length is not relevant, we can return anything, so we return empty string
-                return m_util_s.str.mk_string(zstring());
+                // because the length is not relevant, we can return anything fresh
+                unsigned length = 0; // we are looking for the shortest fresh string
+                zstring result;
+                while (!get_model_of_length(length, result)) {
+                    ++length;
+                }
+                return m_util_s.str.mk_string(result);
             } else {
-                // values[0] contain the length of str_var, so we return some string of this length
+                // values[0] contain the length of str_var, so we return a fresh string of this length
                 bool is_int;
                 rational val(0);
                 SASSERT(values.size() == 1);
                 VERIFY(m_util_a.is_numeral(values[0], val, is_int) && is_int);
-                std::vector<unsigned> res(val.get_unsigned(), 'a'); // we can return anything, so we will just fill it with 'a'
-                return m_util_s.str.mk_string(zstring(res.size(), res.data()));
+                zstring result;
+                if (get_model_of_length(val.get_unsigned(), result)) {
+                    return m_util_s.str.mk_string(result);
+                } else {
+                    util::throw_error(std::string("We do not have a fresh value of length ") + val.to_string());
+                    return m_util_s.str.mk_string(zstring()); // return something so it does not give warning
+                }
             }
         }
     };
