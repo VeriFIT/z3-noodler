@@ -2030,69 +2030,71 @@ namespace smt::noodler {
         // TODO it is incorrect, dummy symbols need to be replaced on the level of transducer transitions, not on nfa transitions (works only if there is one symbol to replace with)
         solution.replace_dummy_symbol_in_transducers_with(set_of_symbols_to_replace_dummy_symbol_with);
 
-        // Restrict the languages in solution of length variables and int conversion variables by their models
+        // Restrict int-conversion var
         for (auto& [var, nfa] : solution.aut_ass) {
-            // literals should have the correct language already and we process only length vars which were not already processed in the dummy-symbol step
-            if (var.is_literal() || !solution.length_sensitive_vars.contains(var) || model_of_var.contains(var)) { continue; }
-
-            // Restrict length
+            if (var.is_literal() || !int_subst_vars.contains(var) || model_of_var.contains(var)) { continue; }
             rational len = arith_model.at(var);
-            mata::nfa::Nfa len_nfa = solution.aut_ass.sigma_automaton_of_length(len.get_unsigned());
-            nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, len_nfa).trim());
-
-            // Restrict int-conversion var
-            if (int_subst_vars.contains(var)) {
-                if (len == 0) {
-                    // to_int_value(var) != -1 for len==0 (see get_formula_for_int_subst_vars())
-                    // so we directly set ""
-                    update_model_and_aut_ass(var, zstring());
+            if (len == 0) {
+                // to_int_value(var) != -1 for len==0 (see get_formula_for_int_subst_vars())
+                // so we directly set ""
+                update_model_and_aut_ass(var, zstring());
+            } else {
+                rational to_int_value = arith_model.at(int_version_of(var));
+                if (to_int_value == -1) {
+                    // the language of var should contain only words containing some non-digit
+                    mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
+                    nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, solution.aut_ass.complement_aut(only_digits)).trim());
                 } else {
-                    rational to_int_value = arith_model.at(int_version_of(var));
-                    if (to_int_value == -1) {
-                        // the language of var should contain only words containing some non-digit
-                        mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
-                        nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, solution.aut_ass.complement_aut(only_digits)).trim());
-                    } else {
-                        zstring to_int_str(to_int_value); // zstring(rational) returns the string representation of the number in the argument
-                        SASSERT(len >= to_int_str.length());
-                        // pad to_int_str with leading zeros until we reach desired length
-                        while (len.get_unsigned() != to_int_str.length()) {
-                            to_int_str = zstring("0") + to_int_str;
-                        }
-                        update_model_and_aut_ass(var, to_int_str);
+                    zstring to_int_str(to_int_value); // zstring(rational) returns the string representation of the number in the argument
+                    SASSERT(len >= to_int_str.length());
+                    // pad to_int_str with leading zeros until we reach desired length
+                    while (len.get_unsigned() != to_int_str.length()) {
+                        to_int_str = zstring("0") + to_int_str;
                     }
+                    update_model_and_aut_ass(var, to_int_str);
                 }
             }
         }
 
-        // TODO the following is very inefficient and will probably be slow (and it is also incorrect, dummy symbols are handled wrongly if there are more symbols to replace with)
         for (auto& [transducer, tape_vars] : transducers_with_vars_on_tapes) {
+            // TODO dummy symbols are handled wrongly if there are more symbols to replace with
             util::replace_dummy_symbol_in_transducer_with(transducer, set_of_symbols_to_replace_dummy_symbol_with);
             STRACE(str_model_transducer,
                 tout << "Constructing model for vars:";
                 for (const BasicTerm& var : tape_vars) {
-                    tout << " " << var;
+                    tout << " " << var << " (length " << arith_model.at(var) << ")";
                 }
                 if (is_trace_enabled(TraceTag::str_model_nfa)) {
                     tout << " and for transducer:\n" << transducer.print_to_dot(true, true);
                 }
                 tout << "\n";
             );
+            std::vector<unsigned> lengths;
             for (size_t tape_num = 0; tape_num < tape_vars.size(); ++tape_num) {
-                transducer = transducer.apply(*solution.aut_ass.at(tape_vars[tape_num]), tape_num, false);
-            }
-            mata::Word accepting_word = transducer.get_word(std::nullopt).value();
-            std::vector<mata::Word> words_for_tape_vars{tape_vars.size()};
-            size_t current_tape_var = 0;
-            for (unsigned current_symbol : accepting_word) {
-                if (current_symbol != mata::nft::EPSILON) {
-                    words_for_tape_vars[current_tape_var].push_back(current_symbol);
+                rational len = arith_model.at(tape_vars[tape_num]);
+                lengths.push_back(len.get_unsigned());
+                if (model_of_var.contains(tape_vars[tape_num])) {
+                    // if we already got the model for var we apply it on its tape (this should not be reachable right now,
+                    // the only way we already have a model is if we got it from code-point or string-int var, which are 
+                    // not supported with transducers right now)
+                    transducer = transducer.apply(*solution.aut_ass.at(tape_vars[tape_num]), tape_num, false);
                 }
-                current_tape_var = (current_tape_var+1) % tape_vars.size();
             }
+            std::vector<mata::Word> words_for_tape_vars = mata::applications::strings::get_words_of_lengths(transducer, lengths).value();
             for (size_t tape_num = 0; tape_num < tape_vars.size(); ++tape_num) {
                 update_model_and_aut_ass(tape_vars[tape_num], regex::Alphabet{solution.aut_ass.get_alphabet()}.get_string_from_mata_word(words_for_tape_vars[tape_num]));
             }
+        }
+
+        // Restrict the languages in solution of length variables
+        for (auto& [var, nfa] : solution.aut_ass) {
+            // literals should have the correct language already and we process only length vars which were not already processed in the previous steps
+            if (var.is_literal() || !solution.length_sensitive_vars.contains(var) || model_of_var.contains(var)) { continue; }
+
+            // Restrict length
+            rational len = arith_model.at(var);
+            mata::nfa::Nfa len_nfa = solution.aut_ass.sigma_automaton_of_length(len.get_unsigned());
+            nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, len_nfa).trim());
         }
 
         is_model_initialized = true;
