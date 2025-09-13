@@ -683,6 +683,17 @@ namespace smt::noodler {
          */
         Formula not_contains{};
 
+        /**
+         * @brief Heuristic method based on only epsilon-product generation and refining languages based on this product
+         * First creates epsilon-product for every inclusion and refines variable language based on segment automaton recieved
+         * from product
+         * Can provide adventage in some UNSAT problems - no need to do time consuming noodlifications
+         * Overapproximates languages - if finds UNSAT, can return UNSAT - if end languages are satisfiable - works with refined languages
+         */
+        void single_product_heuristic();
+
+        bool process_inclusion_single_product(Predicate &inclusion, SolvingState& solving_state);
+
         ////////////////////////////////////////////////////////////////
         //////////////////// FOR MODEL GENERATION //////////////////////
         ////////////////////////////////////////////////////////////////

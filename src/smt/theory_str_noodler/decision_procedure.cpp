@@ -1,4 +1,5 @@
 #include <queue>
+
 #include <utility>
 #include <algorithm>
 #include <functional>
@@ -1655,6 +1656,40 @@ namespace smt::noodler {
         return ca::get_lia_for_not_contains(proj_not_cont, this->solution.aut_ass, true);
     }
 
+    void DecisionProcedure::single_product_heuristic() {
+        STRACE(str, tout << "Single product heuristic...\n");
+        SolvingState process_state = pop_from_worklist();
+
+        int init_predicate_size = process_state.predicates_to_process.size();
+
+        // loop once through initial inclusion graph - now don't care about other created dependent predicates
+        for (int processed_count = 0; processed_count < init_predicate_size; processed_count++)
+        {
+
+            Predicate predicate_to_process = process_state.predicates_to_process[processed_count];
+
+            // don't know what to do with transducers
+            if (predicate_to_process.is_equation()) { // inclusion
+                // if found UNSAT inclusion - this solving state is UNSAT - just return no pushing to worklist
+                if (!process_inclusion_single_product(predicate_to_process, process_state)) {
+                    return;
+                }
+            } else {
+                SASSERT(predicate_to_process.is_transducer());
+            }
+
+        } 
+
+        // pushing process state back - think it doesnt depend second argument
+        push_to_worklist(std::move(process_state), false);
+
+    }
+
+    bool DecisionProcedure::process_inclusion_single_product(Predicate &inclusion, SolvingState& solving_state) {
+        
+        return true;
+    }
+
     /**
      * @brief Creates initial inclusion graph according to the preprocessed instance.
      */
@@ -1743,6 +1778,9 @@ namespace smt::noodler {
 
         STRACE(str_noodle_dot, tout << "digraph Procedure {\ninit[shape=none, label=\"\"]\n";);
         push_to_worklist(std::move(init_solving_state), true);
+
+        // temmporary place for single product heuristic
+        single_product_heuristic();
     }
 
     lbool DecisionProcedure::preprocess(PreprocessType opt, const BasicTermEqiv &len_eq_vars) {
