@@ -1656,6 +1656,21 @@ namespace smt::noodler {
         return ca::get_lia_for_not_contains(proj_not_cont, this->solution.aut_ass, true);
     }
 
+    AutAssignment DecisionProcedure::get_product_languages(SolvingState& solving_state, std::vector<BasicTerm> lhs_vars, std::vector<BasicTerm> rhs_vars) {
+        // Get automata of the variables on the left side
+        STRACE(str_nfa, tout << "Left automata:" << std::endl);
+        auto [left_side_automata, left_side_division] = solving_state.get_automata_and_division_of_concatenation(lhs_vars, false);
+        SASSERT(left_side_division.size() == left_side_vars.size()); // each division should contain exactly one left variable
+        SASSERT(left_side_automata.size() == left_side_division.size()); // we have one automaton for each division
+
+        // Get automata of the variables on the right side
+        STRACE(str_nfa, tout << "Right automata:" << std::endl);
+        auto [right_side_automata, right_side_division] = solving_state.get_automata_and_division_of_concatenation(rhs_vars, false);
+        SASSERT(right_side_automata.size() == right_side_division.size()); // we have one automaton for each division
+
+        return {};
+    }
+
     void DecisionProcedure::single_product_heuristic() {
         STRACE(str, tout << "Single product heuristic...\n");
         SolvingState process_state = pop_from_worklist();
@@ -1686,8 +1701,26 @@ namespace smt::noodler {
     }
 
     bool DecisionProcedure::process_inclusion_single_product(Predicate &inclusion, SolvingState& solving_state) {
-        
-        return true;
+
+        // getting automata for both sides
+        // TODO - probably can be done easier without copying
+        const auto &left_side_vars = inclusion.get_left_side();
+        const auto &right_side_vars = inclusion.get_right_side();
+
+        // inclusion contains length aware variables can't od anything
+        if (solving_state.contains_length_var(right_side_vars) || solving_state.contains_length_var(left_side_vars)) {
+            return true;
+        }
+
+        // get new languages from epsilon product
+        AutAssignment product_aut_ass = get_product_languages(solving_state, left_side_vars, right_side_vars);
+
+        // perform intersection of current languages and new product languages
+        for (const auto &left_var : left_side_vars) {
+            solving_state.aut_ass.restrict_lang(left_var, *product_aut_ass.at(left_var));
+        }
+
+        return solving_state.aut_ass.is_sat();
     }
 
     /**

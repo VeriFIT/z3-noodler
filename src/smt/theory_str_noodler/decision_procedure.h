@@ -684,6 +684,17 @@ namespace smt::noodler {
         Formula not_contains{};
 
         /**
+         * @brief Function that gets new product languages
+         * Performs segmentation on given automata
+         * 
+         * @param lhs_vars Left hand side variables
+         * @param rhs_vars Right hand side variables
+         * 
+         * @return Unordered map where for each varaible there is a new language
+         */
+        AutAssignment get_product_languages(SolvingState& solving_state, std::vector<BasicTerm> lhs_vars, std::vector<BasicTerm> rhs_vars);
+
+        /**
          * @brief Heuristic method based on only epsilon-product generation and refining languages based on this product
          * First creates epsilon-product for every inclusion and refines variable language based on segment automaton recieved
          * from product
