@@ -1656,19 +1656,172 @@ namespace smt::noodler {
         return ca::get_lia_for_not_contains(proj_not_cont, this->solution.aut_ass, true);
     }
 
+    // ********************************** JUST ATTEMPT *************/
+    using State = unsigned long;
+
+    using StateRenaming = std::unordered_map<State, State>;
+
+    mata::nfa::Nfa concatenate_eps(const mata::nfa::Nfa& lhs, const mata::nfa::Nfa& rhs, const mata::Symbol& epsilon, bool use_epsilon) {
+    // Compute concatenation of given automata.
+    // Concatenation will proceed in the order of the passed automata: Result is 'lhs . rhs'.
+
+    if (lhs.num_of_states() == 0 || rhs.num_of_states() == 0 || lhs.initial.empty() || lhs.final.empty() ||
+        rhs.initial.empty() || rhs.final.empty()) {
+        return mata::nfa::Nfa{};
+    }
+
+    StateRenaming* lhs_state_renaming = nullptr;
+    StateRenaming* rhs_state_renaming = nullptr;
+
+    const unsigned long lhs_states_num{lhs.num_of_states() };
+    const unsigned long rhs_states_num{rhs.num_of_states() };
+    mata::nfa::Nfa result{}; // Concatenated automaton.
+    StateRenaming _lhs_states_renaming{}; // Map mapping rhs states to result states.
+    StateRenaming _rhs_states_renaming{}; // Map mapping rhs states to result states.
+
+    const size_t result_num_of_states{lhs_states_num + rhs_states_num};
+    if (result_num_of_states == 0) { return mata::nfa::Nfa{}; }
+
+    // Map lhs states to result states.
+    _lhs_states_renaming.reserve(lhs_states_num);
+    mata::Symbol result_state_index{ 0 };
+    for (State lhs_state{ 0 }; lhs_state < lhs_states_num; ++lhs_state) {
+        _lhs_states_renaming.insert(std::make_pair(lhs_state, result_state_index));
+        ++result_state_index;
+    }
+    // Map rhs states to result states.
+    _rhs_states_renaming.reserve(rhs_states_num);
+    for (State rhs_state{ 0 }; rhs_state < rhs_states_num; ++rhs_state) {
+        _rhs_states_renaming.insert(std::make_pair(rhs_state, result_state_index));
+        ++result_state_index;
+    }
+
+    result = mata::nfa::Nfa();
+    result.delta = lhs.delta;
+    result.initial = lhs.initial;
+    result.add_state(result_num_of_states-1);
+
+    // Add epsilon transitions connecting lhs and rhs automata.
+    // The epsilon transitions lead from lhs original final states to rhs original initial states.
+    for (const auto& lhs_final_state: lhs.final) {
+        for (const auto& rhs_initial_state: rhs.initial) {
+            result.delta.add(lhs_final_state, epsilon,
+                             _rhs_states_renaming[rhs_initial_state]);
+        }
+    }
+
+    // Make result final states.
+    for (const auto& rhs_final_state: rhs.final)
+    {
+        result.final.insert(_rhs_states_renaming[rhs_final_state]);
+    }
+
+    // Add rhs transitions to the result.
+    for (State rhs_state{ 0 }; rhs_state < rhs_states_num; ++rhs_state)
+    {
+        for (const mata::nfa::SymbolPost& rhs_move: rhs.delta.state_post(rhs_state))
+        {
+            for (const State& rhs_state_to: rhs_move.targets)
+            {
+                result.delta.add(_rhs_states_renaming[rhs_state],
+                                 rhs_move.symbol,
+                                 _rhs_states_renaming[rhs_state_to]);
+            }
+        }
+    }
+
+    if (!use_epsilon) {
+        result.remove_epsilon();
+    }
+    if (lhs_state_renaming != nullptr) { *lhs_state_renaming = _lhs_states_renaming; }
+    if (rhs_state_renaming != nullptr) { *rhs_state_renaming = _rhs_states_renaming; }
+    return result;
+} // concatenate_eps().
+
+    // /**
+    //  * @brief Unify (as best as possible) the initial states and the final states of NFAs in @p nfas
+    //  *
+    //  * The unification happens only if the given automaton is not already unified, i.e. it is in @p unified_nfas.
+    //  * We also add the newly unified automata to @p unified_nfas.
+    //  *
+    //  * @param[in] nfas The automata to unify
+    //  * @param[in,out] unified_nfas The set of already unified automata
+    //  */
+    // void unify_initial_and_final_states(const std::vector<std::shared_ptr<mata::nfa::Nfa>>& nfas, std::unordered_set<std::shared_ptr<mata::nfa::Nfa>>& unified_nfas) {
+    //     for (std::shared_ptr<mata::nfa::Nfa> nfa : nfas) {
+    //         if (!unified_nfas.contains(nfa)) {
+    //             nfa->unify_initial();
+    //             nfa->unify_final();
+    //             unified_nfas.insert(nfa);
+    //         }
+    //     }
+    // }
+
+    mata::nfa::Nfa concatenate_with(const std::vector<std::shared_ptr<mata::nfa::Nfa>>& nfas, mata::Symbol delimiter) {
+        mata::nfa::Nfa concatenation{*nfas[0]};
+        for (size_t i = 1; i < nfas.size(); ++i) {
+            concatenation = concatenate_eps(concatenation, *nfas[i], delimiter, true);
+        }
+        return concatenation;
+    }
+    // ********************************** END JUST ATTEMPT *************/
+
     AutAssignment DecisionProcedure::get_product_languages(SolvingState& solving_state, std::vector<BasicTerm> lhs_vars, std::vector<BasicTerm> rhs_vars) {
         // Get automata of the variables on the left side
         STRACE(str_nfa, tout << "Left automata:" << std::endl);
-        auto [left_side_automata, left_side_division] = solving_state.get_automata_and_division_of_concatenation(lhs_vars, false);
-        SASSERT(left_side_division.size() == left_side_vars.size()); // each division should contain exactly one left variable
-        SASSERT(left_side_automata.size() == left_side_division.size()); // we have one automaton for each division
+        auto [lhs_automata, lhs_division] = solving_state.get_automata_and_division_of_concatenation(lhs_vars, false);
+        SASSERT(lhs_division.size() == lhs_vars.size()); // each division should contain exactly one left variable
+        SASSERT(lhs_automata.size() == lhs_division.size()); // we have one automaton for each division
 
-        // Get automata of the variables on the right side
-        STRACE(str_nfa, tout << "Right automata:" << std::endl);
-        auto [right_side_automata, right_side_division] = solving_state.get_automata_and_division_of_concatenation(rhs_vars, false);
-        SASSERT(right_side_automata.size() == right_side_division.size()); // we have one automaton for each division
+        // // Get automata of the variables on the right side
+        // STRACE(str_nfa, tout << "Right automata:" << std::endl);
+        // auto [rhs_automata, rhs_division] = solving_state.get_automata_and_division_of_concatenation(rhs_vars, false);
+        // SASSERT(rhs_automata.size() == rhs_division.size()); // we have one automaton for each division
 
-        return {};
+        // *********** START ATTEMPT **********
+        // just trying what does segmentation do
+
+        // Automata representing the left/rigth side concatenated over different epsilon transitions.
+        mata::nfa::Nfa concatenated_lhs = concatenate_with(lhs_automata, mata::nfa::EPSILON);
+        STRACE(str, tout << "Left automaton:\n" << concatenated_lhs << "\n");
+
+        mata::nfa::Nfa concatenated_rhs = solving_state.aut_ass.get_automaton_concat(rhs_vars);
+        STRACE(str, tout << "Right automaton:\n" << concatenated_rhs << "\n");
+
+        auto product_pres_eps_trans{
+                intersection(concatenated_lhs, concatenated_rhs).trim() };
+
+        if (product_pres_eps_trans.is_lang_empty()) {
+            return {};
+        }
+
+        product_pres_eps_trans = reduce(product_pres_eps_trans);
+        STRACE(str, tout << "Product automaton:\n" << product_pres_eps_trans << "\n");
+
+        mata::applications::strings::seg_nfa::Segmentation segmentation{product_pres_eps_trans, { mata::nfa::EPSILON }};
+        const auto& segments{ segmentation.get_untrimmed_segments() };
+
+        STRACE(str, tout << lhs_vars.size() << " " << segments.size() << "\n");
+        for (unsigned ind = 0; ind < segments.size(); ind++) {
+            STRACE(str, tout << "Initial segment automata for " << lhs_vars[ind] << " :\n" << segments[ind] << "\n");
+        }
+        // *********** END ATTEMPT **********
+
+        AutAssignment eps_product_lang = {};
+        for (unsigned ind = 0; ind < lhs_vars.size(); ind++) {
+            BasicTerm left_var = lhs_vars[ind];
+            // there is not left var in result language
+            if (eps_product_lang.find(left_var) == eps_product_lang.end()) {
+                eps_product_lang[left_var] = std::make_shared<mata::nfa::Nfa>(segments[ind]);
+            } else {
+                eps_product_lang.restrict_lang(left_var, segments[ind]);
+            }
+        }
+        for (const auto &x : eps_product_lang) {
+            STRACE(str, tout << "Epsilon product automata for " << x.first << " :\n" << *x.second << "\n");
+        }
+
+        return eps_product_lang;
     }
 
     void DecisionProcedure::single_product_heuristic() {
@@ -1714,6 +1867,7 @@ namespace smt::noodler {
 
         // get new languages from epsilon product
         AutAssignment product_aut_ass = get_product_languages(solving_state, left_side_vars, right_side_vars);
+        if (product_aut_ass.size() == 0) return false;
 
         // perform intersection of current languages and new product languages
         for (const auto &left_var : left_side_vars) {
