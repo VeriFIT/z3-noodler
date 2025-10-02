@@ -783,7 +783,10 @@ namespace smt::noodler {
             if (solving_state.contains_length_var(input_vars)) {
                 solving_state.length_sensitive_vars.insert(output_vars[0]);
             }
-            solving_state.push_dependent_predicates(solving_state.add_transducer(transducer_to_process.get_transducer(), input_vars, output_vars, false));
+            solving_state.add_predicate(transducer_to_process, false);
+            solving_state.push_dependent_predicates(transducer_to_process, false);
+            push_to_worklist(std::move(solving_state), false);
+            return;
         }
 
         std::vector<mata::applications::strings::seg_nfa::TransducerNoodle> noodles = mata::applications::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true, m_params.m_homomorphism_heuristic);
