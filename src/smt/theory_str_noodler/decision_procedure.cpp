@@ -751,7 +751,7 @@ namespace smt::noodler {
         // would be processed again, but input_vars still lead to one automaton so we would repeat this and get stuck.
         if (input_vars_automata.size() == 1 && !solving_state.contains_length_var(input_vars)) {
             mata::nfa::Nfa application_to_input_automaton = transducer_to_process.get_transducer()->apply(*input_vars_automata[0], 0).to_nfa_move();
-            application_to_input_automaton = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_input_automaton.trim()));
+            application_to_input_automaton = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_input_automaton.trim())).trim();
             
             if (application_to_input_automaton.is_lang_empty()) {
                 // applying input on the transducer results in empty language, this solving_state cannot lead to solution
@@ -774,6 +774,17 @@ namespace smt::noodler {
         auto [output_vars_automata, output_vars_divisions] = solving_state.get_automata_and_division_of_concatenation(output_vars, false);
         SASSERT(output_vars_automata.size() == output_vars_divisions.size());
         SASSERT(output_vars_divisions.size() == output_vars.size());
+
+        if (output_vars.size() == 1 && input_vars.size() == 1) {
+            // if we have simple transducer x = T(y), we do not need to noodlify it, just update the language of x (and add predicates depending on x)
+            mata::nfa::Nfa application_to_input_automaton = transducer_to_process.get_transducer()->apply(*input_vars_automata[0], 0).to_nfa_move();
+            application_to_input_automaton = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_input_automaton.trim())).trim();
+            solving_state.aut_ass[output_vars[0]] = std::make_shared<mata::nfa::Nfa>(application_to_input_automaton);
+            if (solving_state.contains_length_var(input_vars)) {
+                solving_state.length_sensitive_vars.insert(output_vars[0]);
+            }
+            solving_state.push_dependent_predicates(solving_state.add_transducer(transducer_to_process.get_transducer(), input_vars, output_vars, false));
+        }
 
         std::vector<mata::applications::strings::seg_nfa::TransducerNoodle> noodles = mata::applications::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true, m_params.m_homomorphism_heuristic);
         for (const auto& noodle : noodles) {
