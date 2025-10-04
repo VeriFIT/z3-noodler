@@ -692,17 +692,28 @@ namespace smt::noodler {
          * 
          * @return Unordered map where for each varaible there is a new language
          */
-        AutAssignment get_product_languages(SolvingState& solving_state, std::vector<BasicTerm> lhs_vars, std::vector<BasicTerm> rhs_vars);
+        AutAssignment get_product_languages(SolvingState& solving_state, const std::vector<BasicTerm>& lhs_vars, const std::vector<BasicTerm>& rhs_vars);
 
         /**
          * @brief Heuristic method based on only epsilon-product generation and refining languages based on this product
          * First creates epsilon-product for every inclusion and refines variable language based on segment automaton recieved
          * from product
          * Can provide adventage in some UNSAT problems - no need to do time consuming noodlifications
-         * Overapproximates languages - if finds UNSAT, can return UNSAT - if end languages are satisfiable - works with refined languages
+         * Overapproximates languages - if finds UNSAT, can return UNSAT (or in fact wouldn't push back solving state)
+         * if end languages are satisfiable - works with refined languages
          */
         void single_product_heuristic();
 
+        /**
+         * @brief Processes inclusion from inclusion graph and eventually refines solving state languages
+         * Creates epsilon product of given inclusion and performs segmentation
+         * Refines solving state based on these segments (for every left side variable there is segment - we perform intersection with current variable language)
+         * 
+         * @param inclusion Inclusion to be processed
+         * @param solving_state Solving state instance - it's can be altered after returning from function (due language refinment)
+         * 
+         * @return true <-> current solving state is still SAT
+         */
         bool process_inclusion_single_product(Predicate &inclusion, SolvingState& solving_state);
 
         ////////////////////////////////////////////////////////////////
