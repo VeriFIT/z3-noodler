@@ -1716,6 +1716,8 @@ namespace smt::noodler {
 
         int init_predicate_size = process_state.predicates_to_process.size();
 
+        SolvingState tmp_state = process_state;
+
         // loop once through initial inclusion graph
         for (int processed_count = 0; processed_count < init_predicate_size; processed_count++)
         {
@@ -1725,7 +1727,7 @@ namespace smt::noodler {
             // don't know what to do with transducers
             if (predicate_to_process.is_equation()) { // inclusion
                 // if found UNSAT inclusion - this solving state is UNSAT - just return no pushing to worklist
-                if (!process_inclusion_single_product(predicate_to_process, process_state)) {
+                if (!process_inclusion_single_product(predicate_to_process, tmp_state)) {
                     return;
                 }
             } else {
