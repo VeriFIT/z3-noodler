@@ -93,6 +93,7 @@ namespace smt2 {
         token read_number();
         token read_signed_number();
         token read_string();
+        token read_single_quoted_string();
         token read_bv_literal();
 
         void start_caching() { m_cache_input = true; m_cache.reset(); }

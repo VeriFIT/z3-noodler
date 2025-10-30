@@ -218,6 +218,31 @@ namespace smt2 {
         }
     }
 
+    // Z3 extension: treat single-quoted content as STRING_TOKEN without escape processing
+    // Example: '[a-z]' becomes the string token with contents [a-z]
+    scanner::token scanner::read_single_quoted_string() {
+        SASSERT(curr() == '\'');
+        next();
+        m_string.reset();
+        while (true) {
+            char c = curr();
+            if (m_at_eof)
+                throw scanner_exception("unexpected end of string", m_line, m_spos);
+            if (c == '\n') {
+                new_line();
+            }
+            else if (c == '\'') {
+                // closing quote; do not include it
+                next();
+                m_string.push_back(0);
+                return STRING_TOKEN;
+            }
+            // do not interpret escapes; keep raw content
+            m_string.push_back(c);
+            next();
+        }
+    }
+
     scanner::token scanner::read_bv_literal() {
         SASSERT(curr() == '#');
         next();
@@ -364,6 +389,8 @@ namespace smt2 {
                 return read_symbol();
             case '"':
                 return read_string();
+            case '\'':
+                return read_single_quoted_string();
             case '0':
                 return read_number();
             case '#':
