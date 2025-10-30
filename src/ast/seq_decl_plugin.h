@@ -77,6 +77,7 @@ enum seq_op_kind {
     OP_RE_OF_PRED,
     OP_RE_REVERSE,
     OP_RE_DERIVATIVE, // Char -> RegEx -> RegEx
+    OP_RE_FROM_ECMA2020, // Parameterized regex literal: one zstring parameter -> RegEx(String)
 
 
     // string specific operators.
@@ -540,6 +541,9 @@ public:
 
         sort* mk_re(sort* seq) { parameter param(seq); return m.mk_sort(m_fid, RE_SORT, 1, &param); }
         sort* to_seq(sort* re);
+
+        // Create a regex literal from an ECMAScript 2020 pattern (stored as a zstring parameter)
+        app* mk_from_ecma2020(zstring const& pattern);
 
         app* mk_to_re(expr* s) { return m.mk_app(m_fid, OP_SEQ_TO_RE, 1, &s); }
         app* mk_to_re(const zstring &s) { return mk_to_re(u.str.mk_string(s)); }

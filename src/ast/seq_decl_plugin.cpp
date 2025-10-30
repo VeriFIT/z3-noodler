@@ -249,6 +249,8 @@ void seq_decl_plugin::init() {
     m_sigs[OP_SEQ_REPLACE_RE]    = alloc(psig, m, "str.replace_re", 1, 3, seqAreAseqA, seqA);
     m_sigs[OP_SEQ_REPLACE_ALL]   = alloc(psig, m, "str.replace_all", 1, 3, seqAseqAseqA, seqA);
     m_sigs[OP_STRING_CONST]      = nullptr;
+    // Support both parameterized-const (arity=0, zstring parameter) and unary form (String -> RegEx(String))
+    m_sigs[OP_RE_FROM_ECMA2020]  = alloc(psig, m, "re.from_ecma2020", 0, 1, &strT, reT);
     m_sigs[_OP_STRING_STRIDOF]   = alloc(psig, m, "str.indexof", 0, 3, str2TintT, intT);
     m_sigs[_OP_STRING_STRREPL]   = alloc(psig, m, "str.replace", 0, 3, str3T, strT);
     m_sigs[_OP_STRING_FROM_CHAR] = alloc(psig, m, "char", 1, 0, nullptr, strT);
@@ -513,6 +515,25 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
         }
         m.raise_exception("Incorrect arguments used for re.^. Expected one non-negative integer parameter");
 
+    case OP_RE_FROM_ECMA2020:
+        m_has_re = true;
+        if (arity == 1) {
+            // Unary form: String -> RegEx(String)
+            match(*m_sigs[k], arity, domain, range, rng);
+            return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k));
+        }
+        else if (arity == 0) {
+            // Parameterized-const form: zero args, one zstring parameter
+            if (!(num_parameters == 1 && parameters[0].is_zstring())) {
+                m.raise_exception("invalid re.from_ecma2020 declaration: expected zero arguments and one string parameter");
+            }
+            return m.mk_const_decl(symbol("re.from_ecma2020"), mk_reglan(),
+                                   func_decl_info(m_family_id, OP_RE_FROM_ECMA2020, num_parameters, parameters));
+        }
+        else {
+            m.raise_exception("invalid re.from_ecma2020: expected one String argument or zero arguments with one string parameter");
+        }
+
     case OP_STRING_CONST:
         if (!(num_parameters == 1 && arity == 0 && parameters[0].is_zstring())) {
             m.raise_exception("invalid string declaration");
@@ -683,6 +704,8 @@ void seq_decl_plugin::get_op_names(svector<builtin_name> & op_names, symbol cons
         if (m_sigs[i])
             op_names.push_back(builtin_name(m_sigs[i]->m_name.str(), i));
     }
+    // Explicitly expose parameterized/alias ops without m_sigs entries
+    op_names.push_back(builtin_name("re.from_ecma2020", OP_RE_FROM_ECMA2020));
     op_names.push_back(builtin_name("seq.map",    OP_SEQ_MAP));
     op_names.push_back(builtin_name("seq.mapi",   OP_SEQ_MAPI));
     op_names.push_back(builtin_name("seq.foldl",  OP_SEQ_FOLDL));
@@ -1234,6 +1257,14 @@ app* seq_util::rex::mk_full_char(sort* s) {
 
 app* seq_util::rex::mk_full_seq(sort* s) {
     return m.mk_app(m_fid, OP_RE_FULL_SEQ_SET, 0, nullptr, 0, nullptr, s);
+}
+
+app* seq_util::rex::mk_from_ecma2020(zstring const& pattern) {
+    parameter p(pattern);
+    sort* re_sort = mk_re(u.str.mk_string_sort());
+    func_decl* f = m.mk_const_decl(symbol("re.from_ecma2020"), re_sort,
+                                   func_decl_info(m_fid, OP_RE_FROM_ECMA2020, 1, &p));
+    return m.mk_const(f);
 }
 
 app* seq_util::rex::mk_empty(sort* s) {    
