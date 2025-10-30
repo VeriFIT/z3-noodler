@@ -248,6 +248,10 @@ void seq_decl_plugin::init() {
     m_sigs[OP_RE_OF_PRED]        = alloc(psig, m, "re.of.pred", 1, 1, &predA, reA);
     m_sigs[OP_RE_REVERSE]        = alloc(psig, m, "re.reverse", 1, 1, &reA, reA);
     m_sigs[OP_RE_DERIVATIVE]     = alloc(psig, m, "re.derivative", 1, 2, AreA, reA);
+    m_sigs[OP_RE_CAPTURE]        = alloc(psig, m, "re.capture", 1, 1, &reA, reA);
+    m_sigs[OP_RE_REFERENCE]      = alloc(psig, m, "re.reference", 1, 0, nullptr, reA);
+    m_sigs[OP_RE_BEGIN_ANCHOR]   = alloc(psig, m, "re.begin-anchor", 1, 0, nullptr, reA);
+    m_sigs[OP_RE_END_ANCHOR]     = alloc(psig, m, "re.end-anchor", 1, 0, nullptr, reA);
     m_sigs[_OP_RE_ANTIMIROV_UNION] = alloc(psig, m, "re.union", 1, 2, reAreA, reA);
     m_sigs[OP_SEQ_TO_RE]         = alloc(psig, m, "seq.to.re",  1, 1, &seqA, reA);
     m_sigs[OP_SEQ_IN_RE]         = alloc(psig, m, "seq.in.re", 1, 2, seqAreA, boolT);
@@ -511,6 +515,29 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
         }
         m.raise_exception("Incorrect arguments used for re.^. Expected one non-negative integer parameter");
 
+    case OP_RE_CAPTURE:
+        m_has_re = true;
+        if (num_parameters == 1 && parameters[0].is_int() && arity == 1 && parameters[0].get_int() >= 0) {
+            rng = domain[0];
+            return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, num_parameters, parameters));
+        }
+        m.raise_exception("Incorrect arguments used for re.capture. Expected one non-negative integer parameter");
+
+    case OP_RE_REFERENCE:
+        m_has_re = true;
+        if (!range) range = mk_reglan();
+        match(*m_sigs[k], arity, domain, range, rng);
+        if (num_parameters == 1 && parameters[0].is_int() && parameters[0].get_int() >= 0 && arity == 0) {
+            return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, num_parameters, parameters));
+        }
+        m.raise_exception("Incorrect arguments used for re.reference. Expected zero arguments and one non-negative integer parameter");
+
+    case OP_RE_BEGIN_ANCHOR:
+    case OP_RE_END_ANCHOR:
+        m_has_re = true;
+        if (!range) range = mk_reglan();
+        return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, range, func_decl_info(m_family_id, k));
+
     case OP_RE_FROM_ECMA2020:
         m_has_re = true;
         if (arity == 1) {
@@ -701,7 +728,11 @@ void seq_decl_plugin::get_op_names(svector<builtin_name> & op_names, symbol cons
             op_names.push_back(builtin_name(m_sigs[i]->m_name.str(), i));
     }
     // Explicitly expose parameterized/alias ops without m_sigs entries
+    op_names.push_back(builtin_name("re.reference", OP_RE_REFERENCE));
+    op_names.push_back(builtin_name("re.begin-anchor", OP_RE_BEGIN_ANCHOR));
+    op_names.push_back(builtin_name("re.end-anchor", OP_RE_END_ANCHOR));
     op_names.push_back(builtin_name("re.from_ecma2020", OP_RE_FROM_ECMA2020));
+    op_names.push_back(builtin_name("re.capture", OP_RE_CAPTURE));
     op_names.push_back(builtin_name("seq.map",    OP_SEQ_MAP));
     op_names.push_back(builtin_name("seq.mapi",   OP_SEQ_MAPI));
     op_names.push_back(builtin_name("seq.foldl",  OP_SEQ_FOLDL));
@@ -1263,6 +1294,19 @@ app* seq_util::rex::mk_from_ecma2020(zstring const& pattern) {
     return m.mk_const(f);
 }
 
+// Create a capturing group wrapper around r with index n
+app* seq_util::rex::mk_capture(expr* r, unsigned n) {
+    parameter p(n);
+    return m.mk_app(m_fid, OP_RE_CAPTURE, 1, &p, 1, &r);
+}
+
+// Create a backreference node for capture group n
+app* seq_util::rex::mk_reference(unsigned n) {
+    parameter p(n);
+    sort* re_sort = mk_re(u.str.mk_string_sort());
+    return m.mk_app(m_fid, OP_RE_REFERENCE, 1, &p, 0, nullptr, re_sort);
+}
+
 app* seq_util::rex::mk_empty(sort* s) {    
     return m.mk_app(m_fid, OP_RE_EMPTY_SET, 0, nullptr, 0, nullptr, s);
 }
@@ -1720,6 +1764,13 @@ seq_util::rex::info seq_util::rex::mk_info_rec(app* e) const {
         case OP_RE_EMPTY_SET:
             return info(true, l_false, UINT_MAX);
         case OP_RE_FULL_SEQ_SET:
+            return info(true, l_true, 0);
+        case OP_RE_CAPTURE:
+            return get_info_rec(e->get_arg(0));
+        case OP_RE_REFERENCE:
+            return unknown_info; // depends on group length
+        case OP_RE_BEGIN_ANCHOR:
+        case OP_RE_END_ANCHOR:
             return info(true, l_true, 0);
         case OP_RE_STAR:
             i1 = get_info_rec(e->get_arg(0));
