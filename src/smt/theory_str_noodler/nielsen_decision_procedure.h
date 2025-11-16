@@ -349,7 +349,7 @@ namespace smt::noodler {
      */
     class NielsenDecisionProcedure : public AbstractDecisionProcedure {
     private:
-        std::unordered_set<BasicTerm> init_length_sensitive_vars;
+        std::set<BasicTerm> init_length_sensitive_vars;
         Formula formula;
         AutAssignment init_aut_ass;
         const theory_str_noodler_params& m_params;
@@ -445,7 +445,7 @@ namespace smt::noodler {
          * @param par Parameters for Noodler string theory.
          */
         NielsenDecisionProcedure(const Formula &equalities, AutAssignment init_aut_ass,
-                           const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
+                           const std::set<BasicTerm>& init_length_sensitive_vars,
                            const theory_str_noodler_params& par
          ) : init_length_sensitive_vars{ init_length_sensitive_vars },
              formula { equalities },
@@ -487,7 +487,7 @@ namespace smt::noodler {
         /**
          * @brief Get the length sensitive variables
          */
-        const std::unordered_set<BasicTerm>& get_init_length_sensitive_vars() const override {
+        const std::set<BasicTerm>& get_init_length_sensitive_vars() const override {
             return this->init_length_sensitive_vars;
         }
 

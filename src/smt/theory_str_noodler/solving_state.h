@@ -34,7 +34,7 @@ namespace smt::noodler {
         std::deque<Predicate> predicates_to_process;
 
         // the variables that have length constraint on them in the rest of formula
-        std::unordered_set<BasicTerm> length_sensitive_vars;
+        std::set<BasicTerm> length_sensitive_vars;
 
 
         SolvingState() = default;
@@ -43,7 +43,7 @@ namespace smt::noodler {
                      std::set<Predicate> inclusions,
                      std::set<Predicate> transducers,
                      std::set<Predicate> predicates_not_on_cycle,
-                     std::unordered_set<BasicTerm> length_sensitive_vars,
+                     std::set<BasicTerm> length_sensitive_vars,
                      std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map)
                         : aut_ass(aut_ass),
                           substitution_map(substitution_map),

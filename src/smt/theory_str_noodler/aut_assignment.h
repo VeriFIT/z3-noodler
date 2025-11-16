@@ -355,10 +355,10 @@ namespace smt::noodler {
         /**
          * @brief Get all keys from the assignment
          * 
-         * @return std::unordered_set<BasicTerm> Keys
+         * @return std::set<BasicTerm> Keys
          */
-        std::unordered_set<BasicTerm> get_keys() const {
-            std::unordered_set<BasicTerm> ret;
+        std::set<BasicTerm> get_keys() const {
+            std::set<BasicTerm> ret;
             for(const auto & pr : *this) {
                 ret.insert(pr.first);
             }

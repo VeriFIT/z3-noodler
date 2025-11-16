@@ -33,7 +33,7 @@ public:
 class DecisionProcedureCUT : public DecisionProcedure {
 public:
     DecisionProcedureCUT(const Formula &equalities, AutAssignment init_aut_ass,
-                         const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
+                         const std::set<BasicTerm>& init_length_sensitive_vars,
                          ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, const BasicTermEqiv& len_eq_vars, const theory_str_noodler_params& par
     ) : DecisionProcedure(equalities, std::move(init_aut_ass), init_length_sensitive_vars, par, {}, m) {}
 
@@ -81,7 +81,7 @@ inline std::shared_ptr<mata::nfa::Nfa> regex_to_nfa(const std::string& regex) {
     return std::make_shared<mata::nfa::Nfa>(aut);
 }
 
-inline std::map<BasicTerm, expr_ref> create_var_map(const std::unordered_set<BasicTerm>& vars, ast_manager& m, seq_util& m_util_s) {
+inline std::map<BasicTerm, expr_ref> create_var_map(const std::set<BasicTerm>& vars, ast_manager& m, seq_util& m_util_s) {
     std::map<BasicTerm, expr_ref> ret;
 
     for(const BasicTerm& v : vars) {

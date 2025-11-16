@@ -462,7 +462,7 @@ namespace smt::noodler {
         /**
          * Get initial length variables as a set of @c BasicTerm from their expressions.
          */
-        std::unordered_set<BasicTerm> get_init_length_vars(AutAssignment& ass);
+        std::set<BasicTerm> get_init_length_vars(AutAssignment& ass);
         /**
          * @brief Get the conversions (to/from_int/code) with noodler variables
          * 
@@ -481,7 +481,7 @@ namespace smt::noodler {
          * the original formula is SAT, otherwise we need to run normal decision procedure.
          */
         lbool solve_underapprox(const Formula& instance, const AutAssignment& aut_ass,
-                                const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
+                                const std::set<BasicTerm>& init_length_sensitive_vars,
                                 std::vector<TermConversion> conversions);
 
         /**
@@ -510,7 +510,7 @@ namespace smt::noodler {
          * @param init_length_sensitive_vars Length variables
          * @return true <-> suitable for Nielsen-based decision procedure
          */
-        bool is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const;
+        bool is_nielsen_suitable(const Formula& instance, const std::set<BasicTerm>& init_length_sensitive_vars) const;
 
         /**
          * @brief Check if the current instance is suitable for underapproximation.
@@ -546,7 +546,7 @@ namespace smt::noodler {
          * @param init_length_sensitive_vars Length sensitive variables
          * @return lbool Outcome of the procedure
          */
-        lbool run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
+        lbool run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::set<BasicTerm>& init_length_sensitive_vars);
 
         /**
          * @brief Wrapper for running the length-based decision procedure. 
@@ -556,7 +556,7 @@ namespace smt::noodler {
          * @param init_length_sensitive_vars Length sensitive variables
          * @return lbool Outcome of the procedure
          */
-        lbool run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
+        lbool run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::set<BasicTerm>& init_length_sensitive_vars);
 
         /**
          * @brief Wrapper for running the mulitple membership query heuristics.
@@ -584,7 +584,7 @@ namespace smt::noodler {
          * @return lbool Outcome of the procedure.
          */
         lbool run_length_sat(const Formula& instance, const AutAssignment& aut_ass,
-                                const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
+                                const std::set<BasicTerm>& init_length_sensitive_vars,
                                 std::vector<TermConversion> conversions);
 
         /**

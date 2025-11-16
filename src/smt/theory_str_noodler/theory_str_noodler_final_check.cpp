@@ -192,7 +192,7 @@ namespace smt::noodler {
         }
 
         // Get the initial length vars that are needed here (i.e they are in aut_assignment)
-        std::unordered_set<BasicTerm> init_length_sensitive_vars{ get_init_length_vars(aut_assignment) };
+        std::set<BasicTerm> init_length_sensitive_vars{ get_init_length_vars(aut_assignment) };
         STRACE(str,
             tout << "Relevant formula:\n" << instance.to_string();
             for (const auto& conv : conversions) {
@@ -660,8 +660,8 @@ namespace smt::noodler {
         return aut_assignment;
     }
 
-    std::unordered_set<BasicTerm> theory_str_noodler::get_init_length_vars(AutAssignment& ass) {
-        std::unordered_set<BasicTerm> init_lengths{};
+    std::set<BasicTerm> theory_str_noodler::get_init_length_vars(AutAssignment& ass) {
+        std::set<BasicTerm> init_lengths{};
         for (const auto& len : len_vars) {
             BasicTerm v = util::get_variable_basic_term(len);
             if(ass.find(v) != ass.end())
@@ -740,7 +740,7 @@ namespace smt::noodler {
     }
 
     lbool theory_str_noodler::solve_underapprox(const Formula& instance, const AutAssignment& aut_assignment,
-                                                const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
+                                                const std::set<BasicTerm>& init_length_sensitive_vars,
                                                 std::vector<TermConversion> conversions) {
         dec_proc = std::make_shared<DecisionProcedure>(instance, aut_assignment, init_length_sensitive_vars, m_params, conversions, m);
         if (dec_proc->preprocess(PreprocessType::UNDERAPPROX, this->var_eqs.get_equivalence_bt(aut_assignment)) == l_false) {
@@ -842,7 +842,7 @@ namespace smt::noodler {
         STRACE(str_block, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
     }
 
-    bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const {
+    bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, const std::set<BasicTerm>& init_length_sensitive_vars) const {
         if(!this->m_membership_todo_rel.empty() || !this->m_not_contains_todo_rel.empty() || !this->m_conversion_todo.empty() || !this->m_word_diseq_todo_rel.empty() || instance.contains_pred_type(PredicateType::Transducer)) {
             return false;
         }
@@ -886,7 +886,7 @@ namespace smt::noodler {
         return true;
     }
 
-    lbool theory_str_noodler::run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
+    lbool theory_str_noodler::run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::set<BasicTerm>& init_length_sensitive_vars) {
         STRACE(str, tout << "Trying nielsen" << std::endl);
         dec_proc = std::make_shared<NielsenDecisionProcedure>(instance, aut_assignment, init_length_sensitive_vars, m_params);
         dec_proc->preprocess();
@@ -920,7 +920,7 @@ namespace smt::noodler {
         return l_undef;
     }
 
-    lbool theory_str_noodler::run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) {
+    lbool theory_str_noodler::run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::set<BasicTerm>& init_length_sensitive_vars) {
         STRACE(str, tout << "Trying length-based procedure" << std::endl);
         // we need a method get_formula from LengthDecisionProcedure
         std::shared_ptr<LengthDecisionProcedure> len_dec_proc = std::make_shared<LengthDecisionProcedure>(instance, aut_assignment, init_length_sensitive_vars, m_params);
@@ -1097,7 +1097,7 @@ namespace smt::noodler {
     }
 
     lbool theory_str_noodler::run_length_sat(const Formula& instance, const AutAssignment& aut_ass,
-                                const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
+                                const std::set<BasicTerm>& init_length_sensitive_vars,
                                 std::vector<TermConversion> conversions) {
 
         dec_proc = std::make_shared<UnaryDecisionProcedure>(instance, aut_ass, m_params);

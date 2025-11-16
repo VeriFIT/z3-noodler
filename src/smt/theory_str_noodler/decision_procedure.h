@@ -99,7 +99,7 @@ namespace smt::noodler {
         /**
          * @brief Get the length sensitive variables
          */
-        virtual const std::unordered_set<BasicTerm>& get_init_length_sensitive_vars() const {
+        virtual const std::set<BasicTerm>& get_init_length_sensitive_vars() const {
             throw std::runtime_error("Unimplemented");
         }
 
@@ -121,7 +121,7 @@ namespace smt::noodler {
         SolvingState solution;
 
         // initial length vars, formula, automata assignment and substitution map, can be updated by preprocessing, used for initializing the decision procedure
-        std::unordered_set<BasicTerm> init_length_sensitive_vars;
+        std::set<BasicTerm> init_length_sensitive_vars;
         Formula formula;
         AutAssignment init_aut_ass;
         std::unordered_map<BasicTerm, std::vector<BasicTerm>> init_substitution_map;
@@ -359,7 +359,7 @@ namespace smt::noodler {
          */
         DecisionProcedure(
              Formula formula, AutAssignment init_aut_ass,
-             std::unordered_set<BasicTerm> init_length_sensitive_vars,
+             std::set<BasicTerm> init_length_sensitive_vars,
              const theory_str_noodler_params &par,
              std::vector<TermConversion> conversions,
              ast_manager& m
@@ -396,7 +396,7 @@ namespace smt::noodler {
         /**
          * @brief Get the length sensitive variables
          */
-        const std::unordered_set<BasicTerm>& get_init_length_sensitive_vars() const override {
+        const std::set<BasicTerm>& get_init_length_sensitive_vars() const override {
             return this->init_length_sensitive_vars;
         }
     };

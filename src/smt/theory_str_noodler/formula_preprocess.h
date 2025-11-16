@@ -57,22 +57,6 @@ namespace smt::noodler {
     }
 
     template<typename T>
-    bool set_disjoint(const std::unordered_set<T>& t1, const std::set<T>& t2) {
-        if (t1.size() < t2.size()) {
-            for(const auto& t : t1) {
-                if(t2.contains(t))
-                    return false;
-            }
-        } else {
-            for(const auto& t : t2) {
-                if(t1.contains(t))
-                    return false;
-            }
-        }
-        return true;
-    }
-
-    template<typename T>
     bool set_disjoint(const std::set<T>& t1, const std::set<T>& t2) {
         if (t1.size() < t2.size()) {
             for(const auto& t : t1) {
@@ -350,7 +334,7 @@ namespace smt::noodler {
         std::vector<Predicate> removed_inclusions_for_model;
 
         LenNode len_formula;
-        std::unordered_set<BasicTerm> len_variables;
+        std::set<BasicTerm> len_variables;
         std::set<BasicTerm> conversion_vars; // all conversion vars should always be also in len vars, also it should not contain literals
 
         const theory_str_noodler_params& m_params;
@@ -381,7 +365,7 @@ namespace smt::noodler {
 
 
     public:
-        FormulaPreprocessor(Formula conj, AutAssignment ass, std::unordered_set<BasicTerm> lv, const theory_str_noodler_params &par, std::set<BasicTerm> conversion_vars) :
+        FormulaPreprocessor(Formula conj, AutAssignment ass, std::set<BasicTerm> lv, const theory_str_noodler_params &par, std::set<BasicTerm> conversion_vars) :
             formula(conj),
             fresh_var_cnt(0),
             aut_ass(ass),
@@ -401,7 +385,7 @@ namespace smt::noodler {
         Dependency get_flat_dependency() const;
         void add_to_len_formula(LenNode len_to_add) { len_formula.succ.push_back(std::move(len_to_add)); }
         const LenNode& get_len_formula() const { return this->len_formula; }
-        const std::unordered_set<BasicTerm>& get_len_variables() const { return this->len_variables; }
+        const std::set<BasicTerm>& get_len_variables() const { return this->len_variables; }
         const std::vector<Predicate>& get_removed_inclusions_for_model() const {return this->removed_inclusions_for_model; }
 
         Formula get_modified_formula() const;
