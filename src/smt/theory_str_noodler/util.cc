@@ -53,26 +53,6 @@ namespace smt::noodler::util {
         }
     }
 
-    void get_variable_names(expr* const ex, const seq_util& m_util_s, const ast_manager& m, std::unordered_set<std::string>& res) {
-        if(m_util_s.str.is_string(ex)) {
-            return;
-        }
-
-        if(is_variable(ex)) {
-            res.insert(std::to_string(to_app(ex)->get_name()));
-            return;
-        }
-
-        SASSERT(is_app(ex));
-        app* ex_app{ to_app(ex) };
-
-        for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
-            SASSERT(is_app(ex_app->get_arg(i)));
-            app *arg = to_app(ex_app->get_arg(i));
-            get_variable_names(arg, m_util_s, m, res);
-        }
-    }
-
     bool is_variable(const expr* expression) {
         if (!is_app(expression)) {
             return false;

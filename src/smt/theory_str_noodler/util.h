@@ -89,15 +89,6 @@ namespace smt::noodler::util {
     bool is_variable(const expr* expression);
 
     /**
-     * Get variable names from a given expression @p ex. Append to the output parameter @p res.
-     * @param[in] ex Expression to be checked for variables.
-     * @param[in] m_util_s Seq util for AST.
-     * @param[in] m AST manager.
-     * @param[out] res Vector of found variables (may contain duplicities).
-     */
-    void get_variable_names(expr* ex, const seq_util& m_util_s, const ast_manager& m, std::unordered_set<std::string>& res);
-
-    /**
      * Collect basic terms (vars, literals) from a concatenation @p ex. Append the basic terms to the output parameter
      *  @p terms.
      * @param ex Expression to be checked for basic terms.
