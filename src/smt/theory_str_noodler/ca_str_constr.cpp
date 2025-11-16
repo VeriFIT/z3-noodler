@@ -327,7 +327,7 @@ namespace smt::noodler::ca {
         if (this->predicates.size() == 1) {
             size_t original_nfa_size = nfa_with_metadata.nfa.num_of_states();
 
-            std::map<mata::nfa::State, mata::nfa::State> state_renaming; // Original state -> New state
+            mata::nfa::StateRenaming state_renaming; // Original state -> New state
 
             nfa_with_metadata.nfa.trim(&state_renaming);  // Automaton is modified in-place
 
