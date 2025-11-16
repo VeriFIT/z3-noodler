@@ -17,12 +17,10 @@
 #include <stdexcept>
 #include <memory>
 #include <cassert>
-#include <unordered_map>
 #include <string>
 #include <string_view>
 #include <set>
 #include <map>
-#include <unordered_set>
 #include <iostream>
 #include <mata/nft/nft.hh>
 

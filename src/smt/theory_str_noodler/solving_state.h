@@ -19,7 +19,7 @@ namespace smt::noodler {
         // of the automata from these variables). Each variable is either assigned in aut_ass or
         // substituted in substitution_map, but not both!
         AutAssignment aut_ass;
-        std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map;
+        std::map<BasicTerm, std::vector<BasicTerm>> substitution_map;
 
         // set of inclusions (i.e. Predicate must be of type equations which we pretend is an inclusion) where we are trying to find aut_ass + substitution_map such that they hold
         std::set<Predicate> inclusions;
@@ -44,7 +44,7 @@ namespace smt::noodler {
                      std::set<Predicate> transducers,
                      std::set<Predicate> predicates_not_on_cycle,
                      std::set<BasicTerm> length_sensitive_vars,
-                     std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map)
+                     std::map<BasicTerm, std::vector<BasicTerm>> substitution_map)
                         : aut_ass(aut_ass),
                           substitution_map(substitution_map),
                           inclusions(inclusions),

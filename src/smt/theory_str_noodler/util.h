@@ -8,8 +8,6 @@
 #include <map>
 #include <memory>
 #include <queue>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <mata/nft/nft.hh>
 #include <mata/applications/strings.hh>

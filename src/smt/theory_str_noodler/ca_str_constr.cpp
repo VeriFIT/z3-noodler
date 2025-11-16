@@ -5,7 +5,6 @@
 #include <mata/nfa/delta.hh>
 #include <mata/nfa/nfa.hh>
 #include <mata/applications/strings.hh>
-#include <unordered_map>
 #include <mata/parser/re2parser.hh>
 
 namespace smt::noodler::ca {
@@ -328,7 +327,7 @@ namespace smt::noodler::ca {
         if (this->predicates.size() == 1) {
             size_t original_nfa_size = nfa_with_metadata.nfa.num_of_states();
 
-            std::unordered_map<mata::nfa::State, mata::nfa::State> state_renaming; // Original state -> New state
+            std::map<mata::nfa::State, mata::nfa::State> state_renaming; // Original state -> New state
 
             nfa_with_metadata.nfa.trim(&state_renaming);  // Automaton is modified in-place
 

@@ -119,7 +119,7 @@ namespace smt::noodler {
     //----------------------------------------------------------------------------------------------------------------------------------
 
     using ConcatGraphEdges = std::map<std::pair<BasicTerm,BasicTerm>, unsigned>;
-    using SubstitutionMap = std::unordered_map<BasicTerm, std::vector<BasicTerm>>;
+    using SubstitutionMap = std::map<BasicTerm, std::vector<BasicTerm>>;
 
     /**
      * @brief Concatenation graph. Oriented graph where each term (literal/variable) is node and two terms

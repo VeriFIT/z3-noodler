@@ -97,7 +97,7 @@ namespace smt::noodler {
     }
 
     void SolvingState::flatten_substition_map() {
-        std::unordered_map<BasicTerm, std::vector<BasicTerm>> new_substitution_map;
+        std::map<BasicTerm, std::vector<BasicTerm>> new_substitution_map;
         std::function<std::vector<BasicTerm>(const BasicTerm&)> flatten_var;
 
         flatten_var = [&new_substitution_map, &flatten_var, this](const BasicTerm &var) -> std::vector<BasicTerm> {

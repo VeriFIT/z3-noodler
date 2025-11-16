@@ -124,7 +124,7 @@ namespace smt::noodler {
         std::set<BasicTerm> init_length_sensitive_vars;
         Formula formula;
         AutAssignment init_aut_ass;
-        std::unordered_map<BasicTerm, std::vector<BasicTerm>> init_substitution_map;
+        std::map<BasicTerm, std::vector<BasicTerm>> init_substitution_map;
         ConversionHandler conversion_handler;
         ast_manager& m;
 

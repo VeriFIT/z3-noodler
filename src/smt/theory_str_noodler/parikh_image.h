@@ -9,6 +9,7 @@
 #include <memory>
 #include <concepts>
 #include <compare>
+#include <unordered_map>
 
 #include <mata/nfa/nfa.hh>
 #include <mata/nft/nft.hh>

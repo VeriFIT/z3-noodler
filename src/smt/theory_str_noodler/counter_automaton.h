@@ -248,7 +248,7 @@ namespace smt::noodler::ca {
         TagAutStateMetadata metadata;
 
         // Debugging: color states in the tag automaton according to the variable it originates in
-        std::unordered_map<mata::nfa::State, uint64_t> node_color_map;
+        std::map<mata::nfa::State, uint64_t> node_color_map;
 
         size_t num_of_states_in_row;
 
@@ -278,7 +278,7 @@ namespace smt::noodler::ca {
 
             // Collect all used states so we do not create notes for needless states
             // #Optimize(mhecko): maybe bit_set could be faster
-            std::unordered_set<mata::nfa::State> used_states;
+            std::set<mata::nfa::State> used_states;
             for (mata::nfa::State source_state = 0; source_state < state_cnt; ++source_state) {
                 for (const mata::nfa::SymbolPost &move: nfa.delta[source_state]) {
                     for (mata::nfa::State target_state: move.targets) {
