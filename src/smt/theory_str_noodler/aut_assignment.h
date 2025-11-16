@@ -24,7 +24,7 @@ namespace smt::noodler {
      *   - use at() instead of [] operator for getting the value, use [] only for assigning
      *   - if you want to assign some NFA, use std::make_shared<mata::nfa::Nfa>(NFA)
      */
-    class AutAssignment : public std::unordered_map<BasicTerm, std::shared_ptr<mata::nfa::Nfa>> {
+    class AutAssignment : public std::map<BasicTerm, std::shared_ptr<mata::nfa::Nfa>> {
 
     private:
         /// Union of all alphabets of automata in the aut assignment
@@ -39,7 +39,7 @@ namespace smt::noodler {
         }
 
     public:
-        using std::unordered_map<BasicTerm, std::shared_ptr<mata::nfa::Nfa>>::unordered_map;
+        using std::map<BasicTerm, std::shared_ptr<mata::nfa::Nfa>>::map;
 
         // used for tests, do not use normally
         AutAssignment(std::map<BasicTerm, mata::nfa::Nfa> val) {
