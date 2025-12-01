@@ -130,6 +130,12 @@ namespace smt::noodler {
             return FC_DONE;
         }
 
+        if (check_len_sat(expr_ref(m.mk_true(), m), nullptr, true) == l_false) {
+            // arith constraints are already unsat
+            STRACE(str, tout << "Unsat from already just the arith part\n";);
+            return FC_CONTINUE;
+        }
+
         // As a heuristic, for the case we have exactly one constraint, which is of type 'x (not)in RE', we use universality/emptiness
         // checking of the regex (using some heuristics) instead of constructing the automaton of RE. The construction (especially complement)
         // can sometimes blow up, so the check should be faster.
@@ -746,8 +752,8 @@ namespace smt::noodler {
         return l_undef;
     }
 
-    lbool theory_str_noodler::check_len_sat(expr_ref len_formula, expr_ref* unsat_core) {
-        if (len_formula == m.mk_true() && (len_vars.empty() || !m_params.m_produce_models)) {
+    lbool theory_str_noodler::check_len_sat(expr_ref len_formula, expr_ref* unsat_core, bool always_check) {
+        if (!always_check && len_formula == m.mk_true() && (len_vars.empty() || !m_params.m_produce_models)) {
             // we assume here that existing length constraints are satisfiable, so adding true will do nothing
             // however, for model generation, we need to always produce models if we have some length vars
             return l_true;

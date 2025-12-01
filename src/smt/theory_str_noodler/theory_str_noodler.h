@@ -461,9 +461,10 @@ namespace smt::noodler {
          * @brief Check if the length formula @p len_formula is satisfiable with the existing length constraints.
          * 
          * @param[out] unsat_core If this parameter is NOT nullptr, the LIA solver stores here unsat core of 
+         * @param[in] always_check If true, checks the satisfiability even if len_formula == TRUE (useful to check if the existing constraints are sat)
          * the current @p len_formula. If the parameter is nullptr, the unsat core is not computed.
          */
-        lbool check_len_sat(expr_ref len_formula, expr_ref* unsat_core=nullptr);
+        lbool check_len_sat(expr_ref len_formula, expr_ref* unsat_core=nullptr, bool always_check = false);
 
         /**
          * @brief Blocks current SAT assignment for given @p len_formula
