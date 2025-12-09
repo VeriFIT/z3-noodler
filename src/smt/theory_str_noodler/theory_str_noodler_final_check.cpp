@@ -130,12 +130,6 @@ namespace smt::noodler {
             return FC_DONE;
         }
 
-        if (check_len_sat(expr_ref(m.mk_true(), m), nullptr, true) == l_false) {
-            // arith constraints are already unsat
-            STRACE(str, tout << "Unsat from already just the arith part\n";);
-            return FC_CONTINUE;
-        }
-
         // As a heuristic, for the case we have exactly one constraint, which is of type 'x (not)in RE', we use universality/emptiness
         // checking of the regex (using some heuristics) instead of constructing the automaton of RE. The construction (especially complement)
         // can sometimes blow up, so the check should be faster.

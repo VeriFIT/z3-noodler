@@ -488,8 +488,10 @@ namespace smt::noodler {
             }
         }
 
-
-        return LenNode(LenFormulaType::AND, conjuncts);
+        LenNode result(LenFormulaType::AND, conjuncts);
+        result.simplify();
+        STRACE(str, tout << "Init lengths " << result << std::endl);
+        return result;
     }
 
     std::pair<LenNode, LenNodePrecision> DecisionProcedure::get_lengths() {
@@ -531,6 +533,8 @@ namespace smt::noodler {
 
         LenNode result(LenFormulaType::AND, conjuncts);
         STRACE(str, tout << "Final " << (precision == LenNodePrecision::PRECISE ? "precise" : (precision == LenNodePrecision::UNDERAPPROX ?"underapproximating" : "overapproximating")) << " formula from get_lengths(): " << result << std::endl;);
+        result.simplify();
+        STRACE(str, tout << "Final SIMPLIFIED " << (precision == LenNodePrecision::PRECISE ? "precise" : (precision == LenNodePrecision::UNDERAPPROX ?"underapproximating" : "overapproximating")) << " formula from get_lengths(): " << result << std::endl;);
         return {result, precision};
     }
 
@@ -882,7 +886,7 @@ namespace smt::noodler {
         set_initial_variables(equations_and_transducers);
 
         SolvingState init_solving_state;
-        init_solving_state.length_sensitive_vars = std::move(this->init_length_sensitive_vars);
+        init_solving_state.length_sensitive_vars = this->init_length_sensitive_vars; // !!!!!IMPORTANT!!!! cannot be std::move(this->init_length_sensitive_vars) as init_length_sensitive_vars is used in final_check_eh
         init_solving_state.aut_ass = std::move(this->init_aut_ass);
         for (const auto& subs : init_substitution_map) {
             init_solving_state.aut_ass.erase(subs.first);
