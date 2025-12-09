@@ -7,6 +7,82 @@
 
 
 namespace smt::noodler {
+    void LenNode::simplify() {
+        // LenNode old_node = *this;
+        // simplify children first
+        for (auto& child : succ) {
+            child.simplify();
+        }
+
+        // flatten nested ANDs/ORs
+        if (type == LenFormulaType::AND || type == LenFormulaType::OR) {
+            std::vector<LenNode> new_succ;
+            for (auto& child : succ) {
+                if (child.type == type) {
+                    new_succ.insert(new_succ.end(), child.succ.begin(), child.succ.end());
+                } else {
+                    new_succ.push_back(child);
+                }
+            }
+            succ = std::move(new_succ);
+        }
+
+        if (type == LenFormulaType::AND) {
+            // remove TRUE children and check for FALSE children
+            std::vector<LenNode> new_succ;
+            for (auto& child : succ) {
+                if (child.type == LenFormulaType::FALSE) {
+                    // AND with FALSE -> whole formula is FALSE
+                    type = LenFormulaType::FALSE;
+                    succ.clear();
+                    // STRACE(str, tout << "Simplified LenNode " << old_node << " to: " << *this << std::endl;);
+                    return;
+                }
+                if (child.type != LenFormulaType::TRUE) {
+                    new_succ.push_back(child);
+                }
+            }
+            succ = std::move(new_succ);
+            // if no children left, set to TRUE
+            if (succ.empty()) {
+                type = LenFormulaType::TRUE;
+            } else if (succ.size() == 1) {
+                // single child -> replace AND node with its child
+                type = succ.at(0).type;
+                new_succ = std::move(succ.at(0).succ);
+                succ = std::move(new_succ);
+            }
+        }
+
+        if (type == LenFormulaType::OR) {
+            // remove FALSE children and check for TRUE children
+            std::vector<LenNode> new_succ;
+            for (auto& child : succ) {
+                if (child.type == LenFormulaType::TRUE) {
+                    // OR with TRUE -> whole formula is TRUE
+                    type = LenFormulaType::TRUE;
+                    succ.clear();
+                    // STRACE(str, tout << "Simplified LenNode " << old_node << " to: " << *this << std::endl;);
+                    return;
+                }
+                if (child.type != LenFormulaType::FALSE) {
+                    new_succ.push_back(child);
+                }
+            }
+            succ = std::move(new_succ);
+            // if no children left, set to FALSE
+            if (succ.empty()) {
+                type = LenFormulaType::FALSE;
+            } else if (succ.size() == 1) {
+                // single child -> replace OR node with its child
+                type = succ.at(0).type;
+                new_succ = std::move(succ.at(0).succ);
+                succ = std::move(new_succ);
+            }
+        }
+        // STRACE(str, tout << "Simplified LenNode " << old_node << " to: " << *this << std::endl;);
+    }
+
     void collect_free_vars_rec(const LenNode& root, std::set<BasicTerm>& free_vars, std::set<BasicTerm>& quantified_vars) {
         switch (root.type) {
             case LenFormulaType::TRUE:
