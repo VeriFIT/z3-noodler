@@ -8,7 +8,6 @@
 
 namespace smt::noodler {
     void LenNode::simplify() {
-        // LenNode old_node = *this;
         // simplify children first
         for (auto& child : succ) {
             child.simplify();
@@ -35,7 +34,6 @@ namespace smt::noodler {
                     // AND with FALSE -> whole formula is FALSE
                     type = LenFormulaType::FALSE;
                     succ.clear();
-                    // STRACE(str, tout << "Simplified LenNode " << old_node << " to: " << *this << std::endl;);
                     return;
                 }
                 if (child.type != LenFormulaType::TRUE) {
@@ -62,7 +60,6 @@ namespace smt::noodler {
                     // OR with TRUE -> whole formula is TRUE
                     type = LenFormulaType::TRUE;
                     succ.clear();
-                    // STRACE(str, tout << "Simplified LenNode " << old_node << " to: " << *this << std::endl;);
                     return;
                 }
                 if (child.type != LenFormulaType::FALSE) {
@@ -80,7 +77,6 @@ namespace smt::noodler {
                 succ = std::move(new_succ);
             }
         }
-        // STRACE(str, tout << "Simplified LenNode " << old_node << " to: " << *this << std::endl;);
     }
 
     void collect_free_vars_rec(const LenNode& root, std::set<BasicTerm>& free_vars, std::set<BasicTerm>& quantified_vars) {
