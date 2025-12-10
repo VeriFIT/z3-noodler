@@ -202,6 +202,10 @@ namespace smt::noodler {
         LenNode(BasicTerm val) : type(LenFormulaType::LEAF), atom_val(val), succ() { };
         LenNode(LenFormulaType tp, std::vector<struct LenNode> s = {}) : type(tp), atom_val(BasicTerm(BasicTermType::Length)), succ(s) { };
 
+        bool operator==(const LenNode& other) const {
+            return (type == other.type && atom_val == other.atom_val && succ == other.succ);
+        }
+
         /// simple simplifications
         void simplify();
     };

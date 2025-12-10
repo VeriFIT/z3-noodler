@@ -13,68 +13,73 @@ namespace smt::noodler {
             child.simplify();
         }
 
-        // flatten nested ANDs/ORs
-        if (type == LenFormulaType::AND || type == LenFormulaType::OR) {
+        if (type == LenFormulaType::AND || type == LenFormulaType::OR || type == LenFormulaType::PLUS || type == LenFormulaType::TIMES) {
+            std::optional<LenNode> neutral_elemnent = [this]() -> std::optional<LenNode> {
+                switch (this->type) {
+                    case LenFormulaType::AND:
+                        return LenNode(LenFormulaType::TRUE);
+                    case LenFormulaType::OR:
+                        return LenNode(LenFormulaType::FALSE);
+                    case LenFormulaType::PLUS:
+                        return LenNode(0);
+                    case LenFormulaType::TIMES:
+                        return LenNode(1);
+                    default:
+                        UNREACHABLE();
+                        return std::nullopt; // to silence compiler
+                }
+            }();
+            std::optional<LenNode> absorbing_element = [this]() -> std::optional<LenNode> {
+                switch (this->type) {
+                    case LenFormulaType::AND:
+                        return LenNode(LenFormulaType::FALSE);
+                    case LenFormulaType::OR:
+                        return LenNode(LenFormulaType::TRUE);
+                    case LenFormulaType::PLUS:
+                        return std::nullopt; // PLUS does not have absorbing element
+                    case LenFormulaType::TIMES:
+                        return LenNode(0);
+                    default:
+                        UNREACHABLE();
+                        return std::nullopt; // to silence compiler
+                }
+            }();
+
             std::vector<LenNode> new_succ;
             for (auto& child : succ) {
                 if (child.type == type) {
+                    // flatten nested same-type nodes (they are already simplified)
                     new_succ.insert(new_succ.end(), child.succ.begin(), child.succ.end());
                 } else {
-                    new_succ.push_back(child);
+                    if (absorbing_element.has_value() && child == absorbing_element.value()) {
+                        // e.g., AND with FALSE child -> whole formula is FALSE
+                        type = absorbing_element->type;
+                        atom_val = absorbing_element->atom_val;
+                        succ = absorbing_element->succ;
+                        return;
+                    } else if (!neutral_elemnent.has_value() || child == neutral_elemnent.value()) {
+                        // ignore neutral elements
+                        new_succ.push_back(child);
+                    }
                 }
             }
             succ = std::move(new_succ);
-        }
 
-        if (type == LenFormulaType::AND) {
-            // remove TRUE children and check for FALSE children
-            std::vector<LenNode> new_succ;
-            for (auto& child : succ) {
-                if (child.type == LenFormulaType::FALSE) {
-                    // AND with FALSE -> whole formula is FALSE
-                    type = LenFormulaType::FALSE;
-                    succ.clear();
-                    return;
-                }
-                if (child.type != LenFormulaType::TRUE) {
-                    new_succ.push_back(child);
-                }
+            if (succ.empty() && neutral_elemnent.has_value()) {
+                // if no children left, set to neutral element
+                type = neutral_elemnent->type;
+                atom_val = neutral_elemnent->atom_val;
+                succ = neutral_elemnent->succ;
+                return;
             }
-            succ = std::move(new_succ);
-            // if no children left, set to TRUE
-            if (succ.empty()) {
-                type = LenFormulaType::TRUE;
-            } else if (succ.size() == 1) {
-                // single child -> replace AND node with its child
+            
+            if (succ.size() == 1) {
+                // single child -> replace the node with its child
                 type = succ.at(0).type;
+                atom_val = succ.at(0).atom_val;
                 new_succ = std::move(succ.at(0).succ);
                 succ = std::move(new_succ);
-            }
-        }
-
-        if (type == LenFormulaType::OR) {
-            // remove FALSE children and check for TRUE children
-            std::vector<LenNode> new_succ;
-            for (auto& child : succ) {
-                if (child.type == LenFormulaType::TRUE) {
-                    // OR with TRUE -> whole formula is TRUE
-                    type = LenFormulaType::TRUE;
-                    succ.clear();
-                    return;
-                }
-                if (child.type != LenFormulaType::FALSE) {
-                    new_succ.push_back(child);
-                }
-            }
-            succ = std::move(new_succ);
-            // if no children left, set to FALSE
-            if (succ.empty()) {
-                type = LenFormulaType::FALSE;
-            } else if (succ.size() == 1) {
-                // single child -> replace OR node with its child
-                type = succ.at(0).type;
-                new_succ = std::move(succ.at(0).succ);
-                succ = std::move(new_succ);
+                return;
             }
         }
     }
