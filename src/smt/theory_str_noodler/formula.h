@@ -201,6 +201,9 @@ namespace smt::noodler {
         LenNode(unsigned k) : LenNode(rational(k)) { };
         LenNode(BasicTerm val) : type(LenFormulaType::LEAF), atom_val(val), succ() { };
         LenNode(LenFormulaType tp, std::vector<struct LenNode> s = {}) : type(tp), atom_val(BasicTerm(BasicTermType::Length)), succ(s) { };
+
+        /// simple simplifications
+        void simplify();
     };
 
     static inline std::ostream& operator<<(std::ostream& os, const LenNode& node) {
@@ -222,7 +225,7 @@ namespace smt::noodler {
             return (os << node.atom_val.get_name());
         }
         case LenFormulaType::NOT:
-            return os << "(not" << node.succ.at(0) << ")";
+            return os << "(not " << node.succ.at(0) << ")";
         case LenFormulaType::LEQ:
             return os << "(<= " << node.succ.at(0) << " " << node.succ.at(1) << ")";
         case LenFormulaType::LT:
