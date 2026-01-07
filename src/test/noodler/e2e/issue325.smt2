@@ -1,0 +1,6 @@
+(set-info :status sat)
+(declare-const x Real)
+(declare-const t String)
+(assert (forall ((i Int)) (or (< i 0) (> i (to_int x)))))
+(assert (> 1 (ite (str.< t ";") 1 0)))
+(check-sat)
