@@ -3,16 +3,389 @@
 #include <algorithm>
 #include <functional>
 #include <ranges>
-#include <numeric> 
 
 #include <mata/applications/strings.hh>
 #include "util.h"
 #include "aut_assignment.h"
 #include "decision_procedure.h"
 #include "regex.h"
-#include "conversion_handler.h"
 
 namespace smt::noodler {
+
+    void SolvingState::substitute_vars(const std::set<BasicTerm>& vars_to_substitute) {
+        // substitutes variables in a vector using substitution_map
+        auto substitute_vector = [this, &vars_to_substitute](const std::vector<BasicTerm> &vector) {
+            std::vector<BasicTerm> result;
+            for (const BasicTerm &var : vector) {
+                if (!vars_to_substitute.contains(var)) {
+                    result.push_back(var);
+                } else {
+                    const auto &to_this = substitution_map.at(var);
+                    result.insert(result.end(), to_this.begin(), to_this.end());
+                }
+            }
+            return result;
+        };
+
+        // substitutes variables in both sides of inclusion using substitution_map
+        auto substitute_predicate = [&substitute_vector](const Predicate &pred) {
+            std::vector<std::vector<BasicTerm>> new_params;
+            for (const auto& param : pred.get_params()) {
+                new_params.push_back(substitute_vector(param));
+            }
+            if (pred.is_transducer()) return Predicate{pred.get_type(), new_params, pred.get_transducer()};
+            else return Predicate{pred.get_type(), new_params};
+        };
+
+        // returns true if the inclusion has the same thing on both sides
+        auto inclusion_has_same_sides = [](const Predicate &inclusion) { return (inclusion.is_equation() && inclusion.get_left_side() == inclusion.get_right_side()); };
+
+        // substitutes variables of inclusions in a vector using substitute_map, but does not keep the ones that have the same sides after substitution
+        auto substitute_set = [&substitute_predicate, &inclusion_has_same_sides](const std::set<Predicate> predicates) {
+            std::set<Predicate> new_predicates;
+            for (const auto &old_pred : predicates) {
+                auto new_pred = substitute_predicate(old_pred);
+                if (!inclusion_has_same_sides(new_pred)) { // skip inclusions that have both sides equal
+                    new_predicates.insert(new_pred);
+                }
+            }
+            return new_predicates;
+        };
+
+        inclusions = substitute_set(inclusions);
+        transducers = substitute_set(transducers);
+        predicates_not_on_cycle = substitute_set(predicates_not_on_cycle);
+
+        // substituting predicates to process is bit harder, it is possible that two predicates that were supposed to
+        // be processed become same after substituting, so we do not want to keep both in predicates to process
+        std::set<Predicate> substituted_predicates_to_process;
+        std::deque<Predicate> new_predicates_to_process;
+        while (!predicates_to_process.empty()) {
+            Predicate substituted_inclusion = substitute_predicate(predicates_to_process.front());
+            predicates_to_process.pop_front();
+
+            if (!inclusion_has_same_sides(substituted_inclusion)
+                && !substituted_predicates_to_process.contains(substituted_inclusion)) { // we do not want to add predicates that are already in predicates_to_process
+                new_predicates_to_process.push_back(substituted_inclusion);
+            }
+        }
+        predicates_to_process = new_predicates_to_process;
+
+        for (auto& [subst_var, substitution] : substitution_map) {
+            substitution = substitute_vector(substitution);
+        }
+    }
+
+    void SolvingState::remove_vars(const std::set<BasicTerm>& vars_to_remove, const std::set<BasicTerm>& vars_to_keep) {
+        for (const BasicTerm& var : vars_to_remove) {
+            if (!vars_to_keep.contains(var)) {
+                substitution_map.erase(var);
+                length_sensitive_vars.erase(var);
+                aut_ass.erase(var);
+            }
+        }
+    }
+
+    LenNode SolvingState::get_lengths(const BasicTerm& var) const {
+        if (aut_ass.count(var) > 0) {
+            // if var is not substituted, get length constraint from its automaton
+            return aut_ass.get_lengths(var);
+        } else if (substitution_map.count(var) > 0) {
+            // if var is substituted, i.e. state.substitution_map[var] = x_1 x_2 ... x_n, then we have to create length equation
+            //      |var| = |x_1| + |x_2| + ... + |x_n|
+            std::vector<LenNode> plus_operands;
+            for (const auto& subst_var : substitution_map.at(var)) {
+                plus_operands.emplace_back(subst_var);
+            }
+            LenNode result(LenFormulaType::EQ, {var, LenNode(LenFormulaType::PLUS, plus_operands)});
+            // to be safe, we add |var| >= 0 (for the aut_ass case, it is done in aut_ass.get_lengths)
+            return LenNode(LenFormulaType::AND, {result, LenNode(LenFormulaType::LEQ, {0, var})});
+        } else {
+            util::throw_error("Variable was neither in automata assignment nor was substituted");
+            return LenNode(BasicTerm(BasicTermType::Literal)); // return something to get rid of warnings
+        }
+    }
+
+    void SolvingState::flatten_substition_map() {
+        std::unordered_map<BasicTerm, std::vector<BasicTerm>> new_substitution_map;
+        std::function<std::vector<BasicTerm>(const BasicTerm&)> flatten_var;
+
+        flatten_var = [&new_substitution_map, &flatten_var, this](const BasicTerm &var) -> std::vector<BasicTerm> {
+            if (new_substitution_map.count(var) == 0) {
+                std::vector<BasicTerm> flattened_mapping;
+                for (const auto &subst_var : this->substitution_map.at(var)) {
+                    if (aut_ass.count(subst_var) > 0) {
+                        // subst_var is not substituted, keep it
+                        flattened_mapping.push_back(subst_var);
+                    } else {
+                        // subst_var has a substitution, flatten it and insert it to the end of flattened_mapping
+                        std::vector<BasicTerm> flattened_mapping_of_subst_var = flatten_var(subst_var);
+                        flattened_mapping.insert(flattened_mapping.end(),
+                                                 flattened_mapping_of_subst_var.begin(),
+                                                 flattened_mapping_of_subst_var.end());
+                    }
+                }
+                new_substitution_map[var] = flattened_mapping;
+                return flattened_mapping;
+            } else {
+                return new_substitution_map[var];
+            }
+        };
+
+        for (const auto &subst_map_pair : substitution_map) {
+            flatten_var(subst_map_pair.first);
+        }
+
+        STRACE(str_nfa,
+            tout << "Flattened substitution map:" << std::endl;
+            for (const auto &var_map : new_substitution_map) {
+                tout << "    " << var_map.first.get_name() << " ->";
+                for (const auto &subst_var : var_map.second) {
+                    tout << " " << subst_var;
+                }
+                tout << std::endl;
+            });
+
+        substitution_map = new_substitution_map;
+    }
+
+    std::pair<std::vector<std::shared_ptr<mata::nfa::Nfa>>,std::vector<std::vector<BasicTerm>>> SolvingState::get_automata_and_division_of_concatenation(const std::vector<BasicTerm>& concatenation, bool group_non_length) {
+        if (concatenation.empty()) {
+            return std::make_pair<std::vector<std::shared_ptr<mata::nfa::Nfa>>,std::vector<std::vector<BasicTerm>>>({}, {});
+        }
+
+        std::vector<std::shared_ptr<mata::nfa::Nfa>> automata_for_concatenation;
+        std::vector<std::vector<BasicTerm>> divisions;
+
+        BasicTerm cur_var = concatenation[0];
+        // we will build an automaton in prev_aut for the variables in prev_division which are pushed into result when needed
+        std::shared_ptr<mata::nfa::Nfa> prev_aut = aut_ass.at(cur_var);
+        std::vector<BasicTerm> prev_division{ cur_var };
+        bool prev_is_length = length_sensitive_vars.contains(cur_var);
+
+        for (std::vector<BasicTerm>::size_type i = 1; i < concatenation.size(); ++i) {
+            cur_var = concatenation[i];
+            std::shared_ptr<mata::nfa::Nfa> cur_var_aut = aut_ass.at(cur_var);
+            bool cur_is_length = length_sensitive_vars.contains(cur_var);
+
+            if (!group_non_length || prev_is_length || cur_is_length) {
+                // we want to push prev_aut and prev_division into result as either we are not grouping automata, or previous var is
+                // length, therefore it cannot be grouped, or the current variable is length, therefore, we do not want to group it
+                // with the previous automaton
+                automata_for_concatenation.push_back(prev_aut);
+                divisions.push_back(prev_division);
+                STRACE(str_nfa,
+                    tout << "Automaton for var(s)";
+                    for (const auto &var : prev_division) {
+                        tout << " " << var.get_name();
+                    }
+                    tout << ":" << std::endl
+                            << *prev_aut;
+                );
+                prev_aut = cur_var_aut;
+                prev_division = std::vector<BasicTerm>{ cur_var };
+            } else {
+                // we group the current non-length-aware variable with the non-length-aware vars before
+                prev_aut = std::make_shared<mata::nfa::Nfa>(mata::nfa::concatenate(*prev_aut, *cur_var_aut));
+                prev_division.push_back(cur_var);
+            }
+
+            prev_is_length = cur_is_length;
+        }
+        // we need to push last automaton into result
+        automata_for_concatenation.push_back(prev_aut);
+        divisions.push_back(prev_division);
+        STRACE(str_nfa,
+            tout << "Automaton for var(s)";
+            for (const auto &var : prev_division) {
+                tout << " " << var.get_name();
+            }
+            tout << ":" << std::endl << *prev_aut;
+        );
+
+        return std::make_pair<std::vector<std::shared_ptr<mata::nfa::Nfa>>,std::vector<std::vector<BasicTerm>>>(std::move(automata_for_concatenation), std::move(divisions));
+    }
+
+    std::set<BasicTerm> SolvingState::process_substituting_inclusions_from_right(const std::vector<Predicate>& inclusions, bool on_cycle) {
+        std::set<BasicTerm> newly_substituted_vars;
+        for (const Predicate& inclusion : inclusions) {
+            SASSERT(inclusion.is_equation());
+            const std::vector<BasicTerm>& right_side = inclusion.get_right_side();
+            if (contains_length_var(right_side)) {
+                // right side is exactly one length-aware variable x
+                SASSERT(right_side.size() == 1);
+                const BasicTerm &right_var = right_side[0];
+                SASSERT(right_var.is_variable()); // right_var should not be literal if it is length-aware
+                if (!substitution_map.contains(right_var)) {
+                    // if we have not substituted right_var yet, we substitute it now with the left side
+                    substitution_map[right_var] = inclusion.get_left_side();
+                    aut_ass.erase(right_var); // right_var is substituted, we need to remove it from automata assignment
+                    newly_substituted_vars.insert(right_var);
+                    STRACE(str, tout << "right side var " << right_var.get_name() << " replaced with:"; for (auto const &var : inclusion.get_left_side()) { tout << " " << var.get_name(); } tout << std::endl; );
+                } else {
+                    // right_var is already substituted, therefore we add the inclusion but with substituted right_var into the solving state
+                    Predicate new_inclusion = add_inclusion(inclusion.get_left_side(), substitution_map.at(right_var), on_cycle);
+                    // and we also add it into the queue to process (because its right side changed)
+                    push_unique(new_inclusion, on_cycle);
+                    STRACE(str, tout << "added new inclusion from the right side because it could not be substituted: " << new_inclusion << std::endl; );
+                }
+            } else {
+                // the variables on the right side are non-length, therefore we just add the inclusion into the solving state
+                add_predicate(inclusion, on_cycle);
+                // because all the variables on the right side are non-length, they were not substituted and therefore we do not need to process
+                // the inclusion, as the function assumes that it already holds
+                STRACE(str, tout << "added new inclusion from the right side (non-length): " << inclusion << std::endl; );
+            }
+        }
+        // we need to substitute the variables in all other inclusions/transducers
+        substitute_vars(newly_substituted_vars);
+        // some simple transducers could possibly become non-simple after substitution, we need to readd them for processing
+        push_non_simple_transducers_to_processing();
+        // note that we do not need to add any inclusions into processing here, as all inclusions that had a variable from newly_substituted_vars
+        // on the right side must have been in the queue already, otherwise it would have to be processed and substituted before
+
+        return newly_substituted_vars;
+    }
+
+
+    std::set<BasicTerm> SolvingState::process_substituting_inclusions_from_left(const std::vector<Predicate>& inclusions, bool on_cycle) {
+        std::set<BasicTerm> newly_substituted_vars;
+        for (const Predicate& inclusion : inclusions) {
+            SASSERT(inclusion.is_equation());
+            const std::vector<BasicTerm>& left_side = inclusion.get_left_side();
+            SASSERT(left_side.size() == 1); // we assume that the inclusion coming to this function have exactly one left var
+            const BasicTerm &left_var = left_side[0];
+            if (left_var.is_literal()) {
+                // we do not want to substitute literals
+                continue;
+            }
+            if (!substitution_map.contains(left_var)) {
+                // if we have not substituted left_var yet, we substitute it now with the right side
+                substitution_map[left_var] = inclusion.get_right_side();
+                aut_ass.erase(left_var); // left_var is substituted, we need to remove it from automata assignment
+                newly_substituted_vars.insert(left_var);
+                STRACE(str, tout << "left side var " << left_var.get_name() << " replaced with:"; for (auto const &var : inclusion.get_right_side()) { tout << " " << var.get_name(); } tout << std::endl; );
+            } else {
+                // left_var is already substituted, therefore we add the inclusion but with substituted left_var into the solving state
+                Predicate new_inclusion = add_inclusion(substitution_map.at(left_var), inclusion.get_right_side(), on_cycle);
+                // and we also add it into the queue to process (because the inclusion might not hold anymore)
+                push_unique(new_inclusion, on_cycle);
+                STRACE(str, tout << "added new inclusion from the left side because it could not be substituted: " << new_inclusion << std::endl; );
+            }
+        }
+        // before substituting, we need to push all variables that depend on the changed vars for processing
+        push_dependent_predicates(newly_substituted_vars, on_cycle);
+        // we need to substitute the variables in all other inclusions/transducers
+        substitute_vars(newly_substituted_vars);
+        // some simple transducers could possibly become non-simple after substitution, we need to readd them for processing
+        push_non_simple_transducers_to_processing();
+
+        return newly_substituted_vars;
+    }
+
+    BasicTerm SolvingState::add_fresh_var(std::shared_ptr<mata::nfa::Nfa> nfa, std::string var_prefix, bool is_length, bool optimize_literal) {
+        zstring literal;
+        if (optimize_literal && AutAssignment::aut_encodes_literal(*nfa, literal)) {
+            BasicTerm new_literal{BasicTermType::Literal, literal};
+            aut_ass[new_literal] = nfa;
+            return new_literal;
+        } else {
+            BasicTerm new_var = util::mk_noodler_var_fresh(var_prefix);
+            aut_ass[new_var] = nfa;
+            if (is_length) { length_sensitive_vars.insert(new_var); }
+            return new_var;
+        }
+    }
+
+    void SolvingState::replace_dummy_symbol_in_transducers_with(std::set<mata::Symbol> replacements) {
+        for (const Predicate& trans : transducers) {
+            util::replace_dummy_symbol_in_transducer_with(*trans.get_transducer(), replacements);
+        }
+    }
+
+    std::string SolvingState::print_to_DOT() const {
+        auto escape_DOT_string = [](std::string string_to_escape) {
+            std::ostringstream res;
+            for (char c : string_to_escape) {
+                if (c == '\\' || c == '{' || c == '}' || c == '<' || c == '>' || c == '|' || c == '\"' || c == ' ') {
+                    res << '\\' << c;
+                } else {
+                    res << c;
+                }
+            }
+            return res.str();
+        };
+
+        auto print_predicate_to_DOT = [this,&escape_DOT_string](const Predicate& pred) {
+            std::ostringstream res;
+            if (pred.is_equation()) { // inclusion
+                res << escape_DOT_string(to_string(pred.get_left_side())) << "\\ ⊆\\ " << escape_DOT_string(to_string(pred.get_right_side()));
+            } else { //transducer
+                SASSERT(pred.is_transducer());
+                res << escape_DOT_string(to_string(pred.get_output())) << "\\ =\\ T" << pred.get_transducer().get() << "(" << escape_DOT_string(to_string(pred.get_input())) << ")";
+            }
+            if (is_predicate_on_cycle(pred)) {
+                res << "\\ :\\ oncycle";
+            }
+            return res.str();
+        };
+        
+        auto print_strings = [](std::vector<std::string>& strings, bool order, std::string del = "\\n") {
+            if (order) {
+                std::sort(strings.begin(), strings.end());
+            }
+            bool first = true;
+            std::ostringstream res;
+            for (const std::string& string : strings) {
+                if (first) {
+                    first = false;
+                    res << string;
+                } else {
+                    res << del << string;
+                }
+            }
+            return res.str(); 
+        };
+
+        auto print_predicate_container_to_DOT = [&print_predicate_to_DOT, &print_strings]<typename T>(const T& predicate_container, bool order) {
+            std::vector<std::string> predicate_strings(predicate_container.size());
+            std::transform(predicate_container.begin(), predicate_container.end(), predicate_strings.begin(), print_predicate_to_DOT);
+            return print_strings(predicate_strings, order);
+        };
+
+
+        auto print_vars_to_DOT = [&escape_DOT_string, &print_strings]<typename T>(const T& vars, bool order, bool delimit_by_space) {
+            std::vector<std::string> var_names(vars.size());
+            std::transform(vars.begin(), vars.end(), var_names.begin(), [&escape_DOT_string](const BasicTerm& var) { return escape_DOT_string(var.to_string());});
+            return print_strings(var_names, order, (delimit_by_space ? "\\ " : "\\n"));
+        };
+
+        std::ostringstream res;
+        res << DOT_name << "[shape=record,label=\"" << print_predicate_container_to_DOT(inclusions, true);
+        if (!inclusions.empty() && !transducers.empty()) {
+            res << "\\n";
+        }
+        res << print_predicate_container_to_DOT(transducers, true) << "|" << print_predicate_container_to_DOT(predicates_to_process, false) << "|";
+
+        std::vector<std::string> strings_to_print;
+        for (const auto& [var,subst_vars] : substitution_map) {
+            strings_to_print.push_back(escape_DOT_string(var.to_string()) + std::string("\\ -\\>\\ ") + print_vars_to_DOT(subst_vars, false, true));
+        }
+        for (const BasicTerm& var : aut_ass.get_keys()) {
+            if (!var.is_literal()) { 
+                strings_to_print.push_back(escape_DOT_string(var.to_string()) + std::string("\\ -\\>\\ NFA"));
+            }
+        }
+        res << print_strings(strings_to_print, true);
+
+        res << "|";
+
+        res << print_vars_to_DOT(length_sensitive_vars, true, false);
+
+        res << "\"];";
+        return res.str();
+    }
+
     lbool DecisionProcedure::compute_next_solution() {
         // iteratively select next state of solving that can lead to solution and
         // process one of the unprocessed nodes (or possibly find solution)
@@ -339,7 +712,7 @@ namespace smt::noodler {
 
             if (non_literal_side.empty()) {
                 // if the non-literal side is actually empty, then we can just check if the result of application contains epsilon
-                if (application_to_literal.is_in_lang(mata::Word{})) {
+                if (application_to_literal.is_in_lang({})) {
                     // if it does, we can continue with this solving_state, otherwise we keep it out of worklist as it will not lead to solution
                     push_to_worklist(std::move(solving_state), false);
                 }
@@ -427,7 +800,7 @@ namespace smt::noodler {
                                                             noodle[i].input_aut, // we assign Ai to new_input_var
                                                             std::string("input_") + std::to_string(noodlification_no),
                                                             new_element.contains_length_var(input_vars_divisions[noodle[i].input_index]),
-                                                            true
+                                                            false // we do not want literals in simple transducers
                                                         ); // xi
                 input_vars_to_new_input_vars[noodle[i].input_index].push_back(new_input_var);
 
@@ -437,7 +810,7 @@ namespace smt::noodler {
                                                             // lengthness must be propagated from input to output too
                                                             new_element.contains_length_var(input_vars_divisions[noodle[i].input_index])
                                                                 || new_element.length_sensitive_vars.contains(output_vars[noodle[i].output_index]),
-                                                            true
+                                                            false // we do not want literals in simple transducers
                                                         ); // xo
                 output_vars_to_new_output_vars[noodle[i].output_index].push_back(new_output_var);
 
@@ -477,16 +850,14 @@ namespace smt::noodler {
         // start from length formula from preprocessing
         std::vector<LenNode> conjuncts = {preprocessing_len_formula};
 
-        SolvingState temp_state; // temporary solving state to get lengths
-        temp_state.aut_ass = init_aut_ass;
-        temp_state.substitution_map = init_substitution_map;
+        // for each initial length variable get the lengths of all its possible words for automaton in init_aut_ass
         if(all_vars) {
             for (const BasicTerm &var : this->formula.get_vars()) {
-                conjuncts.push_back(temp_state.get_lengths(var));
+                conjuncts.push_back(init_aut_ass.get_lengths(var));
             }
         } else {
             for (const BasicTerm &var : this->init_length_sensitive_vars) {
-                conjuncts.push_back(temp_state.get_lengths(var));
+                conjuncts.push_back(init_aut_ass.get_lengths(var));
             }
         }
 
@@ -504,7 +875,10 @@ namespace smt::noodler {
             return {LenNode(LenFormulaType::TRUE), precision};
         }
 
-        conversion_handler.initialize_solution(solution);
+        // collect all variables that substitute some string_var of some conversion (we do it here
+        // because we need to know which variables are used in conversions for parikh image of variables
+        // in transducers)
+        std::tie(code_subst_vars, int_subst_vars) = get_vars_substituted_in_conversions();
 
         // start with formula for disequations
         std::vector<LenNode> conjuncts = disequations_len_formula_conjuncts;
@@ -521,18 +895,18 @@ namespace smt::noodler {
         util::check_limit(m);
 
         // add formula for conversions
-        auto [conversion_formula, conversion_precision] = conversion_handler.get_formula_encoding_conversions(code_subst_vars_handled_by_parikh);
-        conjuncts.push_back(conversion_formula);
-        precision = get_resulting_precision_for_conjunction(precision, conversion_precision);
+        auto conv_form_with_precision = get_formula_for_conversions();
+        conjuncts.push_back(conv_form_with_precision.first);
+        precision = conv_form_with_precision.second;
 
         // get the LIA formula describing solutions for special predicates
         conjuncts.push_back(get_formula_for_ca_diseqs());
-        auto [not_cont_formula, not_cont_precicions] = get_formula_for_not_contains();
-        conjuncts.push_back(not_cont_formula);
-        precision = get_resulting_precision_for_conjunction(precision, not_cont_precicions);
+        auto not_cont_prec = get_formula_for_not_contains();
+        precision = get_resulting_precision_for_conjunction(precision, not_cont_prec.second);
+        conjuncts.push_back(not_cont_prec.first);
 
         LenNode result(LenFormulaType::AND, conjuncts);
-        STRACE(str, tout << "Final " << (precision == LenNodePrecision::PRECISE ? "precise" : (precision == LenNodePrecision::UNDERAPPROX ?"underapproximating" : "overapproximating")) << " formula from get_lengths(): " << result << std::endl;);
+        STRACE(str, tout << "Final " << (precision == LenNodePrecision::PRECISE ? "precise" : "underapproximating") << " formula from get_lengths(): " << result << std::endl;);
         return {result, precision};
     }
 
@@ -610,7 +984,7 @@ namespace smt::noodler {
             // The tapes of combined_transducer represent the vars in vars_on_tapes. We want to encode the length dependencies
             // between these vars. We will do it trought parikh formula.
             auto [combined_transducer, vars_on_tapes] = get_composed_trans_with_tapes(output_var);
-            assert(combined_transducer.levels.num_of_levels == vars_on_tapes.size());
+            assert(combined_transducer.num_of_levels == vars_on_tapes.size());
 
             // We are now going to build a parikh formula for combined_transducer. We firstly simplify combined_transducer
             // to a one that contains only epsilon transitions and transitions with just one specific symbol. This is because
@@ -619,7 +993,6 @@ namespace smt::noodler {
             
             // we build a parikh image for the transducer (first we collect all levels of code_vars)
             std::set<mata::nft::Level> levels_of_code_subst_vars;
-            std::set<BasicTerm> code_subst_vars = conversion_handler.get_code_subst_vars();
             for (size_t i = 0; i < vars_on_tapes.size(); ++i) {
                 const BasicTerm& var = vars_on_tapes[i];
                 length_vars_with_transducers.insert(var);
@@ -627,9 +1000,9 @@ namespace smt::noodler {
                     code_subst_vars_handled_by_parikh.insert(var);
                     levels_of_code_subst_vars.insert(i);
                 }
-                if (conversion_handler.get_int_subst_vars().contains(var) || conversion_handler.get_real_subst_vars().contains(var)) {
+                if (int_subst_vars.contains(var)) {
                     // TODO add support (pretty hard, we need to remember the order of selected transitions by parikh)
-                    util::throw_error("Integer/real conversions with transducers are not supported yet");
+                    util::throw_error("Integer conversions with transducers are not supported yet");
                 }
             }
 
@@ -707,7 +1080,7 @@ namespace smt::noodler {
                     if (!parikh_transducer.get_tape_var_used_symbols().contains(var)) {
                         // if we are here, this means there is no non-epsilon transition for this var in the transducer,
                         // |var| == 0 (this is encoded in parikh) which means that code_version_of(var) == -1
-                        result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{conversion_handler.code_version_of(var),-1});
+                        result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1});
                     } else {
                         // If we are here, parikh_transducer.get_tape_var_used_symbols().at(var) contains all symbols
                         // that are on some transition in the transducer for this var. Therefore we need to create for
@@ -716,7 +1089,7 @@ namespace smt::noodler {
 
                         // We first encode the formula that var is not one symbol
                         // (|var| != 1 && code_version_of(var) == -1)
-                        LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{var, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{conversion_handler.code_version_of(var),-1}} });
+                        LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{var, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(var),-1}} });
 
                         // We now continue with the case that |var| ==1
                         // (|var| == 1 && code_version_of(var) is code point of one of the symbols based on parikh)
@@ -736,7 +1109,7 @@ namespace smt::noodler {
                             LenNode num_of_s_in_var_is_one{ LenFormulaType::NEQ, std::vector<LenNode>{num_of_s_in_var, 1} };
 
                             // code_version_of(var) == s
-                            LenNode code_version_is_equal_to_s(LenFormulaType::EQ, {conversion_handler.code_version_of(var), s});
+                            LenNode code_version_is_equal_to_s(LenFormulaType::EQ, {code_version_of(var), s});
 
                             // (num_of_s_in_var == 1) => (code_version_of(var) == s), i.e.
                             // (num_of_s_in_var != 1) || (code_version_of(var) == s)
@@ -766,6 +1139,549 @@ namespace smt::noodler {
         }
 
         return result;
+    }
+
+    std::pair<std::set<BasicTerm>,std::set<BasicTerm>> DecisionProcedure::get_vars_substituted_in_conversions() {
+        std::set<BasicTerm> code_subst_vars, int_subst_vars;
+        for (const TermConversion& conv : conversions) {
+            switch (conv.type)
+            {
+                case ConversionType::FROM_CODE:
+                case ConversionType::TO_CODE:
+                {
+                    for (const BasicTerm& var : solution.get_substituted_vars(conv.string_var)) {
+                        code_subst_vars.insert(var);
+                    }
+                    break;
+                }
+                case ConversionType::TO_INT:
+                case ConversionType::FROM_INT:
+                {
+                    for (const BasicTerm& var : solution.get_substituted_vars(conv.string_var)) {
+                        int_subst_vars.insert(var);
+                    }
+                    break;
+                }
+                default:
+                    UNREACHABLE();
+            }
+        }
+        return {code_subst_vars, int_subst_vars};
+    }
+
+    LenNode DecisionProcedure::get_formula_for_code_subst_vars(const std::set<BasicTerm>& code_subst_vars) {
+        LenNode result(LenFormulaType::AND);
+
+        // for each code substituting variable c, create the formula
+        //   (|c| != 1 && code_version_of(c) == -1) || (|c| == 1 && code_version_of(c) is code point of one of the chars in the language of automaton for c)
+        for (const BasicTerm& c : code_subst_vars) {
+            if (code_subst_vars_handled_by_parikh.contains(c)) { continue; }
+
+            // non_char_case = (|c| != 1 && code_version_of(c) == -1)
+            LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{c, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(c),-1}} });
+
+            // char_case = (|c| == 1 && code_version_of(c) is code point of one of the chars in the language of automaton for c)
+            LenNode char_case(LenFormulaType::AND, { {LenFormulaType::EQ, std::vector<LenNode>{c, 1}}, /* code_version_of(c) is code point of one of the chars in the language of automaton for c */ });
+
+            // the rest is just computing 'code_version_of(c) is code point of one of the chars in the language of automaton for c'
+
+            // chars in the language of c (except dummy symbol)
+            std::set<mata::Symbol> real_symbols_of_code_var;
+            bool is_there_dummy_symbol = false;
+            for (mata::Symbol s : mata::applications::strings::get_accepted_symbols(*solution.aut_ass.at(c))) { // iterate trough chars of c
+                if (!util::is_dummy_symbol(s)) {
+                    real_symbols_of_code_var.insert(s);
+                } else {
+                    is_there_dummy_symbol = true;
+                }
+            }
+
+            if (!is_there_dummy_symbol) {
+                // if there is no dummy symbol, we can just create disjunction that code_version_of(c) is equal to one of the symbols in real_symbols_of_code_var
+                std::vector<LenNode> equal_to_one_of_symbols;
+                for (mata::Symbol s : real_symbols_of_code_var) {
+                    equal_to_one_of_symbols.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_version_of(c), s});
+                }
+                char_case.succ.emplace_back(LenFormulaType::OR, equal_to_one_of_symbols);
+            } else {
+                // if there is dummy symbol, then code_version_of(c) can be code point of any char, except those in the alphabet but not in real_symbols_of_code_var
+
+                // code_version_of(c) is valid code_point: (0 <= code_version_of(c) <= max_char)
+                char_case.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{0, code_version_of(c)});
+                char_case.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{code_version_of(c), zstring::max_char()});
+
+                // code_version_of(c) is not equal to code point of some symbol in the alphabet that is not in real_symbols_of_code_var
+                for (mata::Symbol s : solution.aut_ass.get_alphabet()) {
+                    if (!util::is_dummy_symbol(s) && !real_symbols_of_code_var.contains(s)) {
+                        char_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{code_version_of(c), s});
+                    }
+                }
+            }
+
+            result.succ.emplace_back(LenFormulaType::OR, std::vector<LenNode>{
+                non_char_case,
+                char_case
+            });
+        }
+
+        return result;
+    }
+
+    LenNode DecisionProcedure::encode_interval_words(const BasicTerm& var, const std::vector<interval_word>& interval_words) {
+        LenNode result(LenFormulaType::OR);
+        for (const auto& interval_word : interval_words) {
+            // How this works on an example:
+            //      interval_word = [4-5][0-9][2-5][0-9][0-9]
+            // We need to encode, as succintcly as possible, that var is any number from the interval word.
+            // It is easy to see, that because last two positions can use all digits, we can create following inequations:
+            //      ..200 <= var <= ..599
+            // where the first two digits are any of [4-5] and [0-9] respectively, i.e., the full encoding should be the
+            // following disjunct:
+            //      40200 <= var <= 40599 ||
+            //      41200 <= var <= 41599 ||
+            //               ...
+            //      49200 <= var <= 49599 ||
+            //      50200 <= var <= 50599 ||
+            //      51200 <= var <= 51599 ||
+            //               ...
+            //      59200 <= var <= 59599
+
+            // We first compute the vector interval_cases of all the intervals [40200-40599], [41200-41599], ...
+            // by going backwards in the interval_word, first by computing the main interval [..200-..599] which
+            // ends after hitting first digit interval that does not contain all digits (in the exmaple it is [2-5])
+            // and after that point, we add all the possible cases for all digits in the following digit intervals.
+            std::vector<std::pair<rational,rational>> interval_cases = { {rational(0),rational(0)} }; // start with interval [0-0], with the assumption that interval word is not empty
+            assert(interval_word.size() > 0);
+            rational place_value(1); // which point in the interval_word we are now (ones, tens, hundreds, etc.)
+            bool need_to_split = false; // have we hit the digit interval that does not contain all digits yet?
+            for (auto interval_it = interval_word.crbegin(); interval_it != interval_word.crend(); ++interval_it) { // going backwards in interval_word
+                // we are processing interval [s-e]
+                rational interval_start(interval_it->first - AutAssignment::DIGIT_SYMBOL_START);
+                rational interval_end(interval_it->second - AutAssignment::DIGIT_SYMBOL_START);
+
+                if (!need_to_split) {
+                    // We are in the situation that all digit intervals after the currently processed one are in the form [0-9], i.e., we have
+                    //      ...[s-e][0-9]...[0-9]
+                    // Therefore, we should have only one interval of the form [0...0-9...9] in interval_cases
+                    assert(interval_cases.size() == 1);
+                    // We change this interval into [s0...0-e9...9]
+                    interval_cases[0].first += interval_start*place_value;
+                    interval_cases[0].second += interval_end*place_value;
+                    if (interval_start != 0 || interval_end != 9) {
+                        // If the currently processed interval is not of the form [0-9], we will have to add all cases for
+                        need_to_split = true;
+                    }
+                } else {
+                    // At least one of the digit intervals after the currently processed one is not in the form [0-9],
+                    // so for each interval [S-E] in interval_cases and each digit d, s<=d<=e, we need to add interval
+                    // [dS-dE] to the new vector of interval_cases.
+                    std::vector<std::pair<rational,rational>> new_interval_cases;
+                    for (std::pair<rational,rational>& interval_case : interval_cases) {
+                        // for each interval [S-E] in interval_cases
+                        for (rational possible_digit = interval_start; possible_digit <= interval_end; ++possible_digit) {
+                            // for each digit d, s<=d<=e
+                            new_interval_cases.push_back({
+                                // add [dS-dE] to new_interval_cases
+                                possible_digit*place_value + interval_case.first,
+                                possible_digit*place_value + interval_case.second
+                            });
+                        }
+                    }
+                    interval_cases = new_interval_cases;
+                }
+
+                // move to the following place value (from ones to tens, from tens to hundreds, etc.)
+                place_value *= 10;
+            }
+
+            // After computing the vector interval_cases, we can just now create the inequalities
+            for (const auto& interval_case : interval_cases) {
+                rational min = interval_case.first;
+                rational max = interval_case.second;
+                // we want to put
+                //      min <= var <= max
+                // but for the special case where min==max, we can just put
+                //      var = min (= max)
+                if (min == max) {
+                    result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{var, min});
+                } else {
+                    result.succ.emplace_back(LenFormulaType::AND, std::vector<LenNode>{
+                        LenNode(LenFormulaType::LEQ, {min, var}),
+                        LenNode(LenFormulaType::LEQ, {var, max})
+                    });
+                }
+            }
+        }
+        return result;
+    }
+
+    std::pair<LenNode, LenNodePrecision> DecisionProcedure::get_formula_for_int_subst_vars(const std::set<BasicTerm>& int_subst_vars, const std::set<BasicTerm>& code_subst_vars, std::map<BasicTerm,std::vector<unsigned>>& int_subst_vars_to_possible_valid_lengths) {
+        LenNode result(LenFormulaType::AND);
+        LenNodePrecision res_precision = LenNodePrecision::PRECISE;
+
+        // automaton representing all valid inputs (only digits)
+        // - we also keep empty word, because we will use it for substituted vars, and one of them can be empty, while other has only digits (for example s1="45", s2="" but s=s1s2 = "45" is valid)
+        mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
+        STRACE(str_conversion_int, tout << "only-digit NFA:" << std::endl << only_digits << std::endl;);
+        // automaton representing all non-valid inputs (contain non-digit)
+        mata::nfa::Nfa contain_non_digit = solution.aut_ass.complement_aut(only_digits);
+        STRACE(str_conversion_int, tout << "contains-non-digit NFA:" << std::endl << contain_non_digit << std::endl;);
+
+        for (const BasicTerm& int_subst_var : int_subst_vars) {
+            int_subst_vars_to_possible_valid_lengths[int_subst_var] = {};
+
+            // formula_for_int_subst_var should encode int_version_of(int_subst_var) = to_int(int_subts_var) for all words in solution.aut_ass.at(int_subst_var) while
+            // keeping the correspondence between |int_subst_var|, int_version_of(int_subst_var) and possibly also code_version_of(int_subst_var)
+            LenNode formula_for_int_subst_var(LenFormulaType::OR);
+
+            std::shared_ptr<mata::nfa::Nfa> aut = solution.aut_ass.at(int_subst_var);
+            STRACE(str_conversion_int, tout << "NFA for " << int_subst_var << ":" << std::endl << *aut << std::endl;);
+
+            // part containing only digits
+            mata::nfa::Nfa aut_valid_part = mata::nfa::reduce(mata::nfa::intersection(*aut, only_digits).trim());
+            STRACE(str_conversion_int, tout << "only-digit NFA:" << std::endl << aut_valid_part << std::endl;);
+            // part containing some non-digit
+            mata::nfa::Nfa aut_non_valid_part = mata::nfa::reduce(mata::nfa::intersection(*aut, contain_non_digit).trim());
+            STRACE(str_conversion_int, tout << "contains-non-digit NFA:" << std::endl << aut_non_valid_part << std::endl;);
+
+            // First handle the case of all words (except empty word) from solution.aut_ass.at(int_subst_var) that do not represent numbers
+            if (!aut_non_valid_part.is_lang_empty()) {
+                // aut_non_valid_part is language of words that contain at least one non-digit
+                // we therefore create following formula:
+                //       |int_subst_var| is length of some word from aut_non_valid_part && int_version_of(int_subst_var) = -1
+                formula_for_int_subst_var.succ.emplace_back(LenFormulaType::AND, std::vector<LenNode>{ solution.aut_ass.get_lengths(aut_non_valid_part, int_subst_var), LenNode(LenFormulaType::EQ, { int_version_of(int_subst_var), -1 }) });
+                if (code_subst_vars.contains(int_subst_var)) {
+                    // int_subst_var is used in some to_code/from_code
+                    // => we need to add to the previous formula also the fact, that int_subst_var cannot encode code point of a digit
+                    //      .. && (code_version_of(int_subst_var) < AutAssignment::DIGIT_SYMBOL_START || AutAssignment::DIGIT_SYMBOL_END < code_version_of(int_subst_var))
+                    formula_for_int_subst_var.succ.back().succ.emplace_back(LenFormulaType::OR, std::vector<LenNode>{
+                        LenNode(LenFormulaType::LT, { code_version_of(int_subst_var), AutAssignment::DIGIT_SYMBOL_START }),
+                        LenNode(LenFormulaType::LT, { AutAssignment::DIGIT_SYMBOL_END, code_version_of(int_subst_var) })
+                    });
+                }
+            }
+
+            // Now, for each length l of some word containing only digits, we create the formula
+            //      (|int_subst_var| = l && int_version_of(int_subst_var) is number represented by some word containing only digits of length l)
+            // and add l to int_subst_vars_to_possible_valid_lengths[int_subst_var].
+            // For l=0 we need to do something else with the second conjunct, and for l=1, we also need to add something about code_version_of(int_subt_var).
+
+            if (aut_valid_part.is_lang_empty()) {
+                result.succ.push_back(formula_for_int_subst_var);
+                continue;
+            }
+
+            // Handle l=0 as a special case.
+            if (aut_valid_part.is_in_lang({})) {
+                // Even though it is invalid and it seems that we should set int_version_of(int_subst_var) = -1, we cannot do that
+                // as int_subst_var is substituting some string_var in int conversion, and the other variables in the substitution
+                // might not be empty, so together they could form a valid string representing integer.
+                // In get_formula_for_int_conversion() we will actually ignore the value of int_version_of(int_subst_var) for the case
+                // that |int_subst_var| = 0, we just need it to be something else than -1.
+                // We therefore get the formula:
+                //      |int_subst_var| = 0 && !(int_version_of(int_subst_var) = -1)
+                formula_for_int_subst_var.succ.emplace_back(LenFormulaType::AND, std::vector<LenNode>{
+                    LenNode(LenFormulaType::EQ, { int_subst_var, 0 }),
+                    LenNode(LenFormulaType::NEQ, { int_version_of(int_subst_var), -1 })
+                });
+                // Also add the information that int_subst_var can have length 0
+                int_subst_vars_to_possible_valid_lengths[int_subst_var].push_back(0);
+            }
+
+            // maximum length of l
+            unsigned max_length_of_words;
+
+            if (aut_valid_part.is_acyclic()) {
+                // there is a finite number of words containing only digits => the longest possible word is aut_valid_part.num_of_states()-1
+                max_length_of_words = aut_valid_part.num_of_states()-1;
+            } else {
+                // there is infinite number of such words => we need to underapproximate
+                STRACE(str_conversion, tout << "infinite NFA for which we need to do underapproximation:" << std::endl << aut_valid_part << std::endl;);
+                max_length_of_words = m_params.m_underapprox_length;
+                res_precision = LenNodePrecision::UNDERAPPROX;
+            }
+
+            // for lengths l=1 to max_length_of_words
+            for (unsigned l = 1; l <= max_length_of_words; ++l) {
+                // get automaton representing all accepted words containing only digits of length l
+                mata::nfa::Nfa aut_valid_of_length = mata::nfa::minimize(mata::nfa::intersection(aut_valid_part, AutAssignment::digit_automaton_of_length(l)).trim());
+
+                if (aut_valid_of_length.is_lang_empty()) {
+                    // there are no such words
+                    continue;
+                }
+
+                // remember that there are some valid words of length l
+                int_subst_vars_to_possible_valid_lengths[int_subst_var].push_back(l);
+
+                // |int_subst_var| = l && encode that int_version_of(int_subst_var) is a numeral represented by some interval word accepted by aut_valid_of_length
+                formula_for_int_subst_var.succ.emplace_back(LenFormulaType::AND, std::vector<LenNode>{
+                    LenNode(LenFormulaType::EQ, { int_subst_var, l }),
+                    encode_interval_words(int_version_of(int_subst_var), AutAssignment::get_interval_words(aut_valid_of_length))
+                });
+
+                if (code_subst_vars.contains(int_subst_var) && l == 1) {
+                    // int_subst_var is used in some to_code/from_code AND we are handling the case of l==1 (for other lengths, the formula from get_formula_for_code_subst_vars should force that code_version_of(int_subst_var) is -1)
+                    // => we need to connect code_version_of(int_subst_var) and int_version_of(int_subst_var)
+                    //      code_version_of(int_subst_var) = int_version_of(int_subst_var) + AutAssignment::DIGIT_SYMBOL_START
+                    formula_for_int_subst_var.succ.back().succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{
+                        code_version_of(int_subst_var),
+                        LenNode(LenFormulaType::PLUS, std::vector<LenNode>{int_version_of(int_subst_var), AutAssignment::DIGIT_SYMBOL_START })
+                    });
+                }
+            }
+
+            result.succ.push_back(formula_for_int_subst_var);
+        }
+
+
+        STRACE(str_conversion_int, tout << "int_subst_vars formula: " << result << std::endl;);
+        return {result, res_precision};
+    }
+
+    LenNode DecisionProcedure::get_formula_for_code_conversion(const TermConversion& conv) {
+        const BasicTerm& s = conv.string_var;
+        const BasicTerm& c = conv.int_var;
+
+        // First handle the invalid inputs
+        LenNode invalid_case(LenFormulaType::AND);
+        if (conv.type == ConversionType::TO_CODE) {
+            // For to_code, invalid input is string whose length is not 1
+            // (|s| != 1 && c == -1)
+            invalid_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{s, 1});
+            invalid_case.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{c, -1});
+        } else {
+            // For from_code, invalid input is a number not representing a code point of some char
+            // (|s| == 0 && c is not a valid code point)
+            invalid_case.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{s, 0});
+            // non-valid code point means that 'c < 0 || c > max_char'
+            invalid_case.succ.emplace_back(LenFormulaType::OR, std::vector<LenNode>{
+                LenNode(LenFormulaType::LT, {c, 0}),
+                LenNode(LenFormulaType::LT, {zstring::max_char(), c})
+            });
+        }
+
+        // For s=s_1s_2...s_n substitution in the flattened solution, we now handle the valid inputs:
+        //    (|s| == 1 && c >= 0 && c is equal to one of code_version_of(s_i))
+        // This is shared for both to_code and from_code.
+        LenNode valid_case(LenFormulaType::AND, { {LenFormulaType::EQ, std::vector<LenNode>{s, 1}}, {LenFormulaType::LEQ, std::vector<LenNode>{0, c}}, /*c is equal to one of code_version_of(s_i))*/ });
+
+        // c is equal to one of code_version_of(s_i)
+        LenNode equal_to_one_subst_var(LenFormulaType::OR);
+        for (const BasicTerm& subst_var : solution.get_substituted_vars(s)) {
+            // c == code_version_of(s_i)
+            equal_to_one_subst_var.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{c, code_version_of(subst_var)});
+        }
+        valid_case.succ.push_back(equal_to_one_subst_var);
+
+        return LenNode(LenFormulaType::OR, std::vector<LenNode>{
+            invalid_case,
+            valid_case
+        });
+    }
+
+    LenNode DecisionProcedure::get_formula_for_int_conversion(const TermConversion& conv, const std::map<BasicTerm,std::vector<unsigned>>& int_subst_vars_to_possible_valid_lengths) {
+        const BasicTerm& s = conv.string_var;
+        const BasicTerm& i = conv.int_var;
+
+        LenNode result(LenFormulaType::OR);
+
+        // s = s_1 ... s_n, subst_vars = <s_1, ..., s_n>
+        const std::vector<BasicTerm>& subst_vars = solution.get_substituted_vars(s);
+
+        // first handle non-valid cases
+        if (conv.type == ConversionType::TO_INT) {
+            // for TO_INT empty string or anything that contains non-digit
+            LenNode empty_or_one_subst_contains_non_digit(LenFormulaType::OR, {LenNode(LenFormulaType::EQ, {s, 0})}); // start with empty string: |s| = 0
+            for (const BasicTerm& subst_var : subst_vars) {
+                // subst_var contain non-digit if one of s_i == -1 (see get_formula_for_int_subst_vars)
+                empty_or_one_subst_contains_non_digit.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{int_version_of(subst_var), -1});
+            }
+            result.succ.emplace_back(LenFormulaType::AND, std::vector<LenNode>{
+                empty_or_one_subst_contains_non_digit,
+                LenNode(LenFormulaType::EQ, {i, -1}) // for non-valid s, to_int(s) == -1
+            });
+        } else {
+            // for FROM_INT only empty string (as we assume that language of s was set to only possible results of from_int)
+            result.succ.emplace_back(LenFormulaType::AND, std::vector<LenNode>{
+                LenNode(LenFormulaType::LT, {i, 0}), // from_int(i) = "" only if i < 0
+                LenNode(LenFormulaType::EQ, {s, 0})
+            });
+        }
+
+        STRACE(str_conversion_int, tout << "non-valid part for int conversion: " << result << std::endl;);
+
+        if (subst_vars.size() == 0) {
+            // we only have empty word, i.e., a non-valid case that is already in result
+            return result;
+        }
+
+        // length_cases will contain all combinations of lengths l_1,...,l_n, such that l_i represents length of possible word containing only digits of s_i
+        std::vector<std::vector<unsigned>> length_cases = {{}};
+        for (const BasicTerm& subst_var : solution.get_substituted_vars(s)) { // s_i = subst_var
+            std::vector<std::vector<unsigned>> new_cases;
+            const auto& possible_lengths = int_subst_vars_to_possible_valid_lengths.at(subst_var);
+            if (possible_lengths.size() == 0) {
+                // one of the s_i does not have any word containing only digits (not even empty word) => we can just return, there will be just non-valid cases (already in result)
+                return result;
+            }
+            for (unsigned possible_length : possible_lengths) {
+                for (const auto& old_case : length_cases) {
+                    std::vector<unsigned> new_case = old_case;
+                    new_case.push_back(possible_length);
+                    new_cases.push_back(new_case);
+                }
+            }
+            length_cases = new_cases;
+        }
+
+        for (const auto& one_case : length_cases) {
+            assert(subst_vars.size() == one_case.size());
+
+            // Example:
+            //      one_case = 2,3,0,1
+            // Therefore, int_version_of(s_1) encodes (if it is encoding a number, i.e., it is not equal to -1), for |s_1| == 2,
+            // numbers with 2 digits (and there is such number), etc.
+            // We can then create formula that says, for the case that |s_1| == 2 && |s_2| == 3 && |s_3| == 0 && |s_4| == 1,
+            // i must be equal to
+            //      i == int_version_of(s_1)*(10^(3+1)) + int_version_of(s_1)*10 + int_version_of(s_4)
+            // For example if int_version_of(s_1) == 15, int_version_of(s_2) == 364 and int_version_of(s_4) == 6, we get
+            //      i == 15*10000 + 364*10 + 6 = 150000 + 3640 + 6 = 153646
+
+            // We are then creating formula
+            //      ((|s_1| == |l_1| && int_version_of(s_1) != -1) ... && (|s_n| == |l_n| && int_version_of(s_n) != -1)) && ...
+            LenNode formula_for_case(LenFormulaType::AND);
+            //      ... && i = int_version_of(s_1)*10^(l_2+...+l_n) + int_version_of(s_2)*10^(l_3+...+l_n) + ... + int_version_of(s_2)*10^(l_n) + int_version_of(s_n)
+            LenNode formula_for_sum(LenFormulaType::PLUS);
+
+            // However, for case that l_1 = l_2 = ... = l_n = 0, we get an invalid case, so this should be ignored => is_empty will take care of it
+            bool is_empty = true;
+
+            rational place_value(1); // builds 10^(...+l_(n-1)+l_n)
+            for (int i = subst_vars.size()-1; i >= 0; --i) {
+                const BasicTerm& subst_var = subst_vars[i]; // var s_i
+                unsigned length_of_subst_var = one_case[i]; // length l_i
+
+                // |s_i| = l_i
+                formula_for_case.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{subst_var, length_of_subst_var});
+                // For cases where s_i does not represent numbers (except for empty string, but then int_version_of(s_i)!=-1,
+                // see get_formula_for_int_subst_vars() for the reason why), we do not want to use it in computation
+                // int_version_of(s_i) != -1
+                formula_for_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{int_version_of(subst_var), -1});
+                STRACE(str_conversion_int, tout << "part of valid part for int conversion: " << formula_for_case << std::endl;);
+
+                if (length_of_subst_var > 0) {
+                    is_empty = false; // l_i != 0 => we cannot get the case where all l_1,...,l_n are 0
+
+                    // ... + int_version_of(s_i)*10^(l_{i+1}+...+l_n)
+                    formula_for_sum.succ.emplace_back(LenFormulaType::TIMES, std::vector<LenNode>{ int_version_of(subst_var), place_value });
+                    STRACE(str_conversion_int, tout << "part of the sum for int conversion: " << formula_for_sum << std::endl;);
+
+                    // place_value = place_value*(10^l_i)
+                    for (unsigned j = 0; j < length_of_subst_var; ++j) {
+                        place_value *= 10;
+                    }
+                }
+            }
+
+            if (is_empty) continue; // we have the case where every l_i = 0 => ignore, as it is a non-valid case handled at the beginning of the function
+
+            formula_for_case.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ i, formula_for_sum });
+
+            STRACE(str_conversion_int, tout << "valid part for int conversion: " << formula_for_case << std::endl;);
+            result.succ.push_back(formula_for_case);
+        }
+
+        STRACE(str_conversion_int, tout << "int conversion: " << result << std::endl;);
+        return result;
+    }
+
+    /**
+     * Creates a LIA formula that encodes to_code/from_code/to_int/from_int functions.
+     * Assumes that
+     *      - solution is flattened,
+     *      - will be used in conjunction with the result of solution.get_lengths,
+     *      - the resulting string variable of from_code/from_int is restricted to only valid results of from_code/from_int (should be done in theory_str_noodler::handle_conversion),
+     *      - if to_int/from_int will be processed, code points of all digits (symbols 48,..,57) should be in the alphabet (should be done in theory_str_noodler::final_check_eh).
+     *
+     * We have following types of conversions:
+     *      c = to_code(s)
+     *      s = from_code(s)
+     *      i = to_int(s)
+     *      s = from_int(i)
+     * With s a string variable and c/i an integer variable.
+     * The string variable s can be substituted in the (flattened) solution:
+     *      s = s_1 ... s_n (note that we should have |s| = |s_1| + ... + |s_n| from solution.get_lengths)
+     * We therefore collect all vars s_i and put them into two sets:
+     *      code_subst_vars - all vars that substitute some s in to_code/from_code
+     *      int_subst_vars - all vars that substitute some s in to_int/from_int
+     *
+     * We will then use functions get_formula_for_code_subst_vars and get_formula_for_int_subst_vars to encode
+     *      - for each s \in code_subst_vars a formula compactly saying that
+     *          - code_version_of(s) is equal to some to_code(w_s) for any w_s \in solution.aut_ass.at(w_s) with the condition that |s| == |w_s|
+     *      - for each s \in code_subst_vars a formula compactly saying that
+     *          - int_version_of(s) is equal to some to_int(w_s) for any w_s \in solution.aut_ass.at(w_s) with the condition that |s| == |w_s| AND if s also belongs to code_subst_vars, there is a correspondence between int_version_of(s) and code_version_of(s)
+     *
+     * After that, we use get_formula_for_code_conversion to handle code conversions - both to_code and from_code are handled similarly for valid strings (i.e. strings of length 1), invalid cases must be handled differently.
+     * Similarly, we use get_formula_for_int_conversion to handle int_conversions.
+     */
+    std::pair<LenNode, LenNodePrecision> DecisionProcedure::get_formula_for_conversions() {
+        STRACE(str_conversion,
+            tout << "Creating formula for conversions" << std::endl;
+        );
+
+        // the resulting formula
+        LenNode result(LenFormulaType::AND);
+        LenNodePrecision res_precision = LenNodePrecision::PRECISE;
+
+        // create formula for each variable substituting some string_var in some code conversion
+        LenNode code_subst_formula = get_formula_for_code_subst_vars(code_subst_vars);
+        if (!code_subst_formula.succ.empty()) {
+            result.succ.push_back(code_subst_formula);
+        }
+
+        // create formula for each variable substituting some string_var in some int conversion
+        std::map<BasicTerm,std::vector<unsigned>> int_subst_vars_to_possible_valid_lengths;
+        auto int_conv_formula_with_precision = get_formula_for_int_subst_vars(int_subst_vars, code_subst_vars, int_subst_vars_to_possible_valid_lengths);
+        if (!int_conv_formula_with_precision.first.succ.empty()) {
+            result.succ.push_back(int_conv_formula_with_precision.first);
+        }
+        if (int_conv_formula_with_precision.second != LenNodePrecision::PRECISE) {
+            res_precision = int_conv_formula_with_precision.second;
+        }
+
+        for (const TermConversion& conv : conversions) {
+            STRACE(str_conversion,
+                tout << " processing " << get_conversion_name(conv.type) << " with string var " << conv.string_var << " and int var " << conv.int_var << std::endl;
+            );
+
+            switch (conv.type)
+            {
+                case ConversionType::TO_CODE:
+                case ConversionType::FROM_CODE:
+                {
+                    result.succ.push_back(get_formula_for_code_conversion(conv));
+                    break;
+                }
+                case ConversionType::TO_INT:
+                case ConversionType::FROM_INT:
+                {
+                    result.succ.push_back(get_formula_for_int_conversion(conv, int_subst_vars_to_possible_valid_lengths));
+                    break;
+                }
+                default:
+                    UNREACHABLE();
+            }
+        }
+
+        if (result.succ.empty()) {
+            result = LenNode(LenFormulaType::TRUE);
+        }
+
+        STRACE(str_conversion,
+            tout << "Formula for conversions: " << result << std::endl;
+        );
+        return {result, res_precision};
     }
 
     void DecisionProcedure::init_ca_diseq(const Predicate& diseq) {
@@ -922,7 +1838,10 @@ namespace smt::noodler {
 
     lbool DecisionProcedure::preprocess(PreprocessType opt, const BasicTermEqiv &len_eq_vars) {
         // we collect variables used in conversions, some preprocessing rules cannot be applied for them
-        std::set<BasicTerm> conv_vars = conversion_handler.get_string_vars_in_conversions();
+        std::unordered_set<BasicTerm> conv_vars;
+        for (const auto &conv : conversions) {
+            conv_vars.insert(conv.string_var);
+        }
 
         FormulaPreprocessor prep_handler{std::move(this->formula), std::move(this->init_aut_ass), std::move(this->init_length_sensitive_vars), m_params, conv_vars};
 
@@ -957,7 +1876,7 @@ namespace smt::noodler {
         prep_handler.remove_regular();
         // Skip_len_sat is not compatible with not(contains) and conversions as the preprocessing may skip equations with variables
         // inside not(contains)/conversion.
-        if(this->not_contains.get_predicates().empty() && !conversion_handler.are_there_any_conversions()) {
+        if(this->not_contains.get_predicates().empty() && this->conversions.empty()) {
             prep_handler.skip_len_sat();
         }
         prep_handler.generate_identities();
@@ -1002,7 +1921,7 @@ namespace smt::noodler {
         prep_handler.propagate_variables();
         prep_handler.remove_regular();
 
-        prep_handler.conversions_validity(conversion_handler.get_conversions());
+        prep_handler.conversions_validity(conversions);
 
         prep_handler.simplify_not_contains_to_equations();
 
@@ -1088,12 +2007,12 @@ namespace smt::noodler {
                 init_length_sensitive_vars.insert(var2);
 
                 // variables that are results of to_code applied to var1/var2
-                BasicTerm var1_to_code = util::mk_internal_noodler_var(var1.get_name() + zstring("!ineq_to_code"));
-                BasicTerm var2_to_code = util::mk_internal_noodler_var(var2.get_name() + zstring("!ineq_to_code"));
+                BasicTerm var1_to_code = BasicTerm(BasicTermType::Variable, var1.get_name().encode() + "!ineq_to_code");
+                BasicTerm var2_to_code = BasicTerm(BasicTermType::Variable, var2.get_name().encode() + "!ineq_to_code");
 
                 // add the information that we need to process "var1_to_code = to_code(var1)" and "var2_to_code = to_code(var2)"
-                conversion_handler.add_conversion(TermConversion{ConversionType::TO_CODE, var1, var1_to_code});
-                conversion_handler.add_conversion(TermConversion{ConversionType::TO_CODE, var2, var2_to_code});
+                conversions.emplace_back(ConversionType::TO_CODE, var1, var1_to_code);
+                conversions.emplace_back(ConversionType::TO_CODE, var2, var2_to_code);
 
                 // add to_code(var1) != to_code(var2) to the len formula for disequations
                 disequations_len_formula_conjuncts.push_back(LenNode(LenFormulaType::NEQ, {var1_to_code, var2_to_code}));
@@ -1176,30 +2095,28 @@ namespace smt::noodler {
         std::set<mata::Symbol> set_of_symbols_to_replace_dummy_symbol_with;
         // the valid symbols can come from code-point conversions
         for (auto& [var, nfa] : solution.aut_ass) {
-            if (var.is_literal() || !conversion_handler.is_var_code_subst_var(var)) { continue; }
+            if (var.is_literal() || !code_subst_vars.contains(var)) { continue; }
             rational len = arith_model.at(var);
-            rational to_code_value = arith_model.at(conversion_handler.code_version_of(var));
+            rational to_code_value = arith_model.at(code_version_of(var));
             if (to_code_value != -1) {
                 mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
                 if (!solution.aut_ass.get_alphabet().contains(to_code_value_as_symbol)) {
                     // the code value is not a symbol of an alphabet, therefore it is "hidden" in a dummy symbol
                     // we want to "unhide" it, and make it explicit
                     set_of_symbols_to_replace_dummy_symbol_with.insert(to_code_value_as_symbol);
+                    solution.aut_ass.add_symbol_to_alphabet(to_code_value.get_unsigned());
                 }
                 update_model_and_aut_ass(var, zstring(to_code_value.get_unsigned())); // zstring(unsigned) returns char with the code point of the argument
             } // for the case to_code_value == -1 we should have (str.len var) != 1, this restriction will be sorted out further
         }
 
-        if (solution.aut_ass.get_alphabet().contains(util::get_dummy_symbol())) {
-            // if there is no symbol from code-point conversions, we add a fresh one instead
-            if (set_of_symbols_to_replace_dummy_symbol_with.empty()) {
-                set_of_symbols_to_replace_dummy_symbol_with.insert(solution.aut_ass.get_alphabet().get_unused_symbol());
-            }
-
-            // we can now replace dummy symbol in automata
-            solution.aut_ass.replace_dummy_with_symbols(set_of_symbols_to_replace_dummy_symbol_with);
+        // if there is no symbol from code-point conversions, we add a fresh one instead
+        if (set_of_symbols_to_replace_dummy_symbol_with.empty()) {
+            set_of_symbols_to_replace_dummy_symbol_with.insert(solution.aut_ass.add_fresh_symbol_to_alphabet());
         }
 
+        // we can now replace dummy symbol in automata
+        solution.aut_ass.replace_dummy_with_symbols(set_of_symbols_to_replace_dummy_symbol_with);
         // we have to also replace dummy symbol in transducers
         // TODO it is incorrect, dummy symbols need to be replaced on the level of transducer transitions, not on nfa transitions (works only if there is one symbol to replace with)
         solution.replace_dummy_symbol_in_transducers_with(set_of_symbols_to_replace_dummy_symbol_with);
@@ -1233,25 +2150,6 @@ namespace smt::noodler {
             }
         }
 
-        // get string representing the integer of length len, where either it is padded by leading zeroes (pad == true) or trailing zeroes (pad == false)
-        auto get_string_from_integer = [](const rational& len, const rational& integer, bool pad) {
-            if (len == 0) {
-                return zstring();
-            } else {
-                zstring res(integer); // zstring(rational) returns the string representation of the number in the argument
-                SASSERT(len >= res.length());
-                // pad to_int_str with leading/trailing zeros until we reach the desired length
-                while (len.get_unsigned() != res.length()) {
-                    if (pad) {
-                        res = zstring("0") + res;
-                    } else {
-                        res = res + zstring("0");
-                    }
-                }
-                return res;
-            }
-        };
-
         // Restrict the languages in solution of length variables and int conversion variables by their models
         for (auto& [var, nfa] : solution.aut_ass) {
             // literals should have the correct language already and we process only length vars which were not already processed in the dummy-symbol step
@@ -1263,31 +2161,26 @@ namespace smt::noodler {
             nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, len_nfa).trim());
 
             // Restrict int-conversion var
-            if (conversion_handler.is_var_int_subst_var(var) && !conversion_handler.is_var_real_subst_var(var)) {
-                rational to_int_value = arith_model.at(conversion_handler.int_version_of(var));
-                if (to_int_value == -1) {
-                    // the language of var should contain only words containing some non-digit
-                    mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
-                    nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, solution.aut_ass.complement_aut(only_digits)).trim());
+            if (int_subst_vars.contains(var)) {
+                if (len == 0) {
+                    // to_int_value(var) != -1 for len==0 (see get_formula_for_int_subst_vars())
+                    // so we directly set ""
+                    update_model_and_aut_ass(var, zstring());
                 } else {
-                    update_model_and_aut_ass(var, get_string_from_integer(len, to_int_value, true));
-                }
-            }
-
-            // Restrict real-conversion var
-            if (conversion_handler.is_var_real_subst_var(var)) {
-                rational to_int_value = arith_model.at(conversion_handler.int_version_of(var));
-                rational dot_position = arith_model.at(conversion_handler.dot_position_of(var));
-                if (to_int_value == -1 && dot_position == -1) {
-                    // the language of var should contain only words containing some non-number
-                    const mata::nfa::Nfa non_number = solution.aut_ass.complement_aut(mata::nfa::union_nondet(AutAssignment::digit_automaton_with_epsilon(), AutAssignment::decimal_automaton()));
-                    nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, non_number).trim());
-                } else if (to_int_value != -1) {
-                    update_model_and_aut_ass(var, get_string_from_integer(len, to_int_value, true));
-                } else {
-                    zstring whole_string = get_string_from_integer(dot_position, arith_model.at(conversion_handler.whole_part_of(var)), true);
-                    zstring decimal_string = get_string_from_integer(len-dot_position-1, arith_model.at(conversion_handler.decimal_part_of(var)), false);
-                    update_model_and_aut_ass(var, whole_string + zstring(".") + decimal_string);
+                    rational to_int_value = arith_model.at(int_version_of(var));
+                    if (to_int_value == -1) {
+                        // the language of var should contain only words containing some non-digit
+                        mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
+                        nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*nfa, solution.aut_ass.complement_aut(only_digits)).trim());
+                    } else {
+                        zstring to_int_str(to_int_value); // zstring(rational) returns the string representation of the number in the argument
+                        SASSERT(len >= to_int_str.length());
+                        // pad to_int_str with leading zeros until we reach desired length
+                        while (len.get_unsigned() != to_int_str.length()) {
+                            to_int_str = zstring("0") + to_int_str;
+                        }
+                        update_model_and_aut_ass(var, to_int_str);
+                    }
                 }
             }
         }
@@ -1325,6 +2218,377 @@ namespace smt::noodler {
                 tout << std::endl;
             }
         );
+
+        //Look for all egdes in the inclusion graph
+        vector<vector<Predicate>> graph_edges;
+        vector<vector<int>> adjacency_list;
+        for (unsigned i = 0; i < solution.inclusions.size(); i++) {
+            adjacency_list.push_back({});
+        }
+        int idx = 0;
+        for (Predicate incl : solution.inclusions) {
+            //Look throught all variable in the left side of the inclusion
+            for(BasicTerm term :  incl.get_side_vars(Predicate::EquationSideType::Left) ){
+                find_graph_edges(incl, idx, term, &graph_edges, &adjacency_list, true);
+            }
+            //Look throught all variable in the left side of the inclusion
+            for(BasicTerm term :  incl.get_side_vars(Predicate::EquationSideType::Right) ){
+                find_graph_edges(incl, idx, term, &graph_edges, &adjacency_list, false);
+            }
+            idx++;
+        }
+        //Find all SCC inclusions
+        idx = 0;
+        for(vector<int> x : adjacency_list){
+                std::cout << "Adjacency - " << idx << " = " << x << std::endl;
+                idx++;
+        }
+        vector<vector<Predicate>> scc = findSCC(solution.inclusions.size(), &adjacency_list);
+                       
+        regex::Alphabet alph(solution.aut_ass.get_alphabet());
+
+        //solve all SCC
+        for(vector<Predicate> scc_list : scc){
+            if(scc_list.size() > 1)
+            {
+                vector<Atom> left_side;
+                vector<Atom> right_side;
+
+                // T
+                std::set<Atom> T;
+                int T_max_size = 0;
+
+                // v
+                std::map<BasicTerm, mata::Word> scc_solution;
+
+                //shortest words
+                std::map<BasicTerm, std::set<mata::Word>> vars_shortest_words = find_shortest_words(scc_list);
+                
+                std::cout << "Creating atom equations!" << std::endl;
+                //create atom equations
+                for(Predicate incl: scc_list){
+                    //Add # symbol
+                    for(BasicTerm var: incl.get_side(Predicate::EquationSideType::Left)){ 
+                        //is var
+                        unsigned var_length = 0;
+                        std::set<mata::Word> words;
+                        auto it = vars_shortest_words.find(var);
+                        if (it != vars_shortest_words.end())
+                            words = it->second;
+                        if(var.is_variable())
+                                var_length = alph.get_string_from_mata_word(*words.begin()).length();
+                        //is literal
+                        else{
+                            var_length = var.get_name().length();
+                            //add literal to solution
+                            if(!scc_solution.count(var)){
+                                scc_solution[var] = util::get_mata_word_zstring(var.get_name());
+                                T_max_size += var_length;
+                            }
+                        }
+                        for(unsigned idx = 0; idx < var_length; idx++){
+                            Atom a(var,idx);
+                            left_side.push_back(a);
+                        } 
+                    }
+                    for(BasicTerm var: incl.get_side(Predicate::EquationSideType::Right)){
+                        //is var
+                        unsigned var_length = 0;
+                        std::set<mata::Word> words;
+                        auto it = vars_shortest_words.find(var);
+                        if (it != vars_shortest_words.end())
+                            words = it->second;
+                        if(var.is_variable())
+                                var_length = alph.get_string_from_mata_word(*words.begin()).length();
+                        //is literal
+                        else{
+                            var_length = var.get_name().length();
+                            if(!scc_solution.count(var)){
+                                scc_solution[var] = util::get_mata_word_zstring(var.get_name());
+                                T_max_size += var_length;
+                            }
+                        }
+                        for(unsigned idx = 0; idx < var_length; idx++){
+                            Atom a(var,idx);
+                            right_side.push_back(a);
+                        }
+                    }
+                }
+                
+                //assign random words to v
+                for (auto const& [var, words] : vars_shortest_words) {
+                    if (!words.empty()){
+                        scc_solution[var] = *words.begin(); 
+                        T_max_size += alph.get_string_from_mata_word(*words.begin()).length();
+                    }
+                }
+
+                std::cout << "Random Assigment!" << std::endl;
+                for(auto const& [var, word] : scc_solution)
+                {
+                    std::cout << var.get_name() << " - " << alph.get_string_from_mata_word(word) << std::endl;
+                }
+                std::cout << "Looking for words!" << std::endl;
+                
+                //find correct words
+                while(T.size() < T_max_size){
+                    //leftmost half full
+                    int left_most_index = -1;
+                    for (int i = 0; i < left_side.size(); i++) {
+                        if (isHalfFull(left_side, right_side, i, T))
+                        {
+                            left_most_index = i;
+                            break;
+                        }
+                    }
+                    //std::cout << "Left_most = "<< left_most_index << std::endl;
+
+                    if (left_most_index != -1) {
+                        // Lemma 4
+                        Atom add_atom = right_side[0];
+                        bool left_side_atom = true;
+                        if(T.count(left_side[left_most_index]))
+                            add_atom = right_side[left_most_index];
+                        else{
+                            add_atom = left_side[left_most_index];
+                            left_side_atom = false;
+                        }
+                        
+                        //
+                        get_assignment(left_most_index, left_side_atom, left_side, right_side,
+                                        &scc_solution, &T);
+                        
+                        // aktualizuj T
+                        T.insert(add_atom);
+
+                    } else {
+                        // Lemma 3
+                        for (unsigned pos = 0; pos < left_side.size(); pos++) {
+                            if (!T.count(left_side[pos])) {
+                                //std::cout << "Adding " << left_side[pos].var.get_name() << "," << left_side[pos].index << std::endl;
+                                T.insert(left_side[pos]);
+                                break;
+                            }
+                            if (!T.count(right_side[pos])) {
+                                //std::cout << "Adding " << left_side[pos].var.get_name() << "," << left_side[pos].index << std::endl;
+                                T.insert(right_side[pos]);
+                                break;
+                            }
+                        }
+                    }                   
+                }
+                std::cout << "SCC all" << std::endl;
+
+                std::cout << "Var Assigment!" << std::endl;
+                for(auto const& [var, word] : scc_solution)
+                {
+                    std::cout << var.get_name() << " - " << alph.get_string_from_mata_word(word) << std::endl;
+                    if(var.is_variable()){
+                        update_model_and_aut_ass(var, alph.get_string_from_mata_word(word));
+                    }
+                }
+            }
+        }   
+    }
+    
+    void DecisionProcedure::get_assignment(int p, bool missing_left, vector<Atom> left_side, vector<Atom> right_side,
+    std::map<BasicTerm, mata::Word>* scc_solution, std::set<Atom>* T){
+        
+        Atom missing_atom = missing_left ? left_side[p] : right_side[p];
+        
+        // var that would be changed
+        BasicTerm changed_var = missing_atom.var;
+
+        //get word from opposite side
+        vector<Atom> opposite_side = missing_left ? right_side : left_side;
+        mata::Word opposite_word;
+
+        for (const auto atom : opposite_side) {
+            //concat word
+            const mata::Word& word = (*scc_solution)[atom.var];
+            opposite_word.push_back(word[atom.index]);
+        }
+        
+        //get word for var (change scc_solution)
+        int start_in_pattern = p - missing_atom.index;
+        int var_lenght = (*scc_solution)[changed_var].size(); 
+
+        mata::Word new_word_for_var;
+        for (int i = 0; i < var_lenght; i++) {
+            new_word_for_var.push_back(opposite_word[start_in_pattern + i]);
+        }
+        (*scc_solution)[changed_var] = new_word_for_var;
+
+        //remove atoms from T  
+        auto it = T->begin();
+        while (it != T->end()) {
+            if (it->var == changed_var && it->index > missing_atom.index)
+                it = T->erase(it);
+            else
+                ++it;
+        }
+    }
+
+    bool DecisionProcedure::isHalfFull(vector<Atom> left_side, vector<Atom> right_side, int idx, std::set<Atom> T)
+    {
+        bool is_left_atom = T.count(left_side[idx]);
+        bool is_right_atom = T.count(right_side[idx]);
+        //std::cout << "Check halffull " << idx << " - " << is_left_atom << "," << is_right_atom << std::endl;
+        if((is_left_atom && !is_right_atom) || (!is_left_atom && is_right_atom))
+            return true;
+        else
+            return false;
+    }
+
+    std::map<BasicTerm, std::set<mata::Word>> DecisionProcedure::find_shortest_words(vector<Predicate> scc_list)
+    {
+        //return var
+        std::map<BasicTerm, std::set<mata::Word>> res_map;
+
+        regex::Alphabet alph(solution.aut_ass.get_alphabet());
+        //Get shortest words for every var in scc
+        std::cout << "Predicate SCC:" << std::endl;
+        for(Predicate incl: scc_list){
+            std::cout << "\t" << incl << std::endl;
+
+            //Get words from left side
+            for(BasicTerm var: incl.get_side_vars(Predicate::EquationSideType::Left)){           
+                if(res_map.count(var) == 0) 
+                {
+                    const mata::nfa::Nfa& var_nfa = *solution.aut_ass.at(var);
+                    std::set<mata::Word> words = mata::applications::strings::get_shortest_words(var_nfa);
+                    std::cout << "\tChecking: "<< var << "[" << words.size() << "]"<< ":" << std::endl;
+
+                    for(mata::Word w: words){
+                        std::cout << "\t\t" << alph.get_string_from_mata_word(w) << std::endl;
+                    }
+                    //add result to ans
+                    res_map.insert({var, words});
+                }
+            }
+            //Get words from right side
+            for(BasicTerm var: incl.get_side_vars(Predicate::EquationSideType::Right)){
+                if(res_map.count(var) == 0) 
+                {
+                    const mata::nfa::Nfa& var_nfa = *solution.aut_ass.at(var);
+                    std::set<mata::Word> words = mata::applications::strings::get_shortest_words(var_nfa);
+                    std::cout << "\tChecking: "<< var << "[" << words.size() << "]"<< ":" << std::endl;
+                    for(mata::Word w: words){
+                        std::cout << "\t\t" << alph.get_string_from_mata_word(w) << std::endl;
+                    }
+                    // add result to ans
+                    res_map.insert({var, words});
+                }
+            }
+        }
+        return res_map;
+    } 
+    
+    void DecisionProcedure::find_graph_edges(Predicate input_inclusion, int inclIdx, BasicTerm checked_term, vector<vector<Predicate>> *graph_edges,
+                                             vector<vector<int>> *adjacency_list, bool inclusion_side){
+        //Look throught all inclusions for variable matches
+        int idx = 0;
+        for(Predicate incl : solution.inclusions){
+            //if(incl == input_inclusion) continue;
+            std::set<BasicTerm> checked_side;
+            //Choose with side of the inclusion check
+            //Left
+            if(inclusion_side)
+                checked_side = incl.get_side_vars(Predicate::EquationSideType::Right);
+            //Right
+            else
+                checked_side = incl.get_side_vars(Predicate::EquationSideType::Left);
+            if(checked_side.find(checked_term) != checked_side.end()){
+
+                vector<Predicate> edge = {input_inclusion, incl};
+                //Check if the edge is already added
+                int cnt = 0;
+                for(auto edgeC : *graph_edges){
+                    if(edgeC == edge)
+                    cnt++;
+                }
+                if(cnt == 0)
+                {
+                    //Add new edge into the vector
+                    graph_edges->push_back(edge);
+                    //Add new adjacency at idx
+                    (*adjacency_list)[idx].push_back(inclIdx);
+                }
+            }
+            //increment idx
+            idx++;
+        }
+    }
+
+    bool dfs(int curr, int des, vector<vector<int>>* adj, vector<int> *vis)
+    {
+        // If curr node is destination return true
+        if (curr == des) {
+            return true;
+        }
+        //Loop throught all reachable verticles
+        (*vis)[curr] = 1;
+        for (int x : (*adj)[curr]) {
+            if (!(*vis)[x]) {
+                if (dfs(x, des, adj, vis)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    bool isPath(int src, int des, vector<vector<int>> *adj)
+    {
+        vector<int> vis(adj->size(), 0);
+        return dfs(src, des, adj, &vis);
+    }
+
+    vector<vector<Predicate>> DecisionProcedure::findSCC(int n, vector<vector<int>> *adjacency_list)
+    {
+        vector<vector<Predicate>> predicate_ans;
+        // Stores all the strongly connected components.
+        vector<vector<int> > ans;
+        // Stores whether a vertex is a part of any Strongly
+        // Connected Component
+        vector<int> is_scc(n, 0);
+        int i = 0;
+        for(Predicate p: solution.inclusions){
+            //Check if the is part of scc
+            if (!is_scc[i]) 
+            {
+                vector<int> scc;
+                scc.push_back(i);
+                vector<Predicate> scc_predicate;
+                scc_predicate.push_back(p);
+                //Check for all scc verticles
+                int j = 0;
+                for (Predicate pr: solution.inclusions){
+                    if(j <= i){
+                        j++;
+                        continue;
+                    }
+                    //If there is an edge from p1 -> p2 and p2 -> p1
+                    bool path1 = isPath(i, j, adjacency_list);
+                    bool path2 = isPath(j, i, adjacency_list);
+                    //std::cout << "path - " << path1 << "," << path2 << std::endl;
+                    if (!is_scc[j] && path1 && path2){
+                        is_scc[j] = 1;
+                        scc.push_back(j);
+                        scc_predicate.push_back(pr);
+                    }
+                    j++;
+                }
+                ans.push_back(scc);
+                predicate_ans.push_back(scc_predicate);
+            }
+            i++;
+        }
+        for(vector<int> scc_list : ans){
+            std::cout << "SCC:" << std::endl;
+            std::cout << scc_list << std::endl;
+        }
+        return predicate_ans;
     }
 
     zstring DecisionProcedure::get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
@@ -1333,11 +2597,11 @@ namespace smt::noodler {
         if (model_of_var.contains(var)) {
             return model_of_var.at(var);
         }
-
+        
         STRACE(str_model,
             tout << "Generating model for var " << var << "\n";
         );
-
+        
         if (var.is_literal()) {
             return var.get_name();
         }
@@ -1432,11 +2696,19 @@ namespace smt::noodler {
     }
 
     std::vector<BasicTerm> DecisionProcedure::get_len_vars_for_model(const BasicTerm& str_var) {
-        // we ignore str_var and return all vars needed for initializing model
-        std::vector<BasicTerm> needed_vars = conversion_handler.get_arith_vars_needed_for_model();
+        // we always need (for initialization) all len_vars that are in aut_ass, so we ignore str_var
+        std::vector<BasicTerm> needed_vars;
         for (const BasicTerm& len_var : solution.length_sensitive_vars) {
             if (!len_var.is_literal() && solution.aut_ass.contains(len_var)) {
                 needed_vars.push_back(len_var);
+
+                if (int_subst_vars.contains(len_var)) {
+                    needed_vars.push_back(int_version_of(len_var));
+                }
+
+                if (code_subst_vars.contains(len_var)) {
+                    needed_vars.push_back(code_version_of(len_var));
+                }
             }
         }
         for (const auto& transducer_with_parikh_information : transducers_with_parikh_information) {
@@ -1455,8 +2727,8 @@ namespace smt::noodler {
         for (const auto& var : init_length_sensitive_vars) {
             initial_variables.insert(var);
         }
-        for (const BasicTerm& conv_string_var : conversion_handler.get_string_vars_in_conversions()) {
-            initial_variables.insert(conv_string_var);
+        for (const auto& conv : conversions) {
+            initial_variables.insert(conv.string_var);
         }
         for (const auto& incl : inclusions_from_preprocessing) {
             for (const auto& var : incl.get_vars()) {
