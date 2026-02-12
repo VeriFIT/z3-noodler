@@ -327,6 +327,7 @@ namespace smt::noodler {
         void handle_contains(expr *e);
         void handle_not_contains(expr *e);
         void handle_in_re(expr *e, bool is_true);
+        void handle_ecma_re(expr *e);
         void handle_is_digit(expr *e);
         void handle_conversion(expr *e);
         void handle_lex_lt(expr *e);

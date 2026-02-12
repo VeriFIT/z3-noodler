@@ -444,6 +444,8 @@ namespace smt::noodler {
             m_util_s.str.is_from_code(n) // str.from_code
         ) {
             handle_conversion(n);
+        } else if (m_util_s.str.is_from_ecma2020_re(n)) { // str.in_re with re.from_ecma2020
+            handle_ecma_re(n);
         } else if (util::is_str_variable(n, m_util_s)) {
             BasicTerm var_for_n = util::get_variable_basic_term(n);
             SASSERT(!var_name.contains(var_for_n) || var_name.at(var_for_n) == n);
@@ -1934,11 +1936,36 @@ namespace smt::noodler {
         add_axiom({~lit_e, lit_x_eps,  mk_literal(to_code_lt)});
     }
 
+    void theory_str_noodler::handle_ecma_re(expr *e) {
+        expr* x = nullptr;
+        zstring pattern;
+        if (!m_util_s.str.is_from_ecma2020_re(e, &x, &pattern))
+            return;
+
+        expr* r = nullptr;
+        VERIFY(m_util_s.str.is_in_re(e, x, r));
+
+        // TODO: this is just a placeholder converting ecma content directly to string
+        expr_ref str_arg(m);
+        if (is_app(r) && to_app(r)->get_num_args() == 1)
+            str_arg = to_app(r)->get_arg(0);
+        else
+            str_arg = m_util_s.str.mk_string(pattern);
+
+        expr_ref rhs(m_util_s.re.mk_in_re(x, m_util_s.re.mk_to_re(str_arg)), m);
+        add_axiom(m.mk_or(m.mk_not(e), rhs));
+    }
+
     void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
         STRACE(str, tout  << "handle in_re " << mk_pp(e, m) << " " << is_true << std::endl;);
 
         expr *s = nullptr, *re = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, s, re));
+
+        // Memberships over (re.from_ecma2020 ...) are handled via axioms that relate them
+        // to (str.to_re ...) and should not be sent to the decision procedure.
+        if (m_util_s.re.is_from_ecma2020(re))
+            return;
 
         app_ref re_constr(to_app(s), m);
         expr_ref re_atom(e, m);
