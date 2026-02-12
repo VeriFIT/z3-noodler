@@ -995,6 +995,31 @@ bool seq_util::str::is_nth_i(expr const* n, expr*& s, unsigned& idx) const {
     return arith_util(m).is_unsigned(i, idx);
 }
 
+bool seq_util::str::from_ecma2020(expr const* n, expr*& s, zstring& pattern) const {
+    expr* r = nullptr;
+    if (!is_in_re(n, s, r))
+        return false;
+    return u.re.is_from_ecma2020(r, pattern);
+}
+
+bool seq_util::str::is_from_ecma2020_re(expr const* n, expr** x, zstring* pattern) const {
+    expr* s = nullptr;
+    expr* r = nullptr;
+    if (!is_in_re(n, s, r))
+        return false;
+    if (!u.re.is_from_ecma2020(r))
+        return false;
+    if (x)
+        *x = s;
+    if (pattern) {
+        zstring p;
+        if (!u.re.is_from_ecma2020(r, p))
+            return false;
+        *pattern = p;
+    }
+    return true;
+}
+
 app* seq_util::str::mk_nth_c(expr* s, unsigned i) const {
     return mk_nth_i(s, arith_util(m).mk_int(i));
 }
@@ -1296,6 +1321,59 @@ app* seq_util::rex::mk_from_ecma2020(zstring const& pattern) {
     func_decl* f = m.mk_const_decl(symbol("re.from_ecma2020"), re_sort,
                                    func_decl_info(m_fid, OP_RE_FROM_ECMA2020, 1, &p));
     return m.mk_const(f);
+}
+
+bool seq_util::rex::is_capture(expr const* n, expr*& body, unsigned& idx) const {
+    if (!is_capture(n))
+        return false;
+    app const* a = to_app(n);
+    if (a->get_num_args() != 1)
+        return false;
+    func_decl* f = a->get_decl();
+    if (f->get_num_parameters() != 1 || !f->get_parameter(0).is_int())
+        return false;
+    int v = f->get_parameter(0).get_int();
+    if (v < 0)
+        return false;
+    idx = static_cast<unsigned>(v);
+    body = a->get_arg(0);
+    return true;
+}
+
+bool seq_util::rex::is_reference(expr const* n, unsigned& idx) const {
+    if (!is_reference(n))
+        return false;
+    app const* a = to_app(n);
+    if (a->get_num_args() != 0)
+        return false;
+    func_decl* f = a->get_decl();
+    if (f->get_num_parameters() != 1 || !f->get_parameter(0).is_int())
+        return false;
+    int v = f->get_parameter(0).get_int();
+    if (v < 0)
+        return false;
+    idx = static_cast<unsigned>(v);
+    return true;
+}
+
+bool seq_util::rex::is_from_ecma2020(expr const* n, zstring& pattern) const {
+    if (!is_from_ecma2020(n))
+        return false;
+    app const* a = to_app(n);
+    func_decl* f = a->get_decl();
+    if (a->get_num_args() == 0) {
+        // Parameterized-const form: zero args, one zstring parameter
+        if (f->get_num_parameters() == 1 && f->get_parameter(0).is_zstring()) {
+            pattern = f->get_parameter(0).get_zstring();
+            return true;
+        }
+        return false;
+    }
+    if (a->get_num_args() == 1) {
+        // Unary application form: extract the pattern when the argument is a string literal
+        return u.str.is_string(a->get_arg(0), pattern);
+    }
+    return false;
 }
 
 // Create a capturing group wrapper around r with index n

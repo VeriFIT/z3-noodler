@@ -401,6 +401,17 @@ public:
         bool is_from_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_FROM_CODE); }
         bool is_to_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TO_CODE); }
 
+        // Convenience matcher for (str.in_re s (re.from_ecma2020 ...))
+        // Returns true and assigns s (membership first argument) and the extracted ECMAScript-2020 pattern.
+        // Supports both the parameterized-const form and the unary application form when the argument is a string literal.
+        bool from_ecma2020(expr const* n, expr*& s, zstring& pattern) const;
+
+        // Recognizer for membership constraints of the shape (str.in_re x (re.from_ecma2020 ...)).
+        // Optional out-parameters:
+        // - x: the left argument of str.in_re
+        // - pattern: extracted ECMAScript-2020 pattern (fails if the pattern cannot be recovered as a zstring)
+        bool is_from_ecma2020_re(expr const* n, expr** x = nullptr, zstring* pattern = nullptr) const;
+
         bool is_len_sub(expr const* n, expr*& l, expr*& u, rational& k) const;
         bool is_concat_of_units(expr* n) const;
 
@@ -592,6 +603,15 @@ public:
         bool is_range(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_RANGE); }
         bool is_range(expr const* n, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_LOOP); }
+        bool is_capture(expr const* n) const { return is_app_of(n, m_fid, OP_RE_CAPTURE); }
+        bool is_reference(expr const* n) const { return is_app_of(n, m_fid, OP_RE_REFERENCE); }
+        bool is_begin_anchor(expr const* n) const { return is_app_of(n, m_fid, OP_RE_BEGIN_ANCHOR); }
+        bool is_end_anchor(expr const* n) const { return is_app_of(n, m_fid, OP_RE_END_ANCHOR); }
+        bool is_from_ecma2020(expr const* n) const { return is_app_of(n, m_fid, OP_RE_FROM_ECMA2020); }
+
+        bool is_capture(expr const* n, expr*& body, unsigned& idx) const;
+        bool is_reference(expr const* n, unsigned& idx) const;
+        bool is_from_ecma2020(expr const* n, zstring& pattern) const;
         bool is_empty(expr const* n)  const { return is_app_of(n, m_fid, OP_RE_EMPTY_SET); }
         bool is_full_char(expr const* n)  const { return is_app_of(n, m_fid, OP_RE_FULL_CHAR_SET); }
         bool is_full_seq(expr const* n)  const {
