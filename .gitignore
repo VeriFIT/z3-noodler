@@ -114,5 +114,10 @@ CppProperties.json
 test-input
 genaisrc/genblogpost.genai.mts
 *.mts
+.cache/
+.idea/
 # Bazel generated files
 bazel-*
+
+# test files
+input.smt
