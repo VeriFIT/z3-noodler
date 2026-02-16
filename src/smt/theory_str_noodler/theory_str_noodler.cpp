@@ -18,6 +18,8 @@ Eternal glory to Yu-Fang.
 
 #include "decision_procedure.h"
 #include "theory_str_noodler.h"
+
+#include "ecma_regex.h"
 #include "memb_heuristics_procedures.h"
 
 namespace smt::noodler {
@@ -1945,15 +1947,9 @@ namespace smt::noodler {
         expr* r = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, x, r));
 
-        // TODO: this is just a placeholder converting ecma content directly to string
-        expr_ref str_arg(m);
-        if (is_app(r) && to_app(r)->get_num_args() == 1)
-            str_arg = to_app(r)->get_arg(0);
-        else
-            str_arg = m_util_s.str.mk_string(pattern);
-
-        expr_ref rhs(m_util_s.re.mk_in_re(x, m_util_s.re.mk_to_re(str_arg)), m);
-        add_axiom(m.mk_or(m.mk_not(e), rhs));
+        ecma_regex_handler handler(pattern);
+        handler.build_rcg();
+        handler.generate_constraints();
     }
 
     void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
