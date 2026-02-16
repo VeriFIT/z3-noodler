@@ -1,7 +1,142 @@
+---
+# --- 1. ZÁKLADNÍ NASTAVENÍ A LIMITY ---
 Language: Cpp
+Standard: Auto
+ColumnLimit: 120
+DisableFormat: false
+LineEnding: DeriveLF
+
+# --- 2. ODSAZENÍ (INDENTATION) ---
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
 AccessModifierOffset: -4
+IndentAccessModifiers: false
+IndentCaseBlocks: false
+IndentCaseLabels: false
+IndentExternBlock: AfterExternBlock
+IndentGotoLabels: true
+IndentPPDirectives: None
+IndentRequiresClause: true
+IndentWrappedFunctionNames: false
+LambdaBodyIndentation: Signature
+NamespaceIndentation: None
+ConstructorInitializerIndentWidth: 4
+ObjCBlockIndentWidth: 4
+PPIndentWidth: -1
+
+# --- 3. ZÁVORKY A ZALAMOVÁNÍ ŘÁDKŮ (BRACES & WRAPPING) ---
+# Toto nastavení zajistí, že závorky zůstanou na stejném řádku
+BreakBeforeBraces: Attach
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterExternBlock: false
+  AfterFunction: false        # Důležité: Závorka funkce na stejném řádku
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false           # Důležité: 'else' je na řádku s uzavírací závorkou '}'
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+# Pravidla pro zalamování specifických konstrukcí
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortCompoundRequirementOnASingleLine: true
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+
+AlwaysBreakBeforeMultilineStrings: false
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: true
+BinPackParameters: true
+BreakAdjacentStringLiterals: true
+BreakAfterAttributes: Leave
+BreakAfterJavaFieldAnnotations: true
+BreakAfterReturnType: None
+BreakArrays: true
+BreakBeforeBinaryOperators: None
+BreakBeforeConceptDeclarations: Always
+BreakBeforeInlineASMColon: OnlyMultiline
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+BreakStringLiterals: true
+CompactNamespaces: false
+Cpp11BracedListStyle: true
+KeepEmptyLinesAtTheStartOfBlocks: true
+KeepEmptyLinesAtEOF: false
+MaxEmptyLinesToKeep: 1
+SeparateDefinitionBlocks: Leave
+
+# --- 4. MEZERY (SPACES) ---
+SpaceBeforeParens: ControlStatements
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterForeachMacros: true
+  AfterFunctionDefinitionName: false # Žádná mezera mezi názvem funkce a závorkou
+  AfterFunctionDeclarationName: false
+  AfterIfMacros: true
+  AfterOverloadedOperator: false
+  AfterPlacementOperator: true
+  AfterRequiresInClause: false
+  AfterRequiresInExpression: false
+  BeforeNonEmptyParentheses: false
+
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: false
+SpaceAroundPointerQualifiers: Default
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeJsonColon: false
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceBeforeSquareBrackets: false
+SpaceInEmptyBlock: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: Never
+SpacesInContainerLiterals: false
+SpacesInLineCommentPrefix:
+  Minimum: 1
+  Maximum: -1
+SpacesInParens: Never
+SpacesInSquareBrackets: false
+BitFieldColonSpacing: Both
+ObjCSpaceAfterProperty: true
+ObjCSpaceBeforeProtocolList: true
+
+# --- 5. ZAROVNÁNÍ (ALIGNMENT) ---
+PointerAlignment: Right
+ReferenceAlignment: Right
+DerivePointerAlignment: false
+QualifierAlignment: Leave
+
 AlignAfterOpenBracket: Align
 AlignArrayOfStructures: None
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments:
+  Kind: Never
+  OverEmptyLines: 0
+
+# Sekce pro hromadné zarovnávání (vše vypnuto dle původního configu)
 AlignConsecutiveAssignments:
   Enabled: false
   AcrossEmptyLines: false
@@ -11,102 +146,15 @@ AlignConsecutiveAssignments:
   PadOperators: true
 AlignConsecutiveBitFields:
   Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-  AlignCompound: false
-  AlignFunctionPointers: false
-  PadOperators: false
 AlignConsecutiveDeclarations:
   Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-  AlignCompound: false
-  AlignFunctionPointers: false
-  PadOperators: true
 AlignConsecutiveMacros:
   Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-  AlignCompound: false
-  AlignFunctionPointers: false
-  PadOperators: true
 AlignConsecutiveShortCaseStatements:
   Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-  AlignCaseColons: false
-AlignEscapedNewlines: Left
-AlignOperands: Align
-AlignTrailingComments:
-  Kind: Never
-  OverEmptyLines: 0
-AllowAllArgumentsOnNextLine: true
-AllowAllParametersOfDeclarationOnNextLine: true
-AllowBreakBeforeNoexceptSpecifier: Never
-AllowShortBlocksOnASingleLine: Never
-AllowShortCaseLabelsOnASingleLine: false
-AllowShortCompoundRequirementOnASingleLine: true
-AllowShortEnumsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: None
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLambdasOnASingleLine: Empty
-AllowShortLoopsOnASingleLine: false
-AlwaysBreakBeforeMultilineStrings: false
-AlwaysBreakTemplateDeclarations: Yes
-AttributeMacros:
-  - __capability
-BinPackArguments: true
-BinPackParameters: true
-BitFieldColonSpacing: Both
-BraceWrapping:
-  AfterCaseLabel: false
-  AfterClass: false
-  AfterControlStatement: Never
-  AfterEnum: false
-  AfterExternBlock: false
-  AfterFunction: false
-  AfterNamespace: false
-  AfterObjCDeclaration: false
-  AfterStruct: false
-  AfterUnion: false
-  BeforeCatch: false
-  BeforeElse: false
-  BeforeLambdaBody: false
-  BeforeWhile: false
-  IndentBraces: false
-  SplitEmptyFunction: true
-  SplitEmptyRecord: true
-  SplitEmptyNamespace: true
-BreakAdjacentStringLiterals: true
-BreakAfterAttributes: Leave
-BreakAfterReturnType: None
-BreakAfterJavaFieldAnnotations: true
-BreakArrays: true
-BreakBeforeBinaryOperators: None
-BreakBeforeConceptDeclarations: Always
-BreakBeforeBraces: Attach
-BreakBeforeInlineASMColon: OnlyMultiline
-BreakBeforeTernaryOperators: true
-BreakConstructorInitializers: BeforeColon
-BreakInheritanceList: BeforeColon
-BreakStringLiterals: true
-ColumnLimit: 120
-CommentPragmas: "^ IWYU pragma:"
-CompactNamespaces: false
-ConstructorInitializerIndentWidth: 4
-Cpp11BracedListStyle: true
-DerivePointerAlignment: false
-DisableFormat: false
-EmptyLineAfterAccessModifier: Never
-EmptyLineBeforeAccessModifier: LogicalBlock
-ExperimentalAutoDetectBinPacking: false
-FixNamespaceComments: true
-ForEachMacros:
-  - foreach
-  - Q_FOREACH
-  - BOOST_FOREACH
-IfMacros:
-  - KJ_IF_MAYBE
+
+# --- 6. INCLUDES A IMPORTY ---
+SortIncludes: CaseSensitive
 IncludeBlocks: Preserve
 IncludeCategories:
   - Regex: ^"(llvm|llvm-c|clang|clang-c)/
@@ -123,41 +171,37 @@ IncludeCategories:
     CaseSensitive: false
 IncludeIsMainRegex: (Test)?$
 IncludeIsMainSourceRegex: ""
-IndentAccessModifiers: false
-IndentCaseBlocks: false
-IndentCaseLabels: false
-IndentExternBlock: AfterExternBlock
-IndentGotoLabels: true
-IndentPPDirectives: None
-IndentRequiresClause: true
-IndentWidth: 4
-IndentWrappedFunctionNames: false
-InsertBraces: false
-InsertNewlineAtEOF: false
-InsertTrailingCommas: None
-IntegerLiteralSeparator:
-  Binary: 0
-  BinaryMinDigits: 0
-  Decimal: 0
-  DecimalMinDigits: 0
-  Hex: 0
-  HexMinDigits: 0
 JavaScriptQuotes: Leave
 JavaScriptWrapImports: true
-KeepEmptyLinesAtTheStartOfBlocks: true
-KeepEmptyLinesAtEOF: false
-LambdaBodyIndentation: Signature
-LineEnding: DeriveLF
+SortJavaStaticImport: Before
+SortUsingDeclarations: LexicographicNumeric
+
+# --- 7. MAKRA A SPECIÁLNÍ PRAGMA ---
+AttributeMacros:
+  - __capability
+ForEachMacros:
+  - foreach
+  - Q_FOREACH
+  - BOOST_FOREACH
+IfMacros:
+  - KJ_IF_MAYBE
+StatementAttributeLikeMacros:
+  - Q_EMIT
+StatementMacros:
+  - Q_UNUSED
+  - QT_REQUIRE_VERSION
+WhitespaceSensitiveMacros:
+  - BOOST_PP_STRINGIZE
+  - CF_SWIFT_NAME
+  - NS_SWIFT_NAME
+  - PP_STRINGIZE
+  - STRINGIZE
 MacroBlockBegin: ""
 MacroBlockEnd: ""
-MaxEmptyLinesToKeep: 1
-NamespaceIndentation: None
-ObjCBinPackProtocolList: Auto
-ObjCBlockIndentWidth: 4
-ObjCBreakBeforeNestedBlockParam: true
-ObjCSpaceAfterProperty: true
-ObjCSpaceBeforeProtocolList: true
-PackConstructorInitializers: NextLine
+SkipMacroDefinitionBody: false
+CommentPragmas: "^ IWYU pragma:"
+
+# --- 8. PENÁLE (PENALTIES - Ovlivňuje rozhodování algoritmu při zalamování) ---
 PenaltyBreakAssignment: 200
 PenaltyBreakBeforeFirstCallParameter: 19
 PenaltyBreakOpenParenthesis: 100
@@ -169,72 +213,29 @@ PenaltyBreakTemplateDeclaration: 10
 PenaltyExcessCharacter: 1000000
 PenaltyIndentedWhitespace: 0
 PenaltyReturnTypeOnItsOwnLine: 200
-PointerAlignment: Right
-PPIndentWidth: -1
-QualifierAlignment: Leave
-ReferenceAlignment: Right
-ReflowComments: true
+
+# --- 9. OSTATNÍ / UNIVERZÁLNÍ ---
+InsertBraces: false
+InsertNewlineAtEOF: false
+InsertTrailingCommas: None
 RemoveBracesLLVM: false
 RemoveParentheses: Leave
 RemoveSemicolon: false
 RequiresClausePosition: OwnLine
 RequiresExpressionIndentation: OuterScope
-SeparateDefinitionBlocks: Leave
-ShortNamespaceLines: 1
-SkipMacroDefinitionBody: false
-SortIncludes: CaseSensitive
-SortJavaStaticImport: Before
-SortUsingDeclarations: LexicographicNumeric
-SpaceAfterCStyleCast: false
-SpaceAfterLogicalNot: false
-SpaceAfterTemplateKeyword: false
-SpaceAroundPointerQualifiers: Default
-SpaceBeforeAssignmentOperators: true
-SpaceBeforeCaseColon: false
-SpaceBeforeCpp11BracedList: false
-SpaceBeforeCtorInitializerColon: true
-SpaceBeforeInheritanceColon: true
-SpaceBeforeJsonColon: false
-SpaceBeforeParens: ControlStatements
-SpaceBeforeParensOptions:
-  AfterControlStatements: true
-  AfterForeachMacros: true
-  AfterFunctionDefinitionName: false
-  AfterFunctionDeclarationName: false
-  AfterIfMacros: true
-  AfterOverloadedOperator: false
-  AfterPlacementOperator: true
-  AfterRequiresInClause: false
-  AfterRequiresInExpression: false
-  BeforeNonEmptyParentheses: false
-SpaceBeforeRangeBasedForLoopColon: true
-SpaceBeforeSquareBrackets: false
-SpaceInEmptyBlock: false
-SpacesBeforeTrailingComments: 2
-SpacesInAngles: Never
-SpacesInContainerLiterals: false
-SpacesInLineCommentPrefix:
-  Minimum: 1
-  Maximum: -1
-SpacesInParens: Never
-SpacesInParensOptions:
-  InCStyleCasts: false
-  InConditionalStatements: false
-  InEmptyParentheses: false
-  Other: false
-SpacesInSquareBrackets: false
-Standard: Auto
-StatementAttributeLikeMacros:
-  - Q_EMIT
-StatementMacros:
-  - Q_UNUSED
-  - QT_REQUIRE_VERSION
-TabWidth: 4
-UseTab: Never
+IntegerLiteralSeparator:
+  Binary: 0
+  BinaryMinDigits: 0
+  Decimal: 0
+  DecimalMinDigits: 0
+  Hex: 0
+  HexMinDigits: 0
+ObjCBinPackProtocolList: Auto
+ObjCBreakBeforeNestedBlockParam: true
 VerilogBreakBetweenInstancePorts: true
-WhitespaceSensitiveMacros:
-  - BOOST_PP_STRINGIZE
-  - CF_SWIFT_NAME
-  - NS_SWIFT_NAME
-  - PP_STRINGIZE
-  - STRINGIZE
+AllowBreakBeforeNoexceptSpecifier: Never
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: LogicalBlock
+ExperimentalAutoDetectBinPacking: false
+FixNamespaceComments: true
+ReflowComments: true
