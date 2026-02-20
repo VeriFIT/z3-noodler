@@ -1947,7 +1947,7 @@ namespace smt::noodler {
         expr* r = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, x, r));
 
-        ecma_regex_handler handler(pattern);
+        ecma::ecma_regex_handler handler(pattern);
         handler.build_rcg();
         handler.generate_constraints();
     }
