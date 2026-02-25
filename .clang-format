@@ -47,7 +47,7 @@ AlignEscapedNewlines: Left
 AlignOperands: Align
 
 AlignTrailingComments:
-  Kind: Never
+  Kind: Always
   OverEmptyLines: 0
 
 AllowAllArgumentsOnNextLine: true
