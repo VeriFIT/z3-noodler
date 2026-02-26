@@ -193,8 +193,68 @@ namespace smt::noodler::ecma {
         return name_length;
     }
 
+    bool ecma_lexer::validate_bound(zstring& the_number, uint32_t& current_pos) const {
+        uint32_t current_char;
+        while (true) {
+            // Regex is smth like "abc{123" -> valid, just not quantifier
+            if (m_position + current_pos >= m_regex.length()) {
+                return false;
+            }
+            current_char = m_regex[m_position + current_pos];
+            if (current_char < '0' || current_char > '9') {
+                break;
+            }
+            // TODO: which zstring constructor is called in the operator+=? maybe add one with uint32_t param
+            the_number += current_char;
+            current_pos++;
+        }
+        return true;
+    }
+
     bool ecma_lexer::braces_are_quantifier() {
         uint32_t fallback_pos = m_position;
+
+        // already have '{' from parent function -> check range of quantifier
+        // lower bound
+        zstring the_number = "";
+        uint32_t current_pos = 1;
+        if (!validate_bound(the_number, current_pos)) {
+            return false;
+        }
+
+        // after lower bound, there is either ',' or '}', otherwise not quantifier
+        uint32_t current_char = m_regex[m_position + current_pos];
+        if (current_char != ',' && current_char != '}') {
+            return false;
+        }
+        if (current_char == '}') {
+            m_token_len += current_pos;
+            return true;
+        }
+
+        // now we check if the quantifier is without upper bound but still valid quantifier - smth like '{1,}'
+        current_pos++;
+        current_char = m_regex[m_position + current_pos];
+        if (current_char == '}') {
+            m_token_len += current_pos;
+            return true;
+        }
+
+        // upper bound of the quantifier
+        // TODO: this might not work; debug and see what this does exactly
+        the_number.reset();
+        if (!validate_bound(the_number, current_pos)) {
+            return false;
+        }
+
+        // TODO: create token or pass the necessary data somehow
+        // '}' after number -> valid quantifier in form {n,m}
+        current_char = m_regex[m_position + current_pos];
+        if (current_char == '}') {
+            m_token_len += current_pos;
+            return true;
+        }
+        return false;
     }
 
     token_type ecma_lexer::parse_fourth_char_in_capture_group() {
