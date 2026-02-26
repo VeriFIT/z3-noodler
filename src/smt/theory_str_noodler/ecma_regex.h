@@ -106,6 +106,7 @@ namespace smt::noodler::ecma {
         uint32_t m_token_len = 0;
 
         uint32_t get_backref_name_length(uint32_t group_name_start_pos) const;
+        bool validate_bound(zstring& the_number, uint32_t& current_pos) const;
         bool braces_are_quantifier();
         token_type parse_fourth_char_in_capture_group();
         token_type parse_third_char_in_capture_group();
