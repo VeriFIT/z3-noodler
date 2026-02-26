@@ -91,6 +91,7 @@ z3_add_component(smt
     theory_str_noodler/ca_str_constr.cpp
     theory_str_noodler/unary_decision_procedure.cpp
     theory_str_noodler/conversion_handler.cpp
+    theory_str_noodler/ecma_regex.cpp
     theory_str_mc.cpp
     theory_str_regex.cpp
     theory_user_propagator.cpp
