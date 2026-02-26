@@ -111,9 +111,9 @@ namespace smt::noodler::ecma {
         token_type parse_third_char_in_capture_group();
         token_type get_group_token();
         token_type get_escape_sequence_token();
-        token_type get_standard_token_type(uint32_t current_char);
+        token_type get_standard_token_type();
         token_type get_char_class_escape_sequence_token();
-        token_type get_token_type_from_char_class(uint32_t current_char);
+        token_type get_token_type_from_char_class();
 
     public:
         explicit ecma_lexer(zstring_view regex)
@@ -144,8 +144,6 @@ namespace smt::noodler::ecma {
         void parse_term();
         void parse_assertion();
         void parse_atom();
-        void parse_quantifier();
-        void parse_braced_quantifier();
         void parse_character_class();
 
     public:

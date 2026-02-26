@@ -8,11 +8,12 @@
 namespace smt::noodler::ecma {
 
     // ======================= UTILS =======================
-    constexpr uint32_t HEX_SEQUENCE_LENGTH = 3;
-    constexpr uint32_t CONTROL_SEQUENCE_LENGTH = 1;
+    constexpr uint32_t HEX_SEQUENCE_LEN = 3;
+    constexpr uint32_t UNICODE_ESCAPE_SEQUENCE_LEN = 4;
+    constexpr uint32_t CONTROL_SEQUENCE_LEN = 1;
     constexpr uint32_t BACKSLASH_OFFSET = 1;
     constexpr uint32_t NAMED_BACKREF_START_OFFSET = 3;
-    constexpr uint32_t NAMED_BACKREF_MINIMAL_LENGTH = 4;
+    constexpr uint32_t NAMED_BACKREF_MINIMAL_LEN = 4;
     constexpr uint32_t CLOSING_ANGLE_BRACKET_OFFSET = 1;
 
     sequence_validator::sequence_validator(const zstring_view regex, const uint32_t position)
@@ -24,7 +25,7 @@ namespace smt::noodler::ecma {
     }
 
     void sequence_validator::validate_hex_escape_sequence(uint32_t& token_len) const {
-        if (m_position + HEX_SEQUENCE_LENGTH >= m_regex.length()) {
+        if (m_position + HEX_SEQUENCE_LEN >= m_regex.length()) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical Error: Unfinished hexadecimal escape sequence at the end of regex");
         }
@@ -43,12 +44,23 @@ namespace smt::noodler::ecma {
     }
 
     void sequence_validator::validate_unicode_escape_sequence(uint32_t& token_len) const {
-        // Implementation of unicode validation (e.g., \uHHHH or \u{HHHHH})
+        // unicode escape sequence in format \uHHHH
+        if (m_position + UNICODE_ESCAPE_SEQUENCE_LEN >= m_regex.length()) {
+            throw default_exception("Lexical Error: Unfinished unicode escape sequence at the end of regex");
+        }
+
+        const uint32_t first_unicode_digit_pos = m_position + 2;
+        for (uint32_t i = 0; i < UNICODE_ESCAPE_SEQUENCE_LEN; i++) {
+            const uint32_t current_char = m_regex[first_unicode_digit_pos + i];
+            if (!std::isxdigit(static_cast<unsigned char>(current_char))) {
+                throw default_exception("Lexical Error: Invalid unicode escape sequence");
+            }
+        }
         token_len = 6;
     }
 
     void sequence_validator::validate_control_escape_sequence(uint32_t& token_len) const {
-        if (m_position + CONTROL_SEQUENCE_LENGTH >= m_regex.length()) {
+        if (m_position + CONTROL_SEQUENCE_LEN >= m_regex.length()) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical Error: Unfinished control escape sequence at the end of regex");
         }
@@ -70,7 +82,7 @@ namespace smt::noodler::ecma {
         // '\k<name>' ---> tokenLength = 3 + len(name) + 1, where name is nonempty string
         // ---> at least 5 chars in total, further checks done when resolving name
         // currently at '\' ---> 4 more at least to go
-        if (m_position + NAMED_BACKREF_MINIMAL_LENGTH >= m_regex.length()) {
+        if (m_position + NAMED_BACKREF_MINIMAL_LEN >= m_regex.length()) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical Error: Invalid named backreference at the end of regex");
         }
@@ -154,7 +166,6 @@ namespace smt::noodler::ecma {
     }
 
     // ================== ECMA REGEX LEXER ==================
-
     uint32_t ecma_lexer::get_backref_name_length(const uint32_t group_name_start_pos) const {
         uint32_t name_length = 0;
         uint32_t current_pos = group_name_start_pos;
@@ -183,7 +194,7 @@ namespace smt::noodler::ecma {
     }
 
     bool ecma_lexer::braces_are_quantifier() {
-        return true;
+        uint32_t fallback_pos = m_position;
     }
 
     token_type ecma_lexer::parse_fourth_char_in_capture_group() {
@@ -285,7 +296,7 @@ namespace smt::noodler::ecma {
                 return token_type::LITERAL;
             case 'c':
                 sequence_validator(m_regex, m_position).validate_control_escape_sequence(m_token_len);
-                return token_type::CONTROL_ESCAPE;
+                return token_type::LITERAL;
             case 'k':
                 sequence_validator(m_regex, m_position).validate_named_back_reference(m_token_len);
                 return token_type::BACKREFERENCE;
@@ -305,7 +316,8 @@ namespace smt::noodler::ecma {
         }
     }
 
-    token_type ecma_lexer::get_standard_token_type(const uint32_t current_char) {
+    token_type ecma_lexer::get_standard_token_type() {
+        const uint32_t current_char = m_regex[m_position];
         switch (current_char) {
             case '*':
             case '+':
@@ -354,207 +366,173 @@ namespace smt::noodler::ecma {
             case 's':
             case 'S':
                 return token_type::CHAR_CLASS_ESCAPE;
-            case 'x': {
+            case 'x':
                 sequence_validator(m_regex, m_position).validate_hex_escape_sequence(m_token_len);
                 return token_type::LITERAL;
-            }
-            case 'u': {
+            case 'u':
                 sequence_validator(m_regex, m_position).validate_unicode_escape_sequence(m_token_len);
                 return token_type::LITERAL;
-            }
-            case 'c': {
+            case 'c':
                 sequence_validator(m_regex, m_position).validate_control_escape_sequence(m_token_len);
                 return token_type::LITERAL;
-                case '1':
-                case '2':
-                case '3':
-                case '4':
-                case '5':
-                case '6':
-                case '7': {
-                    sequence_validator(m_regex, m_position).validate_octal_escape_sequence(m_token_len);
-                    return token_type::LITERAL;
-                }
-                default:
-                    return token_type::LITERAL;
-            }
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7':
+                sequence_validator(m_regex, m_position).validate_octal_escape_sequence(m_token_len);
+                return token_type::LITERAL;
+            default:
+                return token_type::LITERAL;
         }
+    }
 
-        token_type ecma_lexer::get_token_type_from_char_class(const uint32_t current_char) {
-            switch (current_char) {
-                case ']':
-                    m_in_char_class = false;
-                    return token_type::CHAR_CLASS_END;
-                case '-':
-                    return token_type::CHAR_CLASS_RANGE;
-                case '^':
-                    return token_type::CHAR_CLASS_NEGATION;
-                case '\\':
-                    return get_char_class_escape_sequence_token();
-                default:
-                    return token_type::LITERAL;
-            }
+    token_type ecma_lexer::get_token_type_from_char_class() {
+        const uint32_t current_char = m_regex[m_position];
+        switch (current_char) {
+            case ']':
+                m_in_char_class = false;
+                return token_type::CHAR_CLASS_END;
+            case '-':
+                return token_type::CHAR_CLASS_RANGE;
+            case '^':
+                return token_type::CHAR_CLASS_NEGATION;
+            case '\\':
+                return get_char_class_escape_sequence_token();
+            default:
+                return token_type::LITERAL;
         }
+    }
 
     token ecma_lexer::get_next_token() {
         if (m_position >= m_regex.length()) {
             return {token_type::END_OF_INPUT, {}, zstring_view(nullptr, 0)};
         }
 
-            const uint32_t* token_start = &m_regex[m_position];
-            const uint32_t current_char = *token_start;
+        const uint32_t* token_start = &m_regex[m_position];
 
-            token_type type;
+        token_type type;
 
-            if (m_in_char_class) {
-                type = get_token_type_from_char_class(current_char);
-            } else {
-                type = get_standard_token_type(current_char);
-            }
+        if (m_in_char_class) {
+            type = get_token_type_from_char_class();
+        } else {
+            type = get_standard_token_type();
+        }
 
         m_position += m_token_len;
         return {type, {}, zstring_view(token_start, m_token_len)};
     }
 
-        // =============== ECMA REGEX PARSER ===============
+    // =============== ECMA REGEX PARSER ===============
 
-        void ecma_parser::next() {
-            m_current_token = m_lexer.get_next_token();
+    void ecma_parser::next() {
+        m_current_token = m_lexer.get_next_token();
+    }
+
+    bool ecma_parser::match(const token_type type) {
+        if (m_current_token.type == type) {
+            next();
+            return true;
         }
+        return false;
+    }
 
-        bool ecma_parser::match(const token_type type) {
-            if (m_current_token.type == type) {
-                next();
-                return true;
-            }
-            return false;
+    void ecma_parser::consume(const token_type type, const char* message) {
+        if (m_current_token.type == type) {
+            next();
+            return;
         }
+        throw default_exception("Syntax error: " + std::string(message));
+    }
 
-        void ecma_parser::consume(const token_type type, const char* message) {
-            if (m_current_token.type == type) {
-                next();
-                return;
-            }
-            throw default_exception("Syntax error: " + std::string(message));
-        }
+    regex_constraint_graph ecma_parser::parse() {
+        parse_disjunction();
+        consume(token_type::END_OF_INPUT, "Expected end of input");
+        std::cout << "\033[32m Ecma regex parsing successful! \033[0m" << std::endl;
+        return {};
+    }
 
-        regex_constraint_graph ecma_parser::parse() {
-            parse_disjunction();
-            consume(token_type::END_OF_INPUT, "Expected end of input");
-            std::cout << "\033[32m Ecma regex parsing successful! \033[0m" << std::endl;
-            return {};
-        }
-
-        void ecma_parser::parse_disjunction() {
+    void ecma_parser::parse_disjunction() {
+        parse_alternative();
+        while (match(token_type::ALTERNATION)) {
             parse_alternative();
-            while (match(token_type::ALTERNATION)) {
-                parse_alternative();
-            }
         }
+    }
 
-        void ecma_parser::parse_alternative() {
-            while (m_current_token.type != token_type::ALTERNATION && m_current_token.type != token_type::GROUP_END &&
-                   m_current_token.type != token_type::END_OF_INPUT) {
-                parse_term();
-            }
+    void ecma_parser::parse_alternative() {
+        while (m_current_token.type != token_type::ALTERNATION && m_current_token.type != token_type::GROUP_END &&
+               m_current_token.type != token_type::END_OF_INPUT) {
+            parse_term();
         }
+    }
 
-        void ecma_parser::parse_term() {
-            if (m_current_token.type == token_type::ANCHOR_START || m_current_token.type == token_type::ANCHOR_END ||
-                m_current_token.type == token_type::ANCHOR_WORD_BOUNDARY ||
-                m_current_token.type == token_type::ANCHOR_NONWORD_BOUNDARY ||
-                m_current_token.type == token_type::LOOKAHEAD_POS_START ||
-                m_current_token.type == token_type::LOOKAHEAD_NEG_START ||
-                m_current_token.type == token_type::LOOKBEHIND_POS_START ||
-                m_current_token.type == token_type::LOOKBEHIND_NEG_START) {
+    void ecma_parser::parse_term() {
+        switch (m_current_token.type) {
+            case token_type::ASSERTION:
+            case token_type::LOOKAHEAD_POS_START:
+            case token_type::LOOKAHEAD_NEG_START:
+            case token_type::LOOKBEHIND_POS_START:
+            case token_type::LOOKBEHIND_NEG_START:
                 parse_assertion();
-            } else {
+                break;
+            default:
                 parse_atom();
-                parse_quantifier();
-            }
+                match(token_type::QUANTIFIER);
+                break;
         }
+    }
 
-        void ecma_parser::parse_assertion() {
-            switch (m_current_token.type) {
-                case token_type::ANCHOR_START:
-                case token_type::ANCHOR_END:
-                case token_type::ANCHOR_WORD_BOUNDARY:
-                case token_type::ANCHOR_NONWORD_BOUNDARY:
-                    next();
-                    break;
-                case token_type::LOOKAHEAD_POS_START:
-                case token_type::LOOKAHEAD_NEG_START:
-                case token_type::LOOKBEHIND_POS_START:
-                case token_type::LOOKBEHIND_NEG_START:
-                    next_token();
-                    parse_disjunction();
-                    consume(token_type::GROUP_END, "Expected ')' after lookahead/lookbehind");
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        void ecma_parser::parse_atom() {
-            switch (m_current_token.type) {
-                case token_type::LITERAL:
-                case token_type::DOT:
-                case token_type::DIGIT_CLASS:
-                case token_type::NON_DIGIT_CLASS:
-                case token_type::WORD_CHAR_CLASS:
-                case token_type::NON_WORD_CHAR_CLASS:
-                case token_type::WHITESPACE_CLASS:
-                case token_type::NON_WHITESPACE_CLASS:
-                case token_type::BACKREFERENCE:
-                case token_type::NAMED_BACKREFERENCE:
-                    next();
-                    break;
-                case token_type::CHAR_CLASS_START:
-                    parse_character_class();
-                    break;
-                case token_type::GROUP_START:
-                case token_type::GROUP_NONCAPTURE_START:
-                case token_type::GROUP_NAMED_START:
-                    next();
-                    parse_disjunction();
-                    consume(token_type::GROUP_END, "Expected ')' after group");
-                    break;
-                default:
-                    // TODO: implement own exceptions later
-                    throw default_exception("Unexpected token in atom");
-            }
-        }
-
-        void ecma_parser::parse_character_class() {
-            consume(token_type::CHAR_CLASS_START, "Expected '['");
-            match(token_type::CHAR_CLASS_NEGATION);
-
-            while (m_current_token.type != token_type::CHAR_CLASS_END &&
-                   m_current_token.type != token_type::END_OF_INPUT) {
+    void ecma_parser::parse_assertion() {
+        switch (m_current_token.type) {
+            case token_type::ASSERTION:
                 next();
-            }
-            consume(token_type::CHAR_CLASS_END, "Expected ']'");
-        }
-
-        void ecma_parser::parse_quantifier() {
-            if (match(token_type::QUANT_STAR) || match(token_type::QUANT_PLUS) ||
-                match(token_type::QUANT_QUESTION_MARK)) {
-                match(token_type::QUANT_QUESTION_MARK);  // Lazy quantifier
-            } else if (m_current_token.type == token_type::QUANT_BRACE_START) {
-                parse_braced_quantifier();
-                match(token_type::QUANT_QUESTION_MARK);  // Lazy quantifier
-            }
-        }
-
-        void ecma_parser::parse_braced_quantifier() {
-            consume(token_type::QUANT_BRACE_START, "Expected '{'");
-            while (m_current_token.type != token_type::QUANT_BRACE_END &&
-                   m_current_token.type != token_type::END_OF_INPUT) {
+                break;
+            case token_type::LOOKAHEAD_POS_START:
+            case token_type::LOOKAHEAD_NEG_START:
+            case token_type::LOOKBEHIND_POS_START:
+            case token_type::LOOKBEHIND_NEG_START:
                 next();
-            }
-            consume(token_type::QUANT_BRACE_END, "Expected '}'");
+                parse_disjunction();
+                consume(token_type::GROUP_END, "Expected ')' after lookahead/lookbehind");
+                break;
+            default:
+                break;
         }
+    }
 
-        // =============== ECMA REGEX HANDLER ===============
+    void ecma_parser::parse_atom() {
+        switch (m_current_token.type) {
+            case token_type::LITERAL:
+            case token_type::DOT:
+            case token_type::CHAR_CLASS_ESCAPE:
+            case token_type::BACKREFERENCE:
+                next();
+                break;
+            case token_type::CHAR_CLASS_START:
+                parse_character_class();
+                break;
+            case token_type::GROUP_START:
+            case token_type::GROUP_NONCAPTURE_START:
+            case token_type::GROUP_NAMED_START:
+                next();
+                parse_disjunction();
+                consume(token_type::GROUP_END, "Expected ')' after group");
+                break;
+            default:
+                // TODO: implement own exceptions later
+                throw default_exception("Unexpected token in atom");
+        }
+    }
 
-    }  // namespace smt::noodler::ecma
+    void ecma_parser::parse_character_class() {
+        consume(token_type::CHAR_CLASS_START, "Expected '['");
+        match(token_type::CHAR_CLASS_NEGATION);
+
+        while (m_current_token.type != token_type::CHAR_CLASS_END && m_current_token.type != token_type::END_OF_INPUT) {
+            next();
+        }
+        consume(token_type::CHAR_CLASS_END, "Expected ']'");
+    }
+}  // namespace smt::noodler::ecma
