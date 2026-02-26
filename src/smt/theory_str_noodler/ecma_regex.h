@@ -1,8 +1,10 @@
 #pragma once
 
+#include "ast/ast.h"
 #include "util/zstring.h"
 #include "util/zstring_view.h"
 
+#include <variant>
 #include <vector>
 
 namespace smt::noodler::ecma {
@@ -16,7 +18,6 @@ namespace smt::noodler::ecma {
         CHAR_CLASS_NEGATION,     // '^' after '['
         CHAR_CLASS_RANGE,        // '-' inside '[]'
         CHAR_CLASS_ESCAPE,       // \d, \D, \s, \S, \w, \W
-        CONTROL_ESCAPE,          // \n, \t, \r, \f, \v
         DOT,                     // .
         END_OF_INPUT,            // EOF
         GROUP_START,             // (
@@ -31,8 +32,16 @@ namespace smt::noodler::ecma {
         QUANTIFIER,              // *, +, ?
     };
 
+    typedef struct {
+        uint32_t min;
+        uint32_t max;
+    } quantifier_range;
+
+    using token_payload = std::variant<std::monostate, char32_t, quantifier_range, zstring_view>;
+
     struct token {
         token_type type;
+        token_payload payload;
         zstring_view lexeme;
     };
 
@@ -53,7 +62,40 @@ namespace smt::noodler::ecma {
     };
 
     // =============== REGEX CONSTRAINT GRAPH ===============
-    struct regex_constraint_graph { };
+    enum class rcg_edge_type {
+        MATCH_EDGE,
+        ASSERTION_EDGE,
+        BACKREF_EDGE
+    };
+
+    typedef struct {
+        app* regex;
+    } match_edge;
+
+    enum class assertion_direction {
+        FORWARD,
+        BACKWARD
+    };
+
+    typedef struct {
+        app* regex;
+        assertion_direction direction;
+    } assertion_edge;
+
+    typedef struct {
+        std::variant<int, zstring_view> backreference;
+    } backref_edge;
+
+    using rcg_edge_payload = std::variant<match_edge, assertion_edge, backref_edge>;
+
+    struct rcg_edge {
+        rcg_edge_type type;
+        rcg_edge_payload payload;
+    };
+
+    struct regex_constraint_graph {
+        std::vector<std::vector<rcg_edge>> adj_list;
+    };
 
     // ================== ECMA REGEX LEXER ==================
     class ecma_lexer {
@@ -81,12 +123,19 @@ namespace smt::noodler::ecma {
     };
 
     // =============== ECMA REGEX PARSER ===============
+
+    /**
+     * @brief The ECMAScript2020 regular expression parser class.
+     * The parser is based on grammar found at https://tc39.es/ecma262/2020/#sec-regular-expressions.
+     *
+     *
+     */
     class ecma_parser {
     private:
         ecma_lexer m_lexer;
         token m_current_token;
 
-        void next_token();
+        void next();
         bool match(token_type type);
         void consume(token_type type, const char* message);
 
