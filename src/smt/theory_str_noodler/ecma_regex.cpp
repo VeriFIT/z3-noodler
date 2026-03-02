@@ -212,19 +212,21 @@ namespace smt::noodler::ecma {
     }
 
     bool ecma_lexer::braces_are_quantifier() {
-        uint32_t fallback_pos = m_position;
+        const uint32_t fallback_pos = m_position;
 
         // already have '{' from parent function -> check range of quantifier
         // lower bound
         zstring the_number = "";
         uint32_t current_pos = 1;
         if (!validate_bound(the_number, current_pos)) {
+            m_position = fallback_pos;
             return false;
         }
 
         // after lower bound, there is either ',' or '}', otherwise not quantifier
         uint32_t current_char = m_regex[m_position + current_pos];
         if (current_char != ',' && current_char != '}') {
+            m_position = fallback_pos;
             return false;
         }
         if (current_char == '}') {
@@ -244,6 +246,7 @@ namespace smt::noodler::ecma {
         // TODO: this might not work; debug and see what this does exactly
         the_number.reset();
         if (!validate_bound(the_number, current_pos)) {
+            m_position = fallback_pos;
             return false;
         }
 
@@ -254,6 +257,8 @@ namespace smt::noodler::ecma {
             m_token_len += current_pos;
             return true;
         }
+
+        m_position = fallback_pos;
         return false;
     }
 
