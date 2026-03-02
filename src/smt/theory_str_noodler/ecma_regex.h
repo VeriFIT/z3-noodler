@@ -37,7 +37,8 @@ namespace smt::noodler::ecma {
         uint32_t max;
     } quantifier_range;
 
-    using token_payload = std::variant<std::monostate, char32_t, quantifier_range, zstring_view>;
+    // no payload, literal/escape, quantifier_range, capture group names/raw string data
+    using token_payload = std::variant<std::monostate, uint32_t, quantifier_range, zstring_view>;
 
     struct token {
         token_type type;
@@ -104,6 +105,7 @@ namespace smt::noodler::ecma {
         uint32_t m_position = 0;
         bool m_in_char_class = false;
         uint32_t m_token_len = 0;
+        uint32_t m_num_capture_groups = 0;
 
         uint32_t get_backref_name_length(uint32_t group_name_start_pos) const;
         bool validate_bound(zstring& the_number, uint32_t& current_pos) const;
@@ -115,12 +117,14 @@ namespace smt::noodler::ecma {
         token_type get_standard_token_type();
         token_type get_char_class_escape_sequence_token();
         token_type get_token_type_from_char_class();
+        bool is_capture_or_named_capture(uint32_t position);
 
     public:
         explicit ecma_lexer(zstring_view regex)
             : m_regex(regex) { }
 
         token get_next_token();
+        void perform_first_traverse();
     };
 
     // =============== ECMA REGEX PARSER ===============
