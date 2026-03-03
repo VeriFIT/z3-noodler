@@ -47,19 +47,15 @@ namespace smt::noodler::ecma {
     };
 
     class sequence_validator {
-        bool is_octal(uint32_t digit) const;
-        zstring_view m_regex;
-        uint32_t m_position;
+        static bool is_octal(uint32_t digit);
 
     public:
-        sequence_validator(zstring_view regex, uint32_t position);
-
-        void validate_hex_escape_sequence(uint32_t& token_len) const;
-        void validate_unicode_escape_sequence(uint32_t& token_len) const;
-        void validate_control_escape_sequence(uint32_t& token_len) const;
-        void validate_named_back_reference(uint32_t& token_len) const;
-        void validate_back_reference(uint32_t& token_len) const;
-        void validate_octal_escape_sequence(uint32_t& token_len) const;
+        static void validate_hex_escape_sequence(zstring_view m_regex, uint32_t m_position);
+        static void validate_unicode_escape_sequence(zstring_view m_regex, uint32_t m_position);
+        static void validate_control_escape_sequence(zstring_view m_regex, uint32_t m_position);
+        static void validate_named_back_reference(zstring_view m_regex, uint32_t m_position);
+        static void validate_back_reference(zstring_view m_regex, uint32_t m_position);
+        static uint32_t validate_octal_escape_sequence(zstring_view m_regex, uint32_t m_position);
     };
 
     // =============== REGEX CONSTRAINT GRAPH ===============
