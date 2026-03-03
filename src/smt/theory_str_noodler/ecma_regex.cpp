@@ -262,7 +262,7 @@ namespace smt::noodler::ecma {
         return false;
     }
 
-    token_type ecma_lexer::parse_fourth_char_in_capture_group() {
+    token ecma_lexer::parse_fourth_char_in_capture_group() {
         token_type type;
         const uint32_t fourth_char = m_regex[m_position + 3];
 
@@ -280,24 +280,24 @@ namespace smt::noodler::ecma {
                 m_token_len = 3 + get_backref_name_length(m_position + 3) + CLOSING_ANGLE_BRACKET_OFFSET;
                 break;
         }
-        return type;
+        return {type, {}, {}};
     }
 
-    token_type ecma_lexer::parse_third_char_in_capture_group() {
-        token_type type;
+    token ecma_lexer::parse_third_char_in_capture_group() {
+        token token;
         const uint32_t third_char = m_regex[m_position + 2];
 
         switch (third_char) {
             case ':':
-                type = token_type::GROUP_NONCAPTURE_START;
+                token.type = token_type::GROUP_NONCAPTURE_START;
                 m_token_len = 3;
                 break;
             case '=':
-                type = token_type::LOOKAHEAD_POS_START;
+                token.type = token_type::LOOKAHEAD_POS_START;
                 m_token_len = 3;
                 break;
             case '!':
-                type = token_type::LOOKAHEAD_NEG_START;
+                token.type = token_type::LOOKAHEAD_NEG_START;
                 m_token_len = 3;
                 break;
             case '<':
@@ -306,17 +306,17 @@ namespace smt::noodler::ecma {
                     throw default_exception("Lexical error: Unfinished sequence '(?<' at position" +
                                             std::to_string(m_position + 3) + " in regex");
                 }
-                type = parse_fourth_char_in_capture_group();
+                token = parse_fourth_char_in_capture_group();
                 break;
             default:
                 // TODO: implement own exceptions later
                 throw default_exception("Lexical error: Invalid group indentifier at position" +
                                         std::to_string(m_position + 2) + " in regex");
         }
-        return type;
+        return token;
     }
 
-    token_type ecma_lexer::get_group_token() {
+    token ecma_lexer::get_group_token() {
         // Lexically it is correct, return the token and let the parser throw a syntax error
         if (m_position + 1 >= m_regex.length()) {
             return token_type::GROUP_START;
@@ -381,7 +381,7 @@ namespace smt::noodler::ecma {
         }
     }
 
-    token_type ecma_lexer::get_standard_token_type() {
+    token_type ecma_lexer::get_token_standard() {
         const uint32_t current_char = m_regex[m_position];
         switch (current_char) {
             case '*':
@@ -446,15 +446,18 @@ namespace smt::noodler::ecma {
             case '4':
             case '5':
             case '6':
-            case '7':
+            case '7': {
                 sequence_validator(m_regex, m_position).validate_octal_escape_sequence(m_token_len);
+                zstring_view octal_text(m_regex + m_position + 1, m_token_len - 1);
+                uint32_t octal_value = octal_to_dec(octal_text, m_token_len - 1);
                 return token_type::LITERAL;
+            }
             default:
                 return token_type::LITERAL;
         }
     }
 
-    token_type ecma_lexer::get_token_type_from_char_class() {
+    token_type ecma_lexer::get_token_char_class() {
         const uint32_t current_char = m_regex[m_position];
         switch (current_char) {
             case ']':
@@ -471,23 +474,34 @@ namespace smt::noodler::ecma {
         }
     }
 
+    uint32_t ecma_lexer::octal_to_dec(zstring_view octal_text, const uint32_t octal_len) const {
+        uint32_t res = 0;
+        for (uint32_t i = 0; i < octal_len; i++) {
+            const uint32_t octal_digit = octal_text[i] - '0';
+            res = res * 8 + octal_digit;
+        }
+        return res;
+    }
+
     token ecma_lexer::get_next_token() {
         if (m_position >= m_regex.length()) {
-            return {token_type::END_OF_INPUT, {}, zstring_view(nullptr, 0)};
+            m_token.type = token_type::END_OF_INPUT;
+            m_token.payload = {};
+            m_token.lexeme = {};
+            return m_token;
         }
 
         const uint32_t* token_start = &m_regex[m_position];
 
-        token_type type;
-
         if (m_in_char_class) {
-            type = get_token_type_from_char_class();
+            m_token.type = get_token_char_class();
         } else {
-            type = get_standard_token_type();
+            m_token.type = get_token_standard();
         }
-
         m_position += m_token_len;
-        return {type, {}, zstring_view(token_start, m_token_len)};
+
+        m_token.lexeme = zstring_view(token_start, m_token_len);
+        return m_token;
     }
 
     // =============== ECMA REGEX PARSER ===============

@@ -106,18 +106,20 @@ namespace smt::noodler::ecma {
         bool m_in_char_class = false;
         uint32_t m_token_len = 0;
         uint32_t m_num_capture_groups = 0;
+        token m_token {};
 
         uint32_t get_backref_name_length(uint32_t group_name_start_pos) const;
         bool validate_bound(zstring& the_number, uint32_t& current_pos) const;
         bool braces_are_quantifier();
-        token_type parse_fourth_char_in_capture_group();
-        token_type parse_third_char_in_capture_group();
-        token_type get_group_token();
-        token_type get_escape_sequence_token();
-        token_type get_standard_token_type();
-        token_type get_char_class_escape_sequence_token();
-        token_type get_token_type_from_char_class();
+        token parse_fourth_char_in_capture_group();
+        token parse_third_char_in_capture_group();
+        token get_group_token();
+        token get_escape_sequence_token();
+        token get_token_standard();
+        token get_char_class_escape_sequence_token();
+        token get_token_char_class();
         bool is_capture_or_named_capture(uint32_t position);
+        uint32_t octal_to_dec(zstring_view octal_text, uint32_t octal_len) const;
 
     public:
         explicit ecma_lexer(zstring_view regex)
