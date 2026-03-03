@@ -4,7 +4,8 @@
 #include "util/zstring_view.h"
 
 #include <cctype>
-#include <variant>
+#include <cstdint>
+#include <limits>
 
 namespace smt::noodler::ecma {
 
@@ -13,95 +14,92 @@ namespace smt::noodler::ecma {
     constexpr uint32_t UNICODE_ESCAPE_SEQUENCE_LEN = 4;
     constexpr uint32_t CONTROL_SEQUENCE_LEN = 1;
     constexpr uint32_t BACKSLASH_OFFSET = 1;
-    constexpr uint32_t NAMED_BACKREF_START_OFFSET = 3;
+    constexpr uint32_t GROUP_NAME_START_OFFSET = 3;
     constexpr uint32_t NAMED_BACKREF_MINIMAL_LEN = 4;
     constexpr uint32_t CLOSING_ANGLE_BRACKET_OFFSET = 1;
 
-    sequence_validator::sequence_validator(const zstring_view regex, const uint32_t position)
-        : m_regex(regex),
-          m_position(position) { }
-
-    bool sequence_validator::is_octal(uint32_t digit) const {
+    bool sequence_validator::is_octal(uint32_t digit) {
         return digit >= '0' && digit <= '7';
     }
 
-    void sequence_validator::validate_hex_escape_sequence(uint32_t& token_len) const {
-        if (m_position + HEX_SEQUENCE_LEN >= m_regex.length()) {
+    void sequence_validator::validate_hex_escape_sequence(const zstring_view regex, const uint32_t position) {
+        if (position + HEX_SEQUENCE_LEN >= regex.length()) {
             // TODO: implement own exceptions later
-            throw default_exception("Lexical Error: Unfinished hexadecimal escape sequence at the end of regex");
+            throw default_exception(
+                "Lexical Error: Unfinished hexadecimal escape sequence at the end of regex");
         }
 
-        const uint32_t first_hex_digit = m_regex[m_position + 2];
-        const uint32_t second_hex_digit = m_regex[m_position + 3];
+        const uint32_t first_hex_digit = regex[position + 2];
+        const uint32_t second_hex_digit = regex[position + 3];
 
-        // TODO: Implement custom isxdigit for 4 byte characters
+        // TODO: Implement custom isxdigit for uint32_t
         if (!std::isxdigit(static_cast<unsigned char>(first_hex_digit)) ||
             !std::isxdigit(static_cast<unsigned char>(second_hex_digit))) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical Error: Invalid hexadecimal escape sequence at position " +
-                                    std::to_string(m_position + 2) + " in regex");
+                                    std::to_string(position + 2) + " in regex");
         }
-        token_len = 4;
     }
 
-    void sequence_validator::validate_unicode_escape_sequence(uint32_t& token_len) const {
+    void sequence_validator::validate_unicode_escape_sequence(const zstring_view regex,
+                                                              const uint32_t position) {
         // unicode escape sequence in format \uHHHH
-        if (m_position + UNICODE_ESCAPE_SEQUENCE_LEN >= m_regex.length()) {
+        if (position + UNICODE_ESCAPE_SEQUENCE_LEN >= regex.length()) {
             throw default_exception("Lexical Error: Unfinished unicode escape sequence at the end of regex");
         }
 
-        const uint32_t first_unicode_digit_pos = m_position + 2;
+        const uint32_t first_unicode_digit_pos = position + 2;
         for (uint32_t i = 0; i < UNICODE_ESCAPE_SEQUENCE_LEN; i++) {
-            const uint32_t current_char = m_regex[first_unicode_digit_pos + i];
+            const uint32_t current_char = regex[first_unicode_digit_pos + i];
             if (!std::isxdigit(static_cast<unsigned char>(current_char))) {
                 throw default_exception("Lexical Error: Invalid unicode escape sequence");
             }
         }
-        token_len = 6;
     }
 
-    void sequence_validator::validate_control_escape_sequence(uint32_t& token_len) const {
-        if (m_position + CONTROL_SEQUENCE_LEN >= m_regex.length()) {
+    void sequence_validator::validate_control_escape_sequence(const zstring_view regex,
+                                                              const uint32_t position) {
+        if (position + CONTROL_SEQUENCE_LEN >= regex.length()) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical Error: Unfinished control escape sequence at the end of regex");
         }
 
-        const uint32_t control_char = m_regex[m_position + 2];
+        const uint32_t control_char = regex[position + 2];
 
         // Only [A-Z] characters allowed
         // TODO: implement 4-byte isupper
         if (!std::isupper(static_cast<unsigned char>(control_char))) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical Error: Invalid control escape sequence at position " +
-                                    std::to_string(m_position + 2));
+                                    std::to_string(position + 2));
         }
-
-        token_len = 3;
     }
 
-    void sequence_validator::validate_named_back_reference(uint32_t& token_len) const {
+    void sequence_validator::validate_named_back_reference(const zstring_view regex,
+                                                           const uint32_t position) {
         // '\k<name>' ---> tokenLength = 3 + len(name) + 1, where name is nonempty string
         // ---> at least 5 chars in total, further checks done when resolving name
         // currently at '\' ---> 4 more at least to go
-        if (m_position + NAMED_BACKREF_MINIMAL_LEN >= m_regex.length()) {
+        if (position + NAMED_BACKREF_MINIMAL_LEN >= regex.length()) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical Error: Invalid named backreference at the end of regex");
         }
 
-        const uint32_t open_bracket_char = m_regex[m_position + 2];
+        const uint32_t open_bracket_char = regex[position + 2];
         if (open_bracket_char != '<') {
             // TODO: implement own exceptions later
-            throw default_exception("Lexical Error: Missing open angle bracket in named back reference at position " +
-                                    std::to_string(m_position + 3) + " in regex");
+            throw default_exception(
+                "Lexical Error: Missing open angle bracket in named back reference at position " +
+                std::to_string(position + 3) + " in regex");
         }
 
-        const uint32_t name_start_pos = m_position + 3;
+        const uint32_t name_start_pos = position + 3;
         uint32_t name_length = 0;
         bool found_closing_bracket = false;
 
         // Go through the back reference name char by char and count the length of it
-        for (uint32_t current_pos = name_start_pos; current_pos < m_regex.length(); current_pos++) {
-            const uint32_t current_name_char = m_regex[current_pos];
+        for (uint32_t current_pos = name_start_pos; current_pos < regex.length(); current_pos++) {
+            const uint32_t current_name_char = regex[current_pos];
             if (current_name_char == '>') {
                 found_closing_bracket = true;
                 break;
@@ -110,8 +108,9 @@ namespace smt::noodler::ecma {
             if (!std::isalnum(static_cast<unsigned char>(current_name_char)) && current_name_char != '_' &&
                 current_name_char != '$') {
                 // TODO: implement own exceptions later
-                throw default_exception("Lexical Error: Invalid character in back reference name at position " +
-                                        std::to_string(current_pos + 1) + " in regex");
+                throw default_exception(
+                    "Lexical Error: Invalid character in back reference name at position " +
+                    std::to_string(current_pos + 1) + " in regex");
             }
             name_length++;
         }
@@ -124,50 +123,52 @@ namespace smt::noodler::ecma {
             throw default_exception("Lexical Error: Empty back reference name at position " +
                                     std::to_string(name_start_pos + 1) + " in regex");
         }
-        token_len = NAMED_BACKREF_START_OFFSET + name_length + CLOSING_ANGLE_BRACKET_OFFSET;
     }
 
-    void sequence_validator::validate_back_reference(uint32_t& token_len) const {
+    void sequence_validator::validate_back_reference(const zstring_view regex, const uint32_t position) {
         uint32_t num_of_digits = 1;
-        uint32_t current_pos = m_position + 2;
-        while (current_pos < m_regex.length() && std::isdigit(static_cast<unsigned char>(m_regex[current_pos]))) {
+        uint32_t current_pos = position + 2;
+        while (current_pos < regex.length() && std::isdigit(static_cast<unsigned char>(regex[current_pos]))) {
             num_of_digits++;
             current_pos++;
         }
-        token_len = num_of_digits + BACKSLASH_OFFSET;
     }
 
-    void sequence_validator::validate_octal_escape_sequence(uint32_t& token_len) const {
+    uint32_t sequence_validator::validate_octal_escape_sequence(const zstring_view regex,
+                                                                const uint32_t position) {
+        // TODO: backrefs/octal sequences, length? rework this
+        uint32_t token_len = 0;
         // An octal number can be one, two or three digits long
-        if (m_position + 2 >= m_regex.length()) {
-            return;
+        if (position + 2 >= regex.length()) {
+            return token_len;
         }
 
-        const uint32_t second_digit = m_regex[m_position + 2];
+        const uint32_t second_digit = regex[position + 2];
         if (!is_octal(second_digit)) {
-            return;
+            return token_len;
         }
         token_len = 3;
 
         // Octal sequences in ECMAScript regexes are valid up to '\377'.
         // A regex '\402' matches literal '\40' in octal and then '2' in decimal.
-        const uint32_t first_digit = m_regex[m_position + 1];
+        const uint32_t first_digit = regex[position + 1];
         if (first_digit > '3') {
-            return;
+            return token_len;
         }
 
-        if (m_position + 3 >= m_regex.length()) {
-            return;
+        if (position + 3 >= regex.length()) {
+            return token_len;
         }
-        const uint32_t third_digit = m_regex[m_position + 3];
+        const uint32_t third_digit = regex[position + 3];
         if (!is_octal(third_digit)) {
-            return;
+            return token_len;
         }
         token_len = 4;
+        return token_len;
     }
 
     // ================== ECMA REGEX LEXER ==================
-    uint32_t ecma_lexer::get_backref_name_length(const uint32_t group_name_start_pos) const {
+    token ecma_lexer::get_named_capture_group_token(const uint32_t group_name_start_pos) const {
         uint32_t name_length = 0;
         uint32_t current_pos = group_name_start_pos;
         bool found_closing_bracket = false;
@@ -178,10 +179,13 @@ namespace smt::noodler::ecma {
                 found_closing_bracket = true;
                 break;
             }
-            if (!std::isalnum(static_cast<unsigned char>(current_char)) && current_char != '_' && current_char != '$') {
+            // TODO: there can be unicode blob in the group name, implement it
+            if (!std::isalnum(static_cast<unsigned char>(current_char)) && current_char != '_' &&
+                current_char != '$') {
                 // TODO: implement own exceptions later
-                throw default_exception("Lexical error: Invalid character in capture group name at position " +
-                                        std::to_string(current_pos + 1) + " in regex");
+                throw default_exception(
+                    "Lexical error: Invalid character in capture group name at position " +
+                    std::to_string(current_pos + 1) + " in regex");
             }
             name_length++;
             current_pos++;
@@ -191,25 +195,28 @@ namespace smt::noodler::ecma {
             throw default_exception("Lexical error: Unclosed group capture name at position " +
                                     std::to_string(current_pos + 1) + " in regex");
         }
-        return name_length;
+        return {token_type::GROUP_NAMED_START, zstring_view(&m_regex[group_name_start_pos], name_length),
+                zstring_view(&m_regex[m_position],
+                             GROUP_NAME_START_OFFSET + name_length + CLOSING_ANGLE_BRACKET_OFFSET)};
     }
 
-    bool ecma_lexer::validate_bound(zstring& the_number, uint32_t& current_pos) const {
-        uint32_t current_char;
+    bool ecma_lexer::validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const {
+        uint32_t current_digit;
+        uint32_t parsed_digits = 0;
         while (true) {
             // Regex is smth like "abc{123" -> valid, just not quantifier
             if (m_position + current_pos >= m_regex.length()) {
                 return false;
             }
-            current_char = m_regex[m_position + current_pos];
-            if (current_char < '0' || current_char > '9') {
+            current_digit = m_regex[m_position + current_pos];
+            if (current_digit < '0' || current_digit > '9') {
                 break;
             }
-            // TODO: which zstring constructor is called in the operator+=? maybe add one with uint32_t param
-            the_number += current_char;
+            bound = bound * 10 + static_cast<uint32_t>(current_digit - '0');
             current_pos++;
+            parsed_digits++;
         }
-        return true;
+        return (parsed_digits > 0);
     }
 
     token ecma_lexer::get_braced_quant_token() {
