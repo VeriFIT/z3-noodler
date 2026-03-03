@@ -4,7 +4,8 @@
 #include "util/zstring_view.h"
 
 #include <cctype>
-#include <variant>
+#include <cstdint>
+#include <limits>
 
 namespace smt::noodler::ecma {
 
@@ -199,22 +200,23 @@ namespace smt::noodler::ecma {
                              GROUP_NAME_START_OFFSET + name_length + CLOSING_ANGLE_BRACKET_OFFSET)};
     }
 
-    bool ecma_lexer::validate_bound(zstring& the_number, uint32_t& current_pos) const {
-        uint32_t current_char;
+    bool ecma_lexer::validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const {
+        uint32_t current_digit;
+        uint32_t parsed_digits = 0;
         while (true) {
             // Regex is smth like "abc{123" -> valid, just not quantifier
             if (m_position + current_pos >= m_regex.length()) {
                 return false;
             }
-            current_char = m_regex[m_position + current_pos];
-            if (current_char < '0' || current_char > '9') {
+            current_digit = m_regex[m_position + current_pos];
+            if (current_digit < '0' || current_digit > '9') {
                 break;
             }
-            // TODO: which zstring constructor is called in the operator+=? maybe add one with uint32_t param
-            the_number += current_char;
+            bound = bound * 10 + static_cast<uint32_t>(current_digit - '0');
             current_pos++;
+            parsed_digits++;
         }
-        return true;
+        return (parsed_digits > 0);
     }
 
     token ecma_lexer::get_braced_quant_token() {
