@@ -99,22 +99,25 @@ namespace smt::noodler::ecma {
     private:
         zstring_view m_regex;
         uint32_t m_position = 0;
-        bool m_in_char_class = false;
         uint32_t m_token_len = 0;
         uint32_t m_num_capture_groups = 0;
         uint32_t m_lexeme_start_pos = 0;
-        uint32_t get_backref_name_length(uint32_t group_name_start_pos) const;
-        bool validate_bound(zstring& the_number, uint32_t& current_pos) const;
+        bool m_in_char_class = false;
+        bool m_first_traverse = true;
+
+
+        token get_named_capture_group_token(uint32_t group_name_start_pos) const;
+        bool validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const;
         token get_braced_quant_token();
-        token parse_fourth_char_in_capture_group();
-        token parse_third_char_in_capture_group();
+        token get_lookbehind_or_named_group_token();
+        token get_special_group_or_lookaround_token();
         token get_group_token();
         token get_escape_sequence_token();
         token get_token_standard();
         token get_char_class_escape_sequence_token();
         token get_token_char_class();
         bool is_capture_or_named_capture(uint32_t position);
-        uint32_t octal_to_dec(zstring_view octal_text, uint32_t octal_len) const;
+        static uint32_t octal_to_dec(zstring_view octal_text, uint32_t octal_len);
 
     public:
         explicit ecma_lexer(zstring_view regex)
