@@ -4,6 +4,7 @@
 #include "util/zstring_view.h"
 
 #include <cctype>
+#include <variant>
 
 namespace smt::noodler::ecma {
 
@@ -211,16 +212,16 @@ namespace smt::noodler::ecma {
         return true;
     }
 
-    bool ecma_lexer::braces_are_quantifier() {
-        const uint32_t fallback_pos = m_position;
-
+    token ecma_lexer::get_braced_quant_token() {
+        // TODO: return false --> return literal token and reset m_pos to fallback_pos
+        uint32_t fallback_pos = m_position;
         // already have '{' from parent function -> check range of quantifier
         // lower bound
         zstring the_number = "";
         uint32_t current_pos = 1;
         if (!validate_bound(the_number, current_pos)) {
             m_position = fallback_pos;
-            return false;
+            return {token_type::LITERAL, {}, zstring_view(&m_regex[m_position], m_token_len)};
         }
 
         // after lower bound, there is either ',' or '}', otherwise not quantifier
@@ -319,12 +320,12 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_group_token() {
         // Lexically it is correct, return the token and let the parser throw a syntax error
         if (m_position + 1 >= m_regex.length()) {
-            return token_type::GROUP_START;
+            return {token_type::GROUP_START, {}, {}};
         }
 
         const uint32_t second_char = m_regex[m_position + 1];
         if (second_char != '?') {
-            return token_type::GROUP_START;
+            return {token_type::GROUP_START, {}, {}};
         }
 
         if (m_position + 2 >= m_regex.length()) {
@@ -334,7 +335,7 @@ namespace smt::noodler::ecma {
         return parse_third_char_in_capture_group();
     }
 
-    token_type ecma_lexer::get_escape_sequence_token() {
+    token ecma_lexer::get_escape_sequence_token() {
         if (m_position + 1 >= m_regex.length()) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical error: Unfinished escape sequence at the end of regex");
@@ -349,22 +350,22 @@ namespace smt::noodler::ecma {
             case 'W':
             case 's':
             case 'S':
-                return token_type::CHAR_CLASS_ESCAPE;
+                return {token_type::CHAR_CLASS_ESCAPE, {}, {}};
             case 'b':
             case 'B':
-                return token_type::ASSERTION;
+                return {token_type::ASSERTION, {}, {}};
             case 'x':
                 sequence_validator(m_regex, m_position).validate_hex_escape_sequence(m_token_len);
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
             case 'u':
                 sequence_validator(m_regex, m_position).validate_unicode_escape_sequence(m_token_len);
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
             case 'c':
                 sequence_validator(m_regex, m_position).validate_control_escape_sequence(m_token_len);
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
             case 'k':
                 sequence_validator(m_regex, m_position).validate_named_back_reference(m_token_len);
-                return token_type::BACKREFERENCE;
+                return {token_type::BACKREFERENCE, {}, {}};
             case '1':
             case '2':
             case '3':
@@ -374,47 +375,46 @@ namespace smt::noodler::ecma {
             case '7':
             case '8':
             case '9':
+                // TODO: here it can be either backref or octal literal
                 sequence_validator(m_regex, m_position).validate_back_reference(m_token_len);
-                return token_type::BACKREFERENCE;
+                return {token_type::BACKREFERENCE, {}, {}};
             default:
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
         }
     }
 
-    token_type ecma_lexer::get_token_standard() {
+    token ecma_lexer::get_token_standard() {
         const uint32_t current_char = m_regex[m_position];
         switch (current_char) {
             case '*':
             case '+':
             case '?':
-                return token_type::QUANTIFIER;
+                return {token_type::QUANTIFIER, {}, {}};
             case '{':
-                if (braces_are_quantifier()) {
-                    return token_type::QUANTIFIER;
-                }
+                return get_braced_quant_token();
             case '.':
-                return token_type::DOT;
+                return {token_type::DOT, {}, {}};
             case '|':
-                return token_type::ALTERNATION;
+                return {token_type::ALTERNATION, {}, {}};
             case '^':
             case '$':
-                return token_type::ASSERTION;
+                return {token_type::ASSERTION, {}, {}};
             case '(':
                 return get_group_token();
             case ')':
-                return token_type::GROUP_END;
+                return {token_type::GROUP_END, {}, {}};
             case '\\':
                 return get_escape_sequence_token();
             case '[': {
                 m_in_char_class = true;
-                return token_type::CHAR_CLASS_START;
+                return {token_type::CHAR_CLASS_START, {}, {}};
             }
             default:
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
         }
     }
 
-    token_type ecma_lexer::get_char_class_escape_sequence_token() {
+    token ecma_lexer::get_char_class_escape_sequence_token() {
         if (m_position + 1 >= m_regex.length()) {
             // TODO: implement own exceptions later
             throw default_exception("Lexical error: Unfinished escape sequence at the end of regex");
@@ -430,16 +430,16 @@ namespace smt::noodler::ecma {
             case 'W':
             case 's':
             case 'S':
-                return token_type::CHAR_CLASS_ESCAPE;
+                return {token_type::CHAR_CLASS_ESCAPE, {}, {}};
             case 'x':
                 sequence_validator(m_regex, m_position).validate_hex_escape_sequence(m_token_len);
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
             case 'u':
                 sequence_validator(m_regex, m_position).validate_unicode_escape_sequence(m_token_len);
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
             case 'c':
                 sequence_validator(m_regex, m_position).validate_control_escape_sequence(m_token_len);
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
             case '1':
             case '2':
             case '3':
@@ -450,27 +450,27 @@ namespace smt::noodler::ecma {
                 sequence_validator(m_regex, m_position).validate_octal_escape_sequence(m_token_len);
                 zstring_view octal_text(m_regex + m_position + 1, m_token_len - 1);
                 uint32_t octal_value = octal_to_dec(octal_text, m_token_len - 1);
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
             }
             default:
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
         }
     }
 
-    token_type ecma_lexer::get_token_char_class() {
+    token ecma_lexer::get_token_char_class() {
         const uint32_t current_char = m_regex[m_position];
         switch (current_char) {
             case ']':
                 m_in_char_class = false;
-                return token_type::CHAR_CLASS_END;
+                return {token_type::CHAR_CLASS_END, {}, {}};
             case '-':
-                return token_type::CHAR_CLASS_RANGE;
+                return {token_type::CHAR_CLASS_RANGE, {}, {}};
             case '^':
-                return token_type::CHAR_CLASS_NEGATION;
+                return {token_type::CHAR_CLASS_NEGATION, {}, {}};
             case '\\':
                 return get_char_class_escape_sequence_token();
             default:
-                return token_type::LITERAL;
+                return {token_type::LITERAL, {}, {}};
         }
     }
 
@@ -485,23 +485,15 @@ namespace smt::noodler::ecma {
 
     token ecma_lexer::get_next_token() {
         if (m_position >= m_regex.length()) {
-            m_token.type = token_type::END_OF_INPUT;
-            m_token.payload = {};
-            m_token.lexeme = {};
-            return m_token;
+            return {token_type::END_OF_INPUT, {}, {}};
         }
-
-        const uint32_t* token_start = &m_regex[m_position];
+        m_lexeme_start_pos = m_position;
 
         if (m_in_char_class) {
-            m_token.type = get_token_char_class();
+            return get_token_char_class();
         } else {
-            m_token.type = get_token_standard();
+            return get_token_standard();
         }
-        m_position += m_token_len;
-
-        m_token.lexeme = zstring_view(token_start, m_token_len);
-        return m_token;
     }
 
     // =============== ECMA REGEX PARSER ===============
