@@ -46,18 +46,6 @@ namespace smt::noodler::ecma {
         zstring_view lexeme;
     };
 
-    class sequence_validator {
-        static bool is_octal(uint32_t digit);
-
-    public:
-        static void validate_hex_escape_sequence(zstring_view m_regex, uint32_t m_position);
-        static void validate_unicode_escape_sequence(zstring_view m_regex, uint32_t m_position);
-        static void validate_control_escape_sequence(zstring_view m_regex, uint32_t m_position);
-        static void validate_named_back_reference(zstring_view m_regex, uint32_t m_position);
-        static void validate_back_reference(zstring_view m_regex, uint32_t m_position);
-        static uint32_t validate_octal_escape_sequence(zstring_view m_regex, uint32_t m_position);
-    };
-
     // =============== REGEX CONSTRAINT GRAPH ===============
     enum class rcg_edge_type {
         MATCH_EDGE,
@@ -105,8 +93,22 @@ namespace smt::noodler::ecma {
         bool m_in_char_class = false;
         bool m_first_traverse = true;
 
-
+        static bool is_digit(uint32_t digit);
+        static bool is_alpha(uint32_t digit);
+        static bool is_alnum(uint32_t digit);
+        static bool is_hex_digit(uint32_t digit);
+        static bool is_octal_digit(uint32_t digit);
+        static bool is_upper(uint32_t digit);
+        static uint32_t alphabet_rank(uint32_t digit);
+        static uint32_t hex2dec(zstring_view number);
+        token get_hex_escape_seq_token() const;
+        token get_unicode_escape_seq_token() const;
+        token get_control_escape_seq_token() const;
         token get_named_capture_group_token(uint32_t group_name_start_pos) const;
+        uint32_t get_backref_name_len(uint32_t name_start_pos);
+        token get_named_backref_token();
+        token octal_or_backref();
+        token get_octal_escape_sequence_token();
         bool validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const;
         token get_braced_quant_token();
         token get_lookbehind_or_named_group_token();
@@ -118,6 +120,7 @@ namespace smt::noodler::ecma {
         token get_token_char_class();
         bool is_capture_or_named_capture(uint32_t position);
         static uint32_t octal_to_dec(zstring_view octal_text, uint32_t octal_len);
+
 
     public:
         explicit ecma_lexer(zstring_view regex)
