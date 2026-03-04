@@ -160,7 +160,48 @@ namespace smt::noodler::ecma {
         return token_len;
     }
 
-    // ================== ECMA REGEX LEXER ==================
+    bool ecma_lexer::is_num(const uint32_t digit) {
+        return digit >= '0' && digit <= '9';
+    }
+
+    bool ecma_lexer::is_alpha(const uint32_t digit) {
+        return (digit >= 'A' && digit <= 'Z') || (digit >= 'a' && digit <= 'z');
+    }
+
+    bool ecma_lexer::is_alnum(const uint32_t digit) {
+        return is_alpha(digit) || is_num(digit);
+    }
+
+    bool ecma_lexer::is_hex_digit(const uint32_t digit) {
+        return is_num(digit) || (digit >= 'A' && digit <= 'F') || (digit >= 'a' && digit <= 'f');
+    }
+
+    bool ecma_lexer::is_upper(const uint32_t digit) {
+        return digit >= 'A' && digit <= 'Z';
+    }
+
+    uint32_t ecma_lexer::alphabet_rank(const uint32_t digit) {
+        if (is_upper(digit)) {
+            return digit - 'A' + 1;
+        }
+        return digit - 'a' + 1;
+    }
+
+    uint32_t ecma_lexer::hex2dec(zstring_view number) {
+        uint32_t res = 0;
+        for (uint32_t pos = 0; pos < number.length(); pos++) {
+            const uint32_t hex_digit = number[pos];
+            if (hex_digit >= '0' && hex_digit <= '9') {
+                res = res * 16 + (hex_digit - '0');
+            } else if (hex_digit >= 'A' && hex_digit <= 'F') {
+                res = res * 16 + (hex_digit - 'A' + 10);
+            } else {
+                res = res * 16 + (hex_digit - 'a' + 10);
+            }
+        }
+        return res;
+    }
+
     token ecma_lexer::get_named_capture_group_token(const uint32_t group_name_start_pos) const {
         uint32_t name_length = 0;
         uint32_t current_pos = group_name_start_pos;
