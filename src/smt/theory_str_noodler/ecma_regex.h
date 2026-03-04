@@ -101,6 +101,7 @@ namespace smt::noodler::ecma {
         static bool is_upper(uint32_t digit);
         static uint32_t alphabet_rank(uint32_t digit);
         static uint32_t hex2dec(zstring_view number);
+        static uint32_t oct2dec(zstring_view number);
         token get_hex_escape_seq_token() const;
         token get_unicode_escape_seq_token() const;
         token get_control_escape_seq_token() const;
