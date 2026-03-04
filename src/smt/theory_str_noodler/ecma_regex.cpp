@@ -71,6 +71,17 @@ namespace smt::noodler::ecma {
         return res;
     }
 
+    uint32_t ecma_lexer::oct2dec(zstring_view number) {
+        uint32_t res = 0;
+        for (uint32_t pos = 0; pos < number.length(); pos++) {
+            const uint32_t digit = number[pos];
+            if (is_octal_digit(digit)) {
+                res = res * 8 + (digit - '0');
+            }
+        }
+        return res;
+    }
+
     token ecma_lexer::get_hex_escape_seq_token() const {
         // hexadecimal escape sequence in format \xHH
         if (m_position + HEX_SEQUENCE_LEN >= m_regex.length()) {
@@ -215,7 +226,7 @@ namespace smt::noodler::ecma {
             real_octal_len++;
         }
 
-        return {token_type::LITERAL, decimal_value,
+        return {token_type::LITERAL, oct2dec(zstring_view(&m_regex[m_position + BACKSLASH_OFFSET], real_octal_len)),
                 zstring_view(&m_regex[m_position], BACKSLASH_OFFSET + real_octal_len)};
     }
 
