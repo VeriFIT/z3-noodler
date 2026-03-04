@@ -498,7 +498,60 @@ namespace smt::noodler::ecma {
         }
     }
 
-    void ecma_lexer::perform_first_traverse() { }
+    void ecma_lexer::perform_first_traverse() {
+        uint32_t open_parens_count = 0;
+        bool in_char_class = false;
+        bool escaped = false;
+
+        for (uint32_t pos = 0; pos < m_regex.length(); pos++) {
+            switch (m_regex[pos]) {
+                case '[':
+                    if (escaped) {
+                        escaped = false;  // '\[' --> ignore that
+                    } else {
+                        in_char_class = true;
+                    }
+                    break;
+                case ']':
+                    if (escaped) {
+                        escaped = false;  // '\]' --> ignore that
+                    } else if (in_char_class) {
+                        in_char_class = false;
+                    }
+                    break;
+                case '\\':
+                    // more backslashes in a row --> toggle escaping
+                    escaped = !escaped;
+                    break;
+                case '(':
+                    if (escaped) {
+                        escaped = false;  // '\(' --> ignore that
+                    } else if (!in_char_class) {
+                        open_parens_count++;
+
+                        if (is_capture_or_named_capture(pos)) {
+                            m_num_capture_groups++;
+                        }
+                    }
+                    break;
+                case ')':
+                    if (escaped) {
+                        escaped = false;  // '\)' --> ignore that
+                    } else if (!in_char_class) {
+                        // match not only capture groups but any group structure (lookarounds,...)
+                        if (open_parens_count > 0) {
+                            open_parens_count--;
+                        } else {
+                            throw default_exception("Syntax error: Unmatched ')' in regular expression");
+                        }
+                    }
+                    break;
+                default:
+                    escaped = false;
+                    break;
+            }
+        }
+    }
 
     // =============== ECMA REGEX PARSER ===============
 
