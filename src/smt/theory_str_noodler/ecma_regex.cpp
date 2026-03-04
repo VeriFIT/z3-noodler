@@ -10,7 +10,7 @@
 namespace smt::noodler::ecma {
 
     // ======================= UTILS =======================
-    constexpr uint32_t HEX_SEQUENCE_LEN = 3;
+    constexpr uint32_t HEX_SEQUENCE_LEN = 2;
     constexpr uint32_t UNICODE_ESCAPE_SEQUENCE_LEN = 4;
     constexpr uint32_t CONTROL_SEQUENCE_LEN = 1;
     constexpr uint32_t BACKSLASH_OFFSET = 1;
@@ -24,6 +24,9 @@ namespace smt::noodler::ecma {
     constexpr uint32_t OPEN_ANGLED_BRACKET_OFFSET = 2;
     constexpr uint32_t BACKREF_NAME_OFFSET = 2;
     constexpr uint32_t NAMED_BACKREF_LEN_NO_NAME = 4;
+    constexpr uint32_t FIRST_HEX_DIGIT_OFFSET = 2;
+    constexpr uint32_t SECOND_HEX_DIGIT_OFFSET = 3;
+    constexpr uint32_t ESCAPE_SPECIFIER_OFFSET = 1;
 
     bool ecma_lexer::is_digit(const uint32_t digit) {
         return digit >= '0' && digit <= '9';
@@ -84,18 +87,15 @@ namespace smt::noodler::ecma {
 
     token ecma_lexer::get_hex_escape_seq_token() const {
         // hexadecimal escape sequence in format \xHH
-        if (m_position + HEX_SEQUENCE_LEN >= m_regex.length()) {
-            // TODO: implement own exceptions later
-            throw default_exception("Lexical Error: Unfinished hexadecimal escape sequence at the end of regex");
+        // if the hex number is not well-formed, then '\x' is a literal 'x' and the rest is parsed separately
+        if (m_position + ESCAPE_SPECIFIER_OFFSET + HEX_SEQUENCE_LEN >= m_regex.length()) {
+            return {token_type::LITERAL, static_cast<uint32_t>('x'), zstring_view(&m_regex[m_position], 2)};
         }
 
-        const uint32_t first_hex_digit = m_regex[m_position + 2];
-        const uint32_t second_hex_digit = m_regex[m_position + 3];
-
+        const uint32_t first_hex_digit = m_regex[m_position + FIRST_HEX_DIGIT_OFFSET];
+        const uint32_t second_hex_digit = m_regex[m_position + SECOND_HEX_DIGIT_OFFSET];
         if (!is_hex_digit(first_hex_digit) || !is_hex_digit(second_hex_digit)) {
-            // TODO: implement own exceptions later
-            throw default_exception("Lexical Error: Invalid hexadecimal escape sequence at " +
-                                    std::to_string(m_position + 2) + " in regex");
+            return {token_type::LITERAL, static_cast<uint32_t>('x'), zstring_view(&m_regex[m_position], 2)};
         }
 
         return {token_type::LITERAL, hex2dec(zstring_view(&m_regex[m_position + 2], 2)),
@@ -104,15 +104,16 @@ namespace smt::noodler::ecma {
 
     token ecma_lexer::get_unicode_escape_seq_token() const {
         // unicode escape sequence in format \uHHHH
+        // if the hex number is not well-formed, '\u' is a literal 'u' and rest is parsed separately
         if (m_position + UNICODE_ESCAPE_OFFSET + UNICODE_ESCAPE_SEQUENCE_LEN >= m_regex.length()) {
-            throw default_exception("Lexical Error: Unfinished unicode escape sequence at the end of regex");
+            return {token_type::LITERAL, static_cast<uint32_t>('u'), zstring_view(&m_regex[m_position], 2)};
         }
 
         const uint32_t first_unicode_digit_pos = m_position + UNICODE_ESCAPE_OFFSET;
         for (uint32_t i = 0; i < UNICODE_ESCAPE_SEQUENCE_LEN; i++) {
             const uint32_t current_char = m_regex[first_unicode_digit_pos + i];
-            if (!is_hex_digit(static_cast<unsigned char>(current_char))) {
-                throw default_exception("Lexical Error: Invalid unicode escape sequence");
+            if (!is_hex_digit(current_char)) {
+                return {token_type::LITERAL, static_cast<uint32_t>('u'), zstring_view(&m_regex[m_position], 2)};
             }
         }
 
@@ -122,18 +123,21 @@ namespace smt::noodler::ecma {
     }
 
     token ecma_lexer::get_control_escape_seq_token() const {
-        if (m_position + CONTROL_SEQUENCE_LEN >= m_regex.length()) {
-            // TODO: implement own exceptions later
-            throw default_exception("Lexical Error: Unfinished control escape sequence at the end of regex");
+        // control escape sequence in format \cC, where C is a control character
+        // if the control sequence is not well-formed, a literal '\' is returned and rest is parsed separately.
+        // this is very logical, because unicode and hexadecimal sequences include the escape specifier into the literal as well. :) what the fuck ecma
+        // the above comment is true for node.js implementation, regex101 (using v8 browser engine) parses this as error. whats going on??? leaving node.js implementation here.
+        if (m_position + ESCAPE_SPECIFIER_OFFSET + CONTROL_SEQUENCE_LEN >= m_regex.length()) {
+            // TODO: IMO if we strictly follow the standard, this should be an error
+            return {token_type::LITERAL, static_cast<uint32_t>('\\'), zstring_view(&m_regex[m_position], 1)};
         }
 
         const uint32_t control_char = m_regex[m_position + CONTROL_CHAR_OFFSET];
 
-        // [A-Za-z] characters allowed,
+        // [A-Za-z] characters allowed, otherwise error
         if (!is_alpha(control_char)) {
             // TODO: implement own exceptions later
-            throw default_exception("Lexical Error: Invalid control escape sequence at position " +
-                                    std::to_string(m_position + CONTROL_CHAR_OFFSET));
+            return {token_type::LITERAL, static_cast<uint32_t>('\\'), zstring_view(&m_regex[m_position], 1)};
         }
 
         return {token_type::LITERAL, alphabet_rank(control_char),
@@ -149,6 +153,7 @@ namespace smt::noodler::ecma {
                 found_closing_bracket = true;
                 break;
             }
+            // TODO: the name of the group is described in RegExpIdentifierName nonterminal in the standard, finish this
             if (!is_alnum(current_name_char) && current_name_char != '_' && current_name_char != '$') {
                 // TODO: implement own exceptions later
                 throw default_exception("Lexical Error: Invalid character in back reference name at position " +
@@ -193,27 +198,36 @@ namespace smt::noodler::ecma {
     }
 
     token ecma_lexer::octal_or_backref() {
-        // TODO: dodelat
-        uint32_t num_of_digits = 1;
-        uint32_t current_pos = m_position + 2;
-        while (current_pos < m_regex.length() && is_digit(m_regex[current_pos])) {
-            num_of_digits++;
-            current_pos++;
+        uint32_t decimal_val = 0;
+
+        // greedily read as much digits as possible
+        uint32_t digit_sequence_len = 1;
+        for (; m_position + digit_sequence_len < m_regex.length(); digit_sequence_len++) {
+            const uint32_t digit = m_regex[m_position + digit_sequence_len];
+            if (!is_digit(digit)) {
+                break;
+            }
+            decimal_val = decimal_val * 10 + (digit - '0');
         }
-        return {token_type::BACKREFERENCE, {}, {}};
+        // try to match it to a backreference
+        if (decimal_val > 0 && decimal_val <= m_num_capture_groups) {
+            return {token_type::BACKREFERENCE, decimal_val, zstring_view(&m_regex[m_position], digit_sequence_len)};
+        }
+
+        // cannot be backreference --> match the input to an octal escape sequence
+        return get_octal_escape_sequence_token();
     }
 
     token ecma_lexer::get_octal_escape_sequence_token() {
         uint32_t max_possible_octal_len = 3;
         // i.e. \123, m_position currently at '\'
         const uint32_t first_digit = m_regex[m_position + 1];
-        // no need to check, we got here through cases '1' -- '7'
+        // no need to check boundaries, we got here through cases '1' -- '7', so m_regex[m_position + 1] is defined
         if (first_digit > '3') {
             max_possible_octal_len = 2;
         }
 
         uint32_t real_octal_len = 0;
-        uint32_t decimal_value = 0;
         for (uint32_t pos = 1; pos <= max_possible_octal_len; pos++) {
             if (m_position + pos >= m_regex.length()) {
                 break;
@@ -222,7 +236,6 @@ namespace smt::noodler::ecma {
             if (!is_octal_digit(digit)) {
                 break;
             }
-            decimal_value = decimal_value * 8 + (digit - '0');
             real_octal_len++;
         }
 
