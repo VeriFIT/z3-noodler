@@ -99,7 +99,7 @@ namespace smt::noodler::ecma {
         }
 
         return {token_type::LITERAL, hex2dec(zstring_view(&m_regex[m_position + 2], 2)),
-                zstring_view(&m_regex[m_position], m_position)};
+                zstring_view(&m_regex[m_position], 4)};
     }
 
     token ecma_lexer::get_unicode_escape_seq_token() const {
@@ -316,7 +316,7 @@ namespace smt::noodler::ecma {
         // case {n}
         if (current_char == '}') {
             return {token_type::QUANTIFIER, quantifier_range(lower_bound, lower_bound),
-                    zstring_view(&m_regex[m_position], 3)};
+                    zstring_view(&m_regex[m_position], current_pos + 1)};
         }
 
         if (current_char != ',') {
@@ -332,7 +332,7 @@ namespace smt::noodler::ecma {
         current_char = m_regex[m_position + current_pos];
         if (current_char == '}') {
             return {token_type::QUANTIFIER, quantifier_range(lower_bound, std::numeric_limits<uint32_t>::max()),
-                    zstring_view(&m_regex[m_position], 4)};
+                    zstring_view(&m_regex[m_position], current_pos + 1)};
         }
 
         // upper bound of the quantifier
@@ -350,11 +350,10 @@ namespace smt::noodler::ecma {
         current_char = m_regex[m_position + current_pos];
         if (current_char == '}') {
             return {token_type::QUANTIFIER, quantifier_range(lower_bound, upper_bound),
-                    zstring_view(&m_regex[m_position], m_token_len)};
+                    zstring_view(&m_regex[m_position], current_pos + 1)};
         }
 
-        m_position = fallback_pos;
-        return {token_type::LITERAL, static_cast<uint32_t>('{'), zstring_view(&m_regex[m_position], m_token_len)};
+        return {token_type::LITERAL, static_cast<uint32_t>('{'), zstring_view(&m_regex[m_position], 1)};
     }
 
     token ecma_lexer::get_lookbehind_or_named_group_token() {
@@ -449,7 +448,7 @@ namespace smt::noodler::ecma {
             case '9':
                 return octal_or_backref();
             default:
-                return {token_type::LITERAL, {}, {}};
+                return {token_type::LITERAL, second_char, zstring_view(&m_regex[m_position], 2)};
         }
     }
 
@@ -459,7 +458,7 @@ namespace smt::noodler::ecma {
             case '*':
             case '+':
             case '?':
-                return {token_type::QUANTIFIER, {}, zstring_view(&m_regex[m_position], 1)};
+                return {token_type::QUANTIFIER, current_char, zstring_view(&m_regex[m_position], 1)};
             case '{':
                 return get_braced_quant_token();
             case '.':
@@ -477,7 +476,7 @@ namespace smt::noodler::ecma {
                 return get_escape_sequence_token();
             case '[': {
                 m_in_char_class = true;
-                return {token_type::CHAR_CLASS_START, {}, {}};
+                return {token_type::CHAR_CLASS_START, {}, zstring_view(&m_regex[m_position], 1)};
             }
             default:
                 return {token_type::LITERAL, current_char, zstring_view(&m_regex[m_position], 1)};
@@ -507,6 +506,8 @@ namespace smt::noodler::ecma {
                 return get_unicode_escape_seq_token();
             case 'c':
                 return get_control_escape_seq_token();
+            case 'b':
+                return {token_type::LITERAL, BACKSPACE_LITERAL, zstring_view(&m_regex[m_position], 2)};
             case '1':
             case '2':
             case '3':
@@ -516,7 +517,8 @@ namespace smt::noodler::ecma {
             case '7':
                 return get_octal_escape_sequence_token();
             default:
-                return {token_type::LITERAL, {}, {}};
+                // digits 8 and 9 in escape are '8' and '9' literals as well
+                return {token_type::LITERAL, second_char, zstring_view(&m_regex[m_position], 2)};
         }
     }
 
@@ -525,11 +527,11 @@ namespace smt::noodler::ecma {
         switch (current_char) {
             case ']':
                 m_in_char_class = false;
-                return {token_type::CHAR_CLASS_END, {}, {}};
+                return {token_type::CHAR_CLASS_END, current_char, zstring_view(&m_regex[m_position], 1)};
             case '-':
-                return {token_type::CHAR_CLASS_RANGE, {}, {}};
+                return {token_type::CHAR_CLASS_RANGE, current_char, zstring_view(&m_regex[m_position], 1)};
             case '^':
-                return {token_type::CHAR_CLASS_NEGATION, {}, {}};
+                return {token_type::CHAR_CLASS_NEGATION, current_char, zstring_view(&m_regex[m_position], 1)};
             case '\\':
                 return get_char_class_escape_sequence_token();
             default:
