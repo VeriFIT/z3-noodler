@@ -27,6 +27,7 @@ namespace smt::noodler::ecma {
     constexpr uint32_t FIRST_HEX_DIGIT_OFFSET = 2;
     constexpr uint32_t SECOND_HEX_DIGIT_OFFSET = 3;
     constexpr uint32_t ESCAPE_SPECIFIER_OFFSET = 1;
+    constexpr uint32_t BACKSPACE_LITERAL = 8;
 
     bool ecma_lexer::is_digit(const uint32_t digit) {
         return digit >= '0' && digit <= '9';
@@ -215,13 +216,19 @@ namespace smt::noodler::ecma {
         }
 
         // cannot be backreference --> match the input to an octal escape sequence
-        return get_octal_escape_sequence_token();
+        return get_octal_escape_sequence_token(false);
     }
 
-    token ecma_lexer::get_octal_escape_sequence_token() {
+    token ecma_lexer::get_octal_escape_sequence_token(const bool from_char_class) {
         uint32_t max_possible_octal_len = 3;
         // i.e. \123, m_position currently at '\'
         const uint32_t first_digit = m_regex[m_position + 1];
+        if (!from_char_class && (first_digit == '8' || first_digit == '9')) {
+            // based on https://tc39.es/ecma262/2020/#sec-decimalescape, I think this should be an error.
+            // however, engine in node.js 20 interprets this as '8' or '9' (ascii 56/57) characters.
+            throw default_exception("Lexical error: backreference to nonexistent subpattern");
+        }
+
         // no need to check boundaries, we got here through cases '1' -- '7', so m_regex[m_position + 1] is defined
         if (first_digit > '3') {
             max_possible_octal_len = 2;
@@ -499,7 +506,7 @@ namespace smt::noodler::ecma {
             case 'W':
             case 's':
             case 'S':
-                return {token_type::CHAR_CLASS_ESCAPE, {}, {}};
+                return {token_type::CHAR_CLASS_ESCAPE, second_char, zstring_view(&m_regex[m_position], 2)};
             case 'x':
                 return get_hex_escape_seq_token();
             case 'u':
@@ -515,7 +522,7 @@ namespace smt::noodler::ecma {
             case '5':
             case '6':
             case '7':
-                return get_octal_escape_sequence_token();
+                return get_octal_escape_sequence_token(true);
             default:
                 // digits 8 and 9 in escape are '8' and '9' literals as well
                 return {token_type::LITERAL, second_char, zstring_view(&m_regex[m_position], 2)};
