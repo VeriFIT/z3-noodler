@@ -440,7 +440,7 @@ namespace smt::noodler::ecma {
             case 'c':
                 return get_control_escape_seq_token();
             case 'k':
-                return validate_named_back_reference();
+                return get_named_backref_token();
             case '1':
             case '2':
             case '3':
@@ -494,8 +494,6 @@ namespace smt::noodler::ecma {
         }
 
         const uint32_t second_char = m_regex[m_position + 1];
-        m_token_len = 2;
-
         switch (second_char) {
             case 'd':
             case 'D':
@@ -539,34 +537,7 @@ namespace smt::noodler::ecma {
             case '\\':
                 return get_char_class_escape_sequence_token();
             default:
-                return {token_type::LITERAL, {}, {}};
-        }
-    }
-
-    uint32_t ecma_lexer::octal_to_dec(zstring_view octal_text, const uint32_t octal_len) {
-        uint32_t res = 0;
-        for (uint32_t i = 0; i < octal_len; i++) {
-            const uint32_t octal_digit = octal_text[i] - '0';
-            res = res * 8 + octal_digit;
-        }
-        return res;
-    }
-
-    token ecma_lexer::get_next_token() {
-        if (m_first_traverse) {
-            perform_first_traverse();
-            m_first_traverse = false;
-        }
-
-        if (m_position >= m_regex.length()) {
-            return {token_type::END_OF_INPUT, {}, {}};
-        }
-        m_lexeme_start_pos = m_position;
-
-        if (m_in_char_class) {
-            return get_token_char_class();
-        } else {
-            return get_token_standard();
+                return {token_type::LITERAL, current_char, zstring_view(&m_regex[m_position], 1)};
         }
     }
 
@@ -623,6 +594,27 @@ namespace smt::noodler::ecma {
                     break;
             }
         }
+    }
+
+    token ecma_lexer::get_next_token() {
+        if (m_first_traverse) {
+            perform_first_traverse();
+            m_first_traverse = false;
+        }
+
+        if (m_position >= m_regex.length()) {
+            return {token_type::END_OF_INPUT, {}, {}};
+        }
+
+        token t;
+        if (m_in_char_class) {
+            t = get_token_char_class();
+        } else {
+            t = get_token_standard();
+        }
+        m_position += t.lexeme.length();
+        m_lexeme_len = 0;
+        return t;
     }
 
     // =============== ECMA REGEX PARSER ===============

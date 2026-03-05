@@ -87,9 +87,8 @@ namespace smt::noodler::ecma {
     private:
         zstring_view m_regex;
         uint32_t m_position = 0;
-        uint32_t m_token_len = 0;
         uint32_t m_num_capture_groups = 0;
-        uint32_t m_lexeme_start_pos = 0;
+        uint32_t m_lexeme_len = 0;
         bool m_in_char_class = false;
         bool m_first_traverse = true;
 
@@ -109,8 +108,8 @@ namespace smt::noodler::ecma {
         uint32_t get_backref_name_len(uint32_t name_start_pos);
         token get_named_backref_token();
         token octal_or_backref();
-        token get_octal_escape_sequence_token();
-        bool validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const;
+        token get_octal_escape_sequence_token(const bool from_char_class);
+        uint32_t validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const;
         token get_braced_quant_token();
         token get_lookbehind_or_named_group_token();
         token get_special_group_or_lookaround_token();
@@ -119,8 +118,10 @@ namespace smt::noodler::ecma {
         token get_token_standard();
         token get_char_class_escape_sequence_token();
         token get_token_char_class();
-        bool is_capture_or_named_capture(uint32_t position);
-        static uint32_t octal_to_dec(zstring_view octal_text, uint32_t octal_len);
+
+        bool is_capture_or_named_capture(uint32_t position) {
+            return false;
+        }
 
 
     public:
@@ -167,12 +168,16 @@ namespace smt::noodler::ecma {
     class ecma_regex_handler {
     private:
         zstring_view m_regex;
+        ecma_parser m_parser;
 
     public:
         explicit ecma_regex_handler(const zstring& regex_pattern)
-            : m_regex(regex_pattern) { }
+            : m_regex(regex_pattern),
+              m_parser(regex_pattern) { }
 
-        void build_rcg() { }
+        void build_rcg() {
+            m_parser.parse();
+        }
 
         void generate_constraints() { }
     };
