@@ -281,7 +281,7 @@ namespace smt::noodler::ecma {
             zstring_view(&m_regex[m_position], GROUP_NAME_START_OFFSET + name_length + CLOSING_ANGLE_BRACKET_OFFSET)};
     }
 
-    bool ecma_lexer::validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const {
+    uint32_t ecma_lexer::validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const {
         uint32_t current_digit;
         uint32_t parsed_digits = 0;
         while (true) {
@@ -297,19 +297,16 @@ namespace smt::noodler::ecma {
             current_pos++;
             parsed_digits++;
         }
-        return (parsed_digits > 0);
+        return parsed_digits;
     }
 
     token ecma_lexer::get_braced_quant_token() {
-        // if the quantifier is not well-formed, we assume the '{' is a literal and return the position back to it
-        uint32_t fallback_pos = m_position;
-
         // already have '{' from parent function -> check range of quantifier
         // lower bound
         uint32_t lower_bound = 0;
         uint32_t current_pos = 1;
-        if (!validate_and_get_bound(lower_bound, current_pos)) {
-            m_position = fallback_pos;
+        uint32_t bound_digits = validate_and_get_bound(lower_bound, current_pos);
+        if (bound_digits == 0) {
             return {token_type::LITERAL, static_cast<uint32_t>('{'), zstring_view(&m_regex[m_position], 1)};
         }
 
@@ -344,8 +341,8 @@ namespace smt::noodler::ecma {
 
         // upper bound of the quantifier
         uint32_t upper_bound = 0;
-        if (!validate_and_get_bound(upper_bound, current_pos)) {
-            m_position = fallback_pos;
+        bound_digits = validate_and_get_bound(upper_bound, current_pos);
+        if (bound_digits == 0) {
             return {token_type::LITERAL, static_cast<uint32_t>('{'), zstring_view(&m_regex[m_position], 1)};
         }
 
