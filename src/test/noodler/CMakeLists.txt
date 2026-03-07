@@ -22,6 +22,7 @@ if (Catch2_FOUND)
             parikh.cc
             util.cc
             formula.cpp
+            ecma_regex.cpp
     )
 
     z3_add_install_tactic_rule(${z3_test_deps})
