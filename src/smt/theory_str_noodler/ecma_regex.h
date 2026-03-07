@@ -87,8 +87,8 @@ namespace smt::noodler::ecma {
     private:
         zstring_view m_regex;
         uint32_t m_position = 0;
+        uint32_t m_lexeme_start_pos = 0;  // m_lexeme_len je pryč!
         uint32_t m_num_capture_groups = 0;
-        uint32_t m_lexeme_len = 0;
         bool m_in_char_class = false;
         bool m_first_traverse = true;
 
@@ -101,15 +101,17 @@ namespace smt::noodler::ecma {
         static uint32_t alphabet_rank(uint32_t digit);
         static uint32_t hex2dec(zstring_view number);
         static uint32_t oct2dec(zstring_view number);
-        token get_hex_escape_seq_token() const;
-        token get_unicode_escape_seq_token() const;
-        token get_control_escape_seq_token() const;
-        token get_named_capture_group_token(uint32_t group_name_start_pos) const;
+
+        token make_token(token_type type, token_payload payload = {});
+        token get_hex_escape_seq_token();
+        token get_unicode_escape_seq_token();
+        token get_control_escape_seq_token();
+        token get_named_capture_group_token();
         uint32_t get_backref_name_len(uint32_t name_start_pos);
         token get_named_backref_token();
-        token octal_or_backref();
-        token get_octal_escape_sequence_token(const bool from_char_class);
-        uint32_t validate_and_get_bound(uint32_t& bound, uint32_t& current_pos) const;
+        token octal_or_backref(uint32_t first_digit);
+        token get_octal_escape_sequence_token(bool from_char_class, uint32_t first_digit);
+        uint32_t validate_and_get_bound(uint32_t& bound) const;
         token get_braced_quant_token();
         token get_lookbehind_or_named_group_token();
         token get_special_group_or_lookaround_token();
@@ -119,10 +121,7 @@ namespace smt::noodler::ecma {
         token get_char_class_escape_sequence_token();
         token get_token_char_class();
 
-        bool is_capture_or_named_capture(uint32_t position) {
-            return false;
-        }
-
+        bool is_capture_or_named_capture(uint32_t position);
 
     public:
         explicit ecma_lexer(zstring_view regex)
