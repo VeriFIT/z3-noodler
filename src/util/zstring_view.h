@@ -9,7 +9,7 @@
 
 class zstring_view {
     const uint32_t* m_data = nullptr;
-    size_t m_size = 0;
+    uint32_t m_size = 0;
 
 public:
     zstring_view(const zstring& str)
@@ -23,7 +23,7 @@ public:
         : m_data(str),
           m_size(len) { }
 
-    size_t length() const {
+    uint32_t length() const {
         return m_size;
     }
 
@@ -41,5 +41,22 @@ public:
             throw default_exception("Internal error: zstring_view operator+ offset > size");
         }
         return m_data + offset;
+    }
+
+    bool operator==(const zstring_view other) const {
+        if (m_size != other.m_size) {
+            return false;
+        }
+        for (uint32_t i = 0; i < m_size; i++) {
+            if (m_data[i] != other.m_data[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator==(const zstring& str) const {
+        zstring_view other(str);
+        return *this == other;
     }
 };
