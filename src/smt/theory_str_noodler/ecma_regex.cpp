@@ -130,8 +130,7 @@ namespace smt::noodler::ecma {
         // control escape sequence in format \cC, where C is a control character
         // Currently m_position is right after '\c'
         if (m_position >= m_regex.length()) {
-            m_position = m_lexeme_start_pos + 1;  // rollback -- skip '\'
-            return make_token(token_type::LITERAL, static_cast<uint32_t>('\\'));
+            throw default_exception("Syntax error in ECMA regex: Invalid control sequence" + std::string("\\c"));
         }
 
         const uint32_t control_char = m_regex[m_position];
@@ -142,8 +141,7 @@ namespace smt::noodler::ecma {
         // https://tc39.es/ecma262/2020/#prod-CharacterEscape
         // regex engines usually consume '\' and leave rest as literals, which does not follow the standard
         if (!is_alpha(control_char)) {
-            throw default_exception("Syntax error in ECMA regex: invalid control sequence" + std::string("\\c") +
-                                    std::to_string(m_regex[m_position]));
+            throw default_exception("Syntax error in ECMA regex: Invalid control sequence" + std::string("\\c"));
         }
         return make_token(token_type::LITERAL, alphabet_rank(control_char));
     }
@@ -160,20 +158,18 @@ namespace smt::noodler::ecma {
             // TODO: the name of the group is described in RegExpIdentifierName nonterminal in the standard, finish this
             if (!is_alnum(current_name_char) && current_name_char != '_' && current_name_char != '$') {
                 // TODO: implement own exceptions later
-                throw default_exception("Lexical Error: Invalid character in back reference name at position " +
-                                        std::to_string(pos + 1) + " in regex");
+                throw default_exception("ECMA regex syntax error: Invalid character in back reference name");
             }
             name_length++;
         }
 
         if (!found_closing_bracket) {
             // TODO: implement own exceptions later
-            throw default_exception("Lexical Error: Unclosed back reference name at the end of regex");
+            throw default_exception("ECMA regex syntax error: Unclosed back reference name at the end of regex");
         }
         if (name_length == 0) {
             // TODO: implement own exceptions later
-            throw default_exception("Lexical Error: Empty back reference name at position " +
-                                    std::to_string(name_start_pos + 1) + " in regex");
+            throw default_exception("ECMA regex syntax error: Empty back reference name");
         }
         return name_length;
     }
@@ -182,13 +178,12 @@ namespace smt::noodler::ecma {
         // '\k<name>'
         // currently at '<' after '\k'
         if (m_position >= m_regex.length()) {
-            throw default_exception("Lexical Error: Invalid named backreference at the end of regex");
+            throw default_exception("ECMA regex syntax error: Invalid named backreference at the end of regex");
         }
 
         const uint32_t open_bracket_char = m_regex[m_position];
         if (open_bracket_char != '<') {
-            throw default_exception("Lexical Error: Missing open angle bracket in named back reference at position " +
-                                    std::to_string(m_position - 1) + " in regex");
+            throw default_exception("ECMA regex syntax error: Missing '<' in named backreference");
         }
 
         m_position++;  // consume '<'
@@ -231,7 +226,7 @@ namespace smt::noodler::ecma {
         if (!from_char_class && (first_digit == '8' || first_digit == '9')) {
             // TODO: based on https://tc39.es/ecma262/2020/#sec-decimalescape, I think this should be an error.
             // however, engine in node.js 20 interprets this as '8' or '9' (ascii 56/57) characters.
-            throw default_exception("Lexical error: backreference to nonexistent subpattern");
+            throw default_exception("ECMA regex syntax error: backreference to nonexistent subpattern");
         }
 
         if (first_digit > '3') {
@@ -270,21 +265,22 @@ namespace smt::noodler::ecma {
             // TODO: there can be unicode blob in the group name, implement it
             if (!is_alnum(current_char) && current_char != '_' && current_char != '$') {
                 // TODO: implement own exceptions later
-                throw default_exception("Lexical error: Invalid character in capture group name at position " +
-                                        std::to_string(m_position - 1) + " in regex");
+                throw default_exception("ECMA regex syntax error: Invalid character in capture group name");
             }
             name_length++;
         }
         if (!found_closing_bracket) {
             // TODO: implement own exceptions later
-            throw default_exception("Lexical error: Unclosed group capture name at position " +
-                                    std::to_string(m_position - 1) + " in regex");
+            throw default_exception("ECMA regex syntax error: Unclosed group capture name");
+        }
+        if (name_length == 0) {
+            throw default_exception("ECMA regex syntax error: Empty group name");
         }
         // payload is just the name of the group, lexeme is the whole '(?<name>' thing
         return make_token(token_type::GROUP_NAMED_START, zstring_view(&m_regex[group_name_start_pos], name_length));
     }
 
-    uint32_t ecma_lexer::validate_and_get_bound(uint32_t& bound) const {
+    uint32_t ecma_lexer::validate_and_get_bound(uint32_t& bound) {
         // read digits one by one, save the decimal value of bound
         uint32_t parsed_digits = 0;
         while (m_position < m_regex.length()) {
@@ -293,6 +289,7 @@ namespace smt::noodler::ecma {
                 break;
             }
             bound = bound * 10 + static_cast<uint32_t>(current_digit - '0');
+            m_position++;
             parsed_digits++;
         }
         return parsed_digits;
@@ -303,7 +300,6 @@ namespace smt::noodler::ecma {
         uint32_t lower_bound = 0;
 
         uint32_t bound_digits = validate_and_get_bound(lower_bound);
-        m_position += bound_digits;  // consume the bound digits
 
         if (bound_digits == 0 || m_position >= m_regex.length()) {
             m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
@@ -336,7 +332,6 @@ namespace smt::noodler::ecma {
 
         uint32_t upper_bound = 0;
         bound_digits = validate_and_get_bound(upper_bound);
-        m_position += bound_digits;
 
         if (bound_digits == 0 || m_position >= m_regex.length()) {
             m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
@@ -357,8 +352,7 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_lookbehind_or_named_group_token() {
         // called right after '(?<'
         if (m_position >= m_regex.length()) {
-            throw default_exception("Lexical error: Unfinished sequence '(?<' at position" +
-                                    std::to_string(m_position) + " in regex");
+            throw default_exception("ECMA regex syntax error: Unfinished sequence '(?<'");
         }
 
         const uint32_t fourth_char = m_regex[m_position];
@@ -380,7 +374,7 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_special_group_or_lookaround_token() {
         // called right after '(?'
         if (m_position >= m_regex.length()) {
-            throw default_exception("Lexical error: Unfinished sequence '(?' at the end of regex");
+            throw default_exception("ECMA regex syntax error: Unfinished sequence '(?' at the end of regex");
         }
 
         const uint32_t third_char = m_regex[m_position];
@@ -396,8 +390,7 @@ namespace smt::noodler::ecma {
             case '<':
                 return get_lookbehind_or_named_group_token();
             default:
-                throw default_exception("Lexical error: Invalid group indentifier at position" +
-                                        std::to_string(m_position - 1) + " in regex");
+                throw default_exception("ECMA regex syntax error: Invalid group indentifier");
         }
     }
 
@@ -414,7 +407,7 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_escape_sequence_token() {
         // called right after '\'
         if (m_position >= m_regex.length()) {
-            throw default_exception("Lexical error: Unfinished escape sequence at the end of regex");
+            throw default_exception("ECMA regex syntax error: Unfinished escape sequence at the end of regex");
         }
 
         const uint32_t second_char = m_regex[m_position];
@@ -438,6 +431,7 @@ namespace smt::noodler::ecma {
                 return get_control_escape_seq_token();
             case 'k':
                 return get_named_backref_token();
+            case '0':
             case '1':
             case '2':
             case '3':
@@ -488,7 +482,7 @@ namespace smt::noodler::ecma {
         // called right after '\' inside character class
         if (m_position >= m_regex.length()) {
             // TODO: implement own exceptions later
-            throw default_exception("Lexical error: Unfinished escape sequence at the end of regex");
+            throw default_exception("ECMA regex syntax error: Unfinished escape sequence at the end of regex");
         }
 
         const uint32_t second_char = m_regex[m_position];
@@ -529,11 +523,11 @@ namespace smt::noodler::ecma {
         switch (current_char) {
             case ']':
                 m_in_char_class = false;
-                return make_token(token_type::CHAR_CLASS_END, current_char);
+                return make_token(token_type::CHAR_CLASS_END);
             case '-':
-                return make_token(token_type::CHAR_CLASS_RANGE, current_char);
+                return make_token(token_type::CHAR_CLASS_RANGE);
             case '^':
-                return make_token(token_type::CHAR_CLASS_NEGATION, current_char);
+                return make_token(token_type::CHAR_CLASS_NEGATION);
             case '\\':
                 return get_char_class_escape_sequence_token();
             default:
