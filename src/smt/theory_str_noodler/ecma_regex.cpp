@@ -669,6 +669,8 @@ namespace smt::noodler::ecma {
     }
 
     void ecma_parser::parse_disjunction() {
+        // Disjunction -> Alternative Disjunction2
+        // Disjunction2 -> ALTERNATION Alternative Disjunction2 | epsilon
         parse_alternative();
         while (match(token_type::ALTERNATION)) {
             parse_alternative();
@@ -676,6 +678,7 @@ namespace smt::noodler::ecma {
     }
 
     void ecma_parser::parse_alternative() {
+        // Alternative -> Term Alternative | epsilon
         while (m_current_token.type != token_type::ALTERNATION && m_current_token.type != token_type::GROUP_END &&
                m_current_token.type != token_type::END_OF_INPUT) {
             parse_term();
@@ -691,10 +694,26 @@ namespace smt::noodler::ecma {
             case token_type::LOOKBEHIND_NEG_START:
                 parse_assertion();
                 break;
-            default:
+            case token_type::LITERAL:
+            case token_type::DOT:
+            case token_type::BACKREFERENCE:
+            case token_type::CHAR_CLASS_ESCAPE:
+            case token_type::GROUP_START:
+            case token_type::GROUP_NAMED_START:
+            case token_type::GROUP_NONCAPTURE_START:
+            case token_type::CHAR_CLASS_START:
                 parse_atom();
-                match(token_type::QUANTIFIER);
+                parse_maybe_quantifier();
                 break;
+            default:
+                throw default_exception("Syntax error in ECMA regex: Unexpected token in term");
+        }
+    }
+
+    void ecma_parser::parse_maybe_quantifier() {
+        // MaybeQuantifier -> QUANTIFIER | epsilon
+        if (m_current_token.type == token_type::QUANTIFIER) {
+            next();
         }
     }
 
@@ -709,10 +728,10 @@ namespace smt::noodler::ecma {
             case token_type::LOOKBEHIND_NEG_START:
                 next();
                 parse_disjunction();
-                consume(token_type::GROUP_END, "Expected ')' after lookahead/lookbehind");
+                consume(token_type::GROUP_END, "Expected ')' after lookaround assertion");
                 break;
             default:
-                break;
+                throw default_exception("Syntax error in ECMA regex: Expected assertion");
         }
     }
 
@@ -720,33 +739,116 @@ namespace smt::noodler::ecma {
         switch (m_current_token.type) {
             case token_type::LITERAL:
             case token_type::DOT:
-            case token_type::CHAR_CLASS_ESCAPE:
             case token_type::BACKREFERENCE:
+            case token_type::CHAR_CLASS_ESCAPE:
                 next();
+                break;
+            case token_type::GROUP_START:
+            case token_type::GROUP_NAMED_START:
+            case token_type::GROUP_NONCAPTURE_START:
+                parse_group();
                 break;
             case token_type::CHAR_CLASS_START:
                 parse_character_class();
                 break;
+            default:
+                throw default_exception("Syntax error in ECMA regex: Unexpected token in atom");
+        }
+    }
+
+    void ecma_parser::parse_group() {
+        switch (m_current_token.type) {
             case token_type::GROUP_START:
-            case token_type::GROUP_NONCAPTURE_START:
             case token_type::GROUP_NAMED_START:
+            case token_type::GROUP_NONCAPTURE_START:
                 next();
                 parse_disjunction();
                 consume(token_type::GROUP_END, "Expected ')' after group");
                 break;
             default:
-                // TODO: implement own exceptions later
-                throw default_exception("Unexpected token in atom");
+                throw default_exception("Syntax error in ECMA regex: Expected group start");
         }
     }
 
     void ecma_parser::parse_character_class() {
         consume(token_type::CHAR_CLASS_START, "Expected '['");
-        match(token_type::CHAR_CLASS_NEGATION);
+        parse_maybe_negation();
+        parse_class_ranges();
+        consume(token_type::CHAR_CLASS_END, "Expected ']'");
+    }
 
-        while (m_current_token.type != token_type::CHAR_CLASS_END && m_current_token.type != token_type::END_OF_INPUT) {
+    void ecma_parser::parse_maybe_negation() {
+        if (m_current_token.type == token_type::CHAR_CLASS_NEGATION) {
             next();
         }
-        consume(token_type::CHAR_CLASS_END, "Expected ']'");
+    }
+
+    void ecma_parser::parse_class_ranges() {
+        // ClassRanges -> ClassAtom ClassRangesTail | epsilon
+        if (m_current_token.type == token_type::LITERAL || m_current_token.type == token_type::CHAR_CLASS_ESCAPE ||
+            m_current_token.type == token_type::CHAR_CLASS_RANGE) {
+            parse_class_atom();
+            parse_class_ranges_tail();
+        }
+    }
+
+    void ecma_parser::parse_class_ranges_tail() {
+        // ClassRangesTail -> CHAR_CLASS_RANGE DashTail | ClassAtomNoDash ClassRangesTail | epsilon
+        switch (m_current_token.type) {
+            case token_type::CHAR_CLASS_RANGE:
+                next();
+                parse_dash_tail();
+                break;
+            case token_type::LITERAL:
+            case token_type::CHAR_CLASS_ESCAPE:
+                parse_class_atom_no_dash();
+                parse_class_ranges_tail();
+                break;
+            default:
+                // epsilon
+                break;
+        }
+    }
+
+    void ecma_parser::parse_dash_tail() {
+        // DashTail -> ClassAtom ClassRanges | epsilon
+        switch (m_current_token.type) {
+            case token_type::LITERAL:
+            case token_type::CHAR_CLASS_ESCAPE:
+            case token_type::CHAR_CLASS_RANGE:
+                parse_class_atom();
+                parse_class_ranges();
+                break;
+            default:
+                // epsilon
+                break;
+        }
+    }
+
+    void ecma_parser::parse_class_atom() {
+        // ClassAtom -> ClassAtomNoDash | CHAR_CLASS_RANGE
+        switch (m_current_token.type) {
+            case token_type::LITERAL:
+            case token_type::CHAR_CLASS_ESCAPE:
+                parse_class_atom_no_dash();
+                break;
+            case token_type::CHAR_CLASS_RANGE:
+                next();
+                break;
+            default:
+                throw default_exception("Syntax error in ECMA regex: Expected class atom");
+        }
+    }
+
+    void ecma_parser::parse_class_atom_no_dash() {
+        // ClassAtomNoDash -> LITERAL | CHAR_CLASS_ESCAPE
+        switch (m_current_token.type) {
+            case token_type::LITERAL:
+            case token_type::CHAR_CLASS_ESCAPE:
+                next();
+                break;
+            default:
+                throw default_exception("Syntax error in ECMA regex: Expected literal or escape sequence");
+        }
     }
 }  // namespace smt::noodler::ecma

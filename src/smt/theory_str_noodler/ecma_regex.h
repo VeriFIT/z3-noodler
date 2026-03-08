@@ -29,7 +29,7 @@ namespace smt::noodler::ecma {
         LOOKBEHIND_NEG_START,    // (?<!
         GROUP_END,               // )
         LITERAL,                 // a, b, c, ...
-        QUANTIFIER,              // *, +, ?
+        QUANTIFIER,              // *, +, ?, {n,m}
     };
 
     typedef struct {
@@ -84,10 +84,17 @@ namespace smt::noodler::ecma {
 
     // ================== ECMA REGEX LEXER ==================
     class ecma_lexer {
+    public:
+        explicit ecma_lexer(zstring_view regex)
+            : m_regex(regex) { }
+
+        token get_next_token();
+        void perform_first_traverse();
+
     private:
         zstring_view m_regex;
         uint32_t m_position = 0;
-        uint32_t m_lexeme_start_pos = 0;  // m_lexeme_len je pryč!
+        uint32_t m_lexeme_start_pos = 0;
         uint32_t m_num_capture_groups = 0;
         bool m_in_char_class = false;
         bool m_first_traverse = true;
@@ -122,13 +129,6 @@ namespace smt::noodler::ecma {
         token get_token_char_class();
 
         bool is_capture_or_named_capture(uint32_t position);
-
-    public:
-        explicit ecma_lexer(zstring_view regex)
-            : m_regex(regex) { }
-
-        token get_next_token();
-        void perform_first_traverse();
     };
 
     // =============== ECMA REGEX PARSER ===============
@@ -140,6 +140,13 @@ namespace smt::noodler::ecma {
      *
      */
     class ecma_parser {
+    public:
+        explicit ecma_parser(zstring_view regex)
+            : m_lexer(regex),
+              m_current_token(m_lexer.get_next_token()) { }
+
+        regex_constraint_graph parse();
+
     private:
         ecma_lexer m_lexer;
         token m_current_token;
@@ -151,33 +158,34 @@ namespace smt::noodler::ecma {
         void parse_disjunction();
         void parse_alternative();
         void parse_term();
+        void parse_maybe_quantifier();
         void parse_assertion();
         void parse_atom();
+        void parse_group();
         void parse_character_class();
-
-    public:
-        explicit ecma_parser(zstring_view regex)
-            : m_lexer(regex),
-              m_current_token(m_lexer.get_next_token()) { }
-
-        regex_constraint_graph parse();
+        void parse_maybe_negation();
+        void parse_class_ranges();
+        void parse_class_ranges_tail();
+        void parse_dash_tail();
+        void parse_class_atom();
+        void parse_class_atom_no_dash();
     };
 
     // =============== ECMA REGEX HANDLER ===============
     class ecma_regex_handler {
-    private:
-        zstring_view m_regex;
-        ecma_parser m_parser;
-
     public:
         explicit ecma_regex_handler(const zstring& regex_pattern)
             : m_regex(regex_pattern),
               m_parser(regex_pattern) { }
 
-        void build_rcg() {
-            m_parser.parse();
+        regex_constraint_graph build_rcg() {
+            return m_parser.parse();
         }
 
         void generate_constraints() { }
+
+    private:
+        zstring_view m_regex;
+        ecma_parser m_parser;
     };
 }  // namespace smt::noodler::ecma
