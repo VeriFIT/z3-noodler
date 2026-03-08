@@ -111,7 +111,7 @@ namespace smt::noodler::ecma {
         token get_named_backref_token();
         token octal_or_backref(uint32_t first_digit);
         token get_octal_escape_sequence_token(bool from_char_class, uint32_t first_digit);
-        uint32_t validate_and_get_bound(uint32_t& bound) const;
+        uint32_t validate_and_get_bound(uint32_t& bound);
         token get_braced_quant_token();
         token get_lookbehind_or_named_group_token();
         token get_special_group_or_lookaround_token();
