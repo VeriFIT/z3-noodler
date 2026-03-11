@@ -12,26 +12,26 @@
 namespace smt::noodler::ecma {
     // ======================= UTILS =======================
     enum class token_type {
-        ALTERNATION,             // |
-        ASSERTION,               // ^, $, \b, \B
-        BACKREFERENCE,           // \1, \2, \k<name>
-        CHAR_CLASS_START,        // [
-        CHAR_CLASS_END,          // ]
-        CHAR_CLASS_NEGATION,     // '^' after '['
-        CHAR_CLASS_RANGE,        // '-' inside '[]'
-        CHAR_CLASS_ESCAPE,       // \d, \D, \s, \S, \w, \W
-        DOT,                     // .
-        END_OF_INPUT,            // EOF
-        GROUP_START,             // (
-        GROUP_NONCAPTURE_START,  // (?:
-        GROUP_NAMED_START,       // (?<name>
-        LOOKAHEAD_POS_START,     // (?=
-        LOOKAHEAD_NEG_START,     // (?!
-        LOOKBEHIND_POS_START,    // (?<=
-        LOOKBEHIND_NEG_START,    // (?<!
-        GROUP_END,               // )
-        LITERAL,                 // a, b, c, ...
-        QUANTIFIER,              // *, +, ?, {n,m}
+        ALTERNATION, // |
+        ASSERTION, // ^, $, \b, \B
+        BACKREFERENCE, // \1, \2, \k<name>
+        CHAR_CLASS_START, // [
+        CHAR_CLASS_END, // ]
+        CHAR_CLASS_NEGATION, // '^' after '['
+        CHAR_CLASS_RANGE, // '-' inside '[]'
+        CHAR_CLASS_ESCAPE, // \d, \D, \s, \S, \w, \W
+        DOT, // .
+        END_OF_INPUT, // EOF
+        GROUP_START, // (
+        GROUP_NONCAPTURE_START, // (?:
+        GROUP_NAMED_START, // (?<name>
+        LOOKAHEAD_POS_START, // (?=
+        LOOKAHEAD_NEG_START, // (?!
+        LOOKBEHIND_POS_START, // (?<=
+        LOOKBEHIND_NEG_START, // (?<!
+        GROUP_END, // )
+        LITERAL, // a, b, c, ...
+        QUANTIFIER, // *, +, ?, {n,m}
     };
 
     typedef struct {
@@ -111,7 +111,7 @@ namespace smt::noodler::ecma {
         static uint32_t hex2dec(zstring_view number);
         static uint32_t oct2dec(zstring_view number);
 
-        token make_token(token_type type, token_payload payload = {});
+        token make_token(token_type type, const token_payload& payload = {});
         token get_hex_escape_seq_token();
         token get_unicode_escape_seq_token();
         token get_control_escape_seq_token();
@@ -295,17 +295,17 @@ namespace smt::noodler::ecma {
     public:
         explicit ecma_regex_handler(const zstring& regex_pattern)
             : m_regex(regex_pattern),
-              m_parser(regex_pattern) { }
+              m_parser(regex_pattern) {}
 
         regex_constraint_graph build_rcg() {
             ast_node_ref ast = m_parser.parse();
             return {};
         }
 
-        void generate_constraints() { }
+        void generate_constraints() {}
 
     private:
         zstring_view m_regex;
         ecma_parser m_parser;
     };
-}  // namespace smt::noodler::ecma
+} // namespace smt::noodler::ecma
