@@ -587,6 +587,7 @@ namespace smt::noodler::ecma {
             if (!is_alnum(current_char) && current_char != '_' && current_char != '$') {
                 break;
             }
+            name_len++;
         }
         return (name_len > 0) && (found_closing_bracket);
     }
@@ -896,7 +897,6 @@ namespace smt::noodler::ecma {
     }
 
     ast_node_ref ecma_parser::parse_alternative() {
-        // Alternative -> Term Alternative | epsilon
         auto alt = std::make_shared<ast_node_alternative>();
         while (m_current_token.type != token_type::ALTERNATION && m_current_token.type != token_type::GROUP_END &&
                m_current_token.type != token_type::END_OF_INPUT) {
