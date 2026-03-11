@@ -32,9 +32,8 @@ namespace smt::noodler::ecma {
 
         if (m_in_char_class) {
             return get_token_char_class();
-        } else {
-            return get_token_standard();
         }
+        return get_token_standard();
     }
 
     bool ecma_lexer::is_digit(const uint32_t digit) {
@@ -94,7 +93,7 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    token ecma_lexer::make_token(token_type type, token_payload payload) {
+    token ecma_lexer::make_token(const token_type type, const token_payload payload) {
         uint32_t len = m_position - m_lexeme_start_pos;
         return {type, payload, zstring_view(&m_regex[m_lexeme_start_pos], len)};
     }
@@ -169,7 +168,7 @@ namespace smt::noodler::ecma {
         return make_token(token_type::LITERAL, alphabet_rank(control_char));
     }
 
-    uint32_t ecma_lexer::get_backref_name_len(const uint32_t name_start_pos) {
+    uint32_t ecma_lexer::get_backref_name_len(const uint32_t name_start_pos) const {
         bool found_closing_bracket = false;
         uint32_t name_length = 0;
         for (uint32_t pos = name_start_pos; pos < m_regex.length(); pos++) {
@@ -211,16 +210,14 @@ namespace smt::noodler::ecma {
 
         m_position++;  // consume '<'
         const uint32_t name_start_pos = m_position;
-        uint32_t name_length = get_backref_name_len(name_start_pos);
-
-        m_position += name_length + 1;  // consume name and '>'
-
+        const uint32_t name_length = get_backref_name_len(name_start_pos);
+        m_position += name_length + 1; // consume name and '>'
         return make_token(token_type::BACKREFERENCE, zstring_view(&m_regex[name_start_pos], name_length));
     }
 
     token ecma_lexer::octal_or_backref(uint32_t first_digit) {
         uint32_t decimal_val = first_digit - '0';
-        uint32_t fallback_pos = m_position;  // save position right after the first digit
+        const uint32_t fallback_pos = m_position; // save position right after the first digit
 
         // greedily read as much digits as possible
         while (m_position < m_regex.length()) {
@@ -274,7 +271,7 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_named_capture_group_token() {
         // called right after '(?<'
         uint32_t name_length = 0;
-        uint32_t group_name_start_pos = m_position;
+        const uint32_t group_name_start_pos = m_position;
         bool found_closing_bracket = false;
 
         while (m_position < m_regex.length()) {
@@ -307,7 +304,7 @@ namespace smt::noodler::ecma {
         // read digits one by one, save the decimal value of bound
         uint32_t parsed_digits = 0;
         while (m_position < m_regex.length()) {
-            uint32_t current_digit = m_regex[m_position];
+            const uint32_t current_digit = m_regex[m_position];
             if (!is_digit(current_digit)) {
                 break;
             }
@@ -402,7 +399,6 @@ namespace smt::noodler::ecma {
 
         const uint32_t third_char = m_regex[m_position];
         m_position++;
-
         switch (third_char) {
             case ':':
                 return make_token(token_type::GROUP_NONCAPTURE_START);
@@ -422,8 +418,7 @@ namespace smt::noodler::ecma {
         if (m_position >= m_regex.length() || m_regex[m_position] != '?') {
             return make_token(token_type::GROUP_START);
         }
-
-        m_position++;  // consume '?'
+        m_position++; // consume '?'
         return get_special_group_or_lookaround_token();
     }
 
@@ -545,7 +540,7 @@ namespace smt::noodler::ecma {
         const uint32_t current_char = m_regex[m_position];
         m_position++;
 
-        bool is_first = m_first_in_char_class;
+        const bool is_first = m_first_in_char_class;
         m_first_in_char_class = false;
 
         switch (current_char) {
@@ -653,129 +648,190 @@ namespace smt::noodler::ecma {
     }
 
     // ================== ECMA REGEX AST ==================
+    uint32_t ast_node_disjunction::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        out << "  node" << id << " [label=\"DISJUNCTION\"];\n";
+        for (const ast_node_ref& alt : m_alternatives) {
+            const int child_id = alt->print_dot(out, node_count);
+            out << "  node" << id << " -> node" << child_id << ";\n";
+        }
+        return id;
+    }
 
-    void ast_node::print_dot(std::ostream& out, int& node_count) const {
-        int current_id = node_count++;
+    void ast_node_disjunction::add_alternative(ast_node_ref alt) {
+        m_alternatives.push_back(std::move(alt));
+    }
 
-        std::string label;
-        switch (type) {
-            case ast_node_type::DISJUNCTION:
-                label = "DISJUNCTION";
-                break;
-            case ast_node_type::ALTERNATIVE:
-                label = "ALTERNATIVE";
-                break;
-            case ast_node_type::ASSERTION: {
-                label = "ASSERTION";
-                if (std::holds_alternative<uint32_t>(payload)) {
-                    label += std::string(" '") + static_cast<char>(std::get<uint32_t>(payload)) + "'";
-                }
-                break;
+    uint32_t ast_node_alternative::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        out << "  node" << id << " [label=\"ALTERNATIVE\"];\n";
+        for (const ast_node_ref& term : m_terms) {
+            const int child_id = term->print_dot(out, node_count);
+            out << "  node" << id << " -> node" << child_id << ";\n";
+        }
+        return id;
+    }
+
+    void ast_node_alternative::add_term(ast_node_ref term) {
+        m_terms.push_back(std::move(term));
+    }
+
+    uint32_t ast_node_assertion::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        std::string label = "ASSERTION (";
+        if (m_child) {
+            switch (m_assert_type) {
+                case token_type::LOOKAHEAD_POS_START:
+                    label += "?=";
+                    break;
+                case token_type::LOOKAHEAD_NEG_START:
+                    label += "?!";
+                    break;
+                case token_type::LOOKBEHIND_POS_START:
+                    label += "?<=";
+                    break;
+                case token_type::LOOKBEHIND_NEG_START:
+                    label += "?<!";
+                    break;
+                default:
+                    break;
             }
-            case ast_node_type::QUANTIFIER: {
-                label = "QUANTIFIER";
-                if (std::holds_alternative<uint32_t>(payload)) {
-                    label += std::string(" '") + static_cast<char>(std::get<uint32_t>(payload)) + "'";
-                } else if (std::holds_alternative<quantifier_range>(payload)) {
-                    quantifier_range qr = std::get<quantifier_range>(payload);
-                    label += std::string(" {") + std::to_string(qr.min) + ",";
-                    if (qr.max == std::numeric_limits<uint32_t>::max()) {
-                        label += "inf}";
-                    } else {
-                        label += std::to_string(qr.max) + "}";
-                    }
-                }
-                break;
-            }
-            case ast_node_type::LITERAL: {
-                label = "LITERAL";
-                if (std::holds_alternative<uint32_t>(payload)) {
-                    char c = static_cast<char>(std::get<uint32_t>(payload));
-                    if (c == '"' || c == '\\') {
-                        label += std::string(" '\\") + c + "'";
-                    } else if (c >= ' ' && c <= '~') {
-                        label += std::string(" '") + c + "'";
-                    } else {
-                        label += std::string(" #") + std::to_string(c);
-                    }
-                }
-                break;
-            }
-            case ast_node_type::DOT:
-                label = ".";
-                break;
-            case ast_node_type::BACKREFERENCE: {
-                label = "BACKREFERENCE";
-                if (std::holds_alternative<uint32_t>(payload)) {
-                    label += std::string(" '\\") + std::to_string(std::get<uint32_t>(payload)) + "'";
-                } else if (std::holds_alternative<zstring_view>(payload)) {
-                    zstring_view name = std::get<zstring_view>(payload);
-                    std::string name_str;
-                    for (uint32_t i = 0; i < name.length(); i++) {
-                        name_str += static_cast<char>(name[i]);
-                    }
-                    label += std::string(" '") + name_str + "'";
-                }
-                break;
-            }
-            case ast_node_type::CHAR_CLASS_ESCAPE: {
-                label = "CHAR_CLASS_ESCAPE";
-                if (std::holds_alternative<uint32_t>(payload)) {
-                    label += std::string(" '\\") + static_cast<char>(std::get<uint32_t>(payload)) + "'";
-                }
-                break;
-            }
-            case ast_node_type::GROUP:
-                label = "GROUP";
-                break;
-            case ast_node_type::GROUP_NAMED: {
-                label = "GROUP_NAMED";
-                if (std::holds_alternative<zstring_view>(payload)) {
-                    zstring_view name = std::get<zstring_view>(payload);
-                    std::string name_str;
-                    for (uint32_t i = 0; i < name.length(); i++) {
-                        name_str += static_cast<char>(name[i]);
-                    }
-                    label += std::string(" '") + name_str + "'";
-                }
-                break;
-            }
-            case ast_node_type::GROUP_NONCAPTURE:
-                label = "GROUP_NONCAPTURE";
-                break;
-            case ast_node_type::CHARACTER_CLASS: {
-                label = "CHARACTER_CLASS";
-                if (is_negated) {
-                    label += " (^)";
-                }
-                break;
-            }
-            case ast_node_type::CLASS_RANGES:
-                label = "CLASS_RANGES";
-                break;
-            case ast_node_type::CLASS_ATOM: {
-                label = "CLASS_ATOM";
-                if (std::holds_alternative<uint32_t>(payload)) {
-                    char c = static_cast<char>(std::get<uint32_t>(payload));
-                    if (c >= ' ' && c <= '~') {
-                        label += std::string(" '") + c + "'";
-                    } else {
-                        label += std::string(" #") + std::to_string(c);
-                    }
-                }
-                break;
+            label += ")";
+            out << "  node" << id << " [label=\"" << label << "\"];\n";
+            const int child_id = m_child->print_dot(out, node_count);
+            out << "  node" << id << " -> node" << child_id << ";\n";
+        } else {
+            label += std::string(1, static_cast<char>(m_payload)) + ")";
+            out << "  node" << id << " [label=\"" << label << "\"];\n";
+        }
+        return id;
+    }
+
+    void ast_node_assertion::set_type(const token_type type) {
+        m_assert_type = type;
+    }
+
+    void ast_node_assertion::set_payload(const uint32_t payload) {
+        m_payload = payload;
+    }
+
+    void ast_node_assertion::set_expr(ast_node_ref expr) {
+        m_child = std::move(expr);
+    }
+
+    uint32_t ast_node_quantifier::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        out << "  node" << id << " [label=\"QUANTIFIER {" << m_range.min << ",";
+        if (m_range.max == std::numeric_limits<uint32_t>::max()) {
+            out << "inf";
+        } else {
+            out << m_range.max;
+        }
+        out << "}\"];\n";
+        const int child_id = m_child->print_dot(out, node_count);
+        out << "  node" << id << " -> node" << child_id << ";\n";
+        return id;
+    }
+
+    void ast_node_quantifier::set(const token& t, ast_node_ref term) {
+        if (std::holds_alternative<quantifier_range>(t.payload)) {
+            m_range = std::get<quantifier_range>(t.payload);
+        } else if (std::holds_alternative<uint32_t>(t.payload)) {
+            uint32_t ch = std::get<uint32_t>(t.payload);
+            if (ch == '*') {
+                m_range = {0, std::numeric_limits<uint32_t>::max()};
+            } else if (ch == '+') {
+                m_range = {1, std::numeric_limits<uint32_t>::max()};
+            } else if (ch == '?') {
+                m_range = {0, 1};
             }
         }
+        m_child = std::move(term);
+    }
 
-        out << "  node" << current_id << " [label=\"" << label << "\"];\n";
+    uint32_t ast_node_literal::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        out << "  node" << id << " [label=\"LITERAL ('" << static_cast<char>(m_char) << "')\"];\n";
+        return id;
+    }
 
-        for (const auto& child : children) {
-            if (child) {
-                int child_id = node_count;
-                child->print_dot(out, node_count);
-                out << "  node" << current_id << " -> node" << child_id << ";\n";
+    void ast_node_literal::set_char(const uint32_t ch) {
+        m_char = ch;
+    }
+
+    uint32_t ast_node_dot::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        out << "  node" << id << " [label=\"DOT\"];\n";
+        return id;
+    }
+
+    uint32_t ast_node_backreference::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        out << "  node" << id << " [label=\"BACKREF\"];\n";
+        return id;
+    }
+
+    uint32_t ast_node_group::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        std::string label = "GROUP";
+        if (m_type == group_type::NAMED) {
+            label += " (?<";
+            for (uint32_t i = 0; i < m_name.length(); i++) {
+                label += static_cast<char>(m_name[i]);
+            }
+        } else if (m_type == group_type::NONCAPTURE) {
+            label += " (?:)";
+        }
+
+        out << "  node" << id << " [label=\"" << label << "\"];\n";
+        const int child_id = m_child->print_dot(out, node_count);
+        out << "  node" << id << " -> node" << child_id << ";\n";
+        return id;
+    }
+
+    void ast_node_group::set_type(const group_type type) {
+        m_type = type;
+    }
+
+    void ast_node_group::set_name(const zstring_view name) {
+        m_name = name;
+    }
+
+    void ast_node_group::set_expr(ast_node_ref expr) {
+        m_child = std::move(expr);
+    }
+
+    uint32_t ast_node_character_class::print_dot(std::ostream& out, uint32_t& node_count) const {
+        const int id = ++node_count;
+        std::string label = "CLASS [";
+        if (m_is_negated) {
+            label += "^";
+        }
+
+        for (const auto& [kind, lower, upper] : m_elements) {
+            if (kind == element_type::SINGLE) {
+                label += static_cast<char>(lower);
+            } else if (kind == element_type::ESCAPE) {
+                label += "\\";
+                label += static_cast<char>(lower);
+            } else if (kind == element_type::RANGE) {
+                label += static_cast<char>(lower);
+                label += "-";
+                label += static_cast<char>(upper);
             }
         }
+        label += "]";
+
+        out << "  node" << id << " [label=\"" << label << "\"];\n";
+        return id;
+    }
+
+    void ast_node_character_class::add_element(const char_class_element elem) {
+        m_elements.push_back(elem);
+    }
+
+    void ast_node_character_class::set_negation(const bool neg) {
+        m_is_negated = neg;
     }
 
     // =============== ECMA REGEX PARSER ===============
@@ -789,7 +845,7 @@ namespace smt::noodler::ecma {
         fs::path dot_file = project_root / "output.dot";
         std::ofstream out(dot_file);
         if (out.is_open()) {
-            int node_count = 0;
+            uint32_t node_count = 0;
             out << "digraph G {\n";
             ast->print_dot(out, node_count);
             out << "}" << std::endl;
@@ -814,7 +870,7 @@ namespace smt::noodler::ecma {
 
     token ecma_parser::consume(const token_type type, const char* message) {
         if (m_current_token.type == type) {
-            token t = m_current_token;
+            const token t = m_current_token;
             next();
             return t;
         }
@@ -826,31 +882,30 @@ namespace smt::noodler::ecma {
         // Disjunction2 -> ALTERNATION Alternative Disjunction2 | epsilon
         ast_node_ref alt = parse_alternative();
 
+        // little optimalization -- only one alternative --> no disjunction node
         if (m_current_token.type != token_type::ALTERNATION) {
             return alt;
         }
 
-        ast_node_ref disj = std::make_shared<ast_node>(ast_node_type::DISJUNCTION);
-        disj->children.push_back(alt);
-
+        auto disj = std::make_shared<ast_node_disjunction>();
+        disj->add_alternative(std::move(alt));
         while (match(token_type::ALTERNATION)) {
-            disj->children.push_back(parse_alternative());
+            disj->add_alternative(parse_alternative());
         }
         return disj;
     }
 
     ast_node_ref ecma_parser::parse_alternative() {
         // Alternative -> Term Alternative | epsilon
-        ast_node_ref alt = std::make_shared<ast_node>(ast_node_type::ALTERNATIVE);
+        auto alt = std::make_shared<ast_node_alternative>();
         while (m_current_token.type != token_type::ALTERNATION && m_current_token.type != token_type::GROUP_END &&
                m_current_token.type != token_type::END_OF_INPUT) {
-            alt->children.push_back(parse_term());
+            alt->add_term(parse_term());
         }
         return alt;
     }
 
     ast_node_ref ecma_parser::parse_term() {
-        ast_node_ref atom_or_assertion;
         switch (m_current_token.type) {
             case token_type::ASSERTION:
             case token_type::LOOKAHEAD_POS_START:
@@ -866,8 +921,7 @@ namespace smt::noodler::ecma {
             case token_type::GROUP_NAMED_START:
             case token_type::GROUP_NONCAPTURE_START:
             case token_type::CHAR_CLASS_START:
-                atom_or_assertion = parse_atom();
-                return parse_maybe_quantifier(atom_or_assertion);
+                return parse_maybe_quantifier(parse_atom());
             default:
                 throw default_exception("Syntax error in ECMA regex: Unexpected token in term");
         }
@@ -876,20 +930,26 @@ namespace smt::noodler::ecma {
     ast_node_ref ecma_parser::parse_maybe_quantifier(ast_node_ref term) {
         // MaybeQuantifier -> QUANTIFIER | epsilon
         if (m_current_token.type == token_type::QUANTIFIER) {
-            token t = m_current_token;
+            const token t = m_current_token;
             next();
-            ast_node_ref quant = std::make_shared<ast_node>(ast_node_type::QUANTIFIER, t.payload);
-            quant->children.push_back(term);
+
+            auto quant = std::make_shared<ast_node_quantifier>();
+            quant->set(t, std::move(term));
             return quant;
         }
         return term;
     }
 
     ast_node_ref ecma_parser::parse_assertion() {
-        token t = m_current_token;
-        ast_node_ref node = std::make_shared<ast_node>(ast_node_type::ASSERTION, t.payload);
+        const token t = m_current_token;
+        auto node = std::make_shared<ast_node_assertion>();
+        node->set_type(t.type);
+
         switch (m_current_token.type) {
             case token_type::ASSERTION:
+                if (std::holds_alternative<uint32_t>(t.payload)) {
+                    node->set_payload(std::get<uint32_t>(t.payload));
+                }
                 next();
                 return node;
             case token_type::LOOKAHEAD_POS_START:
@@ -897,7 +957,7 @@ namespace smt::noodler::ecma {
             case token_type::LOOKBEHIND_POS_START:
             case token_type::LOOKBEHIND_NEG_START:
                 next();
-                node->children.push_back(parse_disjunction());
+                node->set_expr(parse_disjunction());
                 consume(token_type::GROUP_END, "Expected ')' after lookaround assertion");
                 return node;
             default:
@@ -906,26 +966,35 @@ namespace smt::noodler::ecma {
     }
 
     ast_node_ref ecma_parser::parse_atom() {
-        token t = m_current_token;
+        const token t = m_current_token;
         switch (m_current_token.type) {
-            case token_type::LITERAL:
-            case token_type::DOT:
-            case token_type::BACKREFERENCE:
-            case token_type::CHAR_CLASS_ESCAPE:
+            case token_type::LITERAL: {
+                auto node = std::make_shared<ast_node_literal>();
+                if (std::holds_alternative<uint32_t>(t.payload)) {
+                    node->set_char(std::get<uint32_t>(t.payload));
+                }
                 next();
-                if (t.type == token_type::LITERAL) {
-                    return std::make_shared<ast_node>(ast_node_type::LITERAL, t.payload);
+                return node;
+            }
+            case token_type::DOT:
+                next();
+                return std::make_shared<ast_node_dot>();
+            case token_type::BACKREFERENCE: {
+                auto node = std::make_shared<ast_node_backreference>();
+                // Překopírovat payload... (ve tvé implementaci bys řešil string vs index)
+                next();
+                return node;
+            }
+            case token_type::CHAR_CLASS_ESCAPE: {
+                auto node = std::make_shared<ast_node_character_class>();
+                if (std::holds_alternative<uint32_t>(t.payload)) {
+                    const char_class_element elem{.kind = element_type::ESCAPE,
+                                                  .lower = std::get<uint32_t>(t.payload)};
+                    node->add_element(elem);
                 }
-                if (t.type == token_type::DOT) {
-                    return std::make_shared<ast_node>(ast_node_type::DOT);
-                }
-                if (t.type == token_type::BACKREFERENCE) {
-                    return std::make_shared<ast_node>(ast_node_type::BACKREFERENCE, t.payload);
-                }
-                if (t.type == token_type::CHAR_CLASS_ESCAPE) {
-                    return std::make_shared<ast_node>(ast_node_type::CHAR_CLASS_ESCAPE, t.payload);
-                }
-                return nullptr;
+                next();
+                return node;
+            }
             case token_type::GROUP_START:
             case token_type::GROUP_NAMED_START:
             case token_type::GROUP_NONCAPTURE_START:
@@ -938,121 +1007,123 @@ namespace smt::noodler::ecma {
     }
 
     ast_node_ref ecma_parser::parse_group() {
-        token t = m_current_token;
-        ast_node_ref node;
+        const token t = m_current_token;
+        auto node = std::make_shared<ast_node_group>();
+
         switch (m_current_token.type) {
             case token_type::GROUP_START:
-                node = std::make_shared<ast_node>(ast_node_type::GROUP);
+                node->set_type(group_type::NORMAL);
                 next();
-                node->children.push_back(parse_disjunction());
-                consume(token_type::GROUP_END, "Expected ')' after group");
-                return node;
+                break;
             case token_type::GROUP_NAMED_START:
-                node = std::make_shared<ast_node>(ast_node_type::GROUP_NAMED, t.payload);
+                node->set_type(group_type::NAMED);
+                if (std::holds_alternative<zstring_view>(t.payload)) {
+                    node->set_name(std::get<zstring_view>(t.payload));
+                } else {
+                    throw default_exception("Internal error: GROUP_NAMED_START has no name");
+                }
                 next();
-                node->children.push_back(parse_disjunction());
-                consume(token_type::GROUP_END, "Expected ')' after group");
-                return node;
+                break;
             case token_type::GROUP_NONCAPTURE_START:
-                node = std::make_shared<ast_node>(ast_node_type::GROUP_NONCAPTURE);
+                node->set_type(group_type::NONCAPTURE);
                 next();
-                node->children.push_back(parse_disjunction());
-                consume(token_type::GROUP_END, "Expected ')' after group");
-                return node;
+                break;
             default:
                 throw default_exception("Syntax error in ECMA regex: Expected group start");
         }
+        node->set_expr(parse_disjunction());
+        consume(token_type::GROUP_END, "Expected ')' after group");
+        return node;
     }
 
     ast_node_ref ecma_parser::parse_character_class() {
         consume(token_type::CHAR_CLASS_START, "Expected '['");
-        bool negated = parse_maybe_negation();
-        ast_node_ref node = std::make_shared<ast_node>(ast_node_type::CHARACTER_CLASS, token_payload {}, negated);
+
+        auto node = std::make_shared<ast_node_character_class>();
+        node->set_negation(match(token_type::CHAR_CLASS_NEGATION));
+
         parse_class_ranges(node);
         consume(token_type::CHAR_CLASS_END, "Expected ']'");
         return node;
     }
 
-    bool ecma_parser::parse_maybe_negation() {
-        if (m_current_token.type == token_type::CHAR_CLASS_NEGATION) {
-            next();
-            return true;
+    void ecma_parser::add_atom_to_class(const std::shared_ptr<ast_node_character_class>& parent,
+                                        const class_atom atom) const {
+        if (atom.is_escape) {
+            parent->add_element({.kind = element_type::ESCAPE, .lower = atom.val});
+        } else {
+            parent->add_element({.kind = element_type::SINGLE, .lower = atom.val});
         }
-        return false;
     }
 
-    void ecma_parser::parse_class_ranges(const ast_node_ref& parent) {
-        // ClassRanges -> ClassAtom ClassRangesTail | epsilon
+    void ecma_parser::parse_class_ranges(const std::shared_ptr<ast_node_character_class>& parent) {
         if (m_current_token.type == token_type::LITERAL || m_current_token.type == token_type::CHAR_CLASS_ESCAPE ||
             m_current_token.type == token_type::CHAR_CLASS_RANGE) {
-            parent->children.push_back(parse_class_atom());
-            parse_class_ranges_tail(parent);
+            parse_class_ranges_tail(parent, parse_class_atom());
         }
     }
 
-    void ecma_parser::parse_class_ranges_tail(const ast_node_ref& parent) {
-        // ClassRangesTail -> CHAR_CLASS_RANGE DashTail | ClassAtomNoDash ClassRangesTail | epsilon
+    void ecma_parser::parse_class_ranges_tail(const std::shared_ptr<ast_node_character_class>& parent,
+                                              const class_atom prev_atom) {
         switch (m_current_token.type) {
             case token_type::CHAR_CLASS_RANGE:
                 next();
-                parent->children.push_back(
-                    std::make_shared<ast_node>(ast_node_type::LITERAL, static_cast<uint32_t>('-')));
-                parse_dash_tail(parent);
+                parse_dash_tail(parent, prev_atom);
                 break;
             case token_type::LITERAL:
-            case token_type::CHAR_CLASS_ESCAPE:
-                parent->children.push_back(parse_class_atom_no_dash());
-                parse_class_ranges_tail(parent);
-                break;
-            default:
-                // epsilon
+            case token_type::CHAR_CLASS_ESCAPE: {
+                add_atom_to_class(parent, prev_atom);
+                const class_atom next_atom = parse_class_atom_no_dash();
+                parse_class_ranges_tail(parent, next_atom);
+            }
+            break;
+            default: // epsilon
+                add_atom_to_class(parent, prev_atom);
                 break;
         }
     }
 
-    void ecma_parser::parse_dash_tail(const ast_node_ref& parent) {
-        // DashTail -> ClassAtom ClassRanges | epsilon
+    void ecma_parser::parse_dash_tail(const std::shared_ptr<ast_node_character_class>& parent,
+                                      const class_atom prev_atom) {
         switch (m_current_token.type) {
             case token_type::LITERAL:
             case token_type::CHAR_CLASS_ESCAPE:
-            case token_type::CHAR_CLASS_RANGE:
-                parent->children.push_back(parse_class_atom());
-                parse_class_ranges(parent);
+                // TODO: based on prev_atom, we decide whether this is an error or not
                 break;
-            default:
-                // epsilon
+            case token_type::CHAR_CLASS_RANGE: {
+                // TODO: two dashes in a row, read standard and implement
+                break;
+            }
+            default: // epsilon
+                // '-' at the end of character class, its a literal
+                add_atom_to_class(parent, prev_atom);
+                parent->add_element({element_type::SINGLE, static_cast<uint32_t>('-'), 0});
                 break;
         }
     }
 
-    ast_node_ref ecma_parser::parse_class_atom() {
-        // ClassAtom -> ClassAtomNoDash | CHAR_CLASS_RANGE
+    class_atom ecma_parser::parse_class_atom() {
         switch (m_current_token.type) {
             case token_type::LITERAL:
             case token_type::CHAR_CLASS_ESCAPE:
                 return parse_class_atom_no_dash();
             case token_type::CHAR_CLASS_RANGE:
                 next();
-                return std::make_shared<ast_node>(ast_node_type::LITERAL, static_cast<uint32_t>('-'));
+                return {false, static_cast<uint32_t>('-')};
             default:
                 throw default_exception("Syntax error in ECMA regex: Expected class atom");
         }
     }
 
-    ast_node_ref ecma_parser::parse_class_atom_no_dash() {
-        // ClassAtomNoDash -> LITERAL | CHAR_CLASS_ESCAPE
-        token t = m_current_token;
+    class_atom ecma_parser::parse_class_atom_no_dash() {
+        const token t = m_current_token;
         switch (m_current_token.type) {
             case token_type::LITERAL:
+                next();
+                return {false, std::get<uint32_t>(t.payload)};
             case token_type::CHAR_CLASS_ESCAPE:
                 next();
-                if (t.type == token_type::LITERAL) {
-                    return std::make_shared<ast_node>(ast_node_type::CLASS_ATOM, t.payload);
-                }
-                if (t.type == token_type::CHAR_CLASS_ESCAPE) {
-                    return std::make_shared<ast_node>(ast_node_type::CHAR_CLASS_ESCAPE, t.payload);
-                }
-                return nullptr;
+                return {true, std::get<uint32_t>(t.payload)};
             default:
                 throw default_exception("Syntax error in ECMA regex: Expected literal or escape sequence");
         }
