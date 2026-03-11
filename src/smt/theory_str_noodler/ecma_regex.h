@@ -12,26 +12,26 @@
 namespace smt::noodler::ecma {
     // ======================= UTILS =======================
     enum class token_type {
-        ALTERNATION,             // |
-        ASSERTION,               // ^, $, \b, \B
-        BACKREFERENCE,           // \1, \2, \k<name>
-        CHAR_CLASS_START,        // [
-        CHAR_CLASS_END,          // ]
-        CHAR_CLASS_NEGATION,     // '^' after '['
-        CHAR_CLASS_RANGE,        // '-' inside '[]'
-        CHAR_CLASS_ESCAPE,       // \d, \D, \s, \S, \w, \W
-        DOT,                     // .
-        END_OF_INPUT,            // EOF
-        GROUP_START,             // (
-        GROUP_NONCAPTURE_START,  // (?:
-        GROUP_NAMED_START,       // (?<name>
-        LOOKAHEAD_POS_START,     // (?=
-        LOOKAHEAD_NEG_START,     // (?!
-        LOOKBEHIND_POS_START,    // (?<=
-        LOOKBEHIND_NEG_START,    // (?<!
-        GROUP_END,               // )
-        LITERAL,                 // a, b, c, ...
-        QUANTIFIER,              // *, +, ?, {n,m}
+        ALTERNATION, // |
+        ASSERTION, // ^, $, \b, \B
+        BACKREFERENCE, // \1, \2, \k<name>
+        CHAR_CLASS_START, // [
+        CHAR_CLASS_END, // ]
+        CHAR_CLASS_NEGATION, // '^' after '['
+        CHAR_CLASS_RANGE, // '-' inside '[]'
+        CHAR_CLASS_ESCAPE, // \d, \D, \s, \S, \w, \W
+        DOT, // .
+        END_OF_INPUT, // EOF
+        GROUP_START, // (
+        GROUP_NONCAPTURE_START, // (?:
+        GROUP_NAMED_START, // (?<name>
+        LOOKAHEAD_POS_START, // (?=
+        LOOKAHEAD_NEG_START, // (?!
+        LOOKBEHIND_POS_START, // (?<=
+        LOOKBEHIND_NEG_START, // (?<!
+        GROUP_END, // )
+        LITERAL, // a, b, c, ...
+        QUANTIFIER, // *, +, ?, {n,m}
     };
 
     typedef struct {
@@ -87,8 +87,8 @@ namespace smt::noodler::ecma {
     // ================== ECMA REGEX LEXER ==================
     class ecma_lexer {
     public:
-        explicit ecma_lexer(zstring_view regex)
-            : m_regex(regex) { }
+        explicit ecma_lexer(const zstring_view regex)
+            : m_regex(regex) {}
 
         token get_next_token();
 
@@ -111,12 +111,12 @@ namespace smt::noodler::ecma {
         static uint32_t hex2dec(zstring_view number);
         static uint32_t oct2dec(zstring_view number);
 
-        token make_token(token_type type, token_payload payload = {});
+        token make_token(token_type type, const token_payload& payload = {});
         token get_hex_escape_seq_token();
         token get_unicode_escape_seq_token();
         token get_control_escape_seq_token();
         token get_named_capture_group_token();
-        uint32_t get_backref_name_len(uint32_t name_start_pos);
+        uint32_t get_backref_name_len(uint32_t name_start_pos) const;
         token get_named_backref_token();
         token octal_or_backref(uint32_t first_digit);
         token get_octal_escape_sequence_token(bool from_char_class, uint32_t first_digit);
@@ -134,53 +134,133 @@ namespace smt::noodler::ecma {
     };
 
     // ================== ECMA REGEX AST ==================
-    enum class ast_node_type {
-        DISJUNCTION,
-        ALTERNATIVE,
-        ASSERTION,
-        QUANTIFIER,
-        LITERAL,
-        DOT,
-        BACKREFERENCE,
-        CHAR_CLASS_ESCAPE,
-        GROUP,
-        GROUP_NAMED,
-        GROUP_NONCAPTURE,
-        CHARACTER_CLASS,
-        CLASS_RANGES,
-        CLASS_ATOM
+
+    class ast_node {
+    public:
+        virtual ~ast_node() = default;
+        virtual uint32_t print_dot(std::ostream& out, uint32_t& node_count) const = 0;
     };
 
-    struct ast_node;
     using ast_node_ref = std::shared_ptr<ast_node>;
 
-    struct ast_node {
-        ast_node_type type;
-        token_payload payload;
-        bool is_negated;  // used for character classes
-        std::vector<ast_node_ref> children;
+    class ast_node_disjunction : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        void add_alternative(ast_node_ref alt);
 
-        ast_node(ast_node_type t, token_payload p = {}, bool n = false)
-            : type(t),
-              payload(p),
-              is_negated(n) { }
+    private:
+        std::vector<ast_node_ref> m_alternatives;
+    };
 
-        void print_dot(std::ostream& out, int& node_count) const;
+    class ast_node_alternative : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        void add_term(ast_node_ref term);
+
+    private:
+        std::vector<ast_node_ref> m_terms;
+    };
+
+    class ast_node_assertion : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        void set_type(token_type type);
+        void set_payload(uint32_t payload);
+        void set_expr(ast_node_ref expr);
+
+    private:
+        token_type m_assert_type{};
+        uint32_t m_payload{}; // Pro ^, $, \b, \B
+        ast_node_ref m_child; // Pro lookaroundy (mohou být null pro ^, $, \b)
+    };
+
+    class ast_node_quantifier : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        void set(const token& t, ast_node_ref term);
+
+    private:
+        quantifier_range m_range{};
+        ast_node_ref m_child;
+    };
+
+    class ast_node_literal : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        void set_char(uint32_t ch);
+
+    private:
+        uint32_t m_char = std::numeric_limits<uint32_t>::max();
+    };
+
+    class ast_node_dot : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+    };
+
+    class ast_node_backreference : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+
+    private:
+        std::variant<uint32_t, zstring_view> m_ref;
+    };
+
+    enum class group_type {
+        NORMAL,
+        NONCAPTURE,
+        NAMED
+    };
+
+    class ast_node_group : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        void set_type(group_type type);
+        void set_name(zstring_view name);
+        void set_expr(ast_node_ref expr);
+
+    private:
+        group_type m_type = group_type::NORMAL;
+
+        zstring_view m_name;
+        ast_node_ref m_child;
+    };
+
+    enum class element_type {
+        SINGLE,
+        RANGE,
+        ESCAPE
+    };
+
+    struct char_class_element {
+        element_type kind = element_type::SINGLE;
+        uint32_t lower = 0; // for SINGLE and ESCAPE, this serves as the value
+        uint32_t upper = std::numeric_limits<uint32_t>::max();
+    };
+
+    class ast_node_character_class : public ast_node {
+    public:
+        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        void add_element(char_class_element elem);
+        void set_negation(bool neg);
+
+    private:
+        bool m_is_negated = false;
+        std::vector<char_class_element> m_elements;
+    };
+
+    struct class_atom {
+        bool is_escape;
+        uint32_t val;
     };
 
     // =============== ECMA REGEX PARSER ===============
 
-    /**
-     * @brief The ECMAScript2020 regular expression parser class.
-     * The parser is based on grammar found at https://tc39.es/ecma262/2020/#sec-regular-expressions.
-     *
-     *
-     */
     class ecma_parser {
     public:
-        explicit ecma_parser(zstring_view regex)
+        explicit ecma_parser(const zstring_view regex)
             : m_lexer(regex),
-              m_current_token(m_lexer.get_next_token()) { }
+              m_current_token(m_lexer.get_next_token()) {}
 
         ast_node_ref parse();
 
@@ -200,12 +280,14 @@ namespace smt::noodler::ecma {
         ast_node_ref parse_atom();
         ast_node_ref parse_group();
         ast_node_ref parse_character_class();
-        bool parse_maybe_negation();
-        void parse_class_ranges(const ast_node_ref& parent);
-        void parse_class_ranges_tail(const ast_node_ref& parent);
-        void parse_dash_tail(const ast_node_ref& parent);
-        ast_node_ref parse_class_atom();
-        ast_node_ref parse_class_atom_no_dash();
+
+        void parse_class_ranges(const std::shared_ptr<ast_node_character_class>& parent);
+        void parse_class_ranges_tail(const std::shared_ptr<ast_node_character_class>& parent, class_atom prev_atom);
+        void parse_dash_tail(const std::shared_ptr<ast_node_character_class>& parent, class_atom prev_atom);
+        class_atom parse_class_atom();
+        class_atom parse_class_atom_no_dash();
+
+        void add_atom_to_class(const std::shared_ptr<ast_node_character_class>& parent, class_atom atom) const;
     };
 
     // =============== ECMA REGEX HANDLER ===============
@@ -213,17 +295,17 @@ namespace smt::noodler::ecma {
     public:
         explicit ecma_regex_handler(const zstring& regex_pattern)
             : m_regex(regex_pattern),
-              m_parser(regex_pattern) { }
+              m_parser(regex_pattern) {}
 
         regex_constraint_graph build_rcg() {
             ast_node_ref ast = m_parser.parse();
             return {};
         }
 
-        void generate_constraints() { }
+        void generate_constraints() {}
 
     private:
         zstring_view m_regex;
         ecma_parser m_parser;
     };
-}  // namespace smt::noodler::ecma
+} // namespace smt::noodler::ecma
