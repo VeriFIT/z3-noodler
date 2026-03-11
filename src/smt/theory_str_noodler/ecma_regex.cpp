@@ -93,7 +93,7 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    token ecma_lexer::make_token(const token_type type, const token_payload payload) {
+    token ecma_lexer::make_token(const token_type type, const token_payload& payload) {
         uint32_t len = m_position - m_lexeme_start_pos;
         return {type, payload, zstring_view(&m_regex[m_lexeme_start_pos], len)};
     }
@@ -211,13 +211,13 @@ namespace smt::noodler::ecma {
         m_position++;  // consume '<'
         const uint32_t name_start_pos = m_position;
         const uint32_t name_length = get_backref_name_len(name_start_pos);
-        m_position += name_length + 1; // consume name and '>'
+        m_position += name_length + 1;  // consume name and '>'
         return make_token(token_type::BACKREFERENCE, zstring_view(&m_regex[name_start_pos], name_length));
     }
 
     token ecma_lexer::octal_or_backref(uint32_t first_digit) {
         uint32_t decimal_val = first_digit - '0';
-        const uint32_t fallback_pos = m_position; // save position right after the first digit
+        const uint32_t fallback_pos = m_position;  // save position right after the first digit
 
         // greedily read as much digits as possible
         while (m_position < m_regex.length()) {
@@ -418,7 +418,7 @@ namespace smt::noodler::ecma {
         if (m_position >= m_regex.length() || m_regex[m_position] != '?') {
             return make_token(token_type::GROUP_START);
         }
-        m_position++; // consume '?'
+        m_position++;  // consume '?'
         return get_special_group_or_lookaround_token();
     }
 
@@ -988,8 +988,8 @@ namespace smt::noodler::ecma {
             case token_type::CHAR_CLASS_ESCAPE: {
                 auto node = std::make_shared<ast_node_character_class>();
                 if (std::holds_alternative<uint32_t>(t.payload)) {
-                    const char_class_element elem{.kind = element_type::ESCAPE,
-                                                  .lower = std::get<uint32_t>(t.payload)};
+                    const char_class_element elem {.kind = element_type::ESCAPE,
+                                                   .lower = std::get<uint32_t>(t.payload)};
                     node->add_element(elem);
                 }
                 next();
@@ -1075,9 +1075,9 @@ namespace smt::noodler::ecma {
                 add_atom_to_class(parent, prev_atom);
                 const class_atom next_atom = parse_class_atom_no_dash();
                 parse_class_ranges_tail(parent, next_atom);
+                break;
             }
-            break;
-            default: // epsilon
+            default:  // epsilon
                 add_atom_to_class(parent, prev_atom);
                 break;
         }
@@ -1094,7 +1094,7 @@ namespace smt::noodler::ecma {
                 // TODO: two dashes in a row, read standard and implement
                 break;
             }
-            default: // epsilon
+            default:  // epsilon
                 // '-' at the end of character class, its a literal
                 add_atom_to_class(parent, prev_atom);
                 parent->add_element({element_type::SINGLE, static_cast<uint32_t>('-'), 0});
