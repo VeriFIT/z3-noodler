@@ -49,11 +49,6 @@ namespace smt::noodler::ecma {
     };
 
     // =============== REGEX CONSTRAINT GRAPH ===============
-    enum class rcg_edge_type {
-        MATCH_EDGE,
-        ASSERTION_EDGE,
-        BACKREF_EDGE
-    };
 
     typedef struct {
         app* regex;
@@ -75,13 +70,18 @@ namespace smt::noodler::ecma {
 
     using rcg_edge_payload = std::variant<match_edge, assertion_edge, backref_edge>;
 
+    using vertex = uint32_t;
+
     struct rcg_edge {
-        rcg_edge_type type;
+        vertex from;
+        vertex to;
         rcg_edge_payload payload;
     };
 
     struct regex_constraint_graph {
+        void add_edge(rcg_edge child);
         std::vector<std::vector<rcg_edge>> adj_list;
+        std::vector<rcg_edge>& operator[](vertex idx);
     };
 
     zstring view_to_zstring(zstring_view view);
@@ -176,8 +176,8 @@ namespace smt::noodler::ecma {
 
     private:
         token_type m_assert_type {};
-        uint32_t m_payload {};  // Pro ^, $, \b, \B,
-        ast_node_ref m_child;   // Pro lookaroundy (mohou být null pro ^, $, \b)
+        uint32_t m_payload {};                // for ^, $, \b, \B assertions
+        ast_node_ref m_subpattern = nullptr;  // for lookarounds (may be null for ^, $, \b, \B)
     };
 
     class ast_node_quantifier : public ast_node {
@@ -269,6 +269,7 @@ namespace smt::noodler::ecma {
     };
 
     // =============== ECMA REGEX PARSER ===============
+    using ast_node_char_class_ref = std::unique_ptr<ast_node_character_class>;
 
     class ecma_parser {
     public:
@@ -295,16 +296,13 @@ namespace smt::noodler::ecma {
         ast_node_ref parse_group();
         ast_node_ref parse_character_class();
 
-        void parse_class_ranges(const std::unique_ptr<ast_node_character_class>& char_class_parent);
-        void parse_class_ranges_tail(const std::unique_ptr<ast_node_character_class>& char_class_parent,
-                                     class_atom prev_atom);
-        void parse_dash_tail(const std::unique_ptr<ast_node_character_class>& char_class_parent,
-                             class_atom prev_atom) const;
+        void parse_class_ranges(const ast_node_char_class_ref& char_class_parent);
+        void parse_class_ranges_tail(const ast_node_char_class_ref& char_class_parent, class_atom prev_atom);
+        void parse_dash_tail(const ast_node_char_class_ref& char_class, class_atom atom_before_dash);
         class_atom parse_class_atom();
         class_atom parse_class_atom_no_dash();
 
-        void add_atom_to_class(const std::unique_ptr<ast_node_character_class>& char_class_parent,
-                               class_atom atom) const;
+        void add_atom_to_class(const ast_node_char_class_ref& char_class_parent, class_atom atom) const;
     };
 
     // =============== ECMA REGEX HANDLER ===============
@@ -314,10 +312,7 @@ namespace smt::noodler::ecma {
             : m_regex(regex_pattern),
               m_parser(regex_pattern) { }
 
-        regex_constraint_graph build_rcg() {
-            ast_node_ref ast = m_parser.parse();
-            return {};
-        }
+        regex_constraint_graph build_rcg();
 
         void generate_constraints() { }
 
