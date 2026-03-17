@@ -1,8 +1,9 @@
 #include "ecma_regex.h"
 
-#include "util/z3_exception.h"
+#include "util.h"
 #include "util/zstring_view.h"
 
+#include <cassert>
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
@@ -10,6 +11,7 @@
 #include <limits>
 #include <ostream>
 #include <string>
+#include <variant>
 
 namespace smt::noodler::ecma {
 
@@ -21,10 +23,19 @@ namespace smt::noodler::ecma {
     zstring view_to_zstring(const zstring_view view) {
         zstring res;
         for (uint32_t i = 0; i < view.length(); ++i) {
-            res += zstring(view[i]);
+            res += view[i];
         }
         return res;
     }
+
+    // =============== REGEX CONSTRAINT GRAPH ==============
+
+    std::vector<rcg_edge>& regex_constraint_graph::operator[](vertex idx) {
+        assert(idx <= adj_list.size());
+        return adj_list[idx];
+    }
+
+    // ================= ECMA REGEX LEXER ===================
 
     token ecma_lexer::get_next_token() {
         if (m_first_traverse) {
@@ -130,7 +141,6 @@ namespace smt::noodler::ecma {
     }
 
     token ecma_lexer::get_unicode_escape_seq_token() {
-        // TODO: zstring contructor parser unicode escape sequences for us, remove this???
         // unicode escape sequence in format \uHHHH
         // currently m_position is on the first hex digit right after '\u' -- hence the 3
         if (m_position + 3 >= m_regex.length()) {
@@ -146,9 +156,10 @@ namespace smt::noodler::ecma {
             }
         }
 
-        // TODO: implement own exceptions
-        throw default_exception(
+        util::throw_error(
             "How did we get here? The zstring constructor should have parsed the unicode sequence for us");
+        // return dummy token, because compilation errors with return type (execution wont get here)
+        return {};
 
         // code to be executed if we actually parsed it:
         // uint32_t hex_val = hex2dec(zstring_view(&m_regex[m_lexeme_start_pos + 2], UNICODE_ESCAPE_SEQUENCE_LEN));
@@ -160,18 +171,18 @@ namespace smt::noodler::ecma {
         // control escape sequence in format \cC, where C is a control character
         // Currently m_position is right after '\c'
         if (m_position >= m_regex.length()) {
-            throw default_exception("Syntax error in ECMA regex: Invalid control sequence" + std::string("\\c"));
+            util::throw_error("Syntax error in ECMA regex: Invalid control sequence" + std::string("\\c"));
         }
 
         const uint32_t control_char = m_regex[m_position];
         m_position++;  // consume the control character
 
         // [A-Za-z] characters allowed, otherwise error
-        // TODO: based on rule CharacterEscape --> c ControlLetter, where ControlLetter --> [A-Za-z]
+        // based on rule CharacterEscape --> c ControlLetter, where ControlLetter --> [A-Za-z]
         // https://tc39.es/ecma262/2020/#prod-CharacterEscape
         // regex engines usually consume '\' and leave rest as literals, which does not follow the standard
         if (!is_alpha(control_char)) {
-            throw default_exception("Syntax error in ECMA regex: Invalid control sequence" + std::string("\\c"));
+            util::throw_error("Syntax error in ECMA regex: Invalid control sequence" + std::string("\\c"));
         }
         return make_token(token_type::LITERAL, alphabet_rank(control_char));
     }
@@ -187,19 +198,16 @@ namespace smt::noodler::ecma {
             }
             // TODO: the name of the group is described in RegExpIdentifierName nonterminal in the standard, finish this
             if (!is_alnum(current_name_char) && current_name_char != '_' && current_name_char != '$') {
-                // TODO: implement own exceptions later
-                throw default_exception("ECMA regex syntax error: Invalid character in back reference name");
+                util::throw_error("ECMA regex syntax error: Invalid character in back reference name");
             }
             name_length++;
         }
 
         if (!found_closing_bracket) {
-            // TODO: implement own exceptions later
-            throw default_exception("ECMA regex syntax error: Unclosed back reference name at the end of regex");
+            util::throw_error("ECMA regex syntax error: Unclosed back reference name at the end of regex");
         }
         if (name_length == 0) {
-            // TODO: implement own exceptions later
-            throw default_exception("ECMA regex syntax error: Empty back reference name");
+            util::throw_error("ECMA regex syntax error: Empty back reference name");
         }
         return name_length;
     }
@@ -208,12 +216,12 @@ namespace smt::noodler::ecma {
         // '\k<name>'
         // currently at '<' after '\k'
         if (m_position >= m_regex.length()) {
-            throw default_exception("ECMA regex syntax error: Invalid named backreference at the end of regex");
+            util::throw_error("ECMA regex syntax error: Invalid named backreference at the end of regex");
         }
 
         const uint32_t open_bracket_char = m_regex[m_position];
         if (open_bracket_char != '<') {
-            throw default_exception("ECMA regex syntax error: Missing '<' in named backreference");
+            util::throw_error("ECMA regex syntax error: Missing '<' in named backreference");
         }
 
         m_position++;  // consume '<'
@@ -252,9 +260,9 @@ namespace smt::noodler::ecma {
         uint32_t max_possible_octal_len = 3;
 
         if (!from_char_class && (first_digit == '8' || first_digit == '9')) {
-            // TODO: based on https://tc39.es/ecma262/2020/#sec-decimalescape, I think this should be an error.
-            // however, engine in node.js 20 interprets this as '8' or '9' (ascii 56/57) characters.
-            throw default_exception("ECMA regex syntax error: backreference to nonexistent subpattern");
+            // based on https://tc39.es/ecma262/2020/#sec-decimalescape, this should be an error
+            // however, engine in node.js 20 interprets this as '8' or '9' (ascii 56/57) characters
+            util::throw_error("ECMA regex syntax error: backreference to nonexistent subpattern");
         }
 
         if (first_digit > '3') {
@@ -292,23 +300,22 @@ namespace smt::noodler::ecma {
             }
             // TODO: there can be unicode blob in the group name, implement it
             if (!is_alnum(current_char) && current_char != '_' && current_char != '$') {
-                // TODO: implement own exceptions later
-                throw default_exception("ECMA regex syntax error: Invalid character in capture group name");
+                util::throw_error("ECMA regex syntax error: Invalid character in capture group name");
             }
             name_length++;
         }
         if (!found_closing_bracket) {
-            // TODO: implement own exceptions later
-            throw default_exception("ECMA regex syntax error: Unclosed group capture name");
+            util::throw_error("ECMA regex syntax error: Unclosed group capture name");
         }
         if (name_length == 0) {
-            throw default_exception("ECMA regex syntax error: Empty group name");
+            util::throw_error("ECMA regex syntax error: Empty group name");
         }
         // payload is just the name of the group, lexeme is the whole '(?<name>' thing
         return make_token(token_type::GROUP_NAMED_START, zstring_view(&m_regex[group_name_start_pos], name_length));
     }
 
     uint32_t ecma_lexer::validate_and_get_bound(uint32_t& bound) {
+        // TODO: the value of bound can be pretty big (bigger than what fits into 32 bits) --> take care of that
         // read digits one by one, save the decimal value of bound
         uint32_t parsed_digits = 0;
         while (m_position < m_regex.length()) {
@@ -380,7 +387,7 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_lookbehind_or_named_group_token() {
         // called right after '(?<'
         if (m_position >= m_regex.length()) {
-            throw default_exception("ECMA regex syntax error: Unfinished sequence '(?<'");
+            util::throw_error("ECMA regex syntax error: Unfinished sequence '(?<'");
         }
 
         const uint32_t fourth_char = m_regex[m_position];
@@ -402,7 +409,7 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_special_group_or_lookaround_token() {
         // called right after '(?'
         if (m_position >= m_regex.length()) {
-            throw default_exception("ECMA regex syntax error: Unfinished sequence '(?' at the end of regex");
+            util::throw_error("ECMA regex syntax error: Unfinished sequence '(?' at the end of regex");
         }
 
         const uint32_t third_char = m_regex[m_position];
@@ -417,7 +424,9 @@ namespace smt::noodler::ecma {
             case '<':
                 return get_lookbehind_or_named_group_token();
             default:
-                throw default_exception("ECMA regex syntax error: Invalid group indentifier");
+                util::throw_error("ECMA regex syntax error: Invalid group indentifier");
+                // return dummy token, because compilation errors with return type (execution wont get here)
+                return {};
         }
     }
 
@@ -433,7 +442,7 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_escape_sequence_token() {
         // called right after '\'
         if (m_position >= m_regex.length()) {
-            throw default_exception("ECMA regex syntax error: Unfinished escape sequence at the end of regex");
+            util::throw_error("ECMA regex syntax error: Unfinished escape sequence at the end of regex");
         }
 
         const uint32_t second_char = m_regex[m_position];
@@ -508,8 +517,7 @@ namespace smt::noodler::ecma {
     token ecma_lexer::get_char_class_escape_sequence_token() {
         // called right after '\' inside character class
         if (m_position >= m_regex.length()) {
-            // TODO: implement own exceptions later
-            throw default_exception("ECMA regex syntax error: Unfinished escape sequence at the end of regex");
+            util::throw_error("ECMA regex syntax error: Unfinished escape sequence at the end of regex");
         }
 
         const uint32_t second_char = m_regex[m_position];
@@ -645,7 +653,7 @@ namespace smt::noodler::ecma {
                         if (open_parens_count > 0) {
                             open_parens_count--;
                         } else {
-                            throw default_exception("Syntax error: Unmatched ')' in regular expression");
+                            util::throw_error("Syntax error: Unmatched ')' in regular expression");
                         }
                     }
                     break;
@@ -708,7 +716,7 @@ namespace smt::noodler::ecma {
     uint32_t ast_node_assertion::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         std::string label = "ASSERTION (";
-        if (m_child) {
+        if (m_subpattern) {
             switch (m_assert_type) {
                 case token_type::LOOKAHEAD_POS_START:
                     label += "?=";
@@ -727,7 +735,7 @@ namespace smt::noodler::ecma {
             }
             label += ")";
             out << "  node" << id << " [label=\"" << label << "\"];\n";
-            const uint32_t child_id = m_child->print_dot(out, node_count);
+            const uint32_t child_id = m_subpattern->print_dot(out, node_count);
             out << "  node" << id << " -> node" << child_id << ";\n";
         } else {
             label += std::string(1, static_cast<char>(m_payload)) + ")";
@@ -737,7 +745,7 @@ namespace smt::noodler::ecma {
     }
 
     zstring ast_node_assertion::serialize() const {
-        if (m_child) {
+        if (m_subpattern) {
             zstring label;
             switch (m_assert_type) {
                 case token_type::LOOKAHEAD_POS_START:
@@ -756,7 +764,7 @@ namespace smt::noodler::ecma {
                     label = zstring("??");
                     break;
             }
-            return zstring("(ASSERT ") + label + zstring(" ") + m_child->serialize() + zstring(")");
+            return zstring("(ASSERT ") + label + zstring(" ") + m_subpattern->serialize() + zstring(")");
         }
         return zstring("(ASSERT '") + zstring(m_payload) + zstring("')");
     }
@@ -770,7 +778,7 @@ namespace smt::noodler::ecma {
     }
 
     void ast_node_assertion::set_expr(ast_node_ref expr) {
-        m_child = std::move(expr);
+        m_subpattern = std::move(expr);
     }
 
     uint32_t ast_node_quantifier::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -934,9 +942,9 @@ namespace smt::noodler::ecma {
         }
         for (const auto& [kind, lower, upper] : m_elements) {
             if (kind == element_type::SINGLE) {
-                res += zstring(" (SINGLE '") + zstring(lower) + zstring("')");
+                res += zstring(" (LIT '") + zstring(lower) + zstring("')");
             } else if (kind == element_type::ESCAPE) {
-                res += zstring(" (ESCAPE '") + zstring(lower) + zstring("')");
+                res += zstring(" (CHAR_CLASS '") + zstring(lower) + zstring("')");
             } else if (kind == element_type::RANGE) {
                 res += zstring(" (RANGE '") + zstring(lower) + zstring("' '") + zstring(upper) + zstring("')");
             }
@@ -946,6 +954,9 @@ namespace smt::noodler::ecma {
     }
 
     void ast_node_character_class::add_element(const char_class_element elem) {
+        if (elem.kind == element_type::RANGE && elem.lower > elem.upper) {
+            util::throw_error("ECMA Regex error: Character range out of order");
+        }
         m_elements.push_back(elem);
     }
 
@@ -993,7 +1004,10 @@ namespace smt::noodler::ecma {
             next();
             return t;
         }
-        throw default_exception("Syntax error: " + std::string(message));
+        util::throw_error("Syntax error: " + std::string(message));
+
+        // return dummy token, because compilation errors with return type (execution wont get here)
+        return {};
     }
 
     ast_node_ref ecma_parser::parse_disjunction() {
@@ -1041,7 +1055,10 @@ namespace smt::noodler::ecma {
             case token_type::CHAR_CLASS_START:
                 return parse_maybe_quantifier(parse_atom());
             default:
-                throw default_exception("Syntax error in ECMA regex: Unexpected token in term");
+                util::throw_error("Syntax error in ECMA regex: Unexpected token in term");
+
+                // return dummy node because compilation errors with return type (execution wont get here)
+                return {};
         }
     }
 
@@ -1065,9 +1082,8 @@ namespace smt::noodler::ecma {
 
         switch (m_current_token.type) {
             case token_type::ASSERTION:
-                if (std::holds_alternative<uint32_t>(t.payload)) {
-                    node->set_payload(std::get<uint32_t>(t.payload));
-                }
+                assert(std::holds_alternative<uint32_t>(t.payload) && "ASSERTION has no specifier");
+                node->set_payload(std::get<uint32_t>(t.payload));
                 next();
                 return node;
             case token_type::LOOKAHEAD_POS_START:
@@ -1079,7 +1095,9 @@ namespace smt::noodler::ecma {
                 consume(token_type::GROUP_END, "Expected ')' after lookaround assertion");
                 return node;
             default:
-                throw default_exception("Syntax error in ECMA regex: Expected assertion");
+                util::throw_error("Syntax error in ECMA regex: Expected assertion");
+                // return dummy node, because compilation errors with return type
+                return {};
         }
     }
 
@@ -1088,9 +1106,9 @@ namespace smt::noodler::ecma {
         switch (m_current_token.type) {
             case token_type::LITERAL: {
                 auto literal = std::make_unique<ast_node_literal>();
-                if (std::holds_alternative<uint32_t>(t.payload)) {
-                    literal->set_char(std::get<uint32_t>(t.payload));
-                }
+                // no uint32_t (character) payload --> incorrect lexer implementation
+                assert(std::holds_alternative<uint32_t>(t.payload) && "LITERAL has no literal value");
+                literal->set_char(std::get<uint32_t>(t.payload));
                 next();
                 return literal;
             }
@@ -1099,9 +1117,13 @@ namespace smt::noodler::ecma {
                 return std::make_unique<ast_node_dot>();
             case token_type::BACKREFERENCE: {
                 auto backref = std::make_unique<ast_node_backreference>();
+                // no uint32_t (backref number) or zstring_view (backref name) --> incorrect lexer implementation
+                assert(
+                    (std::holds_alternative<uint32_t>(t.payload) || std::holds_alternative<zstring_view>(t.payload)) &&
+                    "BACKREFERENCE has no name and no number");
                 if (std::holds_alternative<uint32_t>(t.payload)) {
                     backref->set_ref(std::get<uint32_t>(t.payload));
-                } else if (std::holds_alternative<zstring_view>(t.payload)) {
+                } else {
                     backref->set_ref(std::get<zstring_view>(t.payload));
                 }
                 next();
@@ -1109,11 +1131,10 @@ namespace smt::noodler::ecma {
             }
             case token_type::CHAR_CLASS_ESCAPE: {
                 auto char_class = std::make_unique<ast_node_character_class>();
-                if (std::holds_alternative<uint32_t>(t.payload)) {
-                    const char_class_element elem {.kind = element_type::ESCAPE,
-                                                   .lower = std::get<uint32_t>(t.payload)};
-                    char_class->add_element(elem);
-                }
+                // char class without uint32_t (char class specifier 'w', 'd', etc.) --> incorrect lexer implementation
+                assert(std::holds_alternative<uint32_t>(t.payload) && "CHAR_CLASS_ESCAPE has no class specifier");
+                const char_class_element elem {.kind = element_type::ESCAPE, .lower = std::get<uint32_t>(t.payload)};
+                char_class->add_element(elem);
                 next();
                 return char_class;
             }
@@ -1124,7 +1145,9 @@ namespace smt::noodler::ecma {
             case token_type::CHAR_CLASS_START:
                 return parse_character_class();
             default:
-                throw default_exception("Syntax error in ECMA regex: Unexpected token in atom");
+                util::throw_error("Syntax error in ECMA regex: Unexpected token in atom");
+                // return dummy node, because compilation errors with return type (execution wont get here)
+                return {};
         }
     }
 
@@ -1139,11 +1162,8 @@ namespace smt::noodler::ecma {
                 break;
             case token_type::GROUP_NAMED_START:
                 group->set_type(group_type::NAMED);
-                if (std::holds_alternative<zstring_view>(t.payload)) {
-                    group->set_name(std::get<zstring_view>(t.payload));
-                } else {
-                    throw default_exception("Internal error: GROUP_NAMED_START has no name");
-                }
+                assert(std::holds_alternative<zstring_view>(t.payload) && "GROUP_NAMED_START has no name");
+                group->set_name(std::get<zstring_view>(t.payload));
                 next();
                 break;
             case token_type::GROUP_NONCAPTURE_START:
@@ -1151,7 +1171,7 @@ namespace smt::noodler::ecma {
                 next();
                 break;
             default:
-                throw default_exception("Syntax error in ECMA regex: Expected group start");
+                util::throw_error("Syntax error in ECMA regex: Expected group start");
         }
         group->set_expr(parse_disjunction());
         consume(token_type::GROUP_END, "Expected ')' after group");
@@ -1159,6 +1179,7 @@ namespace smt::noodler::ecma {
     }
 
     ast_node_ref ecma_parser::parse_character_class() {
+        // CharacterClass -> CHAR_CLASS_START MaybeNegation ClassRanges CHAR_CLASS_END
         consume(token_type::CHAR_CLASS_START, "Expected '['");
 
         auto char_class = std::make_unique<ast_node_character_class>();
@@ -1169,8 +1190,7 @@ namespace smt::noodler::ecma {
         return char_class;
     }
 
-    void ecma_parser::add_atom_to_class(const std::unique_ptr<ast_node_character_class>& char_class_parent,
-                                        const class_atom atom) const {
+    void ecma_parser::add_atom_to_class(const ast_node_char_class_ref& char_class_parent, class_atom atom) const {
         if (atom.is_escape) {
             char_class_parent->add_element({.kind = element_type::ESCAPE, .lower = atom.val});
         } else {
@@ -1178,19 +1198,26 @@ namespace smt::noodler::ecma {
         }
     }
 
-    void ecma_parser::parse_class_ranges(const std::unique_ptr<ast_node_character_class>& char_class_parent) {
+    void ecma_parser::parse_class_ranges(const ast_node_char_class_ref& char_class_parent) {
+        // ClassRanges -> ClassAtom ClassRangesTail
+        //             -> epsilon
         if (m_current_token.type == token_type::LITERAL || m_current_token.type == token_type::CHAR_CLASS_ESCAPE ||
             m_current_token.type == token_type::CHAR_CLASS_RANGE) {
-            parse_class_ranges_tail(char_class_parent, parse_class_atom());
+            const class_atom first_atom = parse_class_atom();
+            parse_class_ranges_tail(char_class_parent, first_atom);
         }
     }
 
-    void ecma_parser::parse_class_ranges_tail(const std::unique_ptr<ast_node_character_class>& char_class_parent,
+    void ecma_parser::parse_class_ranges_tail(const ast_node_char_class_ref& char_class_parent,
                                               const class_atom prev_atom) {
+        // ClassRangesTail -> CHAR_CLASS_RANGE DashTail
+        //                 -> ClassAtomNoDash ClassRangesTail
+        //                 -> epsilon
         switch (m_current_token.type) {
             case token_type::CHAR_CLASS_RANGE:
-                next();
+                next();  // skip '-'
                 parse_dash_tail(char_class_parent, prev_atom);
+                parse_class_ranges(char_class_parent);
                 break;
             case token_type::LITERAL:
             case token_type::CHAR_CLASS_ESCAPE: {
@@ -1205,26 +1232,45 @@ namespace smt::noodler::ecma {
         }
     }
 
-    void ecma_parser::parse_dash_tail(const std::unique_ptr<ast_node_character_class>& char_class_parent,
-                                      const class_atom prev_atom) const {
+    void ecma_parser::parse_dash_tail(const ast_node_char_class_ref& char_class, const class_atom atom_before_dash) {
+        // DashTail -> ClassAtom ClassRanges
+        //          -> epsilon
+        // https://tc39.es/ecma262/2020/#sec-runtime-semantics-characterrange-abstract-operation
+        // https://tc39.es/ecma262/2020/#sec-nonemptyclassrangesnodash
+        // when parsing range in the character class, both class atoms have to be single characters
+        // when either of them is e.g. a character class themselves (like '\w', etc.), the standard says it should be an error
+        // the only valid range is in form LITERAL RANGE LITERAL
         switch (m_current_token.type) {
-            case token_type::LITERAL:
-            case token_type::CHAR_CLASS_ESCAPE:
-                // TODO: based on prev_atom, we decide whether this is an error or not
-                break;
-            case token_type::CHAR_CLASS_RANGE: {
-                // TODO: two dashes in a row, read standard and implement
+            case token_type::CHAR_CLASS_ESCAPE: {
+                // no matter what the atom before dash was, this is an error
+                util::throw_error("ECMA Regex error: Character class as a bound of range");
+                break;  // leaving 'break;' because of compilation errors
+            }
+            case token_type::CHAR_CLASS_RANGE:
+            // two '-' in a row --> treat the first one as range, second one as literal -- same as LITERAL
+            case token_type::LITERAL: {
+                // no uint32_t should never happen here -- if so, lexer implementation is incorrect
+                if (atom_before_dash.is_escape) {
+                    util::throw_error("ECMA Regex Error: Character class as a bound of range");
+                }
+                assert(std::holds_alternative<uint32_t>(m_current_token.payload) && "LITERAL has no literal value");
+                const uint32_t from = atom_before_dash.val;
+                const uint32_t to = std::get<uint32_t>(m_current_token.payload);
+                char_class->add_element({.kind = element_type::RANGE, .lower = from, .upper = to});
+                next();
                 break;
             }
             default:  // epsilon
-                // '-' at the end of character class, its a literal
-                add_atom_to_class(char_class_parent, prev_atom);
-                char_class_parent->add_element({element_type::SINGLE, static_cast<uint32_t>('-'), 0});
+                // the '-' that got us here is at the end of char class --> its a literal
+                add_atom_to_class(char_class, atom_before_dash);
+                char_class->add_element({element_type::SINGLE, static_cast<uint32_t>('-'), 0});
                 break;
         }
     }
 
     class_atom ecma_parser::parse_class_atom() {
+        // ClassAtom -> ClassAtomNoDash
+        //           -> CHAR_CLASS_RANGE
         switch (m_current_token.type) {
             case token_type::LITERAL:
             case token_type::CHAR_CLASS_ESCAPE:
@@ -1233,21 +1279,37 @@ namespace smt::noodler::ecma {
                 next();
                 return {false, static_cast<uint32_t>('-')};
             default:
-                throw default_exception("Syntax error in ECMA regex: Expected class atom");
+                util::throw_error("Syntax error in ECMA regex: Expected class atom");
+                // return dummy node, because compilation errors with return type (execution wont get here)
+                return {};
         }
     }
 
     class_atom ecma_parser::parse_class_atom_no_dash() {
-        const token t = m_current_token;
-        switch (m_current_token.type) {
+        // ClassAtomNoDash -> LITERAL | CHAR_CLASS_ESCAPE
+        const token current_token = m_current_token;
+        next();
+        switch (current_token.type) {
             case token_type::LITERAL:
-                next();
-                return {false, std::get<uint32_t>(t.payload)};
+                assert(std::holds_alternative<uint32_t>(current_token.payload));
+                return {false, std::get<uint32_t>(current_token.payload)};
             case token_type::CHAR_CLASS_ESCAPE:
-                next();
-                return {true, std::get<uint32_t>(t.payload)};
+                assert(std::holds_alternative<uint32_t>(current_token.payload));
+                return {true, std::get<uint32_t>(current_token.payload)};
             default:
-                throw default_exception("Syntax error in ECMA regex: Expected literal or escape sequence");
+                util::throw_error("Syntax error in ECMA regex: Expected literal or escape sequence");
+                // return dummy node, because compilation errors with return type (execution wont get here)
+                return {};
         }
     }
+
+    // ============= ECMA REGEX HANDLER =============
+
+    regex_constraint_graph ecma_regex_handler::build_rcg() {
+        regex_constraint_graph rcg;
+        ast_node_ref root = m_parser.parse();
+        return {};
+    }
+
+
 }  // namespace smt::noodler::ecma
