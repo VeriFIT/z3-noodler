@@ -690,9 +690,9 @@ TEST_CASE("ECMA Regex Parser", "[noodler]") {
 
     SECTION("Dot and Escapes") {
         REQUIRE(parse_and_serialize(".") == zstring("(SEQ (DOT))"));
-        REQUIRE(parse_and_serialize("\\d") == zstring("(SEQ (CLASS (ESCAPE 'd')))"));
-        REQUIRE(parse_and_serialize("\\s") == zstring("(SEQ (CLASS (ESCAPE 's')))"));
-        REQUIRE(parse_and_serialize("\\w") == zstring("(SEQ (CLASS (ESCAPE 'w')))"));
+        REQUIRE(parse_and_serialize("\\d") == zstring("(SEQ (CLASS (CHAR_CLASS 'd')))"));
+        REQUIRE(parse_and_serialize("\\s") == zstring("(SEQ (CLASS (CHAR_CLASS 's')))"));
+        REQUIRE(parse_and_serialize("\\w") == zstring("(SEQ (CLASS (CHAR_CLASS 'w')))"));
     }
 
     SECTION("Alternation (Disjunction)") {
@@ -705,7 +705,6 @@ TEST_CASE("ECMA Regex Parser", "[noodler]") {
         REQUIRE(parse_and_serialize("a*") == zstring("(SEQ (QUANT {0,inf} (LIT 'a')))"));
         REQUIRE(parse_and_serialize("a+") == zstring("(SEQ (QUANT {1,inf} (LIT 'a')))"));
         REQUIRE(parse_and_serialize("a?") == zstring("(SEQ (QUANT {0,1} (LIT 'a')))"));
-
         REQUIRE(parse_and_serialize("a{3}") == zstring("(SEQ (QUANT {3,3} (LIT 'a')))"));
         REQUIRE(parse_and_serialize("a{3,}") == zstring("(SEQ (QUANT {3,inf} (LIT 'a')))"));
         REQUIRE(parse_and_serialize("a{3,5}") == zstring("(SEQ (QUANT {3,5} (LIT 'a')))"));
@@ -736,18 +735,300 @@ TEST_CASE("ECMA Regex Parser", "[noodler]") {
     }
 
     SECTION("Character Classes") {
-        REQUIRE(parse_and_serialize("[a]") == zstring("(SEQ (CLASS (SINGLE 'a')))"));
-        REQUIRE(parse_and_serialize("[^a]") == zstring("(SEQ (CLASS ^ (SINGLE 'a')))"));
+        REQUIRE(parse_and_serialize("[a]") == zstring("(SEQ (CLASS (LIT 'a')))"));
+        REQUIRE(parse_and_serialize("[^a]") == zstring("(SEQ (CLASS ^ (LIT 'a')))"));
         REQUIRE(parse_and_serialize("[a-z]") == zstring("(SEQ (CLASS (RANGE 'a' 'z')))"));
         REQUIRE(parse_and_serialize("[a-zA-Z]") == zstring("(SEQ (CLASS (RANGE 'a' 'z') (RANGE 'A' 'Z')))"));
-        REQUIRE(parse_and_serialize("[\\d\\s]") == zstring("(SEQ (CLASS (ESCAPE 'd') (ESCAPE 's')))"));
+        REQUIRE(parse_and_serialize("[\\d\\s]") == zstring("(SEQ (CLASS (CHAR_CLASS 'd') (CHAR_CLASS 's')))"));
         REQUIRE(parse_and_serialize("[^a-z\\d_]") ==
-                zstring("(SEQ (CLASS ^ (RANGE 'a' 'z') (ESCAPE 'd') (SINGLE '_')))"));
+                zstring("(SEQ (CLASS ^ (RANGE 'a' 'z') (CHAR_CLASS 'd') (LIT '_')))"));
     }
 
+    // clang-format off
+
     SECTION("Backreferences") {
-        REQUIRE(parse_and_serialize("(a)\\1") == zstring("(SEQ (GROUP (SEQ (LIT 'a'))) (BACKREF 1))"));
+        REQUIRE(parse_and_serialize("(a)\\1") ==
+                zstring("(SEQ (GROUP (SEQ (LIT 'a'))) (BACKREF 1))"));
+
         REQUIRE(parse_and_serialize("(?<name>a)\\k<name>") ==
                 zstring("(SEQ (GROUP-NAMED name (SEQ (LIT 'a'))) (BACKREF name))"));
+    }
+
+    SECTION("Nested capturing groups") {
+        REQUIRE(parse_and_serialize("((a))") ==
+                zstring("(SEQ (GROUP (SEQ (GROUP (SEQ (LIT 'a'))))))"));
+    }
+
+    SECTION("Nested non-capturing groups") {
+        REQUIRE(parse_and_serialize("(?:(?:a))") ==
+                zstring("(SEQ (GROUP-NONCAP (SEQ (GROUP-NONCAP (SEQ (LIT 'a'))))))"));
+    }
+
+    SECTION("Mixed nested groups with quantifiers") {
+        REQUIRE(parse_and_serialize("(a(b+)c)*") ==
+                zstring("(SEQ (QUANT {0,inf} (GROUP (SEQ"
+                        " (LIT 'a')"
+                        " (GROUP (SEQ (QUANT {1,inf} (LIT 'b'))))"
+                        " (LIT 'c')"
+                        "))))"));
+    }
+
+    SECTION("Named group inside non-capturing group") {
+        REQUIRE(parse_and_serialize("(?:(?<foo>a))") ==
+                zstring("(SEQ (GROUP-NONCAP (SEQ (GROUP-NAMED foo (SEQ (LIT 'a'))))))"));
+    }
+
+    SECTION("Quantifier on group with alternation inside") {
+        REQUIRE(parse_and_serialize("(a|b)+") ==
+                zstring("(SEQ (QUANT {1,inf} (GROUP (DISJ"
+                        " (SEQ (LIT 'a'))"
+                        " (SEQ (LIT 'b'))"
+                        "))))"));
+    }
+
+    SECTION("Quantifier {n,m} on group") {
+        REQUIRE(parse_and_serialize("(ab){2,4}") ==
+                zstring("(SEQ (QUANT {2,4} (GROUP (SEQ (LIT 'a') (LIT 'b')))))"));
+    }
+
+    SECTION("Quantifier on character class") {
+        REQUIRE(parse_and_serialize("[a-z]+") ==
+                zstring("(SEQ (QUANT {1,inf} (CLASS (RANGE 'a' 'z'))))"));
+    }
+
+    SECTION("Quantifier on dot") {
+        REQUIRE(parse_and_serialize(".*") ==
+                zstring("(SEQ (QUANT {0,inf} (DOT)))"));
+    }
+
+    SECTION("Alternation with empty right branch") {
+        REQUIRE(parse_and_serialize("a|") == zstring("(DISJ (SEQ (LIT 'a')) (SEQ))"));
+    }
+
+    SECTION("Alternation with empty left branch") {
+        REQUIRE(parse_and_serialize("|a") == zstring("(DISJ (SEQ) (SEQ (LIT 'a')))"));
+    }
+
+    SECTION("Alternation inside a group") {
+        REQUIRE(parse_and_serialize("(a|b|c)") == zstring(
+            "(SEQ"
+                " (GROUP (DISJ"
+                    " (SEQ (LIT 'a'))"
+                    " (SEQ (LIT 'b'))"
+                    " (SEQ (LIT 'c'))"
+                "))"
+            ")"
+        ));
+    }
+
+    SECTION("Nested alternation") {
+        REQUIRE(parse_and_serialize("(a|b)|(c|d)") == zstring(
+            "(DISJ"
+                " (SEQ (GROUP (DISJ"
+                    " (SEQ (LIT 'a'))"
+                    " (SEQ (LIT 'b'))"
+                ")))"
+                " (SEQ (GROUP (DISJ"
+                    " (SEQ (LIT 'c'))"
+                    " (SEQ (LIT 'd'))"
+                ")))"
+            ")"
+        ));
+    }
+
+    SECTION("Word boundary in the middle of pattern") {
+        REQUIRE(parse_and_serialize("a\\bb") == zstring(
+            "(SEQ"
+                " (LIT 'a')"
+                " (ASSERT 'b')"
+                " (LIT 'b')"
+            ")"
+        ));
+    }
+
+    SECTION("Lookahead with quantified subpattern") {
+        REQUIRE(parse_and_serialize("(?=a+)") == zstring(
+            "(SEQ"
+                " (ASSERT ?= (SEQ"
+                    " (QUANT {1,inf} (LIT 'a'))"
+                "))"
+            ")"
+        ));
+    }
+
+    SECTION("Negative lookbehind with char class") {
+        REQUIRE(parse_and_serialize("(?<![0-9])a") == zstring(
+            "(SEQ"
+                " (ASSERT ?<! (SEQ"
+                    " (CLASS (RANGE '0' '9'))"
+                "))"
+                " (LIT 'a')"
+            ")"
+        ));
+    }
+
+    SECTION("Lookahead followed by group") {
+        REQUIRE(parse_and_serialize("(?=a)(b)") == zstring(
+            "(SEQ"
+                " (ASSERT ?= (SEQ (LIT 'a')))"
+                " (GROUP (SEQ (LIT 'b')))"
+            ")"
+        ));
+    }
+
+    SECTION("Multiple assertions in sequence") {
+        REQUIRE(parse_and_serialize("^\\ba$") == zstring(
+            "(SEQ"
+                " (ASSERT '^')"
+                " (ASSERT 'b')"
+                " (LIT 'a')"
+                " (ASSERT '$')"
+            ")"
+        ));
+    }
+
+    SECTION("Character class with multiple ranges") {
+        REQUIRE(parse_and_serialize("[a-zA-Z0-9]") == zstring(
+            "(SEQ"
+                " (CLASS"
+                    " (RANGE 'a' 'z')"
+                    " (RANGE 'A' 'Z')"
+                    " (RANGE '0' '9')"
+                ")"
+            ")"
+        ));
+    }
+
+    SECTION("Negated class with escape and range") {
+        REQUIRE(parse_and_serialize("[^\\w0-9]") == zstring(
+            "(SEQ"
+                " (CLASS ^"
+                    " (CHAR_CLASS 'w')"
+                    " (RANGE '0' '9')"
+                ")"
+            ")"
+        ));
+    }
+
+    SECTION("Character class with single char and range") {
+        REQUIRE(parse_and_serialize("[_a-z]") == zstring(
+            "(SEQ"
+                " (CLASS"
+                    " (LIT '_')"
+                    " (RANGE 'a' 'z')"
+                ")"
+            ")"
+        ));
+    }
+
+    SECTION("Multiple numeric backreferences") {
+        REQUIRE(parse_and_serialize("(a)(b)\\1\\2") == zstring(
+            "(SEQ"
+                " (GROUP (SEQ (LIT 'a')))"
+                " (GROUP (SEQ (LIT 'b')))"
+                " (BACKREF 1)"
+                " (BACKREF 2)"
+            ")"
+        ));
+    }
+
+    SECTION("Named backreference after named group") {
+        REQUIRE(parse_and_serialize("(?<word>[a-z]+)\\k<word>") == zstring(
+            "(SEQ"
+                " (GROUP-NAMED word (SEQ (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))))"
+                " (BACKREF word)"
+            ")"
+        ));
+    }
+
+    SECTION("Simple email-like pattern") {
+        REQUIRE(parse_and_serialize("[a-z]+@[a-z]+\\.[a-z]+") == zstring(
+            "(SEQ"
+                " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
+                " (LIT '@')"
+                " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
+                " (LIT '.')"
+                " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
+            ")"
+        ));
+    }
+
+    SECTION("IP address octet pattern") {
+        REQUIRE(parse_and_serialize("(25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})") == zstring(
+            "(SEQ"
+                " (GROUP (DISJ"
+                    " (SEQ (LIT '2') (LIT '5') (CLASS (RANGE '0' '5')))"
+                    " (SEQ (LIT '2') (CLASS (RANGE '0' '4')) (CLASS (RANGE '0' '9')))"
+                    " (SEQ"
+                        " (QUANT {0,1} (CLASS (LIT '0') (LIT '1')))"
+                        " (QUANT {1,2} (CLASS (RANGE '0' '9')))"
+                    ")"
+                "))"
+            ")"
+        ));
+    }
+
+    SECTION("Hex color pattern") {
+        REQUIRE(parse_and_serialize("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})") == zstring(
+            "(SEQ"
+                " (LIT '#')"
+                " (GROUP (DISJ"
+                    " (SEQ (QUANT {3,3} (CLASS (RANGE '0' '9') (RANGE 'a' 'f') (RANGE 'A' 'F'))))"
+                    " (SEQ (QUANT {6,6} (CLASS (RANGE '0' '9') (RANGE 'a' 'f') (RANGE 'A' 'F'))))"
+                "))"
+            ")"
+        ));
+    }
+
+    SECTION("Date pattern with named groups") {
+        REQUIRE(parse_and_serialize("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})") == zstring(
+            "(SEQ"
+                " (GROUP-NAMED year (SEQ (QUANT {4,4} (CLASS (CHAR_CLASS 'd')))))"
+                " (LIT '-')"
+                " (GROUP-NAMED month (SEQ (QUANT {2,2} (CLASS (CHAR_CLASS 'd')))))"
+                " (LIT '-')"
+                " (GROUP-NAMED day (SEQ (QUANT {2,2} (CLASS (CHAR_CLASS 'd')))))"
+            ")"
+        ));
+    }
+
+    SECTION("URL path segment with lookahead") {
+        REQUIRE(parse_and_serialize("(?<=/)([a-z0-9\\-]+)(?=/)") == zstring(
+            "(SEQ"
+                " (ASSERT ?<= (SEQ (LIT '/')))"
+                " (GROUP (SEQ (QUANT {1,inf} (CLASS"
+                    " (RANGE 'a' 'z')"
+                    " (RANGE '0' '9')"
+                    " (LIT '-')"
+                "))))"
+                " (ASSERT ?= (SEQ (LIT '/')))"
+            ")"
+        ));
+    }
+
+    SECTION("Quantifier without preceding atom throws") {
+        REQUIRE_THROWS(parse_and_serialize("*"));
+        REQUIRE_THROWS(parse_and_serialize("+"));
+        REQUIRE_THROWS(parse_and_serialize("?"));
+    }
+
+    SECTION("Unclosed group throws") {
+        REQUIRE_THROWS(parse_and_serialize("(a"));
+        REQUIRE_THROWS(parse_and_serialize("(?:a"));
+    }
+
+    SECTION("Unmatched closing paren throws") {
+        REQUIRE_THROWS(parse_and_serialize(")"));
+        REQUIRE_THROWS(parse_and_serialize("a)"));
+    }
+
+    SECTION("Character range out of order throws") {
+        REQUIRE_THROWS(parse_and_serialize("[z-a]"));
+        REQUIRE_THROWS(parse_and_serialize("[9-0]"));
+    }
+
+    SECTION("Character class as range bound throws") {
+        REQUIRE_THROWS(parse_and_serialize("[\\w-z]"));
+        REQUIRE_THROWS(parse_and_serialize("[a-\\d]"));
     }
 }
