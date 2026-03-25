@@ -30,9 +30,24 @@ namespace smt::noodler::ecma {
 
     // =============== REGEX CONSTRAINT GRAPH ==============
 
-    std::vector<rcg_edge>& regex_constraint_graph::operator[](vertex idx) {
-        assert(idx <= adj_list.size());
-        return adj_list[idx];
+    void regex_constraint_graph::add_vertex(rcg_vertex vtx) {
+        vertices.push_back(std::move(vtx));
+    }
+
+    vtx_id regex_constraint_graph::create_vertex() {
+        vtx_id new_id = vertices.size();
+        vertices.emplace_back(new_id, std::vector<rcg_edge> {});
+        return new_id;
+    }
+
+    void regex_constraint_graph::add_edge(rcg_edge child) {
+        edges.push_back(std::move(child));
+    }
+
+    edge_id regex_constraint_graph::create_edge() {
+        edge_id new_id = edges.size();
+        edges.emplace_back(new_id);
+        return new_id;
     }
 
     // ================= ECMA REGEX LEXER ===================
@@ -112,8 +127,8 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    token ecma_lexer::make_token(const token_type type, const token_payload& payload) {
-        uint32_t len = m_position - m_lexeme_start_pos;
+    token ecma_lexer::make_token(const token_type type, const token_payload& payload) const {
+        const uint32_t len = m_position - m_lexeme_start_pos;
         return {type, payload, zstring_view(&m_regex[m_lexeme_start_pos], len)};
     }
 
@@ -1190,7 +1205,7 @@ namespace smt::noodler::ecma {
         return char_class;
     }
 
-    void ecma_parser::add_atom_to_class(const ast_node_char_class_ref& char_class_parent, class_atom atom) const {
+    void ecma_parser::add_atom_to_class(const ast_node_char_class_ref& char_class_parent, const class_atom atom) const {
         if (atom.is_escape) {
             char_class_parent->add_element({.kind = element_type::ESCAPE, .lower = atom.val});
         } else {
@@ -1238,7 +1253,7 @@ namespace smt::noodler::ecma {
         // https://tc39.es/ecma262/2020/#sec-runtime-semantics-characterrange-abstract-operation
         // https://tc39.es/ecma262/2020/#sec-nonemptyclassrangesnodash
         // when parsing range in the character class, both class atoms have to be single characters
-        // when either of them is e.g. a character class themselves (like '\w', etc.), the standard says it should be an error
+        // when either of them is e.g., a character class themselves (like '\w', etc.), the standard says it should be an error
         // the only valid range is in form LITERAL RANGE LITERAL
         switch (m_current_token.type) {
             case token_type::CHAR_CLASS_ESCAPE: {

@@ -42,11 +42,11 @@ namespace smt::noodler::ecma {
     // no payload, literal/escape, quantifier_range, capture group names/raw string data
     using token_payload = std::variant<std::monostate, uint32_t, quantifier_range, zstring_view>;
 
-    struct token {
+    typedef struct {
         token_type type;
         token_payload payload;
         zstring_view lexeme;
-    };
+    } token;
 
     // =============== REGEX CONSTRAINT GRAPH ===============
 
@@ -70,18 +70,38 @@ namespace smt::noodler::ecma {
 
     using rcg_edge_payload = std::variant<match_edge, assertion_edge, backref_edge>;
 
-    using vertex = uint32_t;
+    using vtx_id = uint32_t;
+    using edge_id = uint32_t;
 
     struct rcg_edge {
-        vertex from;
-        vertex to;
+        edge_id id;
+        vtx_id target;
         rcg_edge_payload payload;
     };
 
+    struct rcg_vertex {
+        vtx_id id;
+        std::vector<rcg_edge> outgoing_edges;
+
+        rcg_vertex(const vtx_id id, std::vector<rcg_edge> edges)
+            : id(id),
+              outgoing_edges(std::move(edges)) { }
+    };
+
     struct regex_constraint_graph {
+        std::vector<rcg_vertex> vertices;
+        std::vector<rcg_edge> edges;
+
+        void add_vertex(rcg_vertex vtx);
+        vtx_id create_vertex();
         void add_edge(rcg_edge child);
-        std::vector<std::vector<rcg_edge>> adj_list;
-        std::vector<rcg_edge>& operator[](vertex idx);
+        edge_id create_edge();
+    };
+
+    struct graph_fragment {
+        vtx_id v_in;
+        vtx_id v_out;
+        std::vector<edge_id> edges_pointing_to_out;
     };
 
     zstring view_to_zstring(zstring_view view);
@@ -113,7 +133,7 @@ namespace smt::noodler::ecma {
         static uint32_t hex2dec(zstring_view number);
         static uint32_t oct2dec(zstring_view number);
 
-        token make_token(token_type type, const token_payload& payload = {});
+        token make_token(token_type type, const token_payload& payload = {}) const;
         token get_hex_escape_seq_token();
         token get_unicode_escape_seq_token();
         token get_control_escape_seq_token();
