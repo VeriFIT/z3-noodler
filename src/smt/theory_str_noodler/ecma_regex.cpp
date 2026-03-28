@@ -849,6 +849,12 @@ namespace smt::noodler::ecma {
         m_char = ch;
     }
 
+    RegexComponent ASTNodeLiteral::get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s,
+                                                ast_manager& m) const {
+        assert(m_char < std::numeric_limits<uint32_t>::max());
+        return app_ref(util_s.str.mk_char(m_char), m);
+    }
+
     uint32_t ASTNodeDot::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"DOT\"];\n";

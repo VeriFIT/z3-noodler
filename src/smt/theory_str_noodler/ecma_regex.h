@@ -167,7 +167,8 @@ namespace smt::noodler::ecma {
         virtual ~ASTNode() = default;
         virtual uint32_t print_dot(std::ostream& out, uint32_t& node_count) const = 0;
         virtual zstring serialize() const = 0;
-        virtual RegexComponent get_subgraph() const = 0;
+        virtual RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s,
+                                            ast_manager& m) const = 0;
     };
 
     using ASTNodeRef = std::unique_ptr<ASTNode>;
@@ -177,7 +178,7 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void add_alternative(ASTNodeRef alt);
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
 
     private:
         std::vector<ASTNodeRef> m_alternatives;
@@ -188,7 +189,7 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void add_term(ASTNodeRef term);
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
 
     private:
         std::vector<ASTNodeRef> m_terms;
@@ -201,7 +202,7 @@ namespace smt::noodler::ecma {
         void set_type(TokenType type);
         void set_payload(uint32_t payload);
         void set_expr(ASTNodeRef expr);
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
 
     private:
         TokenType m_assert_type {};
@@ -214,7 +215,7 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void set(const Token& t, ASTNodeRef term);
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
 
     private:
         QuantifierRange m_range {};
@@ -226,7 +227,7 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void set_char(uint32_t ch);
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
 
     private:
         uint32_t m_char = std::numeric_limits<uint32_t>::max();
@@ -236,7 +237,7 @@ namespace smt::noodler::ecma {
     public:
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
     };
 
     class ASTNodeBackref : public ASTNode {
@@ -245,7 +246,7 @@ namespace smt::noodler::ecma {
         zstring serialize() const override;
         void set_ref(zstring_view backref_name);
         void set_ref(uint32_t backref_number);
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
 
     private:
         std::variant<uint32_t, zstring_view> m_backref;
@@ -264,7 +265,7 @@ namespace smt::noodler::ecma {
         void set_type(GroupType type);
         void set_name(zstring_view name);
         void set_expr(ASTNodeRef expr);
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
 
     private:
         GroupType m_type = GroupType::NORMAL;
@@ -291,7 +292,7 @@ namespace smt::noodler::ecma {
         zstring serialize() const override;
         void add_element(CharClassElement elem);
         void set_negation(bool neg);
-        RegexComponent get_subgraph() const override;
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
 
     private:
         bool m_is_negated = false;
