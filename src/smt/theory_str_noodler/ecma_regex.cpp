@@ -1,6 +1,8 @@
 #include "ecma_regex.h"
 
+#include "ast/ast.h"
 #include "util.h"
+#include "util/debug.h"
 #include "util/zstring_view.h"
 
 #include <cassert>
@@ -30,21 +32,36 @@ namespace smt::noodler::ecma {
 
     // =============== REGEX CONSTRAINT GRAPH ==============
 
-    std::vector<rcg_edge>& regex_constraint_graph::operator[](vertex idx) {
-        assert(idx <= adj_list.size());
-        return adj_list[idx];
+    void RegexConstraintGraph::add_vertex(RCGVertex vtx) {
+        vertices.push_back(std::move(vtx));
+    }
+
+    VertexId RegexConstraintGraph::create_vertex() {
+        VertexId new_id = vertices.size();
+        vertices.emplace_back(new_id, std::vector<RCGEdge> {});
+        return new_id;
+    }
+
+    void RegexConstraintGraph::add_edge(RCGEdge child) {
+        edges.push_back(std::move(child));
+    }
+
+    EdgeId RegexConstraintGraph::create_edge() {
+        EdgeId new_id = edges.size();
+        edges.emplace_back(new_id, std::numeric_limits<uint32_t>::max(), BackrefEdge {0});
+        return new_id;
     }
 
     // ================= ECMA REGEX LEXER ===================
 
-    token ecma_lexer::get_next_token() {
+    Token ECMALexer::get_next_token() {
         if (m_first_traverse) {
             perform_first_traverse();
             m_first_traverse = false;
         }
 
         if (m_position >= m_regex.length()) {
-            return {token_type::END_OF_INPUT, {}, zstring_view(nullptr, 0)};
+            return {TokenType::END_OF_INPUT, {}, zstring_view(nullptr, 0)};
         }
 
         m_lexeme_start_pos = m_position;
@@ -55,38 +72,38 @@ namespace smt::noodler::ecma {
         return get_token_standard();
     }
 
-    bool ecma_lexer::is_digit(const uint32_t digit) {
+    bool ECMALexer::is_digit(const uint32_t digit) {
         return digit >= '0' && digit <= '9';
     }
 
-    bool ecma_lexer::is_alpha(const uint32_t digit) {
+    bool ECMALexer::is_alpha(const uint32_t digit) {
         return (digit >= 'A' && digit <= 'Z') || (digit >= 'a' && digit <= 'z');
     }
 
-    bool ecma_lexer::is_alnum(const uint32_t digit) {
+    bool ECMALexer::is_alnum(const uint32_t digit) {
         return is_alpha(digit) || is_digit(digit);
     }
 
-    bool ecma_lexer::is_hex_digit(const uint32_t digit) {
+    bool ECMALexer::is_hex_digit(const uint32_t digit) {
         return is_digit(digit) || (digit >= 'A' && digit <= 'F') || (digit >= 'a' && digit <= 'f');
     }
 
-    bool ecma_lexer::is_octal_digit(const uint32_t digit) {
+    bool ECMALexer::is_octal_digit(const uint32_t digit) {
         return digit >= '0' && digit <= '7';
     }
 
-    bool ecma_lexer::is_upper(const uint32_t digit) {
+    bool ECMALexer::is_upper(const uint32_t digit) {
         return digit >= 'A' && digit <= 'Z';
     }
 
-    uint32_t ecma_lexer::alphabet_rank(const uint32_t digit) {
+    uint32_t ECMALexer::alphabet_rank(const uint32_t digit) {
         if (is_upper(digit)) {
             return digit - 'A' + 1;
         }
         return digit - 'a' + 1;
     }
 
-    uint32_t ecma_lexer::hex2dec(const zstring_view number) {
+    uint32_t ECMALexer::hex2dec(const zstring_view number) {
         uint32_t res = 0;
         for (uint32_t pos = 0; pos < number.length(); pos++) {
             const uint32_t hex_digit = number[pos];
@@ -101,7 +118,7 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    uint32_t ecma_lexer::oct2dec(const zstring_view number) {
+    uint32_t ECMALexer::oct2dec(const zstring_view number) {
         uint32_t res = 0;
         for (uint32_t pos = 0; pos < number.length(); pos++) {
             const uint32_t digit = number[pos];
@@ -112,17 +129,17 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    token ecma_lexer::make_token(const token_type type, const token_payload& payload) {
-        uint32_t len = m_position - m_lexeme_start_pos;
+    Token ECMALexer::make_token(const TokenType type, const token_payload& payload) const {
+        const uint32_t len = m_position - m_lexeme_start_pos;
         return {type, payload, zstring_view(&m_regex[m_lexeme_start_pos], len)};
     }
 
-    token ecma_lexer::get_hex_escape_seq_token() {
+    Token ECMALexer::get_hex_escape_seq_token() {
         // hexadecimal escape sequence in format \xHH
         // currently m_position is right after '\x' -- hence the 1
         if (m_position + 1 >= m_regex.length()) {
             m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\x'
-            return make_token(token_type::LITERAL, static_cast<uint32_t>('x'));
+            return make_token(TokenType::LITERAL, static_cast<uint32_t>('x'));
         }
 
         const uint32_t first_hex_digit = m_regex[m_position];
@@ -131,28 +148,28 @@ namespace smt::noodler::ecma {
         // if the hex number is not well-formed, then '\x' is a literal 'x' and the rest is parsed separately
         if (!is_hex_digit(first_hex_digit) || !is_hex_digit(second_hex_digit)) {
             m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\x'
-            return make_token(token_type::LITERAL, static_cast<uint32_t>('x'));
+            return make_token(TokenType::LITERAL, static_cast<uint32_t>('x'));
         }
 
         // get decimal value of hex digits after '\x'
         uint32_t hex_val = hex2dec(zstring_view(&m_regex[m_lexeme_start_pos + 2], HEX_SEQUENCE_LEN));
         m_position += 2;  // consume both hex digits
-        return make_token(token_type::LITERAL, hex_val);
+        return make_token(TokenType::LITERAL, hex_val);
     }
 
-    token ecma_lexer::get_unicode_escape_seq_token() {
+    Token ECMALexer::get_unicode_escape_seq_token() {
         // unicode escape sequence in format \uHHHH
         // currently m_position is on the first hex digit right after '\u' -- hence the 3
         if (m_position + 3 >= m_regex.length()) {
             m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\u'
-            return make_token(token_type::LITERAL, static_cast<uint32_t>('u'));
+            return make_token(TokenType::LITERAL, static_cast<uint32_t>('u'));
         }
 
         for (uint32_t i = 0; i < UNICODE_ESCAPE_SEQUENCE_LEN; i++) {
             const uint32_t current_char = m_regex[m_position + i];
             if (!is_hex_digit(current_char)) {
                 m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\u'
-                return make_token(token_type::LITERAL, static_cast<uint32_t>('u'));
+                return make_token(TokenType::LITERAL, static_cast<uint32_t>('u'));
             }
         }
 
@@ -167,7 +184,7 @@ namespace smt::noodler::ecma {
         // return make_token(token_type::LITERAL, hex_val);
     }
 
-    token ecma_lexer::get_control_escape_seq_token() {
+    Token ECMALexer::get_control_escape_seq_token() {
         // control escape sequence in format \cC, where C is a control character
         // Currently m_position is right after '\c'
         if (m_position >= m_regex.length()) {
@@ -184,10 +201,10 @@ namespace smt::noodler::ecma {
         if (!is_alpha(control_char)) {
             util::throw_error("Syntax error in ECMA regex: Invalid control sequence" + std::string("\\c"));
         }
-        return make_token(token_type::LITERAL, alphabet_rank(control_char));
+        return make_token(TokenType::LITERAL, alphabet_rank(control_char));
     }
 
-    uint32_t ecma_lexer::get_backref_name_len(const uint32_t name_start_pos) const {
+    uint32_t ECMALexer::get_backref_name_len(const uint32_t name_start_pos) const {
         bool found_closing_bracket = false;
         uint32_t name_length = 0;
         for (uint32_t pos = name_start_pos; pos < m_regex.length(); pos++) {
@@ -212,7 +229,7 @@ namespace smt::noodler::ecma {
         return name_length;
     }
 
-    token ecma_lexer::get_named_backref_token() {
+    Token ECMALexer::get_named_backref_token() {
         // '\k<name>'
         // currently at '<' after '\k'
         if (m_position >= m_regex.length()) {
@@ -228,10 +245,10 @@ namespace smt::noodler::ecma {
         const uint32_t name_start_pos = m_position;
         const uint32_t name_length = get_backref_name_len(name_start_pos);
         m_position += name_length + 1;  // consume name and '>'
-        return make_token(token_type::BACKREFERENCE, zstring_view(&m_regex[name_start_pos], name_length));
+        return make_token(TokenType::BACKREFERENCE, zstring_view(&m_regex[name_start_pos], name_length));
     }
 
-    token ecma_lexer::octal_or_backref(const uint32_t first_digit) {
+    Token ECMALexer::octal_or_backref(const uint32_t first_digit) {
         uint32_t decimal_val = first_digit - '0';
         const uint32_t fallback_pos = m_position;  // save position right after the first digit
 
@@ -247,7 +264,7 @@ namespace smt::noodler::ecma {
 
         // try to match it to a backreference
         if (decimal_val > 0 && decimal_val <= m_num_capture_groups) {
-            return make_token(token_type::BACKREFERENCE, decimal_val);
+            return make_token(TokenType::BACKREFERENCE, decimal_val);
         }
 
         // cannot be backreference --> match the input to an octal escape sequence
@@ -255,7 +272,7 @@ namespace smt::noodler::ecma {
         return get_octal_escape_sequence_token(false, first_digit);
     }
 
-    token ecma_lexer::get_octal_escape_sequence_token(const bool from_char_class, const uint32_t first_digit) {
+    Token ECMALexer::get_octal_escape_sequence_token(const bool from_char_class, const uint32_t first_digit) {
         // m_position is right after first_digit. m_lexeme_start_pos is at '\'
         uint32_t max_possible_octal_len = 3;
 
@@ -281,10 +298,10 @@ namespace smt::noodler::ecma {
 
         // Octal string starts at m_lexeme_start_pos + 1 (skipping '\')
         uint32_t octal_val = oct2dec(zstring_view(&m_regex[m_lexeme_start_pos + 1], real_octal_len));
-        return make_token(token_type::LITERAL, octal_val);
+        return make_token(TokenType::LITERAL, octal_val);
     }
 
-    token ecma_lexer::get_named_capture_group_token() {
+    Token ECMALexer::get_named_capture_group_token() {
         // called right after '(?<'
         uint32_t name_length = 0;
         const uint32_t group_name_start_pos = m_position;
@@ -311,10 +328,10 @@ namespace smt::noodler::ecma {
             util::throw_error("ECMA regex syntax error: Empty group name");
         }
         // payload is just the name of the group, lexeme is the whole '(?<name>' thing
-        return make_token(token_type::GROUP_NAMED_START, zstring_view(&m_regex[group_name_start_pos], name_length));
+        return make_token(TokenType::GROUP_NAMED_START, zstring_view(&m_regex[group_name_start_pos], name_length));
     }
 
-    uint32_t ecma_lexer::validate_and_get_bound(uint32_t& bound) {
+    uint32_t ECMALexer::validate_and_get_bound(uint32_t& bound) {
         // TODO: the value of bound can be pretty big (bigger than what fits into 32 bits) --> take care of that
         // read digits one by one, save the decimal value of bound
         uint32_t parsed_digits = 0;
@@ -330,7 +347,7 @@ namespace smt::noodler::ecma {
         return parsed_digits;
     }
 
-    token ecma_lexer::get_braced_quant_token() {
+    Token ECMALexer::get_braced_quant_token() {
         // already have '{' consumed -> check range of quantifier
         uint32_t lower_bound = 0;
 
@@ -338,31 +355,31 @@ namespace smt::noodler::ecma {
 
         if (bound_digits == 0 || m_position >= m_regex.length()) {
             m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
-            return make_token(token_type::LITERAL, static_cast<uint32_t>('{'));
+            return make_token(TokenType::LITERAL, static_cast<uint32_t>('{'));
         }
 
         // case '{n}'
         if (m_regex[m_position] == '}') {
             m_position++;  // consume '}'
-            return make_token(token_type::QUANTIFIER, quantifier_range {lower_bound, lower_bound});
+            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, lower_bound});
         }
 
         if (m_regex[m_position] != ',') {
             m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
-            return make_token(token_type::LITERAL, static_cast<uint32_t>('{'));
+            return make_token(TokenType::LITERAL, static_cast<uint32_t>('{'));
         }
 
         m_position++;  // skip comma
         if (m_position >= m_regex.length()) {
             m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
-            return make_token(token_type::LITERAL, static_cast<uint32_t>('{'));
+            return make_token(TokenType::LITERAL, static_cast<uint32_t>('{'));
         }
 
         // case '{n,}'
         if (m_regex[m_position] == '}') {
             m_position++;  // consume '}'
-            return make_token(token_type::QUANTIFIER,
-                              quantifier_range {lower_bound, std::numeric_limits<uint32_t>::max()});
+            return make_token(TokenType::QUANTIFIER,
+                              QuantifierRange {lower_bound, std::numeric_limits<uint32_t>::max()});
         }
 
         uint32_t upper_bound = 0;
@@ -370,21 +387,21 @@ namespace smt::noodler::ecma {
 
         if (bound_digits == 0 || m_position >= m_regex.length()) {
             m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
-            return make_token(token_type::LITERAL, static_cast<uint32_t>('{'));
+            return make_token(TokenType::LITERAL, static_cast<uint32_t>('{'));
         }
 
         // '}' after number -> case {n,m}
         if (m_regex[m_position] == '}') {
             m_position++;  // consume '}'
-            return make_token(token_type::QUANTIFIER, quantifier_range {lower_bound, upper_bound});
+            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, upper_bound});
         }
 
         // not a well-formed quantifier --> '{' is a literal
         m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
-        return make_token(token_type::LITERAL, static_cast<uint32_t>('{'));
+        return make_token(TokenType::LITERAL, static_cast<uint32_t>('{'));
     }
 
-    token ecma_lexer::get_lookbehind_or_named_group_token() {
+    Token ECMALexer::get_lookbehind_or_named_group_token() {
         // called right after '(?<'
         if (m_position >= m_regex.length()) {
             util::throw_error("ECMA regex syntax error: Unfinished sequence '(?<'");
@@ -394,10 +411,10 @@ namespace smt::noodler::ecma {
         m_position++;  // consume the '=' or '!'
 
         if (fourth_char == '=') {
-            return make_token(token_type::LOOKBEHIND_POS_START);
+            return make_token(TokenType::LOOKBEHIND_POS_START);
         }
         if (fourth_char == '!') {
-            return make_token(token_type::LOOKBEHIND_NEG_START);
+            return make_token(TokenType::LOOKBEHIND_NEG_START);
         }
 
         // not '!' or '=' --> has to be named capture group (?<name>)
@@ -406,7 +423,7 @@ namespace smt::noodler::ecma {
         return get_named_capture_group_token();
     }
 
-    token ecma_lexer::get_special_group_or_lookaround_token() {
+    Token ECMALexer::get_special_group_or_lookaround_token() {
         // called right after '(?'
         if (m_position >= m_regex.length()) {
             util::throw_error("ECMA regex syntax error: Unfinished sequence '(?' at the end of regex");
@@ -416,11 +433,11 @@ namespace smt::noodler::ecma {
         m_position++;
         switch (third_char) {
             case ':':
-                return make_token(token_type::GROUP_NONCAPTURE_START);
+                return make_token(TokenType::GROUP_NONCAPTURE_START);
             case '=':
-                return make_token(token_type::LOOKAHEAD_POS_START);
+                return make_token(TokenType::LOOKAHEAD_POS_START);
             case '!':
-                return make_token(token_type::LOOKAHEAD_NEG_START);
+                return make_token(TokenType::LOOKAHEAD_NEG_START);
             case '<':
                 return get_lookbehind_or_named_group_token();
             default:
@@ -430,16 +447,16 @@ namespace smt::noodler::ecma {
         }
     }
 
-    token ecma_lexer::get_group_token() {
+    Token ECMALexer::get_group_token() {
         // called right after '('
         if (m_position >= m_regex.length() || m_regex[m_position] != '?') {
-            return make_token(token_type::GROUP_START);
+            return make_token(TokenType::GROUP_START);
         }
         m_position++;  // consume '?'
         return get_special_group_or_lookaround_token();
     }
 
-    token ecma_lexer::get_escape_sequence_token() {
+    Token ECMALexer::get_escape_sequence_token() {
         // called right after '\'
         if (m_position >= m_regex.length()) {
             util::throw_error("ECMA regex syntax error: Unfinished escape sequence at the end of regex");
@@ -454,10 +471,10 @@ namespace smt::noodler::ecma {
             case 'W':
             case 's':
             case 'S':
-                return make_token(token_type::CHAR_CLASS_ESCAPE, second_char);
+                return make_token(TokenType::CHAR_CLASS_ESCAPE, second_char);
             case 'b':
             case 'B':
-                return make_token(token_type::ASSERTION, second_char);
+                return make_token(TokenType::ASSERTION, second_char);
             case 'x':
                 return get_hex_escape_seq_token();
             case 'u':
@@ -478,43 +495,43 @@ namespace smt::noodler::ecma {
             case '9':
                 return octal_or_backref(second_char);
             default:
-                return make_token(token_type::LITERAL, second_char);
+                return make_token(TokenType::LITERAL, second_char);
         }
     }
 
-    token ecma_lexer::get_token_standard() {
+    Token ECMALexer::get_token_standard() {
         const uint32_t current_char = m_regex[m_position];
         m_position++;
         switch (current_char) {
             case '*':
             case '+':
             case '?':
-                return make_token(token_type::QUANTIFIER, current_char);
+                return make_token(TokenType::QUANTIFIER, current_char);
             case '{':
                 return get_braced_quant_token();
             case '.':
-                return make_token(token_type::DOT);
+                return make_token(TokenType::DOT);
             case '|':
-                return make_token(token_type::ALTERNATION);
+                return make_token(TokenType::ALTERNATION);
             case '^':
             case '$':
-                return make_token(token_type::ASSERTION, current_char);
+                return make_token(TokenType::ASSERTION, current_char);
             case '(':
                 return get_group_token();
             case ')':
-                return make_token(token_type::GROUP_END);
+                return make_token(TokenType::GROUP_END);
             case '\\':
                 return get_escape_sequence_token();
             case '[':
                 m_in_char_class = true;
                 m_first_in_char_class = true;
-                return make_token(token_type::CHAR_CLASS_START);
+                return make_token(TokenType::CHAR_CLASS_START);
             default:
-                return make_token(token_type::LITERAL, current_char);
+                return make_token(TokenType::LITERAL, current_char);
         }
     }
 
-    token ecma_lexer::get_char_class_escape_sequence_token() {
+    Token ECMALexer::get_char_class_escape_sequence_token() {
         // called right after '\' inside character class
         if (m_position >= m_regex.length()) {
             util::throw_error("ECMA regex syntax error: Unfinished escape sequence at the end of regex");
@@ -529,7 +546,7 @@ namespace smt::noodler::ecma {
             case 'W':
             case 's':
             case 'S':
-                return make_token(token_type::CHAR_CLASS_ESCAPE, second_char);
+                return make_token(TokenType::CHAR_CLASS_ESCAPE, second_char);
             case 'x':
                 return get_hex_escape_seq_token();
             case 'u':
@@ -537,7 +554,7 @@ namespace smt::noodler::ecma {
             case 'c':
                 return get_control_escape_seq_token();
             case 'b':
-                return make_token(token_type::LITERAL, BACKSPACE_LITERAL);
+                return make_token(TokenType::LITERAL, BACKSPACE_LITERAL);
             case '1':
             case '2':
             case '3':
@@ -548,11 +565,11 @@ namespace smt::noodler::ecma {
                 return get_octal_escape_sequence_token(true, second_char);
             default:
                 // digits 8 and 9 in escape are '8' and '9' literals as well in char class
-                return make_token(token_type::LITERAL, second_char);
+                return make_token(TokenType::LITERAL, second_char);
         }
     }
 
-    token ecma_lexer::get_token_char_class() {
+    Token ECMALexer::get_token_char_class() {
         const uint32_t current_char = m_regex[m_position];
         m_position++;
 
@@ -562,23 +579,23 @@ namespace smt::noodler::ecma {
         switch (current_char) {
             case ']':
                 m_in_char_class = false;
-                return make_token(token_type::CHAR_CLASS_END);
+                return make_token(TokenType::CHAR_CLASS_END);
             case '-':
-                return make_token(token_type::CHAR_CLASS_RANGE);
+                return make_token(TokenType::CHAR_CLASS_RANGE);
             case '^':
                 if (is_first) {
-                    return make_token(token_type::CHAR_CLASS_NEGATION);
+                    return make_token(TokenType::CHAR_CLASS_NEGATION);
                 } else {
-                    return make_token(token_type::LITERAL, current_char);
+                    return make_token(TokenType::LITERAL, current_char);
                 }
             case '\\':
                 return get_char_class_escape_sequence_token();
             default:
-                return make_token(token_type::LITERAL, current_char);
+                return make_token(TokenType::LITERAL, current_char);
         }
     }
 
-    bool ecma_lexer::is_capture_or_named_capture(uint32_t position) const {
+    bool ECMALexer::is_capture_or_named_capture(uint32_t position) const {
         position++;
         if (position >= m_regex.length()) {
             return false;
@@ -608,7 +625,7 @@ namespace smt::noodler::ecma {
         return (name_len > 0) && (found_closing_bracket);
     }
 
-    void ecma_lexer::perform_first_traverse() {
+    void ECMALexer::perform_first_traverse() {
         uint32_t open_parens_count = 0;
         bool in_char_class = false;
         bool escaped = false;
@@ -665,17 +682,17 @@ namespace smt::noodler::ecma {
     }
 
     // ================== ECMA REGEX AST ==================
-    uint32_t ast_node_disjunction::print_dot(std::ostream& out, uint32_t& node_count) const {
+    uint32_t ASTNodeDisjunction::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"DISJUNCTION\"];\n";
-        for (const ast_node_ref& alt : m_alternatives) {
+        for (const ASTNodeRef& alt : m_alternatives) {
             const uint32_t child_id = alt->print_dot(out, node_count);
             out << "  node" << id << " -> node" << child_id << ";\n";
         }
         return id;
     }
 
-    zstring ast_node_disjunction::serialize() const {
+    zstring ASTNodeDisjunction::serialize() const {
         zstring res("(DISJ");
         for (const auto& alt : m_alternatives) {
             res += zstring(" ");
@@ -685,21 +702,21 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    void ast_node_disjunction::add_alternative(ast_node_ref alt) {
+    void ASTNodeDisjunction::add_alternative(ASTNodeRef alt) {
         m_alternatives.push_back(std::move(alt));
     }
 
-    uint32_t ast_node_alternative::print_dot(std::ostream& out, uint32_t& node_count) const {
+    uint32_t ASTNodeAlternative::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"ALTERNATIVE\"];\n";
-        for (const ast_node_ref& term : m_terms) {
+        for (const ASTNodeRef& term : m_terms) {
             const uint32_t child_id = term->print_dot(out, node_count);
             out << "  node" << id << " -> node" << child_id << ";\n";
         }
         return id;
     }
 
-    zstring ast_node_alternative::serialize() const {
+    zstring ASTNodeAlternative::serialize() const {
         zstring res("(SEQ");
         for (const auto& term : m_terms) {
             res += zstring(" ");
@@ -709,25 +726,25 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    void ast_node_alternative::add_term(ast_node_ref term) {
+    void ASTNodeAlternative::add_term(ASTNodeRef term) {
         m_terms.push_back(std::move(term));
     }
 
-    uint32_t ast_node_assertion::print_dot(std::ostream& out, uint32_t& node_count) const {
+    uint32_t ASTNodeAssertion::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         std::string label = "ASSERTION (";
         if (m_subpattern) {
             switch (m_assert_type) {
-                case token_type::LOOKAHEAD_POS_START:
+                case TokenType::LOOKAHEAD_POS_START:
                     label += "?=";
                     break;
-                case token_type::LOOKAHEAD_NEG_START:
+                case TokenType::LOOKAHEAD_NEG_START:
                     label += "?!";
                     break;
-                case token_type::LOOKBEHIND_POS_START:
+                case TokenType::LOOKBEHIND_POS_START:
                     label += "?<=";
                     break;
-                case token_type::LOOKBEHIND_NEG_START:
+                case TokenType::LOOKBEHIND_NEG_START:
                     label += "?<!";
                     break;
                 default:
@@ -744,20 +761,20 @@ namespace smt::noodler::ecma {
         return id;
     }
 
-    zstring ast_node_assertion::serialize() const {
+    zstring ASTNodeAssertion::serialize() const {
         if (m_subpattern) {
             zstring label;
             switch (m_assert_type) {
-                case token_type::LOOKAHEAD_POS_START:
+                case TokenType::LOOKAHEAD_POS_START:
                     label = zstring("?=");
                     break;
-                case token_type::LOOKAHEAD_NEG_START:
+                case TokenType::LOOKAHEAD_NEG_START:
                     label = zstring("?!");
                     break;
-                case token_type::LOOKBEHIND_POS_START:
+                case TokenType::LOOKBEHIND_POS_START:
                     label = zstring("?<=");
                     break;
-                case token_type::LOOKBEHIND_NEG_START:
+                case TokenType::LOOKBEHIND_NEG_START:
                     label = zstring("?<!");
                     break;
                 default:
@@ -769,19 +786,19 @@ namespace smt::noodler::ecma {
         return zstring("(ASSERT '") + zstring(m_payload) + zstring("')");
     }
 
-    void ast_node_assertion::set_type(const token_type type) {
+    void ASTNodeAssertion::set_type(const TokenType type) {
         m_assert_type = type;
     }
 
-    void ast_node_assertion::set_payload(const uint32_t payload) {
+    void ASTNodeAssertion::set_payload(const uint32_t payload) {
         m_payload = payload;
     }
 
-    void ast_node_assertion::set_expr(ast_node_ref expr) {
+    void ASTNodeAssertion::set_expr(ASTNodeRef expr) {
         m_subpattern = std::move(expr);
     }
 
-    uint32_t ast_node_quantifier::print_dot(std::ostream& out, uint32_t& node_count) const {
+    uint32_t ASTNodeQuantifier::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"QUANTIFIER {" << m_range.min << ",";
         if (m_range.max == std::numeric_limits<uint32_t>::max()) {
@@ -795,7 +812,7 @@ namespace smt::noodler::ecma {
         return id;
     }
 
-    zstring ast_node_quantifier::serialize() const {
+    zstring ASTNodeQuantifier::serialize() const {
         zstring max_str = (m_range.max == std::numeric_limits<uint32_t>::max()) ? zstring("inf")
                                                                                 : zstring(std::to_string(m_range.max));
         zstring min_str = zstring(std::to_string(m_range.min));
@@ -804,9 +821,9 @@ namespace smt::noodler::ecma {
                zstring(")");
     }
 
-    void ast_node_quantifier::set(const token& t, ast_node_ref term) {
-        if (std::holds_alternative<quantifier_range>(t.payload)) {
-            m_range = std::get<quantifier_range>(t.payload);
+    void ASTNodeQuantifier::set(const Token& t, ASTNodeRef term) {
+        if (std::holds_alternative<QuantifierRange>(t.payload)) {
+            m_range = std::get<QuantifierRange>(t.payload);
         } else if (std::holds_alternative<uint32_t>(t.payload)) {
             const uint32_t ch = std::get<uint32_t>(t.payload);
             if (ch == '*') {
@@ -820,37 +837,42 @@ namespace smt::noodler::ecma {
         m_child = std::move(term);
     }
 
-    uint32_t ast_node_literal::print_dot(std::ostream& out, uint32_t& node_count) const {
+    uint32_t ASTNodeLiteral::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"LITERAL ('" << static_cast<char>(m_char) << "')\"];\n";
         return id;
     }
 
-    zstring ast_node_literal::serialize() const {
+    zstring ASTNodeLiteral::serialize() const {
         return zstring("(LIT '") + zstring(m_char) + zstring("')");
     }
 
-    void ast_node_literal::set_char(const uint32_t ch) {
+    void ASTNodeLiteral::set_char(const uint32_t ch) {
         m_char = ch;
     }
 
-    uint32_t ast_node_dot::print_dot(std::ostream& out, uint32_t& node_count) const {
+    RegexComponent ASTNodeLiteral::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        SASSERT(m_char < std::numeric_limits<uint32_t>::max());
+        return app_ref(util_s.str.mk_unit(util_s.str.mk_char(m_char)), m);
+    }
+
+    uint32_t ASTNodeDot::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"DOT\"];\n";
         return id;
     }
 
-    zstring ast_node_dot::serialize() const {
+    zstring ASTNodeDot::serialize() const {
         return zstring("(DOT)");
     }
 
-    uint32_t ast_node_backreference::print_dot(std::ostream& out, uint32_t& node_count) const {
+    uint32_t ASTNodeBackref::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"BACKREF\"];\n";
         return id;
     }
 
-    zstring ast_node_backreference::serialize() const {
+    zstring ASTNodeBackref::serialize() const {
         zstring ref_str;
         if (std::holds_alternative<uint32_t>(m_backref)) {
             ref_str = zstring(std::to_string(std::get<uint32_t>(m_backref)));
@@ -860,23 +882,23 @@ namespace smt::noodler::ecma {
         return zstring("(BACKREF ") + ref_str + zstring(")");
     }
 
-    void ast_node_backreference::set_ref(zstring_view backref_name) {
+    void ASTNodeBackref::set_ref(zstring_view backref_name) {
         m_backref = backref_name;
     }
 
-    void ast_node_backreference::set_ref(uint32_t backref_number) {
+    void ASTNodeBackref::set_ref(uint32_t backref_number) {
         m_backref = backref_number;
     }
 
-    uint32_t ast_node_group::print_dot(std::ostream& out, uint32_t& node_count) const {
+    uint32_t ASTNodeGroup::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         std::string label = "GROUP";
-        if (m_type == group_type::NAMED) {
+        if (m_type == GroupType::NAMED) {
             label += " (?<";
             for (uint32_t i = 0; i < m_name.length(); i++) {
                 label += static_cast<char>(m_name[i]);
             }
-        } else if (m_type == group_type::NONCAPTURE) {
+        } else if (m_type == GroupType::NONCAPTURE) {
             label += " (?:)";
         }
 
@@ -886,11 +908,11 @@ namespace smt::noodler::ecma {
         return id;
     }
 
-    zstring ast_node_group::serialize() const {
+    zstring ASTNodeGroup::serialize() const {
         zstring label;
-        if (m_type == group_type::NAMED) {
+        if (m_type == GroupType::NAMED) {
             label = zstring("GROUP-NAMED ") + view_to_zstring(m_name);
-        } else if (m_type == group_type::NONCAPTURE) {
+        } else if (m_type == GroupType::NONCAPTURE) {
             label = zstring("GROUP-NONCAP");
         } else {
             label = zstring("GROUP");
@@ -898,19 +920,19 @@ namespace smt::noodler::ecma {
         return zstring("(") + label + zstring(" ") + m_child->serialize() + zstring(")");
     }
 
-    void ast_node_group::set_type(const group_type type) {
+    void ASTNodeGroup::set_type(const GroupType type) {
         m_type = type;
     }
 
-    void ast_node_group::set_name(const zstring_view name) {
+    void ASTNodeGroup::set_name(const zstring_view name) {
         m_name = name;
     }
 
-    void ast_node_group::set_expr(ast_node_ref expr) {
+    void ASTNodeGroup::set_expr(ASTNodeRef expr) {
         m_child = std::move(expr);
     }
 
-    uint32_t ast_node_character_class::print_dot(std::ostream& out, uint32_t& node_count) const {
+    uint32_t ASTNodeCharClass::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         std::string label = "CLASS [";
         if (m_is_negated) {
@@ -918,12 +940,12 @@ namespace smt::noodler::ecma {
         }
 
         for (const auto& [kind, lower, upper] : m_elements) {
-            if (kind == element_type::SINGLE) {
+            if (kind == ElementType::SINGLE) {
                 label += static_cast<char>(lower);
-            } else if (kind == element_type::ESCAPE) {
+            } else if (kind == ElementType::ESCAPE) {
                 label += "\\";
                 label += static_cast<char>(lower);
-            } else if (kind == element_type::RANGE) {
+            } else if (kind == ElementType::RANGE) {
                 label += static_cast<char>(lower);
                 label += "-";
                 label += static_cast<char>(upper);
@@ -935,17 +957,17 @@ namespace smt::noodler::ecma {
         return id;
     }
 
-    zstring ast_node_character_class::serialize() const {
+    zstring ASTNodeCharClass::serialize() const {
         zstring res("(CLASS");
         if (m_is_negated) {
             res += zstring(" ^");
         }
         for (const auto& [kind, lower, upper] : m_elements) {
-            if (kind == element_type::SINGLE) {
+            if (kind == ElementType::SINGLE) {
                 res += zstring(" (LIT '") + zstring(lower) + zstring("')");
-            } else if (kind == element_type::ESCAPE) {
+            } else if (kind == ElementType::ESCAPE) {
                 res += zstring(" (CHAR_CLASS '") + zstring(lower) + zstring("')");
-            } else if (kind == element_type::RANGE) {
+            } else if (kind == ElementType::RANGE) {
                 res += zstring(" (RANGE '") + zstring(lower) + zstring("' '") + zstring(upper) + zstring("')");
             }
         }
@@ -953,22 +975,54 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    void ast_node_character_class::add_element(const char_class_element elem) {
-        if (elem.kind == element_type::RANGE && elem.lower > elem.upper) {
+    void ASTNodeCharClass::add_element(const CharClassElement elem) {
+        if (elem.kind == ElementType::RANGE && elem.lower > elem.upper) {
             util::throw_error("ECMA Regex error: Character range out of order");
         }
         m_elements.push_back(elem);
     }
 
-    void ast_node_character_class::set_negation(const bool neg) {
+    void ASTNodeCharClass::set_negation(const bool neg) {
         m_is_negated = neg;
+    }
+
+    RegexComponent ASTNodeCharClass::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        SASSERT(!m_elements.empty());
+        app_ref_vector class_elements(m);
+
+        for (const CharClassElement& elem : m_elements) {
+            if (elem.kind == ElementType::SINGLE || elem.kind == ElementType::ESCAPE) {
+                // Convert character to internal z3 seq (string) representation, then to regex and add to vector
+                app* ch = util_s.str.mk_char(elem.lower);
+                app* unit_str = util_s.str.mk_unit(ch);
+                class_elements.push_back(util_s.re.mk_to_re(unit_str));
+            } else if (elem.kind == ElementType::RANGE) {
+                app* lower = util_s.str.mk_unit(util_s.str.mk_char(elem.lower));
+                app* upper = util_s.str.mk_unit(util_s.str.mk_char(elem.upper));
+                class_elements.push_back(util_s.re.mk_range(lower, upper));
+            }
+        }
+
+        // Unite all the ranges and literals
+        app_ref current_class_re(class_elements.get(0), m);
+        for (std::size_t i = 1; i < class_elements.size(); ++i) {
+            current_class_re = util_s.re.mk_union(current_class_re, class_elements.get(i));
+        }
+        // Negated class --> set difference of all chars and the character class
+        if (m_is_negated) {
+            sort* str_sort = util_s.mk_string_sort();
+            app* all_chars = util_s.re.mk_full_char(str_sort);
+            current_class_re = util_s.re.mk_diff(all_chars, current_class_re);
+        }
+
+        return current_class_re;
     }
 
     // =============== ECMA REGEX PARSER ===============
 
-    ast_node_ref ecma_parser::parse() {
-        ast_node_ref ast = parse_disjunction();
-        consume(token_type::END_OF_INPUT, "Expected end of input");
+    ASTNodeRef ECMAParser::parse() {
+        ASTNodeRef ast = parse_disjunction();
+        consume(TokenType::END_OF_INPUT, "Expected end of input");
 
         namespace fs = std::filesystem;
         fs::path project_root = fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
@@ -986,11 +1040,11 @@ namespace smt::noodler::ecma {
         return ast;
     }
 
-    void ecma_parser::next() {
+    void ECMAParser::next() {
         m_current_token = m_lexer.get_next_token();
     }
 
-    bool ecma_parser::match(const token_type type) {
+    bool ECMAParser::match(const TokenType type) {
         if (m_current_token.type == type) {
             next();
             return true;
@@ -998,9 +1052,9 @@ namespace smt::noodler::ecma {
         return false;
     }
 
-    token ecma_parser::consume(const token_type type, const char* message) {
+    Token ECMAParser::consume(const TokenType type, const char* message) {
         if (m_current_token.type == type) {
-            const token t = m_current_token;
+            const Token t = m_current_token;
             next();
             return t;
         }
@@ -1010,49 +1064,49 @@ namespace smt::noodler::ecma {
         return {};
     }
 
-    ast_node_ref ecma_parser::parse_disjunction() {
+    ASTNodeRef ECMAParser::parse_disjunction() {
         // Disjunction -> Alternative Disjunction2
         // Disjunction2 -> ALTERNATION Alternative Disjunction2 | epsilon
-        ast_node_ref alt = parse_alternative();
+        ASTNodeRef alt = parse_alternative();
 
         // little optimalization: only one alternative --> no disjunction node
-        if (m_current_token.type != token_type::ALTERNATION) {
+        if (m_current_token.type != TokenType::ALTERNATION) {
             return alt;
         }
 
-        auto disj = std::make_unique<ast_node_disjunction>();
+        auto disj = std::make_unique<ASTNodeDisjunction>();
         disj->add_alternative(std::move(alt));
-        while (match(token_type::ALTERNATION)) {
+        while (match(TokenType::ALTERNATION)) {
             disj->add_alternative(parse_alternative());
         }
         return disj;
     }
 
-    ast_node_ref ecma_parser::parse_alternative() {
-        auto alt = std::make_unique<ast_node_alternative>();
-        while (m_current_token.type != token_type::ALTERNATION && m_current_token.type != token_type::GROUP_END &&
-               m_current_token.type != token_type::END_OF_INPUT) {
+    ASTNodeRef ECMAParser::parse_alternative() {
+        auto alt = std::make_unique<ASTNodeAlternative>();
+        while (m_current_token.type != TokenType::ALTERNATION && m_current_token.type != TokenType::GROUP_END &&
+               m_current_token.type != TokenType::END_OF_INPUT) {
             alt->add_term(parse_term());
         }
         return alt;
     }
 
-    ast_node_ref ecma_parser::parse_term() {
+    ASTNodeRef ECMAParser::parse_term() {
         switch (m_current_token.type) {
-            case token_type::ASSERTION:
-            case token_type::LOOKAHEAD_POS_START:
-            case token_type::LOOKAHEAD_NEG_START:
-            case token_type::LOOKBEHIND_POS_START:
-            case token_type::LOOKBEHIND_NEG_START:
+            case TokenType::ASSERTION:
+            case TokenType::LOOKAHEAD_POS_START:
+            case TokenType::LOOKAHEAD_NEG_START:
+            case TokenType::LOOKBEHIND_POS_START:
+            case TokenType::LOOKBEHIND_NEG_START:
                 return parse_assertion();
-            case token_type::LITERAL:
-            case token_type::DOT:
-            case token_type::BACKREFERENCE:
-            case token_type::CHAR_CLASS_ESCAPE:
-            case token_type::GROUP_START:
-            case token_type::GROUP_NAMED_START:
-            case token_type::GROUP_NONCAPTURE_START:
-            case token_type::CHAR_CLASS_START:
+            case TokenType::LITERAL:
+            case TokenType::DOT:
+            case TokenType::BACKREFERENCE:
+            case TokenType::CHAR_CLASS_ESCAPE:
+            case TokenType::GROUP_START:
+            case TokenType::GROUP_NAMED_START:
+            case TokenType::GROUP_NONCAPTURE_START:
+            case TokenType::CHAR_CLASS_START:
                 return parse_maybe_quantifier(parse_atom());
             default:
                 util::throw_error("Syntax error in ECMA regex: Unexpected token in term");
@@ -1062,37 +1116,37 @@ namespace smt::noodler::ecma {
         }
     }
 
-    ast_node_ref ecma_parser::parse_maybe_quantifier(ast_node_ref term) {
+    ASTNodeRef ECMAParser::parse_maybe_quantifier(ASTNodeRef term) {
         // MaybeQuantifier -> QUANTIFIER | epsilon
-        if (m_current_token.type == token_type::QUANTIFIER) {
-            const token t = m_current_token;
+        if (m_current_token.type == TokenType::QUANTIFIER) {
+            const Token t = m_current_token;
             next();
 
-            auto quant = std::make_unique<ast_node_quantifier>();
+            auto quant = std::make_unique<ASTNodeQuantifier>();
             quant->set(t, std::move(term));
             return quant;
         }
         return term;
     }
 
-    ast_node_ref ecma_parser::parse_assertion() {
-        const token t = m_current_token;
-        auto node = std::make_unique<ast_node_assertion>();
+    ASTNodeRef ECMAParser::parse_assertion() {
+        const Token t = m_current_token;
+        auto node = std::make_unique<ASTNodeAssertion>();
         node->set_type(t.type);
 
         switch (m_current_token.type) {
-            case token_type::ASSERTION:
-                assert(std::holds_alternative<uint32_t>(t.payload) && "ASSERTION has no specifier");
+            case TokenType::ASSERTION:
+                SASSERT(std::holds_alternative<uint32_t>(t.payload) && "ASSERTION has no specifier");
                 node->set_payload(std::get<uint32_t>(t.payload));
                 next();
                 return node;
-            case token_type::LOOKAHEAD_POS_START:
-            case token_type::LOOKAHEAD_NEG_START:
-            case token_type::LOOKBEHIND_POS_START:
-            case token_type::LOOKBEHIND_NEG_START:
+            case TokenType::LOOKAHEAD_POS_START:
+            case TokenType::LOOKAHEAD_NEG_START:
+            case TokenType::LOOKBEHIND_POS_START:
+            case TokenType::LOOKBEHIND_NEG_START:
                 next();
                 node->set_expr(parse_disjunction());
-                consume(token_type::GROUP_END, "Expected ')' after lookaround assertion");
+                consume(TokenType::GROUP_END, "Expected ')' after lookaround assertion");
                 return node;
             default:
                 util::throw_error("Syntax error in ECMA regex: Expected assertion");
@@ -1101,24 +1155,24 @@ namespace smt::noodler::ecma {
         }
     }
 
-    ast_node_ref ecma_parser::parse_atom() {
-        const token t = m_current_token;
+    ASTNodeRef ECMAParser::parse_atom() {
+        const Token t = m_current_token;
         switch (m_current_token.type) {
-            case token_type::LITERAL: {
-                auto literal = std::make_unique<ast_node_literal>();
+            case TokenType::LITERAL: {
+                auto literal = std::make_unique<ASTNodeLiteral>();
                 // no uint32_t (character) payload --> incorrect lexer implementation
-                assert(std::holds_alternative<uint32_t>(t.payload) && "LITERAL has no literal value");
+                SASSERT(std::holds_alternative<uint32_t>(t.payload) && "LITERAL has no literal value");
                 literal->set_char(std::get<uint32_t>(t.payload));
                 next();
                 return literal;
             }
-            case token_type::DOT:
+            case TokenType::DOT:
                 next();
-                return std::make_unique<ast_node_dot>();
-            case token_type::BACKREFERENCE: {
-                auto backref = std::make_unique<ast_node_backreference>();
+                return std::make_unique<ASTNodeDot>();
+            case TokenType::BACKREFERENCE: {
+                auto backref = std::make_unique<ASTNodeBackref>();
                 // no uint32_t (backref number) or zstring_view (backref name) --> incorrect lexer implementation
-                assert(
+                SASSERT(
                     (std::holds_alternative<uint32_t>(t.payload) || std::holds_alternative<zstring_view>(t.payload)) &&
                     "BACKREFERENCE has no name and no number");
                 if (std::holds_alternative<uint32_t>(t.payload)) {
@@ -1129,20 +1183,20 @@ namespace smt::noodler::ecma {
                 next();
                 return backref;
             }
-            case token_type::CHAR_CLASS_ESCAPE: {
-                auto char_class = std::make_unique<ast_node_character_class>();
+            case TokenType::CHAR_CLASS_ESCAPE: {
+                auto char_class = std::make_unique<ASTNodeCharClass>();
                 // char class without uint32_t (char class specifier 'w', 'd', etc.) --> incorrect lexer implementation
-                assert(std::holds_alternative<uint32_t>(t.payload) && "CHAR_CLASS_ESCAPE has no class specifier");
-                const char_class_element elem {.kind = element_type::ESCAPE, .lower = std::get<uint32_t>(t.payload)};
+                SASSERT(std::holds_alternative<uint32_t>(t.payload) && "CHAR_CLASS_ESCAPE has no class specifier");
+                const CharClassElement elem {.kind = ElementType::ESCAPE, .lower = std::get<uint32_t>(t.payload)};
                 char_class->add_element(elem);
                 next();
                 return char_class;
             }
-            case token_type::GROUP_START:
-            case token_type::GROUP_NAMED_START:
-            case token_type::GROUP_NONCAPTURE_START:
+            case TokenType::GROUP_START:
+            case TokenType::GROUP_NAMED_START:
+            case TokenType::GROUP_NONCAPTURE_START:
                 return parse_group();
-            case token_type::CHAR_CLASS_START:
+            case TokenType::CHAR_CLASS_START:
                 return parse_character_class();
             default:
                 util::throw_error("Syntax error in ECMA regex: Unexpected token in atom");
@@ -1151,78 +1205,78 @@ namespace smt::noodler::ecma {
         }
     }
 
-    ast_node_ref ecma_parser::parse_group() {
-        const token t = m_current_token;
-        auto group = std::make_unique<ast_node_group>();
+    ASTNodeRef ECMAParser::parse_group() {
+        const Token t = m_current_token;
+        auto group = std::make_unique<ASTNodeGroup>();
 
         switch (m_current_token.type) {
-            case token_type::GROUP_START:
-                group->set_type(group_type::NORMAL);
+            case TokenType::GROUP_START:
+                group->set_type(GroupType::NORMAL);
                 next();
                 break;
-            case token_type::GROUP_NAMED_START:
-                group->set_type(group_type::NAMED);
-                assert(std::holds_alternative<zstring_view>(t.payload) && "GROUP_NAMED_START has no name");
+            case TokenType::GROUP_NAMED_START:
+                group->set_type(GroupType::NAMED);
+                SASSERT(std::holds_alternative<zstring_view>(t.payload) && "GROUP_NAMED_START has no name");
                 group->set_name(std::get<zstring_view>(t.payload));
                 next();
                 break;
-            case token_type::GROUP_NONCAPTURE_START:
-                group->set_type(group_type::NONCAPTURE);
+            case TokenType::GROUP_NONCAPTURE_START:
+                group->set_type(GroupType::NONCAPTURE);
                 next();
                 break;
             default:
                 util::throw_error("Syntax error in ECMA regex: Expected group start");
         }
         group->set_expr(parse_disjunction());
-        consume(token_type::GROUP_END, "Expected ')' after group");
+        consume(TokenType::GROUP_END, "Expected ')' after group");
         return group;
     }
 
-    ast_node_ref ecma_parser::parse_character_class() {
+    ASTNodeRef ECMAParser::parse_character_class() {
         // CharacterClass -> CHAR_CLASS_START MaybeNegation ClassRanges CHAR_CLASS_END
-        consume(token_type::CHAR_CLASS_START, "Expected '['");
+        consume(TokenType::CHAR_CLASS_START, "Expected '['");
 
-        auto char_class = std::make_unique<ast_node_character_class>();
-        char_class->set_negation(match(token_type::CHAR_CLASS_NEGATION));
+        auto char_class = std::make_unique<ASTNodeCharClass>();
+        char_class->set_negation(match(TokenType::CHAR_CLASS_NEGATION));
 
         parse_class_ranges(char_class);
-        consume(token_type::CHAR_CLASS_END, "Expected ']'");
+        consume(TokenType::CHAR_CLASS_END, "Expected ']'");
         return char_class;
     }
 
-    void ecma_parser::add_atom_to_class(const ast_node_char_class_ref& char_class_parent, class_atom atom) const {
+    void ECMAParser::add_atom_to_class(const ASTNodeCharClassRef& char_class_parent, const CharClassAtom atom) const {
         if (atom.is_escape) {
-            char_class_parent->add_element({.kind = element_type::ESCAPE, .lower = atom.val});
+            char_class_parent->add_element({.kind = ElementType::ESCAPE, .lower = atom.val});
         } else {
-            char_class_parent->add_element({.kind = element_type::SINGLE, .lower = atom.val});
+            char_class_parent->add_element({.kind = ElementType::SINGLE, .lower = atom.val});
         }
     }
 
-    void ecma_parser::parse_class_ranges(const ast_node_char_class_ref& char_class_parent) {
+    void ECMAParser::parse_class_ranges(const ASTNodeCharClassRef& char_class_parent) {
         // ClassRanges -> ClassAtom ClassRangesTail
         //             -> epsilon
-        if (m_current_token.type == token_type::LITERAL || m_current_token.type == token_type::CHAR_CLASS_ESCAPE ||
-            m_current_token.type == token_type::CHAR_CLASS_RANGE) {
-            const class_atom first_atom = parse_class_atom();
+        if (m_current_token.type == TokenType::LITERAL || m_current_token.type == TokenType::CHAR_CLASS_ESCAPE ||
+            m_current_token.type == TokenType::CHAR_CLASS_RANGE) {
+            const CharClassAtom first_atom = parse_class_atom();
             parse_class_ranges_tail(char_class_parent, first_atom);
         }
     }
 
-    void ecma_parser::parse_class_ranges_tail(const ast_node_char_class_ref& char_class_parent,
-                                              const class_atom prev_atom) {
+    void ECMAParser::parse_class_ranges_tail(const ASTNodeCharClassRef& char_class_parent,
+                                             const CharClassAtom prev_atom) {
         // ClassRangesTail -> CHAR_CLASS_RANGE DashTail
         //                 -> ClassAtomNoDash ClassRangesTail
         //                 -> epsilon
         switch (m_current_token.type) {
-            case token_type::CHAR_CLASS_RANGE:
+            case TokenType::CHAR_CLASS_RANGE:
                 next();  // skip '-'
                 parse_dash_tail(char_class_parent, prev_atom);
                 parse_class_ranges(char_class_parent);
                 break;
-            case token_type::LITERAL:
-            case token_type::CHAR_CLASS_ESCAPE: {
+            case TokenType::LITERAL:
+            case TokenType::CHAR_CLASS_ESCAPE: {
                 add_atom_to_class(char_class_parent, prev_atom);
-                const class_atom next_atom = parse_class_atom_no_dash();
+                const CharClassAtom next_atom = parse_class_atom_no_dash();
                 parse_class_ranges_tail(char_class_parent, next_atom);
                 break;
             }
@@ -1232,50 +1286,50 @@ namespace smt::noodler::ecma {
         }
     }
 
-    void ecma_parser::parse_dash_tail(const ast_node_char_class_ref& char_class, const class_atom atom_before_dash) {
+    void ECMAParser::parse_dash_tail(const ASTNodeCharClassRef& char_class, const CharClassAtom atom_before_dash) {
         // DashTail -> ClassAtom ClassRanges
         //          -> epsilon
         // https://tc39.es/ecma262/2020/#sec-runtime-semantics-characterrange-abstract-operation
         // https://tc39.es/ecma262/2020/#sec-nonemptyclassrangesnodash
         // when parsing range in the character class, both class atoms have to be single characters
-        // when either of them is e.g. a character class themselves (like '\w', etc.), the standard says it should be an error
+        // when either of them is e.g., a character class themselves (like '\w', etc.), the standard says it should be an error
         // the only valid range is in form LITERAL RANGE LITERAL
         switch (m_current_token.type) {
-            case token_type::CHAR_CLASS_ESCAPE: {
+            case TokenType::CHAR_CLASS_ESCAPE: {
                 // no matter what the atom before dash was, this is an error
                 util::throw_error("ECMA Regex error: Character class as a bound of range");
                 break;  // leaving 'break;' because of compilation errors
             }
-            case token_type::CHAR_CLASS_RANGE:
+            case TokenType::CHAR_CLASS_RANGE:
             // two '-' in a row --> treat the first one as range, second one as literal -- same as LITERAL
-            case token_type::LITERAL: {
+            case TokenType::LITERAL: {
                 // no uint32_t should never happen here -- if so, lexer implementation is incorrect
                 if (atom_before_dash.is_escape) {
                     util::throw_error("ECMA Regex Error: Character class as a bound of range");
                 }
-                assert(std::holds_alternative<uint32_t>(m_current_token.payload) && "LITERAL has no literal value");
+                SASSERT(std::holds_alternative<uint32_t>(m_current_token.payload) && "LITERAL has no literal value");
                 const uint32_t from = atom_before_dash.val;
                 const uint32_t to = std::get<uint32_t>(m_current_token.payload);
-                char_class->add_element({.kind = element_type::RANGE, .lower = from, .upper = to});
+                char_class->add_element({.kind = ElementType::RANGE, .lower = from, .upper = to});
                 next();
                 break;
             }
             default:  // epsilon
                 // the '-' that got us here is at the end of char class --> its a literal
                 add_atom_to_class(char_class, atom_before_dash);
-                char_class->add_element({element_type::SINGLE, static_cast<uint32_t>('-'), 0});
+                char_class->add_element({ElementType::SINGLE, static_cast<uint32_t>('-'), 0});
                 break;
         }
     }
 
-    class_atom ecma_parser::parse_class_atom() {
+    CharClassAtom ECMAParser::parse_class_atom() {
         // ClassAtom -> ClassAtomNoDash
         //           -> CHAR_CLASS_RANGE
         switch (m_current_token.type) {
-            case token_type::LITERAL:
-            case token_type::CHAR_CLASS_ESCAPE:
+            case TokenType::LITERAL:
+            case TokenType::CHAR_CLASS_ESCAPE:
                 return parse_class_atom_no_dash();
-            case token_type::CHAR_CLASS_RANGE:
+            case TokenType::CHAR_CLASS_RANGE:
                 next();
                 return {false, static_cast<uint32_t>('-')};
             default:
@@ -1285,16 +1339,16 @@ namespace smt::noodler::ecma {
         }
     }
 
-    class_atom ecma_parser::parse_class_atom_no_dash() {
+    CharClassAtom ECMAParser::parse_class_atom_no_dash() {
         // ClassAtomNoDash -> LITERAL | CHAR_CLASS_ESCAPE
-        const token current_token = m_current_token;
+        const Token current_token = m_current_token;
         next();
         switch (current_token.type) {
-            case token_type::LITERAL:
-                assert(std::holds_alternative<uint32_t>(current_token.payload));
+            case TokenType::LITERAL:
+                SASSERT(std::holds_alternative<uint32_t>(current_token.payload));
                 return {false, std::get<uint32_t>(current_token.payload)};
-            case token_type::CHAR_CLASS_ESCAPE:
-                assert(std::holds_alternative<uint32_t>(current_token.payload));
+            case TokenType::CHAR_CLASS_ESCAPE:
+                SASSERT(std::holds_alternative<uint32_t>(current_token.payload));
                 return {true, std::get<uint32_t>(current_token.payload)};
             default:
                 util::throw_error("Syntax error in ECMA regex: Expected literal or escape sequence");
@@ -1305,11 +1359,10 @@ namespace smt::noodler::ecma {
 
     // ============= ECMA REGEX HANDLER =============
 
-    regex_constraint_graph ecma_regex_handler::build_rcg() {
-        regex_constraint_graph rcg;
-        ast_node_ref root = m_parser.parse();
+    RegexConstraintGraph RCGBuilder::build_rcg() {
+        RegexConstraintGraph rcg;
+        ASTNodeRef root = m_parser.parse();
+        GraphFragment tmp;
         return {};
     }
-
-
 }  // namespace smt::noodler::ecma
