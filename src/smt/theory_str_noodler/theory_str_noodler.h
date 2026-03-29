@@ -6,43 +6,42 @@ Eternal glory to Yu-Fang.
 #ifndef _THEORY_STR_NOODLER_H_
 #define _THEORY_STR_NOODLER_H_
 
+#include "ast/arith_decl_plugin.h"
+#include "ast/rewriter/seq_rewriter.h"
+#include "ast/rewriter/th_rewriter.h"
+#include "ast/seq_decl_plugin.h"
+#include "counter_automaton.h"
+#include "decision_procedure.h"
+#include "expr_cases.h"
+#include "expr_solver.h"
+#include "formula.h"
+#include "inclusion_graph.h"
+#include "length_decision_procedure.h"
+#include "model/seq_factory.h"
+#include "nielsen_decision_procedure.h"
+#include "params/smt_params.h"
+#include "params/theory_str_noodler_params.h"
+#include "quant_lia_solver.h"
+#include "regex.h"
+#include "smt/smt_arith_value.h"
+#include "smt/smt_kernel.h"
+#include "smt/smt_theory.h"
+#include "unary_decision_procedure.h"
+#include "util.h"
+#include "util/scoped_vector.h"
+#include "util/union_find.h"
+#include "var_union_find.h"
+
 #include <functional>
 #include <list>
-#include <set>
-#include <stack>
 #include <map>
 #include <memory>
 #include <queue>
+#include <set>
+#include <stack>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-#include "params/smt_params.h"
-#include "ast/arith_decl_plugin.h"
-#include "ast/seq_decl_plugin.h"
-#include "model/seq_factory.h"
-#include "params/theory_str_noodler_params.h"
-#include "smt/smt_kernel.h"
-#include "smt/smt_theory.h"
-#include "smt/smt_arith_value.h"
-#include "util/scoped_vector.h"
-#include "util/union_find.h"
-#include "ast/rewriter/seq_rewriter.h"
-#include "ast/rewriter/th_rewriter.h"
-
-#include "formula.h"
-#include "inclusion_graph.h"
-#include "decision_procedure.h"
-#include "expr_solver.h"
-#include "quant_lia_solver.h"
-#include "util.h"
-#include "expr_cases.h"
-#include "regex.h"
-#include "var_union_find.h"
-#include "nielsen_decision_procedure.h"
-#include "counter_automaton.h"
-#include "length_decision_procedure.h"
-#include "unary_decision_procedure.h"
 
 /**
  * NOTE: way how to print z3 formula in smt2 format (including the declaration)
@@ -58,13 +57,12 @@ namespace smt::noodler {
     // FIXME a lot of stuff in this class comes from trau/z3str3 we still need to finish cleaning
     class theory_str_noodler : public theory {
     protected:
-
         /**
          * Structure for storing items for the loop protection.
          */
         struct stored_instance {
-            expr_ref lengths; // length formula 
-            bool initial_length; // was the length formula obtained from the initial length checking?
+            expr_ref lengths;     // length formula
+            bool initial_length;  // was the length formula obtained from the initial length checking?
             // TODO we could also keep here the decision procedure and immediately get the model when loop protection gets sat
         };
 
@@ -73,9 +71,9 @@ namespace smt::noodler {
          */
 
         struct DecProcStats {
-            unsigned num_solved_preprocess = 0; // number of instances solved by preprocessing of the procedure
-            unsigned num_start = 0; // number of times the procedure was started (after preprocessing)
-            unsigned num_finish = 0; // number of times the procedure gave an answer (no undef)
+            unsigned num_solved_preprocess = 0;  // number of instances solved by preprocessing of the procedure
+            unsigned num_start = 0;              // number of times the procedure was started (after preprocessing)
+            unsigned num_finish = 0;             // number of times the procedure gave an answer (no undef)
         };
 
         int m_scope_level = 0;
@@ -83,6 +81,7 @@ namespace smt::noodler {
         th_rewriter m_rewrite;
         arith_util m_util_a;
         seq_util m_util_s;
+        ast_manager& m_manager;  // Needed for seq_util construction in ECMAHandler
         seq_factory* m_seq_factory = nullptr;
 
         // has input formula quantifiers?
@@ -107,40 +106,44 @@ namespace smt::noodler {
         std::vector<app_ref> axiomatized_len_axioms;
         obj_hashtable<expr> axiomatized_terms;
         obj_hashtable<expr> axiomatized_persist_terms;
-        obj_hashtable<expr> propagated_string_theory; // expressions that were already processed by string_theory_propagation (to avoid looping)
-        obj_hashtable<expr> m_has_length;          // is length applied
-        expr_ref_vector     m_length;             // length applications themselves
+        obj_hashtable<expr>
+            propagated_string_theory;  // expressions that were already processed by string_theory_propagation (to avoid looping)
+        obj_hashtable<expr> m_has_length;  // is length applied
+        expr_ref_vector m_length;          // length applications themselves
         std::vector<std::pair<expr_ref, stored_instance>> axiomatized_instances;
 
         // TODO what are these?
-        vector<std::pair<obj_hashtable<expr>,std::vector<app_ref>>> len_state;
+        vector<std::pair<obj_hashtable<expr>, std::vector<app_ref>>> len_state;
         obj_map<expr, unsigned> bool_var_int;
         obj_hashtable<expr> bool_var_state;
 
         using expr_pair = std::pair<expr_ref, expr_ref>;
         using expr_pair_flag = std::tuple<expr_ref, expr_ref, bool>;
 
-        // mapping of quantifier quards (quantified variables) to z3 vars. z3 represents variables using indices. 
+        // mapping of quantifier quards (quantified variables) to z3 vars. z3 represents variables using indices.
         std::map<std::string, unsigned> quantif_vars {};
 
         // constraints that are (possibly) to be processed in final_check_eh (added either in relevant_eh or ?assign_eh?)
         // they also need to be popped and pushed in pop_scope_eh and push_scope_eh)
-        scoped_vector<expr_pair> m_word_eq_todo; // pair contains left and right side of the word equality
-        scoped_vector<expr_pair> m_word_diseq_todo; // pair contains left and right side of the word disequality
-        scoped_vector<expr_pair> m_lang_eq_todo; //pair contains left and right side of the language equality
-        scoped_vector<expr_pair> m_lang_diseq_todo; // pair contains left and right side of the language disequality
-        scoped_vector<expr_pair> m_not_contains_todo; // first element should not contain the second one
-        scoped_vector<expr_pair_flag> m_membership_todo; // contains the variable and reg. lang. + flag telling us if it is negated (false -> negated)
-        scoped_vector<TermConversion> m_conversion_todo; // code-point, string-integer and string-real conversions
+        scoped_vector<expr_pair> m_word_eq_todo;       // pair contains left and right side of the word equality
+        scoped_vector<expr_pair> m_word_diseq_todo;    // pair contains left and right side of the word disequality
+        scoped_vector<expr_pair> m_lang_eq_todo;       // pair contains left and right side of the language equality
+        scoped_vector<expr_pair> m_lang_diseq_todo;    // pair contains left and right side of the language disequality
+        scoped_vector<expr_pair> m_not_contains_todo;  // first element should not contain the second one
+        scoped_vector<expr_pair_flag>
+            m_membership_todo;  // contains the variable and reg. lang. + flag telling us if it is negated (false -> negated)
+        scoped_vector<TermConversion> m_conversion_todo;  // code-point, string-integer and string-real conversions
 
         // during final_check_eh, we call remove_irrelevant_constr which chooses from previous sets of
         // todo constraints and check if they are relevant for current SAT assignment => if they are
         // they are added to one of these sets
-        vector<expr_pair> m_word_eq_todo_rel; // pair contains left and right side of the word equality
-        vector<expr_pair> m_word_diseq_todo_rel; // pair contains left and right side of the word disequality
-        vector<expr_pair_flag> m_lang_eq_or_diseq_todo_rel; // contains left and right side of the language (dis)equality and a flag - true -> equality, false -> diseq
-        vector<expr_pair> m_not_contains_todo_rel; // first element should not contain the second one
-        vector<expr_pair_flag> m_membership_todo_rel; // contains the variable and reg. lang. + flag telling us if it is negated (false -> negated)
+        vector<expr_pair> m_word_eq_todo_rel;     // pair contains left and right side of the word equality
+        vector<expr_pair> m_word_diseq_todo_rel;  // pair contains left and right side of the word disequality
+        vector<expr_pair_flag>
+            m_lang_eq_or_diseq_todo_rel;  // contains left and right side of the language (dis)equality and a flag - true -> equality, false -> diseq
+        vector<expr_pair> m_not_contains_todo_rel;  // first element should not contain the second one
+        vector<expr_pair_flag>
+            m_membership_todo_rel;  // contains the variable and reg. lang. + flag telling us if it is negated (false -> negated)
         // we cannot decide relevancy of to_code, from_code, to_int and from_int, so we assume everything in m_conversion_todo is relevant => no _todo_rel version
 
         // TODO: the following three things should probably be done differently
@@ -151,50 +154,77 @@ namespace smt::noodler {
         // the scope at which the last run was sat (so if we pop behind this scope, we have to forget that the last run was sat)
         int scope_with_last_run_was_sat = -1;
 
-        unsigned num_of_solving_final_checks = 0; // number of final checks that lead to solving string formula (i.e. not solved by loop protection nor by language (dis)equalities)
+        unsigned num_of_solving_final_checks =
+            0;  // number of final checks that lead to solving string formula (i.e. not solved by loop protection nor by language (dis)equalities)
         std::map<std::string, DecProcStats> statistics {
-            {"underapprox", {0, 0, 0}}, // underapprox of the stabilization-based procedure
-            {"stabilization", {0, 0, 0}}, // stabilization-based procedure
-            {"nielsen", {0 ,0 ,0}}, // nielsen procedure
-            {"length", {0 ,0 ,0}}, // length-based procedure
-            {"unary", {0 ,0 ,0}}, // unary decision procedure
-            {"single-memb-heur", {0 ,0 ,0}}, // membership heuristic
-            {"multi-memb-heur", {0 ,0 ,0}}, // multiple memberhip heuritstic
-            {"diseq-length-heur", {0 ,0 ,0}}, // disequation length heuristic
+            {"underapprox", {0, 0, 0}},        // underapprox of the stabilization-based procedure
+            {"stabilization", {0, 0, 0}},      // stabilization-based procedure
+            {"nielsen", {0, 0, 0}},            // nielsen procedure
+            {"length", {0, 0, 0}},             // length-based procedure
+            {"unary", {0, 0, 0}},              // unary decision procedure
+            {"single-memb-heur", {0, 0, 0}},   // membership heuristic
+            {"multi-memb-heur", {0, 0, 0}},    // multiple memberhip heuritstic
+            {"diseq-length-heur", {0, 0, 0}},  // disequation length heuristic
         };
 
         // we need this because part of Z3 is written like C, and statistic takes 'const char*', which has to be kept somewhere
         std::map<std::string, std::vector<const char*>> statistics_bullshit_names {
-            {"underapprox", {"str-num-proc-underapprox-start", "str-num-proc-underapprox-finish", "str-num-proc-underapprox-solved-preprocess"}}, // underapprox of the stabilization-based procedure
-            {"stabilization", {"str-num-proc-stabilization-start", "str-num-proc-stabilization-finish", "str-num-proc-stabilization-solved-preprocess"}}, // stabilization-based procedure
-            {"nielsen", {"str-num-proc-nielsen-start", "str-num-proc-nielsen-finish", "str-num-proc-nielsen-solved-preprocess"}}, // nielsen procedure
-            {"length", {"str-num-proc-length-start", "str-num-proc-length-finish", "str-num-proc-length-solved-preprocess"}}, // length-based procedure
-            {"unary", {"str-num-proc-unary-start", "str-num-proc-unary-finish", "str-num-proc-unary-solved-preprocess"}}, // unary decision procedure
-            {"single-memb-heur", {"str-num-proc-single-memb-heur-start", "str-num-proc-single-memb-heur-finish", "str-num-proc-single-memb-heur-solved-preprocess"}}, // membership heuristic
-            {"multi-memb-heur", {"str-num-proc-multi-memb-heur-start", "str-num-proc-multi-memb-heur-finish", "str-num-proc-multi-memb-heur-solved-preprocess"}}, // multiple memberhip heuritstic
-            {"diseq-length-heur", {"str-num-proc-diseq-length-heur-start", "str-num-proc-diseq-length-heur-finish", "str-num-proc-diseq-length-heur-solved-preprocess"}}, // disequation length heuristic
+            {"underapprox",
+             {"str-num-proc-underapprox-start", "str-num-proc-underapprox-finish",
+              "str-num-proc-underapprox-solved-preprocess"}},  // underapprox of the stabilization-based procedure
+            {"stabilization",
+             {"str-num-proc-stabilization-start", "str-num-proc-stabilization-finish",
+              "str-num-proc-stabilization-solved-preprocess"}},  // stabilization-based procedure
+            {"nielsen",
+             {"str-num-proc-nielsen-start", "str-num-proc-nielsen-finish",
+              "str-num-proc-nielsen-solved-preprocess"}},  // nielsen procedure
+            {"length",
+             {"str-num-proc-length-start", "str-num-proc-length-finish",
+              "str-num-proc-length-solved-preprocess"}},  // length-based procedure
+            {"unary",
+             {"str-num-proc-unary-start", "str-num-proc-unary-finish",
+              "str-num-proc-unary-solved-preprocess"}},  // unary decision procedure
+            {"single-memb-heur",
+             {"str-num-proc-single-memb-heur-start", "str-num-proc-single-memb-heur-finish",
+              "str-num-proc-single-memb-heur-solved-preprocess"}},  // membership heuristic
+            {"multi-memb-heur",
+             {"str-num-proc-multi-memb-heur-start", "str-num-proc-multi-memb-heur-finish",
+              "str-num-proc-multi-memb-heur-solved-preprocess"}},  // multiple memberhip heuritstic
+            {"diseq-length-heur",
+             {"str-num-proc-diseq-length-heur-start", "str-num-proc-diseq-length-heur-finish",
+              "str-num-proc-diseq-length-heur-solved-preprocess"}},  // disequation length heuristic
         };
 
         // Stuff for model generation
-        std::set<BasicTerm> relevant_vars; // vars that are in the formula used in decision procedure (we cannot used dec_proc to generate models for those that are not in here)
-        std::shared_ptr<AbstractDecisionProcedure> dec_proc = nullptr; // keeps the decision procedure that returned sat
+        std::set<BasicTerm>
+            relevant_vars;  // vars that are in the formula used in decision procedure (we cannot used dec_proc to generate models for those that are not in here)
+        std::shared_ptr<AbstractDecisionProcedure> dec_proc =
+            nullptr;  // keeps the decision procedure that returned sat
         // classes for creating model dependencies, see their usage in mk_value
-        class noodler_var_value_proc; // for noodler vars used in decision procedure
-        class str_var_value_proc; // for string vars (whose length is important) that are not used in decision procedure
-        class concat_var_value_proc; // for concatenation
+        class noodler_var_value_proc;  // for noodler vars used in decision procedure
+        class
+            str_var_value_proc;  // for string vars (whose length is important) that are not used in decision procedure
+        class concat_var_value_proc;  // for concatenation
 
     public:
-        char const * get_name() const override { return "noodler"; }
-        theory_str_noodler(context& ctx, ast_manager & m, theory_str_noodler_params const & params);
+        const char* get_name() const override {
+            return "noodler";
+        }
+
+        theory_str_noodler(context& ctx, ast_manager& m, const theory_str_noodler_params& params);
         void display(std::ostream& os) const override;
-        theory *mk_fresh(context * newctx) override { return alloc(theory_str_noodler, *newctx, get_manager(), m_params); }
+
+        theory* mk_fresh(context* newctx) override {
+            return alloc(theory_str_noodler, *newctx, get_manager(), m_params);
+        }
+
         void init() override;
-        theory_var mk_var(enode *n) override;
+        theory_var mk_var(enode* n) override;
         void apply_sort_cnstr(enode* n, sort* s) override;
-        bool internalize_atom(app *atom, bool gate_ctx) override;
-        bool internalize_term(app *term) override;
+        bool internalize_atom(app* atom, bool gate_ctx) override;
+        bool internalize_term(app* term) override;
         void init_search_eh() override;
-        void relevant_eh(app *n) override;
+        void relevant_eh(app* n) override;
         void assign_eh(bool_var v, bool is_true) override;
         void new_eq_eh(theory_var, theory_var) override;
         void new_diseq_eh(theory_var, theory_var) override;
@@ -205,17 +235,17 @@ namespace smt::noodler {
         void restart_eh() override;
         void reset_eh() override;
         final_check_status final_check_eh() override;
-        model_value_proc *mk_value(enode *n, model_generator& mg) override;
+        model_value_proc* mk_value(enode* n, model_generator& mg) override;
         void init_model(model_generator& m) override;
         void finalize_model(model_generator& mg) override;
         lbool validate_unsat_core(expr_ref_vector& unsat_core) override;
 
         /**
          * @brief Collect statistics (called at the end of the run)
-         * 
-         * @param st 
+         *
+         * @param st
          */
-        void collect_statistics(::statistics & st) const override;
+        void collect_statistics(::statistics& st) const override;
 
         // FIXME ensure_enode is non-virtual function of theory, why are we redegfining it?
         enode* ensure_enode(expr* e);
@@ -240,16 +270,19 @@ namespace smt::noodler {
          */
         literal mk_eq_empty(expr* n);
 
-        bool has_length(expr *e) const { return m_has_length.contains(e); }
+        bool has_length(expr* e) const {
+            return m_has_length.contains(e);
+        }
+
         void enforce_length(expr* n);
 
-        ~theory_str_noodler() {}
+        ~theory_str_noodler() { }
 
     protected:
-        expr_ref mk_sub(expr *a, expr *b);
+        expr_ref mk_sub(expr* a, expr* b);
 
-        literal mk_literal(expr *e);
-        bool_var mk_bool_var(expr *e);
+        literal mk_literal(expr* e);
+        bool_var mk_bool_var(expr* e);
 
         /**
          * @brief Create a fresh Z3 int variable with a given @p name followed by a unique suffix.
@@ -258,10 +291,12 @@ namespace smt::noodler {
          */
         expr_ref mk_int_var_fresh(const std::string& name) {
             // according to SMT-LIB standard, variable names starting with '@' are reserved for internal use
-            app* fresh_var = m.mk_fresh_const("@" + name, m_util_a.mk_int(), true); // need to be skolem, because it seems they are not printed for models
-            return expr_ref(fresh_var, m);
+            app* fresh_var =
+                m_manager.mk_fresh_const("@" + name, m_util_a.mk_int(),
+                                         true);  // need to be skolem, because it seems they are not printed for models
+            return expr_ref(fresh_var, m_manager);
         }
-        
+
         /**
          * @brief Create a fresh Z3 string variable with a given @p name followed by a unique suffix.
          *
@@ -269,13 +304,15 @@ namespace smt::noodler {
          */
         expr_ref mk_str_var_fresh(const std::string& name) {
             // according to SMT-LIB standard, variable names starting with '@' are reserved for internal use
-            app* fresh_var = m.mk_fresh_const("@" + name, m_util_s.mk_string_sort(), true); // need to be skolem, because it seems they are not printed for models
-            return expr_ref(fresh_var, m);
+            app* fresh_var =
+                m_manager.mk_fresh_const("@" + name, m_util_s.mk_string_sort(),
+                                         true);  // need to be skolem, because it seems they are not printed for models
+            return expr_ref(fresh_var, m_manager);
         }
 
         /**
          * @brief Transforms LenNode to the z3 formula
-         * 
+         *
          * Uses mapping var_name, those variables v that are mapped are assumed to be string variables
          * and will be transformed into (str.len v) while other variables (which are probably created
          * during preprocessing/decision procedure) are taken as int variables.
@@ -284,25 +321,25 @@ namespace smt::noodler {
 
         /**
          * @brief Adds @p e as a theory axiom (i.e. to SAT solver).
-         * 
+         *
          * @param e Axiom to add, probably should be a predicate.
-         * 
+         *
          * TODO Nobody probably knows what happens in here.
          */
-        void add_axiom(expr *e);
+        void add_axiom(expr* e);
         /**
          * @brief Adds a new clause of literals from @p ls.
-         * 
+         *
          * TODO Nobody probably knows what happens in here, and it is a bit different than the other add_axiom
          */
         void add_axiom(std::vector<literal> ls);
 
         /**
          * @brief Get a fresh variable with prefix @p var_name replacing the string function @p str_func
-         * 
+         *
          * Adds an axiom stating that the fresh variable is equal to the string function and registers
          * the replacement in predicate_replace.
-         * 
+         *
          * @param var_name prefix of the fresh variable name
          * @param str_func the string function to be replaced
          * @return the created fresh variable
@@ -315,24 +352,24 @@ namespace smt::noodler {
         }
 
         // methods for rewriting different predicates into something simpler that we can handle
-        void handle_char_at(expr *e);
-        void handle_substr(expr *e);
-        void handle_index_of(expr *e);
-        void handle_replace(expr *e);
-        void handle_replace_re(expr *e);
-        void handle_prefix(expr *e);
-        void handle_suffix(expr *e);
-        void handle_not_prefix(expr *e);
-        void handle_not_suffix(expr *e);
-        void handle_contains(expr *e);
-        void handle_not_contains(expr *e);
-        void handle_in_re(expr *e, bool is_true);
-        void handle_ecma_re(expr *e);
-        void handle_is_digit(expr *e);
-        void handle_conversion(expr *e);
-        void handle_lex_lt(expr *e);
-        void handle_replace_all(expr *e);
-        void handle_replace_re_all(expr *e);
+        void handle_char_at(expr* e);
+        void handle_substr(expr* e);
+        void handle_index_of(expr* e);
+        void handle_replace(expr* e);
+        void handle_replace_re(expr* e);
+        void handle_prefix(expr* e);
+        void handle_suffix(expr* e);
+        void handle_not_prefix(expr* e);
+        void handle_not_suffix(expr* e);
+        void handle_contains(expr* e);
+        void handle_not_contains(expr* e);
+        void handle_in_re(expr* e, bool is_true);
+        void handle_ecma_re(expr* e);
+        void handle_is_digit(expr* e);
+        void handle_conversion(expr* e);
+        void handle_lex_lt(expr* e);
+        void handle_replace_all(expr* e);
+        void handle_replace_re_all(expr* e);
 
         /**
          * @brief Marks a string term @p e as length-aware
@@ -341,54 +378,54 @@ namespace smt::noodler {
          * to initial_len_expressions and when a corresponding variable is created
          * (in relevant_eh), it should be added to len_vars.
          * If @p e is a concatenation, we mark their arguments instead.
-         * 
+         *
          * @param e The string term to mark
          */
-        void mark_expression_as_length(expr *e);
+        void mark_expression_as_length(expr* e);
 
         void print_len_vars(std::ostream& os);
 
         // methods for assigning boolean values to predicates
-        void assign_not_contains(expr *e);
+        void assign_not_contains(expr* e);
 
         void set_conflict(const literal_vector& ls);
 
         /**
-         * @brief Construct a formula representing current conjunction of atomic string constraints currently 
-         * solved in final_check (atoms that are not relevant are omited). It includes (dis)equations, regexes, 
+         * @brief Construct a formula representing current conjunction of atomic string constraints currently
+         * solved in final_check (atoms that are not relevant are omited). It includes (dis)equations, regexes,
          * and notcontains.
-         * 
+         *
          * @return expr_ref Conjunction of atomic string constraints
          */
         expr_ref construct_refinement();
 
         /**
-         * @brief Introduce string axioms for a formula @p ex. 
-         * 
+         * @brief Introduce string axioms for a formula @p ex.
+         *
          * @param ex Formula whose terms should be inspected.
          * @param init Is it an initial string formula (formula from input)?
          * @param neg Is the formula under negation?
-         * @param var_lengths Introduce lengths axioms for variables of the form x = eps -> |x| = 0? 
+         * @param var_lengths Introduce lengths axioms for variables of the form x = eps -> |x| = 0?
          */
-        void string_theory_propagation(expr * ex, bool init = false, bool neg = false, bool var_lengths = false);
-        void propagate_concat_axiom(enode * cat);
-        void propagate_basic_string_axioms(enode * str, bool var_lengths = false);
+        void string_theory_propagation(expr* ex, bool init = false, bool neg = false, bool var_lengths = false);
+        void propagate_concat_axiom(enode* cat);
+        void propagate_basic_string_axioms(enode* str, bool var_lengths = false);
 
         /**
          * Creates theory axioms that hold iff either any of the negated assumption from @p neg_assumptions holds,
          * or string term @p s does not occur in @p x@p s other than at the end. I.e. we are checking
          * (not-negated assumptions) -> (string term @p s does not occur in @p x@p s other than at the end)
-         * 
+         *
          * It does it by checking that s does not occur anywhere in xs reduced by one character (i.e. xs[0:-2])
-         * 
+         *
          * Translates to the following theory axioms:
          * not(s = eps) -> neg_assumptions || s = s1.s2
          * not(s = eps) -> neg_assumptions || s2 in re.allchar (is a single character)
          * not(s = eps) -> neg_assumptions || not(contains(x.s1, s))
          * (s = eps) && (x != eps) -> neg_assumptions
-         * 
+         *
          * For the case that s is a string literal, we do not add the two first axioms and we take s1 = s[0:-2].
-         * 
+         *
          * @param neg_assumptions Negated assumptions that have to hold for checking tightest prefix
          */
         void tightest_prefix(expr* s, expr* x, std::vector<literal> neg_assumptions);
@@ -415,14 +452,14 @@ namespace smt::noodler {
         Predicate conv_eq_pred(app* expr);
 
         /**
-         * @brief Check if the given equation is a temporary equations that was added 
+         * @brief Check if the given equation is a temporary equations that was added
          * among axioms during axiomatization in handle_replace_all. These equalities
-         * are there due to length axioms inferring and proper handling of variable 
-         * substitution. We want to discard them as they make the instances artificially harder: 
+         * are there due to length axioms inferring and proper handling of variable
+         * substitution. We want to discard them as they make the instances artificially harder:
          * x = replace_all(...) || x = y --> we might get in final_check x = y && tmp = replace_all(...)
-         * in final_check we include only those transducer constraints that are present in remaining 
+         * in final_check we include only those transducer constraints that are present in remaining
          * constraints (ignoring tmp = replace_all(...)).
-         * 
+         *
          * @param ex Equation
          * @return true <-> is temporary transducer constraint
          */
@@ -430,7 +467,7 @@ namespace smt::noodler {
 
         /**
          * @brief Creates noodler formula containing relevant word equations and disequations
-         * 
+         *
          * @param alph Set of symbols of the current instance (for transducer constraints)
          */
         [[nodiscard]] Formula get_formula_from_relevant(const regex::Alphabet& alph);
@@ -447,7 +484,8 @@ namespace smt::noodler {
          * @param instance Formula containing (dis)equations
          * @param noodler_alphabet Set of symbols occuring in the formula and memberships
          */
-        [[nodiscard]] AutAssignment create_aut_assignment_for_formula(Formula& instance, const regex::Alphabet& noodler_alphabet);
+        [[nodiscard]] AutAssignment create_aut_assignment_for_formula(Formula& instance,
+                                                                      const regex::Alphabet& noodler_alphabet);
 
         /**
          * Get initial length variables as a set of @c BasicTerm from their expressions.
@@ -456,11 +494,11 @@ namespace smt::noodler {
 
         /**
          * @brief Get the conversions (to/from_int/code) with noodler variables
-         * 
+         *
          * Side effect: string variables in conversions which are not mapped in the automata
          * assignment @p ass will be mapped to sigma* after this.
          */
-        std::vector<TermConversion> get_conversions_as_basicterms(AutAssignment &ass);
+        std::vector<TermConversion> get_conversions_as_basicterms(AutAssignment& ass);
 
         /**
          * Solves relevant language (dis)equations from m_lang_eq_or_diseq_todo_rel. If some of them
@@ -477,45 +515,47 @@ namespace smt::noodler {
 
         /**
          * @brief Check if the length formula @p len_formula is satisfiable with the existing length constraints (the context).
-         * 
+         *
          * @param check_with_context If false, checks only if the length formula @p len_formula is satisfiable
          * @param[out] unsat_core If this parameter is NOT nullptr, the LIA solver stores here unsat core of the current @p len_formula.
          */
-        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr);
+        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core = nullptr);
 
         /**
          * @brief Blocks current SAT assignment for given @p len_formula
-         * 
+         *
          * @param len_formula Length formula corresponding to the current instance
          * @param add_axiomatized Add item to the vector of axiomatized instances (for the loop protection)
          * @param init_lengths Was the length formula obtained from the initial length checking (for the fool protection)
-         * 
+         *
          * TODO explain better
          */
         void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool init_lengths = false);
 
         /**
          * @brief Checks if the current instance is suitable for Nielsen decision procedure.
-         * 
+         *
          * @param instance Current instance converted to Formula
          * @param init_length_sensitive_vars Length variables
          * @return true <-> suitable for Nielsen-based decision procedure
          */
-        bool is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const;
+        bool is_nielsen_suitable(const Formula& instance,
+                                 const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const;
 
         /**
          * @brief Check if the current instance is suitable for underapproximation.
-         * 
+         *
          * @param instance Current instance converted to Formula
          * @param aut_ass Current automata assignment
          * @param convs String-Int conversions
          * @return true <-> suitable for underapproximation
          */
-        bool is_underapprox_suitable(const Formula& instance, const AutAssignment& aut_ass, const std::vector<TermConversion>& convs) const;
+        bool is_underapprox_suitable(const Formula& instance, const AutAssignment& aut_ass,
+                                     const std::vector<TermConversion>& convs) const;
 
         /**
          * @brief Checks if the relevant predicates are suitable for multiple membership heuristic
-         * 
+         *
          * Multiple membership heuristic is used when we have formula containing only memberships.
          * We then only need to compute intersection from the regular languages and check if it is not empty.
          * The heuristics sorts the regexes by expected complexity of computing nfa, and iteratively computes
@@ -531,29 +571,31 @@ namespace smt::noodler {
 
         /**
          * @brief Wrapper for running the Nielsen transformation.
-         * 
+         *
          * @param instance Formula instance
          * @param aut_assignment Current automata assignment
          * @param init_length_sensitive_vars Length sensitive variables
          * @return lbool Outcome of the procedure
          */
-        lbool run_nielsen(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
+        lbool run_nielsen(const Formula& instance, const AutAssignment& aut_assignment,
+                          const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
 
         /**
-         * @brief Wrapper for running the length-based decision procedure. 
-         * 
+         * @brief Wrapper for running the length-based decision procedure.
+         *
          * @param instance Formula instance
          * @param aut_assignment Current automata assignment
          * @param init_length_sensitive_vars Length sensitive variables
          * @return lbool Outcome of the procedure
          */
-        lbool run_length_proc(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
+        lbool run_length_proc(const Formula& instance, const AutAssignment& aut_assignment,
+                              const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
 
         /**
          * @brief Wrapper for running the mulitple membership query heuristics.
-         * 
+         *
          * Check is_mult_membership_suitable() for explanation.
-         * 
+         *
          * @return lbool Outcome of the heuristic procedure.
          */
         lbool run_mult_membership_heur();
@@ -566,18 +608,19 @@ namespace smt::noodler {
          * @param init_length_sensitive_vars Length sensitive variables
          * @return lbool Outcome of the heuristic
          */
-        lbool run_diseq_length_heur(const Formula& instance, const AutAssignment& aut_assignment, const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
-        
+        lbool run_diseq_length_heur(const Formula& instance, const AutAssignment& aut_assignment,
+                                    const std::unordered_set<BasicTerm>& init_length_sensitive_vars);
+
         /**
          * @brief Wrapper for running the loop protection.
-         * 
+         *
          * @return lbool Outcome of the loop protection
          */
         lbool run_loop_protection();
 
         /**
          * @brief Run length-based satisfiability checking.
-         * 
+         *
          * @param instance Current instance converted to Formula
          * @param aut_ass Current automata assignment
          * @param init_length_sensitive_vars Length sensitive variables
@@ -585,24 +628,24 @@ namespace smt::noodler {
          * @return lbool Outcome of the procedure.
          */
         lbool run_length_sat(const Formula& instance, const AutAssignment& aut_ass,
-                                const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
-                                std::vector<TermConversion> conversions);
+                             const std::unordered_set<BasicTerm>& init_length_sensitive_vars,
+                             std::vector<TermConversion> conversions);
 
         /**
          * @brief This function should always be called after decision procedure decides SAT with non-trivial length formula
-         * 
+         *
          * It pushes the length formula into Z3, so that we can generate correct model.
-         * 
+         *
          * @param length_formula - formula with which we got sat
          */
         void sat_handling(expr_ref length_formula);
 
         /***************** FINAL_CHECK_EH HELPING FUNCTIONS END *******************/
 
-        void collect_shared_vars(sbuffer<theory_var> & result) const;
+        void collect_shared_vars(sbuffer<theory_var>& result) const;
 
         unsigned mk_interface_eqs();
     };
-}
+}  // namespace smt::noodler
 
 #endif /* _THEORY_STR_NOODLER_H_ */
