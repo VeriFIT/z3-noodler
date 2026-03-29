@@ -1999,10 +1999,15 @@ namespace smt::noodler {
         expr* r = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, x, r));
 
+<<<<<<< HEAD
         ecma::RCGBuilder builder(m, pattern);
         ecma::RegexConstraintGraph rcg = builder.build_rcg();
 
         // axiomatize ecma regex from rcg
+=======
+        ecma::ECMAHandler handler(m, pattern);
+        handler.generate_ecma_constraints();
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
     }
 
     void theory_str_noodler::handle_in_re(expr* const e, const bool is_true) {

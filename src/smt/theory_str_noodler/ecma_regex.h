@@ -167,7 +167,12 @@ namespace smt::noodler::ecma {
         virtual ~ASTNode() = default;
         virtual uint32_t print_dot(std::ostream& out, uint32_t& node_count) const = 0;
         virtual zstring serialize() const = 0;
+<<<<<<< HEAD
         virtual RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const = 0;
+=======
+        virtual RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s,
+                                            ast_manager& m) const = 0;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
     };
 
     using ASTNodeRef = std::unique_ptr<ASTNode>;
@@ -177,7 +182,11 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void add_alternative(ASTNodeRef alt);
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         std::vector<ASTNodeRef> m_alternatives;
@@ -188,7 +197,11 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void add_term(ASTNodeRef term);
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         std::vector<ASTNodeRef> m_terms;
@@ -201,7 +214,11 @@ namespace smt::noodler::ecma {
         void set_type(TokenType type);
         void set_payload(uint32_t payload);
         void set_expr(ASTNodeRef expr);
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         TokenType m_assert_type {};
@@ -214,7 +231,11 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void set(const Token& t, ASTNodeRef term);
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         QuantifierRange m_range {};
@@ -226,7 +247,11 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void set_char(uint32_t ch);
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         uint32_t m_char = std::numeric_limits<uint32_t>::max();
@@ -236,7 +261,11 @@ namespace smt::noodler::ecma {
     public:
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
     };
 
     class ASTNodeBackref : public ASTNode {
@@ -245,7 +274,11 @@ namespace smt::noodler::ecma {
         zstring serialize() const override;
         void set_ref(zstring_view backref_name);
         void set_ref(uint32_t backref_number);
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         std::variant<uint32_t, zstring_view> m_backref;
@@ -264,7 +297,11 @@ namespace smt::noodler::ecma {
         void set_type(GroupType type);
         void set_name(zstring_view name);
         void set_expr(ASTNodeRef expr);
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         GroupType m_type = GroupType::NORMAL;
@@ -291,7 +328,11 @@ namespace smt::noodler::ecma {
         zstring serialize() const override;
         void add_element(CharClassElement elem);
         void set_negation(bool neg);
+<<<<<<< HEAD
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+=======
+        RegexComponent get_subgraph(RegexConstraintGraph& graph, const seq_util& util_s, ast_manager& m) const override;
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         bool m_is_negated = false;
@@ -341,18 +382,33 @@ namespace smt::noodler::ecma {
     };
 
     // =============== ECMA REGEX HANDLER ===============
+<<<<<<< HEAD
     class RCGBuilder {
     public:
         explicit RCGBuilder(ast_manager& m, const zstring& regex_pattern)
+=======
+    class ECMAHandler {
+    public:
+        explicit ECMAHandler(ast_manager& m, const zstring& regex_pattern)
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
             : m_regex(regex_pattern),
               m_parser(regex_pattern),
               m_util_s(m) { }
 
+<<<<<<< HEAD
         RegexConstraintGraph build_rcg();
+=======
+        void generate_ecma_constraints() { }
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
 
     private:
         zstring_view m_regex;
         ECMAParser m_parser;
         seq_util m_util_s;
+<<<<<<< HEAD
+=======
+
+        RegexConstraintGraph build_rcg();
+>>>>>>> 17cf8d230785a44cc389c66e0908afffcc6fbb93
     };
 }  // namespace smt::noodler::ecma
