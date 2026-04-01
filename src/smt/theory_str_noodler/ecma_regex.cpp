@@ -5,6 +5,7 @@
 #include "util/debug.h"
 #include "util/zstring_view.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cctype>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <ostream>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace smt::noodler::ecma {
 
@@ -21,6 +23,8 @@ namespace smt::noodler::ecma {
     constexpr uint32_t HEX_SEQUENCE_LEN = 2;
     constexpr uint32_t UNICODE_ESCAPE_SEQUENCE_LEN = 4;
     constexpr uint32_t BACKSPACE_LITERAL = 8;
+    constexpr uint32_t UNBOUNDED = std::numeric_limits<uint32_t>::max();
+    constexpr uint32_t UNKNOWN_VERTEX = std::numeric_limits<uint32_t>::max();
 
     zstring view_to_zstring(const zstring_view view) {
         zstring res;
@@ -38,7 +42,13 @@ namespace smt::noodler::ecma {
 
     VertexId RegexConstraintGraph::create_vertex() {
         VertexId new_id = vertices.size();
-        vertices.emplace_back(new_id, std::vector<RCGEdge> {});
+        vertices.emplace_back(new_id, std::vector<EdgeId> {});
+        return new_id;
+    }
+
+    VertexId RegexConstraintGraph::create_vertex(std::vector<EdgeId> edges) {
+        VertexId new_id = vertices.size();
+        vertices.emplace_back(new_id, std::move(edges));
         return new_id;
     }
 
@@ -48,7 +58,13 @@ namespace smt::noodler::ecma {
 
     EdgeId RegexConstraintGraph::create_edge() {
         EdgeId new_id = edges.size();
-        edges.emplace_back(new_id, std::numeric_limits<uint32_t>::max(), BackrefEdge {0});
+        edges.emplace_back(new_id, UNKNOWN_VERTEX, BackrefEdge {0});
+        return new_id;
+    }
+
+    EdgeId RegexConstraintGraph::create_edge(VertexId target_vertex, RCGEdgePayload payload) {
+        EdgeId new_id = edges.size();
+        edges.emplace_back(new_id, target_vertex, std::move(payload));
         return new_id;
     }
 
@@ -378,8 +394,7 @@ namespace smt::noodler::ecma {
         // case '{n,}'
         if (m_regex[m_position] == '}') {
             m_position++;  // consume '}'
-            return make_token(TokenType::QUANTIFIER,
-                              QuantifierRange {lower_bound, std::numeric_limits<uint32_t>::max()});
+            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, UNBOUNDED});
         }
 
         uint32_t upper_bound = 0;
@@ -706,6 +721,71 @@ namespace smt::noodler::ecma {
         m_alternatives.push_back(std::move(alt));
     }
 
+    RegexComponent ASTNodeDisjunction::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
+                                                    ast_manager& m) const {
+        // Disjunction is associative --> we can merge ALL the regular segments into one
+        // and nonregular segments are kept in the same order
+        std::vector<app_ref> regular_alternatives;
+        std::vector<GraphFragment> nonregular_alternatives;
+
+        // First pass --> sort regular and nonregular segments
+        for (const ASTNodeRef& alternative : m_alternatives) {
+            RegexComponent current_term = alternative->get_subgraph(graph, util_s, m);
+            if (std::holds_alternative<app_ref>(current_term)) {
+                regular_alternatives.push_back(std::get<app_ref>(current_term));
+                continue;
+            }
+            nonregular_alternatives.push_back(std::get<GraphFragment>(current_term));
+        }
+
+        // No need to construct a graph if all segments were regular
+        // TODO: refactor the union-merging (same code twice)
+        if (!regular_alternatives.empty() && nonregular_alternatives.empty()) {
+            app_ref final_regular_segment = regular_alternatives[0];
+            for (std::size_t i = 1; i < regular_alternatives.size(); i++) {
+                final_regular_segment = util_s.re.mk_union(final_regular_segment, regular_alternatives[i]);
+            }
+            return final_regular_segment;
+        }
+
+        VertexId new_vout = graph.create_vertex();
+        std::vector<EdgeId> new_vin_outgoing_edges;
+        std::vector<EdgeId> new_vout_incoming_edges;
+
+        // If there was at least one regular segment, merge them and add corresponding edge
+        if (!regular_alternatives.empty()) {
+            app_ref final_regular_segment = regular_alternatives[0];
+            for (std::size_t i = 1; i < regular_alternatives.size(); i++) {
+                final_regular_segment = util_s.re.mk_union(final_regular_segment, regular_alternatives[i]);
+            }
+            const MatchEdge regular_edge {final_regular_segment};
+            const EdgeId regular_eid = graph.create_edge(new_vout, {regular_edge});
+            new_vin_outgoing_edges.push_back(regular_eid);
+            new_vout_incoming_edges.push_back(regular_eid);
+        }
+
+        // Add edges corresponding to all the nonregular segments
+        for (const GraphFragment& nonreg_segment : nonregular_alternatives) {
+            // To avoid construction of epsilon match edges, we 'steal' all the outgoing edges of the fragment
+            // v_in and make them point FROM the global new v_in
+            for (const EdgeId eid : graph.vertices[nonreg_segment.v_in].outgoing_edges) {
+                new_vin_outgoing_edges.push_back(eid);
+            }
+            graph.vertices[nonreg_segment.v_in].outgoing_edges.clear();
+
+            // Again, to avoid construction of epsilon match edges, we 'steal' all the incoming edges of the fragment
+            // v_out and make them point TO the global new v_out
+            for (const EdgeId eid : nonreg_segment.edges_pointing_to_vout) {
+                graph.edges[eid].target = new_vout;
+                new_vout_incoming_edges.push_back(eid);
+            }
+        }
+
+        // Construct the new graph fragment and return it
+        VertexId new_vin = graph.create_vertex(new_vin_outgoing_edges);
+        return GraphFragment {new_vin, new_vout, std::move(new_vout_incoming_edges)};
+    }
+
     uint32_t ASTNodeAlternative::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"ALTERNATIVE\"];\n";
@@ -728,6 +808,70 @@ namespace smt::noodler::ecma {
 
     void ASTNodeAlternative::add_term(ASTNodeRef term) {
         m_terms.push_back(std::move(term));
+    }
+
+    RegexComponent ASTNodeAlternative::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
+                                                    ast_manager& m) const {
+        // Two passes through the terms that should be concatenated:
+        // Pass 1. If there are adjacent regular components, merge them with mk_concat.
+        std::vector<RegexComponent> simplified_terms;
+        for (const ASTNodeRef& term : m_terms) {
+            RegexComponent current_term = term->get_subgraph(graph, util_s, m);
+
+            // No components yet to merge --> just add it (first iteration)
+            if (simplified_terms.empty()) {
+                simplified_terms.push_back(current_term);
+                continue;
+            }
+
+            RegexComponent& most_recent_term = simplified_terms.back();
+            // Both current and most recently added component are regular --> merge them and rewrite in-situ
+            if (std::holds_alternative<app_ref>(most_recent_term) && std::holds_alternative<app_ref>(current_term)) {
+                app_ref last_regular = std::get<app_ref>(most_recent_term);
+                app_ref current_regular = std::get<app_ref>(current_term);
+                most_recent_term = app_ref(util_s.re.mk_concat(last_regular, current_regular), m);
+            } else {
+                // Either of them not regular --> cannot merge, just add it
+                simplified_terms.push_back(current_term);
+            }
+        }
+
+        // Single regular term left --> no graph building needed
+        if (simplified_terms.size() == 1 && std::holds_alternative<app_ref>(simplified_terms[0])) {
+            return simplified_terms[0];
+        }
+
+        // Pass 2. At least one component not regular --> chain the components into a graph
+        GraphFragment result_graph {};
+        for (const auto& comp : simplified_terms) {
+            GraphFragment current_fragment;
+            // Normalization -- make a graph fragment from the regular part (unified chaining approach)
+            if (std::holds_alternative<app_ref>(comp)) {
+                current_fragment.v_out = graph.create_vertex();
+                EdgeId reg_edge_id = graph.create_edge(current_fragment.v_out, MatchEdge {std::get<app_ref>(comp)});
+
+                // v_in teď asi bere pole EdgeId, aby věděl, co z něj vede
+                std::vector<EdgeId> outgoing_edges {reg_edge_id};
+                current_fragment.v_in = graph.create_vertex(outgoing_edges);
+                current_fragment.edges_pointing_to_vout = outgoing_edges;
+            } else {
+                current_fragment = std::get<GraphFragment>(comp);
+            }
+
+            // Append the current component into the growing result_graph
+            if (!result_graph.is_initialized()) {
+                result_graph = current_fragment;
+            } else {
+                // Optimization (less vertices in the final graph) -- redirect all edges from most recent v_out to new v_in
+                for (EdgeId id : result_graph.edges_pointing_to_vout) {
+                    graph.edges[id].target = current_fragment.v_in;
+                }
+                // Update the graph v_out to most recent fragment v_out (edges pointing to v_out included)
+                result_graph.v_out = current_fragment.v_out;
+                result_graph.edges_pointing_to_vout = current_fragment.edges_pointing_to_vout;
+            }
+        }
+        return result_graph;
     }
 
     uint32_t ASTNodeAssertion::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -801,7 +945,7 @@ namespace smt::noodler::ecma {
     uint32_t ASTNodeQuantifier::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"QUANTIFIER {" << m_range.min << ",";
-        if (m_range.max == std::numeric_limits<uint32_t>::max()) {
+        if (m_range.max == UNBOUNDED) {
             out << "inf";
         } else {
             out << m_range.max;
@@ -813,8 +957,7 @@ namespace smt::noodler::ecma {
     }
 
     zstring ASTNodeQuantifier::serialize() const {
-        zstring max_str = (m_range.max == std::numeric_limits<uint32_t>::max()) ? zstring("inf")
-                                                                                : zstring(std::to_string(m_range.max));
+        zstring max_str = (m_range.max == UNBOUNDED) ? zstring("inf") : zstring(std::to_string(m_range.max));
         zstring min_str = zstring(std::to_string(m_range.min));
 
         return zstring("(QUANT {") + min_str + zstring(",") + max_str + zstring("} ") + m_child->serialize() +
@@ -827,14 +970,48 @@ namespace smt::noodler::ecma {
         } else if (std::holds_alternative<uint32_t>(t.payload)) {
             const uint32_t ch = std::get<uint32_t>(t.payload);
             if (ch == '*') {
-                m_range = {0, std::numeric_limits<uint32_t>::max()};
+                m_range = {0, UNBOUNDED};
             } else if (ch == '+') {
-                m_range = {1, std::numeric_limits<uint32_t>::max()};
+                m_range = {1, UNBOUNDED};
             } else if (ch == '?') {
                 m_range = {0, 1};
             }
         }
         m_child = std::move(term);
+    }
+
+    RegexComponent ASTNodeQuantifier::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
+                                                   ast_manager& m) const {
+        RegexComponent child_subgraph = m_child->get_subgraph(graph, util_s, m);
+        // Backreferences or lookarounds under kleene star/plus --> unsupported yet, leads to dynamic number of string variables
+        // Possible solution: fixed unrolling (not supported yet)
+        if (std::holds_alternative<GraphFragment>(child_subgraph)) {
+            if (m_range.max == UNBOUNDED) {
+                util::throw_error("Unsupported regex structure: Non-regular constructs under kleene star/kleene plus");
+            }
+
+            // {n, m} quantified non-regular segments currently unsupported
+            // possible solution: concatenate the graph fragment m times and from nth to mth copy, create epsilon-MatchEdge out
+            util::throw_error("Unsupported regex structure: Non-regular constructs under {n,m} quantifier");
+        }
+
+        // Quantified regular sub-regex
+        SASSERT(std::holds_alternative<app_ref>(child_subgraph));
+        app_ref child_expr = std::get<app_ref>(child_subgraph);
+        app* quant = nullptr;
+        if (m_range.max == UNBOUNDED) {
+            if (m_range.min == 0) {
+                quant = util_s.re.mk_star(child_expr);
+            } else if (m_range.min == 1) {
+                quant = util_s.re.mk_plus(child_expr);
+            } else {
+                quant = util_s.re.mk_loop(child_expr, m_range.min);
+            }
+        } else {
+            quant = util_s.re.mk_loop(child_expr, m_range.min, m_range.max);
+        }
+        SASSERT(quant != nullptr);
+        return app_ref(quant, m);
     }
 
     uint32_t ASTNodeLiteral::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -876,7 +1053,8 @@ namespace smt::noodler::ecma {
         zstring ref_str;
         if (std::holds_alternative<uint32_t>(m_backref)) {
             ref_str = zstring(std::to_string(std::get<uint32_t>(m_backref)));
-        } else if (std::holds_alternative<zstring_view>(m_backref)) {
+        } else {
+            SASSERT(std::holds_alternative<zstring_view>(m_backref));
             ref_str += view_to_zstring(std::get<zstring_view>(m_backref));
         }
         return zstring("(BACKREF ") + ref_str + zstring(")");
@@ -945,7 +1123,8 @@ namespace smt::noodler::ecma {
             } else if (kind == ElementType::ESCAPE) {
                 label += "\\";
                 label += static_cast<char>(lower);
-            } else if (kind == ElementType::RANGE) {
+            } else {
+                SASSERT(kind == ElementType::RANGE);
                 label += static_cast<char>(lower);
                 label += "-";
                 label += static_cast<char>(upper);
@@ -967,7 +1146,8 @@ namespace smt::noodler::ecma {
                 res += zstring(" (LIT '") + zstring(lower) + zstring("')");
             } else if (kind == ElementType::ESCAPE) {
                 res += zstring(" (CHAR_CLASS '") + zstring(lower) + zstring("')");
-            } else if (kind == ElementType::RANGE) {
+            } else {
+                SASSERT(kind == ElementType::RANGE);
                 res += zstring(" (RANGE '") + zstring(lower) + zstring("' '") + zstring(upper) + zstring("')");
             }
         }
@@ -1364,5 +1544,9 @@ namespace smt::noodler::ecma {
         ASTNodeRef root = m_parser.parse();
         GraphFragment tmp;
         return {};
+    }
+
+    bool GraphFragment::is_initialized() const {
+        return v_in == std::numeric_limits<VertexId>::max() && v_out == std::numeric_limits<VertexId>::max();
     }
 }  // namespace smt::noodler::ecma
