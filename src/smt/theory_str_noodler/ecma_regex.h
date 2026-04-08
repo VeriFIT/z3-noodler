@@ -61,9 +61,16 @@ namespace smt::noodler::ecma {
         BACKWARD
     };
 
-    struct AssertionEdge {
+    struct Lookaround {
         app_ref regex;
         AssertionDirection direction;
+        bool is_positive;
+    };
+
+    using Anchor = uint32_t;
+
+    struct AssertionEdge {
+        std::variant<Anchor, Lookaround> assertion;
     };
 
     struct BackrefEdge {
@@ -114,6 +121,10 @@ namespace smt::noodler::ecma {
     };
 
     zstring view_to_zstring(zstring_view view);
+
+    GraphFragment chain_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second);
+
+    GraphFragment alternate_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second);
 
     // ================== ECMA REGEX LEXER ==================
     class ECMALexer {
@@ -216,6 +227,13 @@ namespace smt::noodler::ecma {
         TokenType m_assert_type {};
         uint32_t m_payload {};              // for ^, $, \b, \B assertions
         ASTNodeRef m_subpattern = nullptr;  // for lookarounds (may be null for ^, $, \b, \B)
+
+        static GraphFragment make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m, app_ref assert_re,
+                                                     AssertionDirection dir, bool is_positive);
+
+        static GraphFragment make_word_boundary_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m,
+                                                         bool is_word_boundary);
+        static app_ref make_word_char_re(seq_util& util_s, ast_manager& m);
     };
 
     class ASTNodeQuantifier : public ASTNode {
