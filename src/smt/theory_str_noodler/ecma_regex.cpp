@@ -34,6 +34,42 @@ namespace smt::noodler::ecma {
         return res;
     }
 
+    GraphFragment chain_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second) {
+        for (const EdgeId id : first.edges_pointing_to_vout) {
+            graph.edges[id].target = second.v_in;
+        }
+        return GraphFragment {first.v_in, second.v_out, second.edges_pointing_to_vout};
+    }
+
+    GraphFragment alternate_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second) {
+        VertexId new_vout = graph.create_vertex();
+
+        // Retargetuj edges_pointing_to_vout obou větví na nový v_out
+        std::vector<EdgeId> new_vout_incoming;
+        for (const EdgeId id : first.edges_pointing_to_vout) {
+            graph.edges[id].target = new_vout;
+            new_vout_incoming.push_back(id);
+        }
+        for (const EdgeId id : second.edges_pointing_to_vout) {
+            graph.edges[id].target = new_vout;
+            new_vout_incoming.push_back(id);
+        }
+
+        // Steal outgoing edges z v_in obou větví do nového v_in
+        std::vector<EdgeId> new_vin_outgoing;
+        for (const EdgeId id : graph.vertices[first.v_in].outgoing_edges) {
+            new_vin_outgoing.push_back(id);
+        }
+        for (const EdgeId id : graph.vertices[second.v_in].outgoing_edges) {
+            new_vin_outgoing.push_back(id);
+        }
+        graph.vertices[first.v_in].outgoing_edges.clear();
+        graph.vertices[second.v_in].outgoing_edges.clear();
+
+        VertexId new_vin = graph.create_vertex(new_vin_outgoing);
+        return GraphFragment {new_vin, new_vout, new_vout_incoming};
+    }
+
     // =============== REGEX CONSTRAINT GRAPH ==============
 
     void RegexConstraintGraph::add_vertex(RCGVertex vtx) {
@@ -723,7 +759,7 @@ namespace smt::noodler::ecma {
 
     RegexComponent ASTNodeDisjunction::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
                                                     ast_manager& m) const {
-        // Disjunction is associative --> we can merge ALL the regular segments into one
+        // Disjunction is commutative --> we can merge ALL the regular segments into one
         // and nonregular segments are kept in the same order
         std::vector<app_ref> regular_alternatives;
         std::vector<GraphFragment> nonregular_alternatives;
@@ -739,7 +775,6 @@ namespace smt::noodler::ecma {
         }
 
         // No need to construct a graph if all segments were regular
-        // TODO: refactor the union-merging (same code twice)
         if (!regular_alternatives.empty() && nonregular_alternatives.empty()) {
             app_ref final_regular_segment = regular_alternatives[0];
             for (std::size_t i = 1; i < regular_alternatives.size(); i++) {
@@ -748,42 +783,28 @@ namespace smt::noodler::ecma {
             return final_regular_segment;
         }
 
-        VertexId new_vout = graph.create_vertex();
-        std::vector<EdgeId> new_vin_outgoing_edges;
-        std::vector<EdgeId> new_vout_incoming_edges;
+        GraphFragment result_fragment = nonregular_alternatives[0];
+        for (std::size_t i = 1; i < nonregular_alternatives.size(); i++) {
+            result_fragment = alternate_fragments(graph, result_fragment, nonregular_alternatives[i]);
+        }
 
         // If there was at least one regular segment, merge them and add corresponding edge
         if (!regular_alternatives.empty()) {
-            app_ref final_regular_segment = regular_alternatives[0];
+            app_ref merged_regular = regular_alternatives[0];
             for (std::size_t i = 1; i < regular_alternatives.size(); i++) {
-                final_regular_segment = util_s.re.mk_union(final_regular_segment, regular_alternatives[i]);
+                merged_regular = app_ref(util_s.re.mk_union(merged_regular, regular_alternatives[i]), m);
             }
-            const MatchEdge regular_edge {final_regular_segment};
-            const EdgeId regular_eid = graph.create_edge(new_vout, {regular_edge});
-            new_vin_outgoing_edges.push_back(regular_eid);
-            new_vout_incoming_edges.push_back(regular_eid);
+
+            // Create fragment for the merged regular segment
+            VertexId reg_vout = graph.create_vertex();
+            EdgeId reg_eid = graph.create_edge(reg_vout, RCGEdgePayload {MatchEdge {merged_regular}});
+            VertexId reg_vin = graph.create_vertex(std::vector<EdgeId> {reg_eid});
+            GraphFragment reg_fragment {reg_vin, reg_vout, {reg_eid}};
+
+            result_fragment = alternate_fragments(graph, result_fragment, reg_fragment);
         }
 
-        // Add edges corresponding to all the nonregular segments
-        for (const GraphFragment& nonreg_segment : nonregular_alternatives) {
-            // To avoid construction of epsilon match edges, we 'steal' all the outgoing edges of the fragment
-            // v_in and make them point FROM the global new v_in
-            for (const EdgeId eid : graph.vertices[nonreg_segment.v_in].outgoing_edges) {
-                new_vin_outgoing_edges.push_back(eid);
-            }
-            graph.vertices[nonreg_segment.v_in].outgoing_edges.clear();
-
-            // Again, to avoid construction of epsilon match edges, we 'steal' all the incoming edges of the fragment
-            // v_out and make them point TO the global new v_out
-            for (const EdgeId eid : nonreg_segment.edges_pointing_to_vout) {
-                graph.edges[eid].target = new_vout;
-                new_vout_incoming_edges.push_back(eid);
-            }
-        }
-
-        // Construct the new graph fragment and return it
-        VertexId new_vin = graph.create_vertex(new_vin_outgoing_edges);
-        return GraphFragment {new_vin, new_vout, std::move(new_vout_incoming_edges)};
+        return result_fragment;
     }
 
     uint32_t ASTNodeAlternative::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -841,37 +862,24 @@ namespace smt::noodler::ecma {
             return simplified_terms[0];
         }
 
+        // Helper lambda for converting regular components into trivial graph fragments
+        auto to_fragment = [&](RegexComponent& component) -> GraphFragment {
+            if (std::holds_alternative<app_ref>(component)) {
+                VertexId v_out = graph.create_vertex();
+                EdgeId eid = graph.create_edge(v_out, RCGEdgePayload {MatchEdge {std::get<app_ref>(component)}});
+                VertexId v_in = graph.create_vertex(std::vector<EdgeId> {eid});
+                return GraphFragment {v_in, v_out, {eid}};
+            }
+            return std::get<GraphFragment>(component);
+        };
+
         // Pass 2. At least one component not regular --> chain the components into a graph
-        GraphFragment result_graph {};
-        for (const auto& comp : simplified_terms) {
-            GraphFragment current_fragment;
-            // Normalization -- make a graph fragment from the regular part (unified chaining approach)
-            if (std::holds_alternative<app_ref>(comp)) {
-                current_fragment.v_out = graph.create_vertex();
-                EdgeId reg_edge_id = graph.create_edge(current_fragment.v_out, MatchEdge {std::get<app_ref>(comp)});
-
-                // v_in teď asi bere pole EdgeId, aby věděl, co z něj vede
-                std::vector<EdgeId> outgoing_edges {reg_edge_id};
-                current_fragment.v_in = graph.create_vertex(outgoing_edges);
-                current_fragment.edges_pointing_to_vout = outgoing_edges;
-            } else {
-                current_fragment = std::get<GraphFragment>(comp);
-            }
-
-            // Append the current component into the growing result_graph
-            if (!result_graph.is_initialized()) {
-                result_graph = current_fragment;
-            } else {
-                // Optimization (less vertices in the final graph) -- redirect all edges from most recent v_out to new v_in
-                for (EdgeId id : result_graph.edges_pointing_to_vout) {
-                    graph.edges[id].target = current_fragment.v_in;
-                }
-                // Update the graph v_out to most recent fragment v_out (edges pointing to v_out included)
-                result_graph.v_out = current_fragment.v_out;
-                result_graph.edges_pointing_to_vout = current_fragment.edges_pointing_to_vout;
-            }
+        GraphFragment result = to_fragment(simplified_terms[0]);
+        for (std::size_t i = 1; i < simplified_terms.size(); i++) {
+            GraphFragment current = to_fragment(simplified_terms[i]);
+            result = chain_fragments(graph, result, current);
         }
-        return result_graph;
+        return result;
     }
 
     uint32_t ASTNodeAssertion::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -942,6 +950,73 @@ namespace smt::noodler::ecma {
         m_subpattern = std::move(expr);
     }
 
+    RegexComponent ASTNodeAssertion::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        sort* str_sort = util_s.mk_string_sort();
+
+        // Anchors --
+        if (m_assert_type == TokenType::ASSERTION) {
+            if (m_payload == '^' || m_payload == '$') {
+                return app_ref(util_s.re.mk_epsilon(str_sort), m);
+            }
+            return make_word_boundary_fragment(graph, util_s, m, m_payload == 'b');
+        }
+
+        // The subpattern cannot contain backreferences
+        RegexComponent inner_regex = m_subpattern->get_subgraph(graph, util_s, m);
+        if (!std::holds_alternative<app_ref>(inner_regex)) {
+            // TODO: nested lookarounds not supported (yet). Only backreferences inside lookaround should be unsupported
+            util::throw_error("Unsupported: non-regular content inside lookaround");
+        }
+
+        const bool is_forward =
+            (m_assert_type == TokenType::LOOKAHEAD_POS_START || m_assert_type == TokenType::LOOKAHEAD_NEG_START);
+        const bool is_positive =
+            (m_assert_type == TokenType::LOOKAHEAD_POS_START || m_assert_type == TokenType::LOOKBEHIND_POS_START);
+
+        return make_assertion_fragment(graph, m, std::get<app_ref>(inner_regex),
+                                       is_forward ? AssertionDirection::FORWARD : AssertionDirection::BACKWARD,
+                                       is_positive);
+    }
+
+    GraphFragment ASTNodeAssertion::make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m,
+                                                            app_ref assert_regex, AssertionDirection dir,
+                                                            bool is_positive) {
+        VertexId v_out = graph.create_vertex();
+        EdgeId eid = graph.create_edge(
+            v_out, RCGEdgePayload {AssertionEdge {Lookaround {std::move(assert_regex), dir, is_positive}}});
+        VertexId v_in = graph.create_vertex(std::vector<EdgeId> {eid});
+        return GraphFragment {v_in, v_out, {eid}};
+    }
+
+    GraphFragment ASTNodeAssertion::make_word_boundary_fragment(RegexConstraintGraph& graph, seq_util& util_s,
+                                                                ast_manager& m, bool is_word_boundary) {
+        app_ref word_characters = make_word_char_re(util_s, m);  // [A-Za-z0-9_]
+
+        // Branch 1: the word boundary is either after a whitespace and before a character --> (?<=\w)RE(?!\w)
+        GraphFragment b1_lookbehind =
+            make_assertion_fragment(graph, m, word_characters, AssertionDirection::BACKWARD, true);
+        GraphFragment b1_lookahead =
+            make_assertion_fragment(graph, m, word_characters, AssertionDirection::FORWARD, !is_word_boundary);
+
+        // Branch 2: the word boundary is either after a character and before a whitespace --> (?<!\w)RE(?=\w)
+        GraphFragment b2_lookbehind =
+            make_assertion_fragment(graph, m, word_characters, AssertionDirection::BACKWARD, false);
+        GraphFragment b2_lookahead =
+            make_assertion_fragment(graph, m, word_characters, AssertionDirection::FORWARD, is_word_boundary);
+
+        GraphFragment branch1 = chain_fragments(graph, b1_lookbehind, b1_lookahead);
+        GraphFragment branch2 = chain_fragments(graph, b2_lookbehind, b2_lookahead);
+        return alternate_fragments(graph, branch1, branch2);
+    }
+
+    app_ref ASTNodeAssertion::make_word_char_re(seq_util& util_s, ast_manager& m) {
+        app* upper = util_s.re.mk_range(util_s.str.mk_char('A'), util_s.str.mk_char('Z'));
+        app* lower = util_s.re.mk_range(util_s.str.mk_char('a'), util_s.str.mk_char('z'));
+        app* digits = util_s.re.mk_range(util_s.str.mk_char('0'), util_s.str.mk_char('9'));
+        app* underscore = util_s.str.mk_unit(util_s.str.mk_char('_'));
+        return {util_s.re.mk_union(upper, util_s.re.mk_union(lower, util_s.re.mk_union(digits, underscore))), m};
+    }
+
     uint32_t ASTNodeQuantifier::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"QUANTIFIER {" << m_range.min << ",";
@@ -951,7 +1026,7 @@ namespace smt::noodler::ecma {
             out << m_range.max;
         }
         out << "}\"];\n";
-        const int child_id = m_child->print_dot(out, node_count);
+        const uint32_t child_id = m_child->print_dot(out, node_count);
         out << "  node" << id << " -> node" << child_id << ";\n";
         return id;
     }
@@ -991,7 +1066,7 @@ namespace smt::noodler::ecma {
             }
 
             // {n, m} quantified non-regular segments currently unsupported
-            // possible solution: concatenate the graph fragment m times and from nth to mth copy, create epsilon-MatchEdge out
+            // TODO: possible solution: concatenate the graph fragment m times and from nth to mth copy, create epsilon-MatchEdge out
             util::throw_error("Unsupported regex structure: Non-regular constructs under {n,m} quantifier");
         }
 
@@ -1041,6 +1116,10 @@ namespace smt::noodler::ecma {
 
     zstring ASTNodeDot::serialize() const {
         return zstring("(DOT)");
+    }
+
+    RegexComponent ASTNodeDot::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        return app_ref(util_s.re.mk_full_char(util_s.mk_string_sort()), m);
     }
 
     uint32_t ASTNodeBackref::print_dot(std::ostream& out, uint32_t& node_count) const {
