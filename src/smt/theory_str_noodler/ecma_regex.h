@@ -8,6 +8,7 @@
 #include <limits>
 #include <memory>
 #include <ostream>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -73,8 +74,10 @@ namespace smt::noodler::ecma {
         std::variant<Anchor, Lookaround> assertion;
     };
 
+    using BackrefId = std::variant<uint32_t, zstring_view>;
+
     struct BackrefEdge {
-        std::variant<int, zstring_view> backreference;
+        BackrefId backreference;
     };
 
     using RCGEdgePayload = std::variant<std::monostate, MatchEdge, AssertionEdge, BackrefEdge>;
@@ -105,6 +108,9 @@ namespace smt::noodler::ecma {
         std::vector<RCGVertex> vertices;
         std::vector<RCGEdge> edges;
 
+        std::unordered_map<EdgeId, std::vector<uint32_t>> group_starts;
+        std::unordered_map<EdgeId, std::vector<uint32_t>> group_ends;
+
         void add_vertex(RCGVertex vtx);
         VertexId create_vertex();
         VertexId create_vertex(std::vector<EdgeId> edges);
@@ -129,8 +135,9 @@ namespace smt::noodler::ecma {
     // ================== ECMA REGEX LEXER ==================
     class ECMALexer {
     public:
-        explicit ECMALexer(const zstring_view regex)
-            : m_regex(regex) { }
+        explicit ECMALexer(const zstring_view regex, std::unordered_map<zstring_view, uint32_t>& named_groups)
+            : m_regex(regex),
+              m_named_groups(named_groups) { }
 
         Token get_next_token();
 
@@ -142,6 +149,7 @@ namespace smt::noodler::ecma {
         bool m_in_char_class = false;
         bool m_first_in_char_class = false;
         bool m_first_traverse = true;
+        std::unordered_map<zstring_view, uint32_t>& m_named_groups;
 
         static bool is_digit(uint32_t digit);
         static bool is_alpha(uint32_t digit);
@@ -171,7 +179,7 @@ namespace smt::noodler::ecma {
         Token get_token_standard();
         Token get_char_class_escape_sequence_token();
         Token get_token_char_class();
-        bool is_capture_or_named_capture(uint32_t position) const;
+        std::pair<bool, zstring_view> is_capture_or_named_capture(uint32_t position) const;
         void perform_first_traverse();
     };
 
@@ -270,12 +278,11 @@ namespace smt::noodler::ecma {
     public:
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
-        void set_ref(zstring_view backref_name);
         void set_ref(uint32_t backref_number);
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
 
     private:
-        std::variant<uint32_t, zstring_view> m_backref;
+        uint32_t m_backref_id;
     };
 
     enum class GroupType {
@@ -289,15 +296,15 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void set_type(GroupType type);
-        void set_name(zstring_view name);
         void set_expr(ASTNodeRef expr);
+        void set_id(uint32_t gid);
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
 
     private:
         GroupType m_type = GroupType::NORMAL;
 
-        zstring_view m_name;
         ASTNodeRef m_child;
+        uint32_t m_gid;
     };
 
     enum class ElementType {
@@ -336,7 +343,7 @@ namespace smt::noodler::ecma {
     class ECMAParser {
     public:
         explicit ECMAParser(const zstring_view regex)
-            : m_lexer(regex),
+            : m_lexer(regex, m_named_groups),
               m_current_token(m_lexer.get_next_token()) { }
 
         ASTNodeRef parse();
@@ -344,6 +351,8 @@ namespace smt::noodler::ecma {
     private:
         ECMALexer m_lexer;
         Token m_current_token;
+        uint32_t m_current_group_id = 0;
+        std::unordered_map<zstring_view, uint32_t> m_named_groups;
 
         void next();
         bool match(TokenType type);
