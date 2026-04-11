@@ -8,7 +8,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
     // Basic token tests
     SECTION("Get literal token from regex") {
         zstring regex = "a";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
 
         REQUIRE(t.type == TokenType::LITERAL);
@@ -22,7 +23,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Escape sequence as literal") {
         zstring regex = "\\*";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
 
         REQUIRE(t.type == TokenType::LITERAL);
@@ -34,7 +36,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Hex escape sequence") {
         zstring regex = "\\x41\\x42";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
 
         Token t1 = lexer.get_next_token();
         REQUIRE(t1.type == TokenType::LITERAL);
@@ -49,7 +52,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Quantifier {n}") {
         zstring regex = "{1}";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::QUANTIFIER);
         QuantifierRange range;
@@ -61,7 +65,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Quantifier {n,}") {
         zstring regex = "{1,}";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::QUANTIFIER);
         QuantifierRange range;
@@ -73,7 +78,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Quantifier {n,m}") {
         zstring regex = "{1,2}";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::QUANTIFIER);
         QuantifierRange range;
@@ -85,7 +91,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Dot") {
         zstring regex = ".";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::DOT);
         REQUIRE(t.lexeme == ".");
@@ -93,7 +100,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Alternation") {
         zstring regex = "|";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::ALTERNATION);
         REQUIRE(t.lexeme == "|");
@@ -101,7 +109,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Assertion ^") {
         zstring regex = "^";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::ASSERTION);
         REQUIRE(std::get<uint32_t>(t.payload) == '^');
@@ -110,7 +119,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Assertion $") {
         zstring regex = "$";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::ASSERTION);
         REQUIRE(std::get<uint32_t>(t.payload) == '$');
@@ -119,7 +129,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Group start") {
         zstring regex = "(";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::GROUP_START);
         REQUIRE(t.lexeme == "(");
@@ -127,7 +138,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Group end with open") {
         zstring regex = "()";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE(lexer.get_next_token().type == TokenType::GROUP_START);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::GROUP_END);
@@ -136,7 +148,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Char class start") {
         zstring regex = "[";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::CHAR_CLASS_START);
         REQUIRE(t.lexeme == "[");
@@ -144,7 +157,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Non-capturing group") {
         zstring regex = "(?:";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::GROUP_NONCAPTURE_START);
         REQUIRE(t.lexeme == "(?:");
@@ -152,7 +166,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Positive lookahead") {
         zstring regex = "(?=";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LOOKAHEAD_POS_START);
         REQUIRE(t.lexeme == "(?=");
@@ -160,7 +175,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Negative lookahead") {
         zstring regex = "(?!";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LOOKAHEAD_NEG_START);
         REQUIRE(t.lexeme == "(?!");
@@ -168,7 +184,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Positive lookbehind") {
         zstring regex = "(?<=";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LOOKBEHIND_POS_START);
         REQUIRE(t.lexeme == "(?<=");
@@ -176,7 +193,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Negative lookbehind") {
         zstring regex = "(?<!";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LOOKBEHIND_NEG_START);
         REQUIRE(t.lexeme == "(?<!");
@@ -184,16 +202,19 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Named capture group") {
         zstring regex = "(?<name>";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::GROUP_NAMED_START);
+        // GROUP_NAMED_START payload is still the string view
         REQUIRE(std::get<zstring_view>(t.payload) == "name");
         REQUIRE(t.lexeme == "(?<name>");
     }
 
     SECTION("Char class escape \\d") {
         zstring regex = "\\d";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::CHAR_CLASS_ESCAPE);
         REQUIRE(std::get<uint32_t>(t.payload) == 'd');
@@ -202,7 +223,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Assertion \\b") {
         zstring regex = "\\b";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::ASSERTION);
         REQUIRE(std::get<uint32_t>(t.payload) == 'b');
@@ -211,7 +233,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Assertion \\B") {
         zstring regex = "\\B";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::ASSERTION);
         REQUIRE(std::get<uint32_t>(t.payload) == 'B');
@@ -220,7 +243,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Control escape sequence") {
         zstring regex = "\\cA";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == 1);  // Ctrl+A
@@ -228,24 +252,26 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
     }
 
     SECTION("Named backreference") {
-        zstring regex = "\\k<name>";
-        ECMALexer lexer(regex);
+        zstring regex = "\\k<name>(?<name>)";
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::BACKREFERENCE);
-        REQUIRE(std::get<zstring_view>(t.payload) == "name");
+        // Payload is now the uint32_t group ID!
+        REQUIRE(std::get<uint32_t>(t.payload) == 1);
         REQUIRE(t.lexeme == "\\k<name>");
     }
 
     // Caveats
     SECTION("Hex fallback to literal") {
-        // \x4Z is invalid, should fallback to literal 'x', leaving '4' and 'Z'
         zstring regex = "\\x4Z";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
 
         Token t1 = lexer.get_next_token();
         REQUIRE(t1.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t1.payload) == static_cast<uint32_t>('x'));
-        REQUIRE(t1.lexeme.length() == 2);  // Consumes '\x'
+        REQUIRE(t1.lexeme.length() == 2);
 
         Token t2 = lexer.get_next_token();
         REQUIRE(t2.type == TokenType::LITERAL);
@@ -257,23 +283,23 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
     }
 
     SECTION("Control escape fallback") {
-        // \c1 is invalid, should throw an error
         zstring regex = "\\c1";
-        ECMALexer lexer(regex);
-
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Group end unmatched") {
         zstring regex = ")";
-        ECMALexer lexer(regex);
-        // This should throw because of unmatched ')' in first traverse
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Braced quantifier fallback {") {
         zstring regex = "{";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == '{');
@@ -282,7 +308,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Braced quantifier fallback {,}") {
         zstring regex = "{,}";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == '{');
@@ -291,7 +318,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Braced quantifier fallback {n") {
         zstring regex = "{1";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == '{');
@@ -300,7 +328,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Braced quantifier fallback {n,") {
         zstring regex = "{1,";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == '{');
@@ -309,7 +338,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Braced quantifier fallback {n,m") {
         zstring regex = "{1,2";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == '{');
@@ -318,7 +348,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Braced quantifier fallback {n,mX") {
         zstring regex = "{1,2X";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == '{');
@@ -327,7 +358,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Braced quantifier fallback {nX") {
         zstring regex = "{1X";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == '{');
@@ -336,49 +368,57 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Unfinished special group (?") {
         zstring regex = "(?";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Invalid special group (?X") {
         zstring regex = "(?X";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Unfinished lookbehind (?<") {
         zstring regex = "(?<";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Unfinished named capture group (?<name") {
         zstring regex = "(?<name";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Invalid char in named capture group") {
         zstring regex = "(?<na-me>";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Empty named capture group") {
         zstring regex = "(?<>)";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Unfinished escape sequence \\") {
         zstring regex = "\\";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Hex escape sequence fallback \\xH") {
         zstring regex = "\\x4";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == 'x');
@@ -392,7 +432,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Unicode escape sequence fallback \\uHH") {
         zstring regex = "\\u12";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == 'u');
@@ -411,7 +452,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Unicode escape sequence fallback \\uG") {
         zstring regex = "\\uG";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == 'u');
@@ -425,55 +467,64 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Control escape fallback \\c") {
         zstring regex = "\\c";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Invalid control escape sequence") {
         zstring regex = "\\c1";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Unfinished named backreference \\k<") {
         zstring regex = "\\k<";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Invalid named backreference \\kname") {
         zstring regex = "\\kname";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Unclosed named backreference") {
         zstring regex = "\\k<name";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Empty named backreference") {
         zstring regex = "\\k<>";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Invalid char in named backreference") {
         zstring regex = "\\k<na-me>";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Octal escape \\8 is invalid") {
         zstring regex = "\\8";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE_THROWS(lexer.get_next_token());
     }
 
     SECTION("Octal escape \\0 followed by non-octal") {
         zstring regex = "\\0A";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == 0);
@@ -485,28 +536,28 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("In-class escape \\b") {
         zstring regex = "[\\b]";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
 
-        Token t = lexer.get_next_token();  // [
+        Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::CHAR_CLASS_START);
-        REQUIRE_NOTHROW(std::get<std::monostate>(t.payload));
         REQUIRE(t.lexeme == "[");
 
         t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
-        REQUIRE(std::get<uint32_t>(t.payload) == 8);  // backspace
+        REQUIRE(std::get<uint32_t>(t.payload) == 8);
         REQUIRE(t.lexeme == "\\b");
 
-        t = lexer.get_next_token();  // ]
+        t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::CHAR_CLASS_END);
-        REQUIRE_NOTHROW(std::get<std::monostate>(t.payload));
         REQUIRE(t.lexeme == "]");
     }
 
     SECTION("In-class octal escape \\8 is literal 8") {
         zstring regex = "[\\8]";
-        ECMALexer lexer(regex);
-        lexer.get_next_token();  // [
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
+        lexer.get_next_token();
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == '8');
@@ -515,14 +566,16 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Unclosed group") {
         zstring regex = "(";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE(lexer.get_next_token().type == TokenType::GROUP_START);
         REQUIRE(lexer.get_next_token().type == TokenType::END_OF_INPUT);
     }
 
     SECTION("Unclosed char class") {
         zstring regex = "[a-";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
         REQUIRE(lexer.get_next_token().type == TokenType::CHAR_CLASS_START);
         REQUIRE(lexer.get_next_token().type == TokenType::LITERAL);
         REQUIRE(lexer.get_next_token().type == TokenType::CHAR_CLASS_RANGE);
@@ -531,16 +584,16 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     // Complex regexes
     SECTION("Octal vs Backreference handling") {
-        // No capture groups, \1 should be evaluated as an octal sequence (fallback to literal)
         zstring regex1 = "\\1";
-        ECMALexer lexer1(regex1);
+        std::unordered_map<zstring_view, uint32_t> map1;
+        ECMALexer lexer1(regex1, map1);
         Token t1 = lexer1.get_next_token();
         REQUIRE(t1.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t1.payload) == 1);
 
-        // One capture group, \1 should be evaluated as a backreference
         zstring regex2 = "(a)\\1";
-        ECMALexer lexer2(regex2);
+        std::unordered_map<zstring_view, uint32_t> map2;
+        ECMALexer lexer2(regex2, map2);
 
         REQUIRE(lexer2.get_next_token().type == TokenType::GROUP_START);
         Token t = lexer2.get_next_token();
@@ -554,9 +607,9 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
     }
 
     SECTION("Character classes") {
-        // [^a-z]
         zstring regex = "[^a-z]";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
 
         REQUIRE(lexer.get_next_token().type == TokenType::CHAR_CLASS_START);
 
@@ -579,7 +632,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Complex multi-token match") {
         zstring regex = "^(?:a|b){1,2}$";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
 
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::ASSERTION);
@@ -604,7 +658,7 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
         t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::QUANTIFIER);
-        REQUIRE(t.lexeme.length() == 5);  // "{1,2}" length
+        REQUIRE(t.lexeme.length() == 5);
 
         t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::ASSERTION);
@@ -616,23 +670,24 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Lookarounds and groups") {
         zstring regex = "(?<=a)(b)(?=c)";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
 
         REQUIRE(lexer.get_next_token().type == TokenType::LOOKBEHIND_POS_START);
         Token t = lexer.get_next_token();
-        REQUIRE(t.type == TokenType::LITERAL);  // a
+        REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == 'a');
         REQUIRE(lexer.get_next_token().type == TokenType::GROUP_END);
 
         REQUIRE(lexer.get_next_token().type == TokenType::GROUP_START);
         t = lexer.get_next_token();
-        REQUIRE(t.type == TokenType::LITERAL);  // b
+        REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == 'b');
         REQUIRE(lexer.get_next_token().type == TokenType::GROUP_END);
 
         REQUIRE(lexer.get_next_token().type == TokenType::LOOKAHEAD_POS_START);
         t = lexer.get_next_token();
-        REQUIRE(t.type == TokenType::LITERAL);  // c
+        REQUIRE(t.type == TokenType::LITERAL);
         REQUIRE(std::get<uint32_t>(t.payload) == 'c');
         REQUIRE(lexer.get_next_token().type == TokenType::GROUP_END);
 
@@ -641,7 +696,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler]") {
 
     SECTION("Character class with escapes") {
         zstring regex = "[\\d\\sA-Z]";
-        ECMALexer lexer(regex);
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
 
         REQUIRE(lexer.get_next_token().type == TokenType::CHAR_CLASS_START);
 
@@ -717,11 +773,11 @@ TEST_CASE("ECMA Regex Parser", "[noodler]") {
     }
 
     SECTION("Groups (Normal, Non-capturing, Named)") {
-        REQUIRE(parse_and_serialize("()") == zstring("(SEQ (GROUP (SEQ)))"));
-        REQUIRE(parse_and_serialize("(a)") == zstring("(SEQ (GROUP (SEQ (LIT 'a'))))"));
-        REQUIRE(parse_and_serialize("(ab)+") == zstring("(SEQ (QUANT {1,inf} (GROUP (SEQ (LIT 'a') (LIT 'b')))))"));
+        REQUIRE(parse_and_serialize("()") == zstring("(SEQ (GROUP #1 (SEQ)))"));
+        REQUIRE(parse_and_serialize("(a)") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))))"));
+        REQUIRE(parse_and_serialize("(ab)+") == zstring("(SEQ (QUANT {1,inf} (GROUP #1 (SEQ (LIT 'a') (LIT 'b')))))"));
         REQUIRE(parse_and_serialize("(?:a)") == zstring("(SEQ (GROUP-NONCAP (SEQ (LIT 'a'))))"));
-        REQUIRE(parse_and_serialize("(?<foo>a)") == zstring("(SEQ (GROUP-NAMED foo (SEQ (LIT 'a'))))"));
+        REQUIRE(parse_and_serialize("(?<foo>a)") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))))"));
     }
 
     SECTION("Assertions and Lookarounds") {
@@ -744,19 +800,14 @@ TEST_CASE("ECMA Regex Parser", "[noodler]") {
                 zstring("(SEQ (CLASS ^ (RANGE 'a' 'z') (CHAR_CLASS 'd') (LIT '_')))"));
     }
 
-    // clang-format off
-
     SECTION("Backreferences") {
-        REQUIRE(parse_and_serialize("(a)\\1") ==
-                zstring("(SEQ (GROUP (SEQ (LIT 'a'))) (BACKREF 1))"));
+        REQUIRE(parse_and_serialize("(a)\\1") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))) (BACKREF 1))"));
 
-        REQUIRE(parse_and_serialize("(?<name>a)\\k<name>") ==
-                zstring("(SEQ (GROUP-NAMED name (SEQ (LIT 'a'))) (BACKREF name))"));
+        REQUIRE(parse_and_serialize("(?<name>a)\\k<name>") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))) (BACKREF 1))"));
     }
 
     SECTION("Nested capturing groups") {
-        REQUIRE(parse_and_serialize("((a))") ==
-                zstring("(SEQ (GROUP (SEQ (GROUP (SEQ (LIT 'a'))))))"));
+        REQUIRE(parse_and_serialize("((a))") == zstring("(SEQ (GROUP #1 (SEQ (GROUP #2 (SEQ (LIT 'a'))))))"));
     }
 
     SECTION("Nested non-capturing groups") {
@@ -765,40 +816,36 @@ TEST_CASE("ECMA Regex Parser", "[noodler]") {
     }
 
     SECTION("Mixed nested groups with quantifiers") {
-        REQUIRE(parse_and_serialize("(a(b+)c)*") ==
-                zstring("(SEQ (QUANT {0,inf} (GROUP (SEQ"
-                        " (LIT 'a')"
-                        " (GROUP (SEQ (QUANT {1,inf} (LIT 'b'))))"
-                        " (LIT 'c')"
-                        "))))"));
+        REQUIRE(parse_and_serialize("(a(b+)c)*") == zstring("(SEQ (QUANT {0,inf} (GROUP #1 (SEQ"
+                                                            " (LIT 'a')"
+                                                            " (GROUP #2 (SEQ (QUANT {1,inf} (LIT 'b'))))"
+                                                            " (LIT 'c')"
+                                                            "))))"));
     }
 
     SECTION("Named group inside non-capturing group") {
         REQUIRE(parse_and_serialize("(?:(?<foo>a))") ==
-                zstring("(SEQ (GROUP-NONCAP (SEQ (GROUP-NAMED foo (SEQ (LIT 'a'))))))"));
+                zstring("(SEQ (GROUP-NONCAP (SEQ (GROUP #1 (SEQ (LIT 'a'))))))"));
     }
 
     SECTION("Quantifier on group with alternation inside") {
-        REQUIRE(parse_and_serialize("(a|b)+") ==
-                zstring("(SEQ (QUANT {1,inf} (GROUP (DISJ"
-                        " (SEQ (LIT 'a'))"
-                        " (SEQ (LIT 'b'))"
-                        "))))"));
+        REQUIRE(parse_and_serialize("(a|b)+") == zstring("(SEQ (QUANT {1,inf} (GROUP #1 (DISJ"
+                                                         " (SEQ (LIT 'a'))"
+                                                         " (SEQ (LIT 'b'))"
+                                                         "))))"));
     }
 
     SECTION("Quantifier {n,m} on group") {
         REQUIRE(parse_and_serialize("(ab){2,4}") ==
-                zstring("(SEQ (QUANT {2,4} (GROUP (SEQ (LIT 'a') (LIT 'b')))))"));
+                zstring("(SEQ (QUANT {2,4} (GROUP #1 (SEQ (LIT 'a') (LIT 'b')))))"));
     }
 
     SECTION("Quantifier on character class") {
-        REQUIRE(parse_and_serialize("[a-z]+") ==
-                zstring("(SEQ (QUANT {1,inf} (CLASS (RANGE 'a' 'z'))))"));
+        REQUIRE(parse_and_serialize("[a-z]+") == zstring("(SEQ (QUANT {1,inf} (CLASS (RANGE 'a' 'z'))))"));
     }
 
     SECTION("Quantifier on dot") {
-        REQUIRE(parse_and_serialize(".*") ==
-                zstring("(SEQ (QUANT {0,inf} (DOT)))"));
+        REQUIRE(parse_and_serialize(".*") == zstring("(SEQ (QUANT {0,inf} (DOT)))"));
     }
 
     SECTION("Alternation with empty right branch") {
@@ -810,200 +857,170 @@ TEST_CASE("ECMA Regex Parser", "[noodler]") {
     }
 
     SECTION("Alternation inside a group") {
-        REQUIRE(parse_and_serialize("(a|b|c)") == zstring(
-            "(SEQ"
-                " (GROUP (DISJ"
-                    " (SEQ (LIT 'a'))"
-                    " (SEQ (LIT 'b'))"
-                    " (SEQ (LIT 'c'))"
-                "))"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(a|b|c)") == zstring("(SEQ"
+                                                          " (GROUP #1 (DISJ"
+                                                          " (SEQ (LIT 'a'))"
+                                                          " (SEQ (LIT 'b'))"
+                                                          " (SEQ (LIT 'c'))"
+                                                          "))"
+                                                          ")"));
     }
 
     SECTION("Nested alternation") {
-        REQUIRE(parse_and_serialize("(a|b)|(c|d)") == zstring(
-            "(DISJ"
-                " (SEQ (GROUP (DISJ"
-                    " (SEQ (LIT 'a'))"
-                    " (SEQ (LIT 'b'))"
-                ")))"
-                " (SEQ (GROUP (DISJ"
-                    " (SEQ (LIT 'c'))"
-                    " (SEQ (LIT 'd'))"
-                ")))"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(a|b)|(c|d)") == zstring("(DISJ"
+                                                              " (SEQ (GROUP #1 (DISJ"
+                                                              " (SEQ (LIT 'a'))"
+                                                              " (SEQ (LIT 'b'))"
+                                                              ")))"
+                                                              " (SEQ (GROUP #2 (DISJ"
+                                                              " (SEQ (LIT 'c'))"
+                                                              " (SEQ (LIT 'd'))"
+                                                              ")))"
+                                                              ")"));
     }
 
     SECTION("Word boundary in the middle of pattern") {
-        REQUIRE(parse_and_serialize("a\\bb") == zstring(
-            "(SEQ"
-                " (LIT 'a')"
-                " (ASSERT 'b')"
-                " (LIT 'b')"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("a\\bb") == zstring("(SEQ"
+                                                        " (LIT 'a')"
+                                                        " (ASSERT 'b')"
+                                                        " (LIT 'b')"
+                                                        ")"));
     }
 
     SECTION("Lookahead with quantified subpattern") {
-        REQUIRE(parse_and_serialize("(?=a+)") == zstring(
-            "(SEQ"
-                " (ASSERT ?= (SEQ"
-                    " (QUANT {1,inf} (LIT 'a'))"
-                "))"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(?=a+)") == zstring("(SEQ"
+                                                         " (ASSERT ?= (SEQ"
+                                                         " (QUANT {1,inf} (LIT 'a'))"
+                                                         "))"
+                                                         ")"));
     }
 
     SECTION("Negative lookbehind with char class") {
-        REQUIRE(parse_and_serialize("(?<![0-9])a") == zstring(
-            "(SEQ"
-                " (ASSERT ?<! (SEQ"
-                    " (CLASS (RANGE '0' '9'))"
-                "))"
-                " (LIT 'a')"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(?<![0-9])a") == zstring("(SEQ"
+                                                              " (ASSERT ?<! (SEQ"
+                                                              " (CLASS (RANGE '0' '9'))"
+                                                              "))"
+                                                              " (LIT 'a')"
+                                                              ")"));
     }
 
     SECTION("Lookahead followed by group") {
-        REQUIRE(parse_and_serialize("(?=a)(b)") == zstring(
-            "(SEQ"
-                " (ASSERT ?= (SEQ (LIT 'a')))"
-                " (GROUP (SEQ (LIT 'b')))"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(?=a)(b)") == zstring("(SEQ"
+                                                           " (ASSERT ?= (SEQ (LIT 'a')))"
+                                                           " (GROUP #1 (SEQ (LIT 'b')))"
+                                                           ")"));
     }
 
     SECTION("Multiple assertions in sequence") {
-        REQUIRE(parse_and_serialize("^\\ba$") == zstring(
-            "(SEQ"
-                " (ASSERT '^')"
-                " (ASSERT 'b')"
-                " (LIT 'a')"
-                " (ASSERT '$')"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("^\\ba$") == zstring("(SEQ"
+                                                         " (ASSERT '^')"
+                                                         " (ASSERT 'b')"
+                                                         " (LIT 'a')"
+                                                         " (ASSERT '$')"
+                                                         ")"));
     }
 
     SECTION("Character class with multiple ranges") {
-        REQUIRE(parse_and_serialize("[a-zA-Z0-9]") == zstring(
-            "(SEQ"
-                " (CLASS"
-                    " (RANGE 'a' 'z')"
-                    " (RANGE 'A' 'Z')"
-                    " (RANGE '0' '9')"
-                ")"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("[a-zA-Z0-9]") == zstring("(SEQ"
+                                                              " (CLASS"
+                                                              " (RANGE 'a' 'z')"
+                                                              " (RANGE 'A' 'Z')"
+                                                              " (RANGE '0' '9')"
+                                                              ")"
+                                                              ")"));
     }
 
     SECTION("Negated class with escape and range") {
-        REQUIRE(parse_and_serialize("[^\\w0-9]") == zstring(
-            "(SEQ"
-                " (CLASS ^"
-                    " (CHAR_CLASS 'w')"
-                    " (RANGE '0' '9')"
-                ")"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("[^\\w0-9]") == zstring("(SEQ"
+                                                            " (CLASS ^"
+                                                            " (CHAR_CLASS 'w')"
+                                                            " (RANGE '0' '9')"
+                                                            ")"
+                                                            ")"));
     }
 
     SECTION("Character class with single char and range") {
-        REQUIRE(parse_and_serialize("[_a-z]") == zstring(
-            "(SEQ"
-                " (CLASS"
-                    " (LIT '_')"
-                    " (RANGE 'a' 'z')"
-                ")"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("[_a-z]") == zstring("(SEQ"
+                                                         " (CLASS"
+                                                         " (LIT '_')"
+                                                         " (RANGE 'a' 'z')"
+                                                         ")"
+                                                         ")"));
     }
 
     SECTION("Multiple numeric backreferences") {
-        REQUIRE(parse_and_serialize("(a)(b)\\1\\2") == zstring(
-            "(SEQ"
-                " (GROUP (SEQ (LIT 'a')))"
-                " (GROUP (SEQ (LIT 'b')))"
-                " (BACKREF 1)"
-                " (BACKREF 2)"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(a)(b)\\1\\2") == zstring("(SEQ"
+                                                               " (GROUP #1 (SEQ (LIT 'a')))"
+                                                               " (GROUP #2 (SEQ (LIT 'b')))"
+                                                               " (BACKREF 1)"
+                                                               " (BACKREF 2)"
+                                                               ")"));
     }
 
     SECTION("Named backreference after named group") {
-        REQUIRE(parse_and_serialize("(?<word>[a-z]+)\\k<word>") == zstring(
-            "(SEQ"
-                " (GROUP-NAMED word (SEQ (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))))"
-                " (BACKREF word)"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(?<word>[a-z]+)\\k<word>") ==
+                zstring("(SEQ"
+                        " (GROUP #1 (SEQ (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))))"
+                        " (BACKREF 1)"
+                        ")"));
     }
 
     SECTION("Simple email-like pattern") {
-        REQUIRE(parse_and_serialize("[a-z]+@[a-z]+\\.[a-z]+") == zstring(
-            "(SEQ"
-                " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
-                " (LIT '@')"
-                " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
-                " (LIT '.')"
-                " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("[a-z]+@[a-z]+\\.[a-z]+") == zstring("(SEQ"
+                                                                         " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
+                                                                         " (LIT '@')"
+                                                                         " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
+                                                                         " (LIT '.')"
+                                                                         " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
+                                                                         ")"));
     }
 
     SECTION("IP address octet pattern") {
-        REQUIRE(parse_and_serialize("(25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})") == zstring(
-            "(SEQ"
-                " (GROUP (DISJ"
-                    " (SEQ (LIT '2') (LIT '5') (CLASS (RANGE '0' '5')))"
-                    " (SEQ (LIT '2') (CLASS (RANGE '0' '4')) (CLASS (RANGE '0' '9')))"
-                    " (SEQ"
+        REQUIRE(parse_and_serialize("(25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})") ==
+                zstring("(SEQ"
+                        " (GROUP #1 (DISJ"
+                        " (SEQ (LIT '2') (LIT '5') (CLASS (RANGE '0' '5')))"
+                        " (SEQ (LIT '2') (CLASS (RANGE '0' '4')) (CLASS (RANGE '0' '9')))"
+                        " (SEQ"
                         " (QUANT {0,1} (CLASS (LIT '0') (LIT '1')))"
                         " (QUANT {1,2} (CLASS (RANGE '0' '9')))"
-                    ")"
-                "))"
-            ")"
-        ));
+                        ")"
+                        "))"
+                        ")"));
     }
 
     SECTION("Hex color pattern") {
-        REQUIRE(parse_and_serialize("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})") == zstring(
-            "(SEQ"
-                " (LIT '#')"
-                " (GROUP (DISJ"
-                    " (SEQ (QUANT {3,3} (CLASS (RANGE '0' '9') (RANGE 'a' 'f') (RANGE 'A' 'F'))))"
-                    " (SEQ (QUANT {6,6} (CLASS (RANGE '0' '9') (RANGE 'a' 'f') (RANGE 'A' 'F'))))"
-                "))"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})") ==
+                zstring("(SEQ"
+                        " (LIT '#')"
+                        " (GROUP #1 (DISJ"
+                        " (SEQ (QUANT {3,3} (CLASS (RANGE '0' '9') (RANGE 'a' 'f') (RANGE 'A' 'F'))))"
+                        " (SEQ (QUANT {6,6} (CLASS (RANGE '0' '9') (RANGE 'a' 'f') (RANGE 'A' 'F'))))"
+                        "))"
+                        ")"));
     }
 
     SECTION("Date pattern with named groups") {
-        REQUIRE(parse_and_serialize("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})") == zstring(
-            "(SEQ"
-                " (GROUP-NAMED year (SEQ (QUANT {4,4} (CLASS (CHAR_CLASS 'd')))))"
-                " (LIT '-')"
-                " (GROUP-NAMED month (SEQ (QUANT {2,2} (CLASS (CHAR_CLASS 'd')))))"
-                " (LIT '-')"
-                " (GROUP-NAMED day (SEQ (QUANT {2,2} (CLASS (CHAR_CLASS 'd')))))"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})") ==
+                zstring("(SEQ"
+                        " (GROUP #1 (SEQ (QUANT {4,4} (CLASS (CHAR_CLASS 'd')))))"
+                        " (LIT '-')"
+                        " (GROUP #2 (SEQ (QUANT {2,2} (CLASS (CHAR_CLASS 'd')))))"
+                        " (LIT '-')"
+                        " (GROUP #3 (SEQ (QUANT {2,2} (CLASS (CHAR_CLASS 'd')))))"
+                        ")"));
     }
 
     SECTION("URL path segment with lookahead") {
-        REQUIRE(parse_and_serialize("(?<=/)([a-z0-9\\-]+)(?=/)") == zstring(
-            "(SEQ"
-                " (ASSERT ?<= (SEQ (LIT '/')))"
-                " (GROUP (SEQ (QUANT {1,inf} (CLASS"
-                    " (RANGE 'a' 'z')"
-                    " (RANGE '0' '9')"
-                    " (LIT '-')"
-                "))))"
-                " (ASSERT ?= (SEQ (LIT '/')))"
-            ")"
-        ));
+        REQUIRE(parse_and_serialize("(?<=/)([a-z0-9\\-]+)(?=/)") == zstring("(SEQ"
+                                                                            " (ASSERT ?<= (SEQ (LIT '/')))"
+                                                                            " (GROUP #1 (SEQ (QUANT {1,inf} (CLASS"
+                                                                            " (RANGE 'a' 'z')"
+                                                                            " (RANGE '0' '9')"
+                                                                            " (LIT '-')"
+                                                                            "))))"
+                                                                            " (ASSERT ?= (SEQ (LIT '/')))"
+                                                                            ")"));
     }
 
     SECTION("Quantifier without preceding atom throws") {

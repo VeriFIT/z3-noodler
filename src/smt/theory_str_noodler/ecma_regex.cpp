@@ -1,6 +1,7 @@
 #include "ecma_regex.h"
 
 #include "ast/ast.h"
+#include "ast/seq_decl_plugin.h"
 #include "util.h"
 #include "util/debug.h"
 #include "util/zstring_view.h"
@@ -14,6 +15,7 @@
 #include <limits>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -94,7 +96,7 @@ namespace smt::noodler::ecma {
 
     EdgeId RegexConstraintGraph::create_edge() {
         EdgeId new_id = edges.size();
-        edges.emplace_back(new_id, UNKNOWN_VERTEX, BackrefEdge {0});
+        edges.emplace_back(new_id, UNKNOWN_VERTEX, BackrefEdge {0u});
         return new_id;
     }
 
@@ -297,7 +299,13 @@ namespace smt::noodler::ecma {
         const uint32_t name_start_pos = m_position;
         const uint32_t name_length = get_backref_name_len(name_start_pos);
         m_position += name_length + 1;  // consume name and '>'
-        return make_token(TokenType::BACKREFERENCE, zstring_view(&m_regex[name_start_pos], name_length));
+
+        zstring_view backref_name {&m_regex[name_start_pos], name_length};
+        auto it = m_named_groups.find(backref_name);
+        if (it == m_named_groups.end()) {
+            util::throw_error("ECMA regex syntax error: Backreference to undefined named group");
+        }
+        return make_token(TokenType::BACKREFERENCE, it->second);
     }
 
     Token ECMALexer::octal_or_backref(const uint32_t first_digit) {
@@ -646,19 +654,20 @@ namespace smt::noodler::ecma {
         }
     }
 
-    bool ECMALexer::is_capture_or_named_capture(uint32_t position) const {
+    std::pair<bool, zstring_view> ECMALexer::is_capture_or_named_capture(uint32_t position) const {
         position++;
         if (position >= m_regex.length()) {
-            return false;
+            return {false, {}};
         }
         if (m_regex[position] != '?') {
-            return true;
+            return {true, {}};
         }
         position++;
         if (position >= m_regex.length() || m_regex[position] != '<') {
-            return false;
+            return {false, {}};
         }
 
+        uint32_t name_start = position + 1;
         uint32_t name_len = 0;
         bool found_closing_bracket = false;
         while (++position < m_regex.length()) {
@@ -667,13 +676,15 @@ namespace smt::noodler::ecma {
                 found_closing_bracket = true;
                 break;
             }
-            // TODO: implement unicode blob
             if (!is_alnum(current_char) && current_char != '_' && current_char != '$') {
                 break;
             }
             name_len++;
         }
-        return (name_len > 0) && (found_closing_bracket);
+        if (name_len > 0 && found_closing_bracket) {
+            return {true, zstring_view(&m_regex[name_start], name_len)};
+        }
+        return {false, {}};
     }
 
     void ECMALexer::perform_first_traverse() {
@@ -706,9 +717,16 @@ namespace smt::noodler::ecma {
                         escaped = false;  // '\(' --> ignore that
                     } else if (!in_char_class) {
                         open_parens_count++;
-
-                        if (is_capture_or_named_capture(pos)) {
+                        auto [is_capture, name] = is_capture_or_named_capture(pos);
+                        if (is_capture) {
                             m_num_capture_groups++;
+                            // named capture group --> add it to the map,
+                            if (name.length() > 0) {
+                                if (m_named_groups.count(name) != 0) {
+                                    util::throw_error("ECMA Regex error: Duplicate capture group name");
+                                }
+                                m_named_groups[name] = m_num_capture_groups;
+                            }
                         }
                     }
                     break;
@@ -1129,50 +1147,41 @@ namespace smt::noodler::ecma {
     }
 
     zstring ASTNodeBackref::serialize() const {
-        zstring ref_str;
-        if (std::holds_alternative<uint32_t>(m_backref)) {
-            ref_str = zstring(std::to_string(std::get<uint32_t>(m_backref)));
-        } else {
-            SASSERT(std::holds_alternative<zstring_view>(m_backref));
-            ref_str += view_to_zstring(std::get<zstring_view>(m_backref));
-        }
-        return zstring("(BACKREF ") + ref_str + zstring(")");
-    }
-
-    void ASTNodeBackref::set_ref(zstring_view backref_name) {
-        m_backref = backref_name;
+        return zstring("(BACKREF ") + std::to_string(m_backref_id) + zstring(")");
     }
 
     void ASTNodeBackref::set_ref(uint32_t backref_number) {
-        m_backref = backref_number;
+        m_backref_id = backref_number;
+    }
+
+    RegexComponent ASTNodeBackref::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        const VertexId vout = graph.create_vertex();
+        const EdgeId backref_eid = graph.create_edge(vout, {BackrefEdge {m_backref_id}});
+        const VertexId vin = graph.create_vertex({backref_eid});
+        return GraphFragment {vin, vout, {backref_eid}};
     }
 
     uint32_t ASTNodeGroup::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         std::string label = "GROUP";
-        if (m_type == GroupType::NAMED) {
-            label += " (?<";
-            for (uint32_t i = 0; i < m_name.length(); i++) {
-                label += static_cast<char>(m_name[i]);
-            }
-        } else if (m_type == GroupType::NONCAPTURE) {
+        if (m_type == GroupType::NONCAPTURE) {
             label += " (?:)";
+        } else {
+            label += " #" + std::to_string(m_gid);
         }
 
         out << "  node" << id << " [label=\"" << label << "\"];\n";
-        const int child_id = m_child->print_dot(out, node_count);
+        const uint32_t child_id = m_child->print_dot(out, node_count);
         out << "  node" << id << " -> node" << child_id << ";\n";
         return id;
     }
 
     zstring ASTNodeGroup::serialize() const {
         zstring label;
-        if (m_type == GroupType::NAMED) {
-            label = zstring("GROUP-NAMED ") + view_to_zstring(m_name);
-        } else if (m_type == GroupType::NONCAPTURE) {
+        if (m_type == GroupType::NONCAPTURE) {
             label = zstring("GROUP-NONCAP");
         } else {
-            label = zstring("GROUP");
+            label = zstring("GROUP #") + std::to_string(m_gid);
         }
         return zstring("(") + label + zstring(" ") + m_child->serialize() + zstring(")");
     }
@@ -1181,12 +1190,46 @@ namespace smt::noodler::ecma {
         m_type = type;
     }
 
-    void ASTNodeGroup::set_name(const zstring_view name) {
-        m_name = name;
-    }
-
     void ASTNodeGroup::set_expr(ASTNodeRef expr) {
         m_child = std::move(expr);
+    }
+
+    void ASTNodeGroup::set_id(uint32_t gid) {
+        m_gid = gid;
+    }
+
+    RegexComponent ASTNodeGroup::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        RegexComponent subregex = m_child->get_subgraph(graph, util_s, m);
+        if (m_type == GroupType::NONCAPTURE) {
+            return subregex;
+        }
+
+        // Capture groups contain very important information for the solver --> even if the subregex is regular,
+        // we cannot greedily merge it with anything (possible backreferences later in the regex)
+        // Therefore, we normalize the regular subregex and then work with it uniformly
+        GraphFragment fragment;
+        if (std::holds_alternative<app_ref>(subregex)) {
+            const VertexId vout = graph.create_vertex();
+            const EdgeId eid = graph.create_edge(vout, RCGEdgePayload {MatchEdge {std::get<app_ref>(subregex)}});
+            const VertexId vin = graph.create_vertex({eid});
+            fragment = GraphFragment {vin, vout, {eid}};
+        } else {
+            fragment = std::get<GraphFragment>(subregex);
+        }
+
+        // Instead of creating separate vertices for the capture groups, we tag all the edges that are going out
+        // of v_in of the subregex with the capture group index.
+        // If there are nested capture groups, e.g., ((a)), the edges from v_in are tagged with two capture group starts.
+        for (const EdgeId eid : graph.vertices[fragment.v_in].outgoing_edges) {
+            graph.group_starts[eid].push_back(m_gid);
+        }
+
+        // The same optimalization for capture group ends
+        for (const EdgeId eid : fragment.edges_pointing_to_vout) {
+            graph.group_ends[eid].push_back(m_gid);
+        }
+
+        return fragment;
     }
 
     uint32_t ASTNodeCharClass::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -1430,15 +1473,9 @@ namespace smt::noodler::ecma {
                 return std::make_unique<ASTNodeDot>();
             case TokenType::BACKREFERENCE: {
                 auto backref = std::make_unique<ASTNodeBackref>();
-                // no uint32_t (backref number) or zstring_view (backref name) --> incorrect lexer implementation
-                SASSERT(
-                    (std::holds_alternative<uint32_t>(t.payload) || std::holds_alternative<zstring_view>(t.payload)) &&
-                    "BACKREFERENCE has no name and no number");
-                if (std::holds_alternative<uint32_t>(t.payload)) {
-                    backref->set_ref(std::get<uint32_t>(t.payload));
-                } else {
-                    backref->set_ref(std::get<zstring_view>(t.payload));
-                }
+                // Lexer already transforms named backreferences into indexed-based ones
+                SASSERT(std::holds_alternative<uint32_t>(t.payload) && "BACKREFERENCE payload must be uint32_t");
+                backref->set_ref(std::get<uint32_t>(t.payload));
                 next();
                 return backref;
             }
@@ -1476,7 +1513,6 @@ namespace smt::noodler::ecma {
             case TokenType::GROUP_NAMED_START:
                 group->set_type(GroupType::NAMED);
                 SASSERT(std::holds_alternative<zstring_view>(t.payload) && "GROUP_NAMED_START has no name");
-                group->set_name(std::get<zstring_view>(t.payload));
                 next();
                 break;
             case TokenType::GROUP_NONCAPTURE_START:
@@ -1486,6 +1522,12 @@ namespace smt::noodler::ecma {
             default:
                 util::throw_error("Syntax error in ECMA regex: Expected group start");
         }
+
+        if (m_current_token.type != TokenType::GROUP_NONCAPTURE_START) {
+            m_current_group_id++;
+            group->set_id(m_current_group_id);
+        }
+
         group->set_expr(parse_disjunction());
         consume(TokenType::GROUP_END, "Expected ')' after group");
         return group;
