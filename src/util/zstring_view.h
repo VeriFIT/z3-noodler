@@ -60,3 +60,10 @@ public:
         return *this == other;
     }
 };
+
+template<>
+struct std::hash<zstring_view> {
+    size_t operator()(const zstring_view& zv) const {
+        return std::hash<const uint32_t*> {}(zv.data()) + std::hash<uint32_t> {}(zv.length());
+    }
+};
