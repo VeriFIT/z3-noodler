@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 class zstring_view {
     const uint32_t* m_data = nullptr;
@@ -64,6 +65,11 @@ public:
 template<>
 struct std::hash<zstring_view> {
     size_t operator()(const zstring_view& zv) const {
-        return std::hash<const uint32_t*> {}(zv.data()) + std::hash<uint32_t> {}(zv.length());
+        std::size_t total_hash = 0;
+        for (std::size_t i = 0; i < zv.length(); i++) {
+            total_hash += std::hash<uint32_t> {}(zv[i]);
+        }
+        total_hash += std::hash<uint32_t> {}(zv.length());
+        return total_hash;
     }
 };
