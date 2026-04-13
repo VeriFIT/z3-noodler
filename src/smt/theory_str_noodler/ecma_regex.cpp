@@ -26,7 +26,6 @@ namespace smt::noodler::ecma {
     constexpr uint32_t UNICODE_ESCAPE_SEQUENCE_LEN = 4;
     constexpr uint32_t BACKSPACE_LITERAL = 8;
     constexpr uint32_t UNBOUNDED = std::numeric_limits<uint32_t>::max();
-    constexpr uint32_t UNKNOWN_VERTEX = std::numeric_limits<uint32_t>::max();
 
     zstring view_to_zstring(const zstring_view view) {
         zstring res;
@@ -43,10 +42,22 @@ namespace smt::noodler::ecma {
         return GraphFragment {first.v_in, second.v_out, second.edges_pointing_to_vout};
     }
 
-    GraphFragment alternate_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second) {
-        VertexId new_vout = graph.create_vertex();
+    GraphFragment alternate_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
+                                      const GraphFragment& second) {
+        std::vector<EdgeId> new_vin_outgoing;
+        for (const EdgeId id : graph.vertices[first.v_in].outgoing_edges) {
+            new_vin_outgoing.push_back(id);
+        }
+        for (const EdgeId id : graph.vertices[second.v_in].outgoing_edges) {
+            new_vin_outgoing.push_back(id);
+        }
 
-        // Retargetuj edges_pointing_to_vout obou větví na nový v_out
+        graph.vertices[first.v_in].outgoing_edges.clear();
+        graph.vertices[second.v_in].outgoing_edges.clear();
+
+        const VertexId new_vin = graph.create_vertex(new_vin_outgoing);
+        const VertexId new_vout = graph.create_vertex();
+
         std::vector<EdgeId> new_vout_incoming;
         for (const EdgeId id : first.edges_pointing_to_vout) {
             graph.edges[id].target = new_vout;
@@ -57,18 +68,6 @@ namespace smt::noodler::ecma {
             new_vout_incoming.push_back(id);
         }
 
-        // Steal outgoing edges z v_in obou větví do nového v_in
-        std::vector<EdgeId> new_vin_outgoing;
-        for (const EdgeId id : graph.vertices[first.v_in].outgoing_edges) {
-            new_vin_outgoing.push_back(id);
-        }
-        for (const EdgeId id : graph.vertices[second.v_in].outgoing_edges) {
-            new_vin_outgoing.push_back(id);
-        }
-        graph.vertices[first.v_in].outgoing_edges.clear();
-        graph.vertices[second.v_in].outgoing_edges.clear();
-
-        VertexId new_vin = graph.create_vertex(new_vin_outgoing);
         return GraphFragment {new_vin, new_vout, new_vout_incoming};
     }
 
@@ -722,10 +721,10 @@ namespace smt::noodler::ecma {
                             m_num_capture_groups++;
                             // named capture group --> add it to the map,
                             if (name.length() > 0) {
-                                if (m_named_groups.count(name) != 0) {
+                                if (m_named_groups.contains(name)) {
                                     util::throw_error("ECMA Regex error: Duplicate capture group name");
                                 }
-                                m_named_groups[name] = m_num_capture_groups;
+                                m_named_groups.insert(std::make_pair(name, m_num_capture_groups));
                             }
                         }
                     }
@@ -883,9 +882,10 @@ namespace smt::noodler::ecma {
         // Helper lambda for converting regular components into trivial graph fragments
         auto to_fragment = [&](RegexComponent& component) -> GraphFragment {
             if (std::holds_alternative<app_ref>(component)) {
-                VertexId v_out = graph.create_vertex();
+                const VertexId v_in = graph.create_vertex();
+                const VertexId v_out = graph.create_vertex();
                 EdgeId eid = graph.create_edge(v_out, RCGEdgePayload {MatchEdge {std::get<app_ref>(component)}});
-                VertexId v_in = graph.create_vertex(std::vector<EdgeId> {eid});
+                graph.vertices[v_in].outgoing_edges.push_back(eid);
                 return GraphFragment {v_in, v_out, {eid}};
             }
             return std::get<GraphFragment>(component);
@@ -974,7 +974,11 @@ namespace smt::noodler::ecma {
         // Anchors --
         if (m_assert_type == TokenType::ASSERTION) {
             if (m_payload == '^' || m_payload == '$') {
-                return app_ref(util_s.re.mk_epsilon(str_sort), m);
+                VertexId v_in = graph.create_vertex();
+                VertexId v_out = graph.create_vertex();
+                EdgeId eid = graph.create_edge(v_out, RCGEdgePayload {AssertionEdge {Anchor {m_payload}}});
+                graph.vertices[v_in].outgoing_edges.push_back(eid);
+                return GraphFragment {v_in, v_out, {eid}};
             }
             return make_word_boundary_fragment(graph, util_s, m, m_payload == 'b');
         }
@@ -999,10 +1003,11 @@ namespace smt::noodler::ecma {
     GraphFragment ASTNodeAssertion::make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m,
                                                             app_ref assert_regex, AssertionDirection dir,
                                                             bool is_positive) {
+        VertexId v_in = graph.create_vertex();
         VertexId v_out = graph.create_vertex();
         EdgeId eid = graph.create_edge(
             v_out, RCGEdgePayload {AssertionEdge {Lookaround {std::move(assert_regex), dir, is_positive}}});
-        VertexId v_in = graph.create_vertex(std::vector<EdgeId> {eid});
+        graph.vertices[v_in].outgoing_edges.push_back(eid);
         return GraphFragment {v_in, v_out, {eid}};
     }
 
@@ -1028,10 +1033,13 @@ namespace smt::noodler::ecma {
     }
 
     app_ref ASTNodeAssertion::make_word_char_re(seq_util& util_s, ast_manager& m) {
-        app* upper = util_s.re.mk_range(util_s.str.mk_char('A'), util_s.str.mk_char('Z'));
-        app* lower = util_s.re.mk_range(util_s.str.mk_char('a'), util_s.str.mk_char('z'));
-        app* digits = util_s.re.mk_range(util_s.str.mk_char('0'), util_s.str.mk_char('9'));
-        app* underscore = util_s.str.mk_unit(util_s.str.mk_char('_'));
+        app* upper = util_s.re.mk_range(util_s.str.mk_unit(util_s.str.mk_char('A')),
+                                        util_s.str.mk_unit(util_s.str.mk_char('Z')));
+        app* lower = util_s.re.mk_range(util_s.str.mk_unit(util_s.str.mk_char('a')),
+                                        util_s.str.mk_unit(util_s.str.mk_char('z')));
+        app* digits = util_s.re.mk_range(util_s.str.mk_unit(util_s.str.mk_char('0')),
+                                         util_s.str.mk_unit(util_s.str.mk_char('9')));
+        app* underscore = util_s.re.mk_to_re(util_s.str.mk_unit(util_s.str.mk_char('_')));
         return {util_s.re.mk_union(upper, util_s.re.mk_union(lower, util_s.re.mk_union(digits, underscore))), m};
     }
 
@@ -1123,7 +1131,8 @@ namespace smt::noodler::ecma {
 
     RegexComponent ASTNodeLiteral::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
         SASSERT(m_char < std::numeric_limits<uint32_t>::max());
-        return app_ref(util_s.str.mk_unit(util_s.str.mk_char(m_char)), m);
+        app* str_unit = util_s.str.mk_unit(util_s.str.mk_char(m_char));
+        return app_ref(util_s.re.mk_to_re(str_unit), m);
     }
 
     uint32_t ASTNodeDot::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -1155,9 +1164,10 @@ namespace smt::noodler::ecma {
     }
 
     RegexComponent ASTNodeBackref::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        const VertexId vin = graph.create_vertex();
         const VertexId vout = graph.create_vertex();
         const EdgeId backref_eid = graph.create_edge(vout, {BackrefEdge {m_backref_id}});
-        const VertexId vin = graph.create_vertex({backref_eid});
+        graph.vertices[vin].outgoing_edges.push_back(backref_eid);
         return GraphFragment {vin, vout, {backref_eid}};
     }
 
@@ -1209,9 +1219,10 @@ namespace smt::noodler::ecma {
         // Therefore, we normalize the regular subregex and then work with it uniformly
         GraphFragment fragment;
         if (std::holds_alternative<app_ref>(subregex)) {
+            const VertexId vin = graph.create_vertex();
             const VertexId vout = graph.create_vertex();
             const EdgeId eid = graph.create_edge(vout, RCGEdgePayload {MatchEdge {std::get<app_ref>(subregex)}});
-            const VertexId vin = graph.create_vertex({eid});
+            graph.vertices[vin].outgoing_edges.push_back(eid);
             fragment = GraphFragment {vin, vout, {eid}};
         } else {
             fragment = std::get<GraphFragment>(subregex);
@@ -1312,8 +1323,9 @@ namespace smt::noodler::ecma {
         }
         // Negated class --> set difference of all chars and the character class
         if (m_is_negated) {
+            // Set diff didnt work well --> intersection with complements
             sort* str_sort = util_s.mk_string_sort();
-            app* all_chars = util_s.re.mk_full_char(str_sort);
+            app* all_chars = util_s.re.mk_to_re(util_s.re.mk_full_char(str_sort));
             current_class_re = util_s.re.mk_diff(all_chars, current_class_re);
         }
 
@@ -1508,16 +1520,13 @@ namespace smt::noodler::ecma {
         switch (m_current_token.type) {
             case TokenType::GROUP_START:
                 group->set_type(GroupType::NORMAL);
-                next();
                 break;
             case TokenType::GROUP_NAMED_START:
                 group->set_type(GroupType::NAMED);
                 SASSERT(std::holds_alternative<zstring_view>(t.payload) && "GROUP_NAMED_START has no name");
-                next();
                 break;
             case TokenType::GROUP_NONCAPTURE_START:
                 group->set_type(GroupType::NONCAPTURE);
-                next();
                 break;
             default:
                 util::throw_error("Syntax error in ECMA regex: Expected group start");
@@ -1528,6 +1537,7 @@ namespace smt::noodler::ecma {
             group->set_id(m_current_group_id);
         }
 
+        next();
         group->set_expr(parse_disjunction());
         consume(TokenType::GROUP_END, "Expected ')' after group");
         return group;
@@ -1545,7 +1555,7 @@ namespace smt::noodler::ecma {
         return char_class;
     }
 
-    void ECMAParser::add_atom_to_class(const ASTNodeCharClassRef& char_class_parent, const CharClassAtom atom) const {
+    void ECMAParser::add_atom_to_class(const ASTNodeCharClassRef& char_class_parent, const CharClassAtom atom) {
         if (atom.is_escape) {
             char_class_parent->add_element({.kind = ElementType::ESCAPE, .lower = atom.val});
         } else {
@@ -1663,8 +1673,28 @@ namespace smt::noodler::ecma {
     RegexConstraintGraph RCGBuilder::build_rcg() {
         RegexConstraintGraph rcg;
         ASTNodeRef root = m_parser.parse();
-        GraphFragment tmp;
-        return {};
+        // Získáme kořenovou komponentu (buď fragment, nebo holý Z3 regex)
+        const RegexComponent comp = root->get_subgraph(rcg, m_util_s, m_manager);
+
+        if (std::holds_alternative<app_ref>(comp)) {
+            const VertexId v_in = rcg.create_vertex();   // Dostane menší ID (např. 0)
+            const VertexId v_out = rcg.create_vertex();  // Dostane větší ID (např. 1)
+            const EdgeId eid = rcg.create_edge(v_out, RCGEdgePayload {MatchEdge {std::get<app_ref>(comp)}});
+            rcg.vertices[v_in].outgoing_edges.push_back(eid);
+
+            // Nastavíme globální start a cíl
+            rcg.start_vertex = v_in;
+            rcg.end_vertex = v_out;
+        } else {
+            // Graf už byl úspěšně postaven (obsahuje capture grupy/backref atd.)
+            const GraphFragment frag = std::get<GraphFragment>(comp);
+
+            // Nastavíme globální start a cíl z kořenového fragmentu
+            rcg.start_vertex = frag.v_in;
+            rcg.end_vertex = frag.v_out;
+        }
+
+        return rcg;
     }
 
     bool GraphFragment::is_initialized() const {

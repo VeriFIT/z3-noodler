@@ -104,12 +104,17 @@ namespace smt::noodler::ecma {
               outgoing_edges(std::move(edges)) { }
     };
 
+    constexpr uint32_t UNKNOWN_VERTEX = std::numeric_limits<uint32_t>::max();
+
     struct RegexConstraintGraph {
         std::vector<RCGVertex> vertices;
         std::vector<RCGEdge> edges;
 
         std::unordered_map<EdgeId, std::vector<uint32_t>> group_starts;
         std::unordered_map<EdgeId, std::vector<uint32_t>> group_ends;
+
+        VertexId start_vertex = UNKNOWN_VERTEX;
+        VertexId end_vertex = UNKNOWN_VERTEX;
 
         void add_vertex(RCGVertex vtx);
         VertexId create_vertex();
@@ -130,7 +135,8 @@ namespace smt::noodler::ecma {
 
     GraphFragment chain_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second);
 
-    GraphFragment alternate_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second);
+    GraphFragment alternate_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
+                                      const GraphFragment& second);
 
     // ================== ECMA REGEX LEXER ==================
     class ECMALexer {
@@ -349,10 +355,10 @@ namespace smt::noodler::ecma {
         ASTNodeRef parse();
 
     private:
+        std::unordered_map<zstring_view, uint32_t> m_named_groups {};
         ECMALexer m_lexer;
         Token m_current_token;
         uint32_t m_current_group_id = 0;
-        std::unordered_map<zstring_view, uint32_t> m_named_groups;
 
         void next();
         bool match(TokenType type);
@@ -373,7 +379,7 @@ namespace smt::noodler::ecma {
         CharClassAtom parse_class_atom();
         CharClassAtom parse_class_atom_no_dash();
 
-        void add_atom_to_class(const ASTNodeCharClassRef& char_class_parent, CharClassAtom atom) const;
+        static void add_atom_to_class(const ASTNodeCharClassRef& char_class_parent, CharClassAtom atom);
     };
 
     // =============== ECMA REGEX HANDLER ===============
@@ -382,6 +388,7 @@ namespace smt::noodler::ecma {
         explicit RCGBuilder(ast_manager& m, const zstring& regex_pattern)
             : m_regex(regex_pattern),
               m_parser(regex_pattern),
+              m_manager(m),
               m_util_s(m) { }
 
         RegexConstraintGraph build_rcg();
@@ -389,6 +396,7 @@ namespace smt::noodler::ecma {
     private:
         zstring_view m_regex;
         ECMAParser m_parser;
+        ast_manager& m_manager;
         seq_util m_util_s;
     };
 }  // namespace smt::noodler::ecma
