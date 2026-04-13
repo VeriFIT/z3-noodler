@@ -176,7 +176,7 @@ PPIndentWidth: -1
 
 QualifierAlignment: Custom
 QualifierOrder:
-  [static, friend, inline, constexpr, const, volatile, type, restrict]
+  [ static, friend, inline, constexpr, const, volatile, type, restrict ]
 
 ReferenceAlignment: Left
 ReflowComments: IndentOnly
