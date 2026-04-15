@@ -20,12 +20,12 @@
 #include <vector>
 
 namespace smt::noodler::ecma {
-
     // ======================= UTILS =======================
     constexpr uint32_t HEX_SEQUENCE_LEN = 2;
     constexpr uint32_t UNICODE_ESCAPE_SEQUENCE_LEN = 4;
     constexpr uint32_t BACKSPACE_LITERAL = 8;
     constexpr uint32_t UNBOUNDED = std::numeric_limits<uint32_t>::max();
+    constexpr bool debug_mode = false;
 
     zstring view_to_zstring(const zstring_view view) {
         zstring res;
@@ -35,7 +35,8 @@ namespace smt::noodler::ecma {
         return res;
     }
 
-    GraphFragment chain_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second) {
+    GraphFragment chain_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
+                                  const GraphFragment& second) {
         for (const EdgeId id : first.edges_pointing_to_vout) {
             graph.edges[id].target = second.v_in;
         }
@@ -83,9 +84,9 @@ namespace smt::noodler::ecma {
         return new_id;
     }
 
-    VertexId RegexConstraintGraph::create_vertex(std::vector<EdgeId> edges) {
+    VertexId RegexConstraintGraph::create_vertex(std::vector<EdgeId> edge_list) {
         VertexId new_id = vertices.size();
-        vertices.emplace_back(new_id, std::move(edges));
+        vertices.emplace_back(new_id, std::move(edge_list));
         return new_id;
     }
 
@@ -336,8 +337,7 @@ namespace smt::noodler::ecma {
         uint32_t max_possible_octal_len = 3;
 
         if (!from_char_class && (first_digit == '8' || first_digit == '9')) {
-            // based on https://tc39.es/ecma262/2020/#sec-decimalescape, this should be an error
-            // however, engine in node.js 20 interprets this as '8' or '9' (ascii 56/57) characters
+            // based on https://tc39.es/ecma262/2020/#sec-decimalescape, this is an error
             util::throw_error("ECMA regex syntax error: backreference to nonexistent subpattern");
         }
 
@@ -969,8 +969,6 @@ namespace smt::noodler::ecma {
     }
 
     RegexComponent ASTNodeAssertion::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
-        sort* str_sort = util_s.mk_string_sort();
-
         // Anchors --
         if (m_assert_type == TokenType::ASSERTION) {
             if (m_payload == '^' || m_payload == '$') {
@@ -1131,7 +1129,7 @@ namespace smt::noodler::ecma {
 
     RegexComponent ASTNodeLiteral::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
         SASSERT(m_char < std::numeric_limits<uint32_t>::max());
-        app* str_unit = util_s.str.mk_unit(util_s.str.mk_char(m_char));
+        app* str_unit = util_s.str.mk_string(m_char);
         return app_ref(util_s.re.mk_to_re(str_unit), m);
     }
 
@@ -1146,7 +1144,7 @@ namespace smt::noodler::ecma {
     }
 
     RegexComponent ASTNodeDot::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
-        return app_ref(util_s.re.mk_full_char(util_s.mk_string_sort()), m);
+        return app_ref(util_s.re.mk_full_seq(nullptr), m);
     }
 
     uint32_t ASTNodeBackref::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -1204,7 +1202,7 @@ namespace smt::noodler::ecma {
         m_child = std::move(expr);
     }
 
-    void ASTNodeGroup::set_id(uint32_t gid) {
+    void ASTNodeGroup::set_id(const uint32_t gid) {
         m_gid = gid;
     }
 
@@ -1306,12 +1304,11 @@ namespace smt::noodler::ecma {
         for (const CharClassElement& elem : m_elements) {
             if (elem.kind == ElementType::SINGLE || elem.kind == ElementType::ESCAPE) {
                 // Convert character to internal z3 seq (string) representation, then to regex and add to vector
-                app* ch = util_s.str.mk_char(elem.lower);
-                app* unit_str = util_s.str.mk_unit(ch);
+                app* unit_str = util_s.str.mk_string(elem.lower);
                 class_elements.push_back(util_s.re.mk_to_re(unit_str));
             } else if (elem.kind == ElementType::RANGE) {
-                app* lower = util_s.str.mk_unit(util_s.str.mk_char(elem.lower));
-                app* upper = util_s.str.mk_unit(util_s.str.mk_char(elem.upper));
+                app* lower = util_s.str.mk_string(elem.lower);
+                app* upper = util_s.str.mk_string(elem.upper);
                 class_elements.push_back(util_s.re.mk_range(lower, upper));
             }
         }
@@ -1323,10 +1320,9 @@ namespace smt::noodler::ecma {
         }
         // Negated class --> set difference of all chars and the character class
         if (m_is_negated) {
-            // Set diff didnt work well --> intersection with complements
-            sort* str_sort = util_s.mk_string_sort();
-            app* all_chars = util_s.re.mk_to_re(util_s.re.mk_full_char(str_sort));
-            current_class_re = util_s.re.mk_diff(all_chars, current_class_re);
+            // Set diff didnt work well --> intersection with complement
+            current_class_re =
+                util_s.re.mk_inter(util_s.re.mk_full_seq(nullptr), util_s.re.mk_complement(current_class_re));
         }
 
         return current_class_re;
@@ -1338,19 +1334,20 @@ namespace smt::noodler::ecma {
         ASTNodeRef ast = parse_disjunction();
         consume(TokenType::END_OF_INPUT, "Expected end of input");
 
-        namespace fs = std::filesystem;
-        fs::path project_root = fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
-        fs::path dot_file = project_root / "output.dot";
-        std::ofstream out(dot_file);
-        if (out.is_open()) {
-            uint32_t node_count = 0;
-            out << "digraph G {\n";
-            ast->print_dot(out, node_count);
-            out << "}" << std::endl;
-            out.close();
+        if (debug_mode) {
+            namespace fs = std::filesystem;
+            fs::path project_root = fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
+            fs::path dot_file = project_root / "output.dot";
+            std::ofstream out(dot_file);
+            if (out.is_open()) {
+                uint32_t node_count = 0;
+                out << "digraph G {\n";
+                ast->print_dot(out, node_count);
+                out << "}" << std::endl;
+                out.close();
+            }
         }
 
-        std::cout << "\033[32m Ecma regex parsing successful! \033[0m" << std::endl;
         return ast;
     }
 

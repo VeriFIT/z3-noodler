@@ -118,7 +118,7 @@ namespace smt::noodler::ecma {
 
         void add_vertex(RCGVertex vtx);
         VertexId create_vertex();
-        VertexId create_vertex(std::vector<EdgeId> edges);
+        VertexId create_vertex(std::vector<EdgeId> edge_list);
         void add_edge(RCGEdge child);
         EdgeId create_edge();
         EdgeId create_edge(VertexId target, RCGEdgePayload payload);
@@ -133,7 +133,7 @@ namespace smt::noodler::ecma {
 
     zstring view_to_zstring(zstring_view view);
 
-    GraphFragment chain_fragments(RegexConstraintGraph& graph, GraphFragment& first, GraphFragment& second);
+    GraphFragment chain_fragments(RegexConstraintGraph& graph, const GraphFragment& first, const GraphFragment& second);
 
     GraphFragment alternate_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
                                       const GraphFragment& second);
