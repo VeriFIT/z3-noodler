@@ -71,13 +71,11 @@ namespace smt::noodler::ecma {
     using Anchor = uint32_t;
 
     struct AssertionEdge {
-        std::variant<Anchor, Lookaround> assertion;
+        std::variant<Anchor, Lookaround> payload;
     };
 
-    using BackrefId = std::variant<uint32_t, zstring_view>;
-
     struct BackrefEdge {
-        BackrefId backreference;
+        uint32_t backref_id;
     };
 
     using RCGEdgePayload = std::variant<std::monostate, MatchEdge, AssertionEdge, BackrefEdge>;
