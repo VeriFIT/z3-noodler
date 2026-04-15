@@ -1999,10 +1999,24 @@ namespace smt::noodler {
         expr* r = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, x, r));
 
-        ecma::RCGBuilder builder(m, pattern);
-        ecma::RegexConstraintGraph rcg = builder.build_rcg();
+        ecma::RegexConstraintBuilder builder(m, pattern);
+        builder.build_rcg();
 
-        // axiomatize ecma regex from rcg
+        SASSERT(is_app(x));
+        const expr_ref ecma_formula = builder.generate_constraints(to_app(x));
+
+#ifndef NDEBUG
+        std::cout << ";; --- GENERATED ECMA CONSTRAINTS ---" << std::endl;
+        std::cout << mk_pp(ecma_formula.get(), m) << std::endl;
+        std::cout << ";; ----------------------------------" << std::endl;
+#endif
+        // 5. AXIOMATIZACE: e <=> ecma_formula
+        const expr_ref lemma(m.mk_iff(e, ecma_formula), m);
+
+        // 6. Propagace lemmatu do Z3 jádra
+        // V Z3 theory pluginech se nová pravidla/axiomy přidávají pomocí kontextu.
+        // Typicky se to dělá internalizací lemmatu bez vyžadování důkazu.
+        add_axiom(lemma);
     }
 
     void theory_str_noodler::handle_in_re(expr* const e, const bool is_true) {
