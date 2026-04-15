@@ -1713,12 +1713,6 @@ namespace smt::noodler::ecma {
 
     // ============= ECMA REGEX HANDLER =============
 
-    RegexConstraintGraph RCGBuilder::build_rcg() {
-        RegexConstraintGraph rcg;
-        ASTNodeRef root = m_parser.parse();
-        // Získáme kořenovou komponentu (buď fragment, nebo holý Z3 regex)
-        const RegexComponent comp = root->get_subgraph(rcg, m_util_s, m_manager);
-
     RegexConstraintGraph RegexConstraintBuilder::build_rcg() {
         const ASTNodeRef root = m_parser.parse();
         const RegexComponent comp = root->get_subgraph(m_graph, m_util_s, m_manager);
