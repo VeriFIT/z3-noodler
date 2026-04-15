@@ -1032,13 +1032,10 @@ namespace smt::noodler::ecma {
     }
 
     app_ref ASTNodeAssertion::make_word_char_re(seq_util& util_s, ast_manager& m) {
-        app* upper = util_s.re.mk_range(util_s.str.mk_unit(util_s.str.mk_char('A')),
-                                        util_s.str.mk_unit(util_s.str.mk_char('Z')));
-        app* lower = util_s.re.mk_range(util_s.str.mk_unit(util_s.str.mk_char('a')),
-                                        util_s.str.mk_unit(util_s.str.mk_char('z')));
-        app* digits = util_s.re.mk_range(util_s.str.mk_unit(util_s.str.mk_char('0')),
-                                         util_s.str.mk_unit(util_s.str.mk_char('9')));
-        app* underscore = util_s.re.mk_to_re(util_s.str.mk_unit(util_s.str.mk_char('_')));
+        app* upper = util_s.re.mk_range(util_s.str.mk_string("A"), util_s.str.mk_string("Z"));
+        app* lower = util_s.re.mk_range(util_s.str.mk_string("a"), util_s.str.mk_string("z"));
+        app* digits = util_s.re.mk_range(util_s.str.mk_string("0"), util_s.str.mk_string("9"));
+        app* underscore = util_s.re.mk_to_re(util_s.str.mk_string("_"));
         return {util_s.re.mk_union(upper, util_s.re.mk_union(lower, util_s.re.mk_union(digits, underscore))), m};
     }
 
@@ -1303,7 +1300,7 @@ namespace smt::noodler::ecma {
         app_ref_vector class_elements(m);
 
         for (const CharClassElement& elem : m_elements) {
-            if (elem.kind == ElementType::SINGLE || elem.kind == ElementType::ESCAPE) {
+            if (elem.kind == ElementType::SINGLE) {
                 // Convert character to internal z3 seq (string) representation, then to regex and add to vector
                 app* unit_str = util_s.str.mk_string(elem.lower);
                 class_elements.push_back(util_s.re.mk_to_re(unit_str));
@@ -1311,6 +1308,51 @@ namespace smt::noodler::ecma {
                 app* lower = util_s.str.mk_string(elem.lower);
                 app* upper = util_s.str.mk_string(elem.upper);
                 class_elements.push_back(util_s.re.mk_range(lower, upper));
+            } else {  // CHAR_CLASS
+                switch (elem.lower) {
+                    case 'd':
+                    case 'D': {
+                        app* lower = util_s.str.mk_string("0");
+                        app* upper = util_s.str.mk_string("9");
+                        app* re_digit = util_s.re.mk_range(lower, upper);
+                        if (elem.lower == 'D') {
+                            re_digit = util_s.re.mk_complement(re_digit);
+                        }
+                        class_elements.push_back(re_digit);
+                        break;
+                    }
+                    case 's':
+                    case 'S': {
+                        // HT, VT, FF, SP, NBSP, ZWNBSP, US, LF, CR, LS, PS
+                        std::array<uint32_t, 11> whitespaces {0x0009, 0x000B, 0x000C, 0x0020, 0x00A0, 0xFEFF,
+                                                              0x001F, 0x000A, 0x000D, 0x2028, 0x2029};
+                        app* re_whitespace = util_s.re.mk_to_re(util_s.str.mk_string(whitespaces[0]));
+                        for (std::size_t i = 1; i < whitespaces.size(); i++) {
+                            app* whitespace_str = util_s.re.mk_to_re(util_s.str.mk_string(whitespaces[i]));
+                            re_whitespace = util_s.re.mk_union(re_whitespace, whitespace_str);
+                        }
+                        if (elem.lower == 'S') {
+                            re_whitespace = util_s.re.mk_complement(re_whitespace);
+                        }
+                        class_elements.push_back(re_whitespace);
+                        break;
+                    }
+                    case 'w':
+                    case 'W': {
+                        // [A-Za-z0-9_]
+                        app* lowercase = util_s.re.mk_range(util_s.str.mk_string("a"), util_s.str.mk_string("z"));
+                        app* uppercase = util_s.re.mk_range(util_s.str.mk_string("A"), util_s.str.mk_string("Z"));
+                        app* digits = util_s.re.mk_range(util_s.str.mk_string("0"), util_s.str.mk_string("9"));
+                        app* underscore = util_s.re.mk_to_re(util_s.str.mk_string("_"));
+                        app* re_word = util_s.re.mk_union(util_s.re.mk_union(lowercase, uppercase),
+                                                          util_s.re.mk_union(digits, underscore));
+                        if (elem.lower == 'W') {
+                            re_word = util_s.re.mk_complement(re_word);
+                        }
+                        class_elements.push_back(re_word);
+                        break;
+                    }
+                }
             }
         }
 
