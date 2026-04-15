@@ -613,6 +613,7 @@ namespace smt::noodler::ecma {
                 return get_control_escape_seq_token();
             case 'b':
                 return make_token(TokenType::LITERAL, BACKSPACE_LITERAL);
+            case '0':
             case '1':
             case '2':
             case '3':
