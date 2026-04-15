@@ -1652,7 +1652,10 @@ namespace smt::noodler::ecma {
                 break;  // leaving 'break;' because of compilation errors
             }
             case TokenType::CHAR_CLASS_RANGE:
-            // two '-' in a row --> treat the first one as range, second one as literal -- same as LITERAL
+                // second dash in a row --> just hardcode it as a '-' literal
+                char_class->add_element({.kind = ElementType::RANGE, .lower = atom_before_dash.val, .upper = '-'});
+                next();
+                break;
             case TokenType::LITERAL: {
                 // no uint32_t should never happen here -- if so, lexer implementation is incorrect
                 if (atom_before_dash.is_escape) {
