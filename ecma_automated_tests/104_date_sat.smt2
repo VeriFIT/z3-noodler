@@ -1,0 +1,6 @@
+(set-logic QF_S)
+(set-info :status sat)
+(declare-const w String)
+(assert (str.in_re w (re.from_ecma2020 "\d{4}-\d{2}-\d{2}")))
+(assert (= w "2024-01-15"))
+(check-sat)

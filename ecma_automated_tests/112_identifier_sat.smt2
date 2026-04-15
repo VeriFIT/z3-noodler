@@ -1,0 +1,6 @@
+(set-logic QF_S)
+(set-info :status sat)
+(declare-const w String)
+(assert (str.in_re w (re.from_ecma2020 "[a-zA-Z_][a-zA-Z0-9_]*")))
+(assert (= w "_myVar123"))
+(check-sat)

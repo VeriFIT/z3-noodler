@@ -1,0 +1,6 @@
+(set-logic QF_S)
+(set-info :status sat)
+(declare-const w String)
+(assert (str.in_re w (re.from_ecma2020 "([a-z]+)-\d+-\1")))
+(assert (= w "abc-123-abc"))
+(check-sat)
