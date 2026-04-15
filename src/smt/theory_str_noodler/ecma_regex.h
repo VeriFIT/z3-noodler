@@ -383,20 +383,53 @@ namespace smt::noodler::ecma {
     };
 
     // =============== ECMA REGEX HANDLER ===============
-    class RCGBuilder {
+    class RegexConstraintBuilder {
     public:
-        explicit RCGBuilder(ast_manager& m, const zstring& regex_pattern)
+        explicit RegexConstraintBuilder(ast_manager& m, const zstring& regex_pattern)
             : m_regex(regex_pattern),
               m_parser(regex_pattern),
               m_manager(m),
-              m_util_s(m) { }
+              m_util_s(m),
+              m_str_sort(m_util_s.mk_string_sort()),
+              m_unique_paths(m),
+              m_current_path_vars(m),
+              m_current_path_constraints(m) { }
 
         RegexConstraintGraph build_rcg();
+        expr_ref generate_constraints(app* target_string);
 
     private:
         zstring_view m_regex;
         ECMAParser m_parser;
         ast_manager& m_manager;
         seq_util m_util_s;
+        RegexConstraintGraph m_graph;
+        sort* m_str_sort;
+
+        // Global result of DFS traversal (all the unique paths in graph)
+        expr_ref_vector m_unique_paths;
+
+        // DFS 'backpack' -- all the necessary structures for DFS traversal
+        // 1. All the active string variables and their constraints of the current path
+        expr_ref_vector m_current_path_vars;
+        expr_ref_vector m_current_path_constraints;
+
+        // 2. Active capture group information
+        std::vector<uint32_t> m_active_groups;
+        std::unordered_map<uint32_t, expr_ref_vector> m_group_vars;
+
+        // 3. Active lookahead information
+        struct ActiveLookahead {
+            app_ref regex;
+            bool is_positive;
+            size_t start_index;
+            bool is_end_anchor;
+        };
+
+        std::vector<ActiveLookahead> m_active_lookaheads;
+
+        app* mk_fresh_string_var() const;
+        expr_ref concat_vars(const expr_ref_vector& vars, std::size_t start_idx = 0) const;
+        void rcg_dfs_visit(VertexId current_vertex, app* target_string);
     };
 }  // namespace smt::noodler::ecma
