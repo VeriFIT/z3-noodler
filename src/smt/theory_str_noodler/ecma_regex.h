@@ -427,7 +427,7 @@ namespace smt::noodler::ecma {
         std::vector<ActiveLookahead> m_active_lookaheads;
 
         app* mk_fresh_string_var() const;
-        expr_ref concat_vars(const expr_ref_vector& vars, std::size_t start_idx = 0) const;
+        expr_ref concat_vars(const expr_ref_vector& vars, std::size_t start_idx = 0);
         void rcg_dfs_visit(VertexId current_vertex, app* target_string);
     };
 }  // namespace smt::noodler::ecma

@@ -864,6 +864,11 @@ namespace smt::noodler::ecma {
 
     RegexComponent ASTNodeAlternative::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
                                                     ast_manager& m) const {
+        // The alternative might be an empty string --> if that is the case, create an epsilon-MatchEdge.
+        if (m_terms.empty()) {
+            return app_ref(util_s.re.mk_epsilon(util_s.mk_string_sort()), m);
+        }
+
         // Two passes through the terms that should be concatenated:
         // Pass 1. If there are adjacent regular components, merge them with mk_concat.
         std::vector<RegexComponent> simplified_terms;
@@ -1768,9 +1773,9 @@ namespace smt::noodler::ecma {
         return m_manager.mk_fresh_const("ecma_re", m_str_sort);
     }
 
-    expr_ref RegexConstraintBuilder::concat_vars(const expr_ref_vector& vars, const std::size_t start_idx) const {
+    expr_ref RegexConstraintBuilder::concat_vars(const expr_ref_vector& vars, const std::size_t start_idx) {
         if (start_idx >= vars.size()) {
-            return {m_util_s.str.mk_empty(m_str_sort), m_manager};
+            return {m_util_s.re.mk_epsilon(m_str_sort), m_manager};
         }
         if (vars.size() - start_idx == 1) {
             return {vars[start_idx], m_manager};
@@ -1878,7 +1883,7 @@ namespace smt::noodler::ecma {
                     if (anchor == '^') {
                         // All the string variables up to this point must be empty --> x_1...x_k = epsilon
                         expr_ref prefix = concat_vars(m_current_path_vars);
-                        push_constraint(app_ref(m_manager.mk_eq(prefix, m_util_s.str.mk_empty(nullptr)), m_manager));
+                        push_constraint(app_ref(m_manager.mk_eq(prefix, m_util_s.str.mk_empty(m_str_sort)), m_manager));
                     } else if (anchor == '$') {
                         // The '$' anchor is postponed and then handled separately as a lookahead
                         // All the string variables following '$' must be equal to epsilon --> generate in when end of graph is reached
