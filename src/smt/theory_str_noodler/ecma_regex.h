@@ -136,6 +136,8 @@ namespace smt::noodler::ecma {
     GraphFragment alternate_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
                                       const GraphFragment& second);
 
+    GraphFragment make_epsilon_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m);
+
     // ================== ECMA REGEX LEXER ==================
     class ECMALexer {
     public:
@@ -253,6 +255,22 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void set(const Token& t, ASTNodeRef term);
+
+
+        /**
+         * @brief Create 'm' chained copies of subgraph for {n, m} quantifier.
+         *  Nonregular fragments under {n,m} quantifiers:
+         *  - copy the fragment `m` times,
+         *  - chain the first `n` fragments, which are mandatory,
+         *  - the remaining (`m` - `n`) fragments are optional --> alternate it with an epsilon-edge, so it can be skipped,
+         *  - connect the `m`th copied fragment back to the original flow in the graph.
+         * @param graph The graph in which the copies are created.
+         * @param util_s z3's seq_util
+         * @param manager z3's ast_manager
+         * @return
+         */
+        RegexComponent build_fixed_quantifier_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
+                                                       ast_manager& manager) const;
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
 
     private:

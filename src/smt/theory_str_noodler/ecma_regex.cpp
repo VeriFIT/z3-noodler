@@ -8,8 +8,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cctype>
-#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -70,6 +68,15 @@ namespace smt::noodler::ecma {
         }
 
         return GraphFragment {new_vin, new_vout, new_vout_incoming};
+    }
+
+    GraphFragment make_epsilon_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) {
+        const VertexId v_in = graph.create_vertex();
+        const VertexId v_out = graph.create_vertex();
+        app_ref eps(util_s.re.mk_epsilon(util_s.mk_string_sort()), m);
+        const EdgeId eid = graph.create_edge(v_out, RCGEdgePayload {MatchEdge {eps}});
+        graph.vertices[v_in].outgoing_edges.push_back(eid);
+        return GraphFragment {v_in, v_out, {eid}};
     }
 
     // =============== REGEX CONSTRAINT GRAPH ==============
@@ -1095,19 +1102,78 @@ namespace smt::noodler::ecma {
         m_child = std::move(term);
     }
 
+    RegexComponent ASTNodeQuantifier::build_fixed_quantifier_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
+                                                                      ast_manager& manager) const {
+        if (m_range.max == UNBOUNDED) {
+            util::throw_error("Unsupported regex structure: Non-regular constructs under kleene star/kleene plus");
+        }
+
+        const uint32_t min_required_copies = m_range.min;
+        const uint32_t max_copies = m_range.max;
+
+        // {0,0} --> epsilon
+        if (max_copies == 0) {
+            const VertexId v_in = graph.create_vertex();
+            const VertexId v_out = graph.create_vertex();
+            const app_ref eps(util_s.re.mk_epsilon(util_s.mk_string_sort()), manager);
+            const EdgeId eid = graph.create_edge(v_out, RCGEdgePayload {MatchEdge {eps}});
+            graph.vertices[v_in].outgoing_edges.push_back(eid);
+            return GraphFragment {v_in, v_out, {eid}};
+        }
+
+        // Every copy is created by calling get_subgraph on the sub-AST
+        // Theoretically, we could deep-copy the graph fragment, but this approach is less error-prone,
+        // because we don't have to deal with creating new vertices from the copy, etc.
+        std::vector<GraphFragment> copies;
+        copies.reserve(max_copies);
+        for (uint32_t i = 0; i < max_copies; i++) {
+            RegexComponent copy = m_child->get_subgraph(graph, util_s, manager);
+            SASSERT(std::holds_alternative<GraphFragment>(copy));
+            copies.push_back(std::get<GraphFragment>(copy));
+        }
+
+        // Chain the fragments:
+        //   - copies 0..n-1 are mandatory (just chain them)
+        //   - copies n..m are optional (alternate them with epsilon and then chain them)
+        GraphFragment result;
+        if (min_required_copies == 0) {
+            // All the fragments are optional --> alternate each with epsilon and chain them all
+            result = alternate_fragments(graph, copies[0], make_epsilon_fragment(graph, util_s, manager));
+            for (uint32_t i = 1; i < max_copies; i++) {
+                result = chain_fragments(
+                    graph, result,
+                    alternate_fragments(graph, copies[i], make_epsilon_fragment(graph, util_s, manager)));
+            }
+        } else {
+            // Chain of mandatory copies
+            result = copies[0];
+            for (uint32_t i = 1; i < min_required_copies; i++) {
+                result = chain_fragments(graph, result, copies[i]);
+            }
+            // Chain of optional copies
+            for (uint32_t i = min_required_copies; i < max_copies; i++) {
+                result = chain_fragments(
+                    graph, result,
+                    alternate_fragments(graph, copies[i], make_epsilon_fragment(graph, util_s, manager)));
+            }
+        }
+
+        return result;
+    }
+
     RegexComponent ASTNodeQuantifier::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
                                                    ast_manager& m) const {
         RegexComponent child_subgraph = m_child->get_subgraph(graph, util_s, m);
-        // Backreferences or lookarounds under kleene star/plus --> unsupported yet, leads to dynamic number of string variables
-        // Possible solution: fixed unrolling (not supported yet)
         if (std::holds_alternative<GraphFragment>(child_subgraph)) {
+            // Backreferences or lookarounds under kleene star/plus --> unsupported yet, leads to dynamic number of string variables
             if (m_range.max == UNBOUNDED) {
                 util::throw_error("Unsupported regex structure: Non-regular constructs under kleene star/kleene plus");
             }
 
-            // {n, m} quantified non-regular segments currently unsupported
-            // TODO: possible solution: concatenate the graph fragment m times and from nth to mth copy, create epsilon-MatchEdge out
-            util::throw_error("Unsupported regex structure: Non-regular constructs under {n,m} quantifier");
+            // Nonregular fragments under {n, m} quantifiers --> copy the subgraph `m` times
+            if (std::holds_alternative<GraphFragment>(child_subgraph)) {
+                return build_fixed_quantifier_subgraph(graph, util_s, m);
+            }
         }
 
         // Quantified regular sub-regex
