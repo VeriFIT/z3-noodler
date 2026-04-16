@@ -17,7 +17,7 @@
 # =============================================================================
 
 # --- CONFIGURATION ---
-Z3_BIN=${Z3_BIN:-"cmake-build-release/z3"}
+Z3_BIN=${Z3_BIN:-"cmake-build-debug/z3"}
 TEST_DIR="ecma_automated_tests"
 TIMEOUT=30          # per-test wall-clock timeout (seconds)
 
@@ -131,8 +131,8 @@ make_test "038_alternation_words_unsat"  "unsat" "cat|dog|bird" "(assert (= w \"
 # Alternatives of different lengths — verifies parser doesn't confuse them
 make_test "039_alternation_lengths_sat"  "sat"   "a|ab|abc"     "(assert (= w \"ab\"))"
 # Empty left branch = empty-string alternative
-make_test "40_alternation_empty_sat"    "sat"   "|a"           "(assert (= w \"\"))"
-make_test "41_alternation_empty_unsat"  "unsat" "|a"           "(assert (= w \"b\"))"
+make_test "040_alternation_empty_sat"    "sat"   "|a"           "(assert (= w \"\"))"
+make_test "041_alternation_empty_unsat"  "unsat" "|a"           "(assert (= w \"b\"))"
 
 # ---------------------------------------------------------------------------
 # 6. Quantifiers (greedy)
