@@ -419,7 +419,10 @@ namespace smt::noodler::ecma {
 
         // case '{n}'
         if (m_regex[m_position] == '}') {
-            m_position++;  // consume '}'
+            m_position++;                      // consume '}'
+            if (m_regex[m_position] == '?') {  // skip lazy quantifier
+                m_position++;
+            }
             return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, lower_bound});
         }
 
@@ -436,7 +439,10 @@ namespace smt::noodler::ecma {
 
         // case '{n,}'
         if (m_regex[m_position] == '}') {
-            m_position++;  // consume '}'
+            m_position++;                      // consume '}'
+            if (m_regex[m_position] == '?') {  // skip lazy quantifier
+                m_position++;
+            }
             return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, UNBOUNDED});
         }
 
@@ -451,6 +457,9 @@ namespace smt::noodler::ecma {
         // '}' after number -> case {n,m}
         if (m_regex[m_position] == '}') {
             m_position++;  // consume '}'
+            if (m_regex[m_position] == '?') {
+                m_position++;
+            }
             return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, upper_bound});
         }
 
@@ -564,6 +573,10 @@ namespace smt::noodler::ecma {
             case '*':
             case '+':
             case '?':
+                // lazy quantifier -- not relevant for membership problem, just skip it
+                if (m_regex[m_position] == '?') {
+                    m_position++;
+                }
                 return make_token(TokenType::QUANTIFIER, current_char);
             case '{':
                 return get_braced_quant_token();
@@ -1717,7 +1730,7 @@ namespace smt::noodler::ecma {
         const ASTNodeRef root = m_parser.parse();
         const RegexComponent comp = root->get_subgraph(m_graph, m_util_s, m_manager);
 
-        
+
         if (std::holds_alternative<app_ref>(comp)) {
             const VertexId v_in = m_graph.create_vertex();
             const VertexId v_out = m_graph.create_vertex();
