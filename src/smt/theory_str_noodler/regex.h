@@ -153,17 +153,34 @@ namespace smt::noodler::regex {
      */
     void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet);
 
-    /**
-     * Convert expression @p expr to NFA.
-     * @param[in] expression Expression to be converted to NFA.
-     * @param[in] m_util_s Seq util for AST.
-     * @param[in] alphabet Alphabet to be used in re.allchar (SMT2: '.') expressions.
-     * @param[in] determinize Determinize intermediate automata
-     * @param[in] make_complement Whether to make complement of the passed @p expr instead.
-     * @return The resulting regex.
-     */
-    [[nodiscard]] mata::nfa::Nfa conv_to_nfa(app *expression, const seq_util& m_util_s, const ast_manager& m,
-                                             const Alphabet& alphabet, bool determinize = false, bool make_complement = false);
+    class NfaConstructor {
+    private:
+        seq_util& m_util_s;
+        const ast_manager& m;
+        const Alphabet& alphabet;
+
+        std::map<app*,std::shared_ptr<mata::nfa::Nfa>> automata_cache;
+        std::map<app*,bool> is_automaton_reduced;
+
+        std::shared_ptr<mata::nfa::Nfa> reduce_nfa_for(app* expr) {
+            if (!is_automaton_reduced.at(expr)) {
+                automata_cache[expr] = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(*automata_cache.at(expr)));
+                is_automaton_reduced[expr] = true;
+            }
+            return automata_cache.at(expr);
+        }
+
+    public:
+        NfaConstructor(seq_util& m_util_s, const ast_manager& m, const Alphabet& alphabet) : m_util_s(m_util_s), m(m), alphabet(alphabet) {}
+
+        /**
+         * Convert expression @p expr to NFA.
+         * @param[in] expression Expression (regex) to be converted to NFA.
+         * @param[in] make_complement Whether to make complement of the passed @p expr instead.
+         * @return The resulting NFA corresponding to the regex.
+         */
+        [[nodiscard]] std::shared_ptr<mata::nfa::Nfa> conv_to_nfa(app *expression, bool make_complement = false);
+    };
 
     /**
      * @brief Get basic information about the regular expression in the form of RegexInfo (see the description above). 
@@ -175,15 +192,6 @@ namespace smt::noodler::regex {
      * @return RegexInfo 
      */
     RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s);
-
-    /**
-     * @brief Create bounded iteration of a given automaton. 
-     * 
-     * @param body_nfa Core NFA
-     * @param count Number of concatenations
-     * @return mata::nfa::Nfa NFA
-     */
-    mata::nfa::Nfa create_large_concat(const mata::nfa::Nfa& body_nfa, unsigned count);
 
     /**
      * @brief Get the sum of loops of a regex (loop inside a loop is multiplied)
@@ -307,7 +315,7 @@ namespace smt::noodler::regex {
      * @param mata_alph Mata alphabet containing symbols from the current instance
      * @param[out] transducer_preds Newly created transducer constraints
      */
-    void gather_transducer_constraints(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, const Alphabet& mata_alph, Formula& transducer_preds);
+    void gather_transducer_constraints(app* ex, ast_manager& m, seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, const Alphabet& mata_alph, Formula& transducer_preds);
 
 }
 

@@ -618,6 +618,7 @@ namespace smt::noodler {
     AutAssignment theory_str_noodler::create_aut_assignment_for_formula(Formula& instance, const regex::Alphabet& noodler_alphabet) {
         AutAssignment aut_assignment{noodler_alphabet};
         const regex::Alphabet &alph = aut_assignment.get_alphabet();
+        regex::NfaConstructor nfa_constructor(m_util_s, m, alph);
         for (const auto &membership: m_membership_todo_rel) {
             const expr_ref& var_expr{ std::get<0>(membership) };
             assert(is_app(var_expr));
@@ -630,16 +631,16 @@ namespace smt::noodler {
 
             // If the regular constraint is in a negative form, create a complement of the regular expression instead.
             const bool make_complement{ !std::get<2>(membership) };
-            mata::nfa::Nfa nfa{ regex::conv_to_nfa(to_app(std::get<1>(membership)), m_util_s, m, alph, make_complement, make_complement) };
+            std::shared_ptr<mata::nfa::Nfa> nfa{ nfa_constructor.conv_to_nfa(to_app(std::get<1>(membership)), make_complement) };
             auto aut_ass_it{ aut_assignment.find(term) };
             if (aut_ass_it != aut_assignment.end()) {
                 // This variable already has some regular constraints. Hence, we create an intersection of the new one
                 //  with the previously existing.
                 aut_ass_it->second = std::make_shared<mata::nfa::Nfa>(
-                        mata::nfa::reduce(mata::nfa::intersection(nfa, *aut_ass_it->second)));
+                        mata::nfa::reduce(mata::nfa::intersection(*nfa, *aut_ass_it->second)));
 
             } else { // We create a regular constraint for the current variable for the first time.
-                aut_assignment[term] = std::make_shared<mata::nfa::Nfa>(std::forward<mata::nfa::Nfa>(std::move(nfa)));
+                aut_assignment[term] = nfa;
             }
 
             // we also need to gather transducer constraints for the var
@@ -723,8 +724,9 @@ namespace smt::noodler {
             regex::extract_symbols(right_side, m_util_s, alph);
 
             // construct NFAs for both sides
-            mata::nfa::Nfa nfa1 = regex::conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
-            mata::nfa::Nfa nfa2 = regex::conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
+            regex::NfaConstructor nfa_constructor(m_util_s, m, alph);
+            mata::nfa::Nfa nfa1 = *nfa_constructor.conv_to_nfa(to_app(left_side));
+            mata::nfa::Nfa nfa2 = *nfa_constructor.conv_to_nfa(to_app(right_side));
 
             // check if NFAs are equivalent (if we have equation) or not (if we have disequation)
             bool are_equiv;
