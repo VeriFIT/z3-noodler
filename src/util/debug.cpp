@@ -43,7 +43,7 @@ void notify_assertion_violation(const char * fileName, int line, const char * co
               << condition << '\n';
 #ifndef Z3DEBUG
     std::cerr << Z3_FULL_VERSION "\n"
-                 "Please file an issue with this message and more detail about how you encountered it at https://github.com/Z3Prover/z3/issues/new\n";
+                 "Please file an issue with this message and more detail about how you encountered it at https://github.com/VeriFIT/z3-noodler/issues/new\n";
 #endif
 }
 
