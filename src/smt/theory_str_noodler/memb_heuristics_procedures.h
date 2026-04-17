@@ -51,7 +51,7 @@ namespace smt::noodler {
         std::map<BasicTerm, zstring> models;
     public:
         MultMembHeuristicProcedure(std::map<BasicTerm, std::vector<std::pair<bool,app*>>> var_to_list_of_regexes_and_complement_flag, regex::Alphabet alph, seq_util& m_util_s, const ast_manager& m, bool produce_model)
-            : var_to_list_of_regexes_and_complement_flag(var_to_list_of_regexes_and_complement_flag), alph(alph), m_util_s(m_util_s), m(m), produce_model(produce_model), nfa_constructor(m_util_s, m, alph) {}
+            : var_to_list_of_regexes_and_complement_flag(var_to_list_of_regexes_and_complement_flag), alph(std::move(alph)), m_util_s(m_util_s), m(m), produce_model(produce_model), nfa_constructor(m_util_s, m, this->alph) {}
 
         lbool compute_next_solution() override;
 
