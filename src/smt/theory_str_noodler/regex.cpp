@@ -180,18 +180,6 @@ namespace smt::noodler::regex {
             return automata_cache.at(expression);
         }
 
-        if (m_util_s.str.is_string_term(expression)) {
-            zstring string;
-            if (m_util_s.str.is_string(expression, string)) {
-                std::shared_ptr<mata::nfa::Nfa> res = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(string));
-                automata_cache[expression] = res;
-                is_automaton_reduced[expression] = true;
-                return res;
-            } else {
-                util::throw_error("We can convert to NFA only string literals");
-            }
-        }
-
         SASSERT(m_util_s.is_re(expression));
 
         // to simulate recursive calls of conv_to_nfa on arguments of expression, we use postorder
@@ -204,11 +192,13 @@ namespace smt::noodler::regex {
 
             if (!visited) { // we have not visited cur_expr -> we need to process children first
                 postorder_stack.push({cur_expr, true});
-                if (m_util_s.re.is_loop(cur_expr)) {
-                    // loop has arguments that are not regexes/strings, we collect only the first one, which is a regex
+                if (m_util_s.re.is_to_re(cur_expr) || m_util_s.re.is_range(cur_expr)) {
+                    // to_re and range have a string arguments, we do not want to put it in stack
+                } else if (m_util_s.re.is_loop(cur_expr)) {
+                    // loop has arguments that are not regexes, we collect only the first one, which is a regex
                     postorder_stack.push({to_app(cur_expr->get_arg(0)), false});
                 } else {
-                    // all other expressions should have only regex/string arguments
+                    // all other expressions should have only regex arguments
                     for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
                         postorder_stack.push({to_app(cur_expr->get_arg(arg_idx)), false});
                     }
@@ -228,8 +218,12 @@ namespace smt::noodler::regex {
                 is_automaton_reduced[cur_expr] = false;
                 if (m_util_s.re.is_to_re(cur_expr)) { // Handle conversion of to regex function call.
                     SASSERT(cur_expr->get_num_args() == 1);
-                    result = get_nfa_for_argument(0);
-                    is_automaton_reduced[cur_expr] = is_automaton_reduced.at(to_app(cur_expr->get_arg(0)));
+                    if (zstring string; m_util_s.str.is_string(cur_expr->get_arg(0), string)) {
+                        result = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(string));
+                        is_automaton_reduced[cur_expr] = true;
+                    } else {
+                        util::throw_error("We can convert to NFA only string literals");
+                    }
                 } else if (m_util_s.re.is_concat(cur_expr)) { // Handle regex concatenation.
                     SASSERT(cur_expr->get_num_args() > 1);
                     result = std::make_shared<mata::nfa::Nfa>(mata::nfa::concatenate(*get_nfa_for_argument(0), *get_nfa_for_argument(1)));
@@ -250,7 +244,7 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_diff(cur_expr)) { // Handle diff.
                     util::throw_error("regex difference is unsupported");
                 } else if (m_util_s.re.is_dot_plus(cur_expr)) { // Handle dot plus.
-                    result = std::make_shared<mata::nfa::Nfa>();
+                    result = std::make_shared<mata::nfa::Nfa>(2);
                     result->initial.insert(0);
                     result->final.insert(1);
                     for (const auto& symbol : alphabet) {
@@ -262,14 +256,19 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_epsilon(cur_expr)) { // Handle epsilon.
                     result = std::make_shared<mata::nfa::Nfa>(mata::nfa::builder::create_empty_string_nfa());
                 } else if (m_util_s.re.is_full_char(cur_expr)) { // Handle full char (single occurrence of any string symbol, '.').
-                    result = std::make_shared<mata::nfa::Nfa>();
+                    result = std::make_shared<mata::nfa::Nfa>(2);
                     result->initial.insert(0);
                     result->final.insert(1);
                     for (const auto& symbol : alphabet) {
                         result->delta.add(0, symbol, 1);
                     }
                 } else if (m_util_s.re.is_full_seq(cur_expr)) {
-                    util::throw_error("full seq is unsupported");
+                    result = std::make_shared<mata::nfa::Nfa>(1);
+                    result->initial.insert(0);
+                    result->final.insert(0);
+                    for (const auto& symbol : alphabet) {
+                        result->delta.add(0, symbol, 0);
+                    }
                 } else if (m_util_s.re.is_intersection(cur_expr)) { // Handle intersection.
                     SASSERT(cur_expr->get_num_args() > 0);
                     app* arg = to_app(cur_expr->get_arg(0));
@@ -353,6 +352,7 @@ namespace smt::noodler::regex {
                                 resulting_nfa.concatenate(body_nfa_with_epsilon);
                                 resulting_nfa.trim();
                             }
+                            result = std::make_shared<mata::nfa::Nfa>(resulting_nfa);
                         } else {
                             // if high is not set, we can repeat body_nfa unlimited more times
                             // so we do star operation on body_nfa and add it to end of nfa
@@ -388,7 +388,7 @@ namespace smt::noodler::regex {
                     const unsigned range_begin_value = range_begin_string[0];
                     const unsigned range_end_value = range_end_string[0];
 
-                    result = std::make_shared<mata::nfa::Nfa>();
+                    result = std::make_shared<mata::nfa::Nfa>(2);
                     result->initial.insert(0);
                     result->final.insert(1);
                     auto current_value{ range_begin_value };
@@ -428,7 +428,9 @@ namespace smt::noodler::regex {
                 } else if(util::is_variable(cur_expr)) { // Handle variable.
                     util::throw_error("variable in regexes are unsupported");
                 } else {
-                    util::throw_error("unsupported operation in regex");
+                    std::stringstream ss;
+                    ss << "unsupported operation in regex: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m));
+                    util::throw_error(ss.str());
                 }
 
                 result->unify_initial();
@@ -440,14 +442,16 @@ namespace smt::noodler::regex {
                 if (result->num_of_states() < RED_BOUND) {
                     STRACE(str_create_nfa_reduce, 
                         tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
-                        tout << result;
+                        tout << *result;
                     );
                     result = reduce_nfa_for(cur_expr); // we set to result just so we can print it in STRACE
                 }
 
                 STRACE(str_create_nfa,
-                    tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "---------------" << std::endl;
-                    tout << result;
+                    tout << "--------------" << "NFA for " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " created---------------" << std::endl;
+                    if (is_trace_enabled(TraceTag::str_nfa)) {
+                        tout << *result;
+                    }
                 );
             }
         }

@@ -1073,7 +1073,7 @@ namespace smt::noodler {
         for (const auto& diseq : m_word_diseq_todo_rel) {
             BasicTerm var = util::get_variable_basic_term(diseq.first);
             relevant_vars.insert(var);
-            app* reg = to_app(diseq.second);
+            app* reg = m_util_s.re.mk_to_re(diseq.second);
             var_to_list_of_regexes_and_complement_flag[var].push_back(std::make_pair(true, reg));
         }
 
@@ -1083,7 +1083,7 @@ namespace smt::noodler {
         for (const auto& eq : m_word_eq_todo_rel) {
             BasicTerm var = util::get_variable_basic_term(eq.first);
             relevant_vars.insert(var);
-            app* reg = to_app(eq.second);
+            app* reg = m_util_s.re.mk_to_re(eq.second);
             var_to_list_of_regexes_and_complement_flag[var].push_back(std::make_pair(false, reg));
         }
 
