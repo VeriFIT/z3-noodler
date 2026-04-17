@@ -231,7 +231,7 @@ namespace smt::noodler::regex {
                     result = get_nfa_for_argument(0);
                     is_automaton_reduced[cur_expr] = is_automaton_reduced.at(to_app(cur_expr->get_arg(0)));
                 } else if (m_util_s.re.is_concat(cur_expr)) { // Handle regex concatenation.
-                    SASSERT(num_of_regex_arguments_of_cur_expr > 1);
+                    SASSERT(cur_expr->get_num_args() > 1);
                     result = std::make_shared<mata::nfa::Nfa>(mata::nfa::concatenate(*get_nfa_for_argument(0), *get_nfa_for_argument(1)));
                     for (unsigned int i = 2; i < cur_expr->get_num_args(); ++i) {
                         result->concatenate(*get_nfa_for_argument(i));
@@ -414,7 +414,7 @@ namespace smt::noodler::regex {
                     result->final.insert(new_state);
 
                 } else if (m_util_s.re.is_plus(cur_expr)) { // Handle positive iteration.
-                    SASSERT(num_of_regex_arguments_of_cur_expr == 1);
+                    SASSERT(cur_expr->get_num_args() == 1);
                     result = std::make_shared<mata::nfa::Nfa>(*get_nfa_for_argument(0));
                     for (const auto& final : result->final) {
                         for (const auto& initial : result->initial) {
