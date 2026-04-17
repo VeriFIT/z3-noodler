@@ -250,6 +250,7 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_diff(cur_expr)) { // Handle diff.
                     util::throw_error("regex difference is unsupported");
                 } else if (m_util_s.re.is_dot_plus(cur_expr)) { // Handle dot plus.
+                    result = std::make_shared<mata::nfa::Nfa>();
                     result->initial.insert(0);
                     result->final.insert(1);
                     for (const auto& symbol : alphabet) {
@@ -261,6 +262,7 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_epsilon(cur_expr)) { // Handle epsilon.
                     result = std::make_shared<mata::nfa::Nfa>(mata::nfa::builder::create_empty_string_nfa());
                 } else if (m_util_s.re.is_full_char(cur_expr)) { // Handle full char (single occurrence of any string symbol, '.').
+                    result = std::make_shared<mata::nfa::Nfa>();
                     result->initial.insert(0);
                     result->final.insert(1);
                     for (const auto& symbol : alphabet) {
@@ -386,6 +388,7 @@ namespace smt::noodler::regex {
                     const unsigned range_begin_value = range_begin_string[0];
                     const unsigned range_end_value = range_end_string[0];
 
+                    result = std::make_shared<mata::nfa::Nfa>();
                     result->initial.insert(0);
                     result->final.insert(1);
                     auto current_value{ range_begin_value };
