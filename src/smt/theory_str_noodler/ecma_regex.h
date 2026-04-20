@@ -61,9 +61,18 @@ namespace smt::noodler::ecma {
         FORWARD,
         BACKWARD
     };
+    using VertexId = uint32_t;
+    using EdgeId = uint32_t;
+
+    struct GraphFragment {
+        VertexId v_in = std::numeric_limits<VertexId>::max();
+        VertexId v_out = std::numeric_limits<VertexId>::max();
+        std::vector<EdgeId> edges_pointing_to_vout;
+        bool is_initialized() const;
+    };
 
     struct Lookaround {
-        app_ref regex;
+        std::variant<app_ref, GraphFragment> subregex;
         AssertionDirection direction;
         bool is_positive;
     };
@@ -79,8 +88,6 @@ namespace smt::noodler::ecma {
     };
 
     using RCGEdgePayload = std::variant<std::monostate, MatchEdge, AssertionEdge, BackrefEdge>;
-    using VertexId = uint32_t;
-    using EdgeId = uint32_t;
 
     struct RCGEdge {
         EdgeId id;
@@ -120,13 +127,6 @@ namespace smt::noodler::ecma {
         void add_edge(RCGEdge child);
         EdgeId create_edge();
         EdgeId create_edge(VertexId target, RCGEdgePayload payload);
-    };
-
-    struct GraphFragment {
-        VertexId v_in = std::numeric_limits<VertexId>::max();
-        VertexId v_out = std::numeric_limits<VertexId>::max();
-        std::vector<EdgeId> edges_pointing_to_vout;
-        bool is_initialized() const;
     };
 
     zstring view_to_zstring(zstring_view view);
@@ -242,7 +242,7 @@ namespace smt::noodler::ecma {
         uint32_t m_payload {};              // for ^, $, \b, \B assertions
         ASTNodeRef m_subpattern = nullptr;  // for lookarounds (may be null for ^, $, \b, \B)
 
-        static GraphFragment make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m, app_ref assert_re,
+        static GraphFragment make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m, app_ref assert_regex,
                                                      AssertionDirection dir, bool is_positive);
 
         static GraphFragment make_word_boundary_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m,
@@ -436,7 +436,7 @@ namespace smt::noodler::ecma {
 
         // 3. Active lookahead information
         struct ActiveLookahead {
-            app_ref regex;
+            std::variant<app_ref, GraphFragment> subregex;
             bool is_positive;
             size_t start_index;
             bool is_end_anchor;
@@ -446,6 +446,7 @@ namespace smt::noodler::ecma {
 
         app* mk_fresh_string_var() const;
         expr_ref concat_vars(const expr_ref_vector& vars, std::size_t start_idx = 0);
+        expr_ref run_inner_rcg_dfs(const GraphFragment& fragment, app* target_string);
         void rcg_dfs_visit(VertexId current_vertex, app* target_string);
     };
 }  // namespace smt::noodler::ecma
