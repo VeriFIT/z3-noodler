@@ -1014,7 +1014,7 @@ namespace smt::noodler::ecma {
             (m_assert_type == TokenType::LOOKAHEAD_POS_START || m_assert_type == TokenType::LOOKAHEAD_NEG_START);
         const bool is_positive =
             (m_assert_type == TokenType::LOOKAHEAD_POS_START || m_assert_type == TokenType::LOOKBEHIND_POS_START);
-        const AssertionDirection dir = is_forward ? AssertionDirection::FORWARD : AssertionDirection::BACKWARD;
+        const LookaroundDirection dir = is_forward ? LookaroundDirection::FORWARD : LookaroundDirection::BACKWARD;
 
         if (std::holds_alternative<app_ref>(inner_regex)) {
             // Regular inner content -- original fast path
@@ -1039,7 +1039,7 @@ namespace smt::noodler::ecma {
     }
 
     GraphFragment ASTNodeAssertion::make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m,
-                                                            app_ref assert_regex, const AssertionDirection dir,
+                                                            app_ref assert_regex, const LookaroundDirection dir,
                                                             const bool is_positive) {
         const VertexId v_in = graph.create_vertex();
         const VertexId v_out = graph.create_vertex();
@@ -1055,15 +1055,15 @@ namespace smt::noodler::ecma {
 
         // Branch 1: the word boundary is either after a whitespace and before a character --> (?<=\w)RE(?!\w)
         GraphFragment b1_lookbehind =
-            make_assertion_fragment(graph, m, word_characters, AssertionDirection::BACKWARD, true);
+            make_assertion_fragment(graph, m, word_characters, LookaroundDirection::BACKWARD, true);
         GraphFragment b1_lookahead =
-            make_assertion_fragment(graph, m, word_characters, AssertionDirection::FORWARD, !is_word_boundary);
+            make_assertion_fragment(graph, m, word_characters, LookaroundDirection::FORWARD, !is_word_boundary);
 
         // Branch 2: the word boundary is either after a character and before a whitespace --> (?<!\w)RE(?=\w)
         GraphFragment b2_lookbehind =
-            make_assertion_fragment(graph, m, word_characters, AssertionDirection::BACKWARD, false);
+            make_assertion_fragment(graph, m, word_characters, LookaroundDirection::BACKWARD, false);
         GraphFragment b2_lookahead =
-            make_assertion_fragment(graph, m, word_characters, AssertionDirection::FORWARD, is_word_boundary);
+            make_assertion_fragment(graph, m, word_characters, LookaroundDirection::FORWARD, is_word_boundary);
 
         GraphFragment branch1 = chain_fragments(graph, b1_lookbehind, b1_lookahead);
         GraphFragment branch2 = chain_fragments(graph, b2_lookbehind, b2_lookahead);
@@ -1179,7 +1179,8 @@ namespace smt::noodler::ecma {
                                                    ast_manager& m) const {
         RegexComponent child_subgraph = m_child->get_subgraph(graph, util_s, m);
         if (std::holds_alternative<GraphFragment>(child_subgraph)) {
-            // Backreferences or lookarounds under kleene star/plus --> unsupported yet, leads to dynamic number of string variables
+            // Backreferences or lookarounds under kleene star/plus --> unsupported yet, leads to dynamic number of
+            // string variables
             if (m_range.max == UNBOUNDED) {
                 util::throw_error("Unsupported regex structure: Non-regular constructs under kleene star/kleene plus");
             }
@@ -1324,7 +1325,8 @@ namespace smt::noodler::ecma {
 
         // Instead of creating separate vertices for the capture groups, we tag all the edges that are going out
         // of v_in of the subregex with the capture group index.
-        // If there are nested capture groups, e.g., ((a)), the edges from v_in are tagged with two capture group starts.
+        // If there are nested capture groups, e.g., ((a)), the edges from v_in are tagged with two capture group
+        // starts.
         for (const EdgeId eid : graph.vertices[fragment.v_in].outgoing_edges) {
             graph.group_starts[eid].push_back(m_gid);
         }
@@ -1741,8 +1743,8 @@ namespace smt::noodler::ecma {
         // https://tc39.es/ecma262/2020/#sec-runtime-semantics-characterrange-abstract-operation
         // https://tc39.es/ecma262/2020/#sec-nonemptyclassrangesnodash
         // when parsing range in the character class, both class atoms have to be single characters
-        // when either of them is e.g., a character class themselves (like '\w', etc.), the standard says it should be an error
-        // the only valid range is in form LITERAL RANGE LITERAL
+        // when either of them is e.g., a character class themselves (like '\w', etc.), the standard says it should be
+        // an error the only valid range is in form LITERAL RANGE LITERAL
         switch (m_current_token.type) {
             case TokenType::CHAR_CLASS_ESCAPE: {
                 // no matter what the atom before dash was, this is an error
@@ -1871,7 +1873,8 @@ namespace smt::noodler::ecma {
 
     expr_ref RegexConstraintBuilder::run_inner_rcg_dfs(const GraphFragment& fragment, app* target_string) {
         // Save the DFS state so we can restore it after the inner traversal.
-        // Outer capture group variables are not cleared so backreferences from the inner regex can be resolved correctly.
+        // Outer capture group variables are not cleared so backreferences from the inner regex can be resolved
+        // correctly.
         expr_ref_vector outer_unique_paths(m_manager);
         for (unsigned i = 0; i < m_unique_paths.size(); ++i) {
             outer_unique_paths.push_back(m_unique_paths.get(i));
@@ -1945,8 +1948,175 @@ namespace smt::noodler::ecma {
         return inner_result;
     }
 
+    void RegexConstraintBuilder::cleanup_after_edge_visit(const std::vector<uint32_t>& newly_started_groups,
+                                                          const std::vector<uint32_t>& newly_ended_groups,
+                                                          const bool la_pushed,
+                                                          const std::size_t& num_edge_constraints) {
+        // 1. Make all the ended groups active again
+        for (uint32_t gid : newly_ended_groups) {
+            m_active_groups.push_back(gid);
+        }
+        // 2. Remove the fresh string variable from all active groups
+        for (uint32_t gid : m_active_groups) {
+            m_group_vars.at(gid).pop_back();
+        }
+        // 3. Make all the started groups non-active
+        for (uint32_t gid : newly_started_groups) {
+            std::erase(m_active_groups, gid);
+        }
+        // 4. If the edge was lookaround, remove it
+        if (la_pushed) {
+            m_active_lookaheads.pop_back();
+        }
+        // 5. Remove all the created constraints for this edge
+        for (size_t i = 0; i < num_edge_constraints; i++) {
+            m_current_path_constraints.pop_back();
+        }
+        // 6. Delete the variable created for this edge
+        m_current_path_vars.pop_back();
+    }
+
+    void RegexConstraintBuilder::push_constraint(const app_ref& constraint, std::size_t& num_edge_constraints) {
+        m_current_path_constraints.push_back(constraint);
+        num_edge_constraints++;
+    }
+
+    void RegexConstraintBuilder::handle_lookaround_constraints(bool& la_pushed, const AssertionEdge& assertion,
+                                                               std::size_t& num_edge_constraints) {
+        const auto& [subregex, direction, is_positive] = std::get<Lookaround>(assertion.payload);
+        if (direction == LookaroundDirection::FORWARD) {
+            // Lookahead --> postpone and generate constraints when end of graph is reached (same as '$' anchor)
+            m_active_lookaheads.push_back({subregex, is_positive, m_current_path_vars.size() - 1});
+            la_pushed = true;
+        } else {
+            // Lookbehind -- evaluate immediately against the prefix consumed so far
+            if (std::holds_alternative<app_ref>(subregex)) {
+                // Regular lookbehind: prefix \in Sigma* concat RE
+                const app_ref& lb_regex_base = std::get<app_ref>(subregex);
+                const expr_ref prefix = concat_vars(m_current_path_vars);
+                const app_ref sigma_star = {m_util_s.re.mk_full_seq(nullptr), m_manager};
+                const app_ref lb_regex = {m_util_s.re.mk_concat(sigma_star, lb_regex_base), m_manager};
+                app_ref condition = {m_util_s.re.mk_in_re(prefix, lb_regex), m_manager};
+                if (!is_positive) {
+                    condition = app_ref(m_manager.mk_not(condition), m_manager);
+                }
+                push_constraint(condition, num_edge_constraints);
+            } else {
+                // Nonregular negative lookbehind --> would cause negation of the formula ==> universal quantifiers,
+                // therefore unsupported.
+                if (!is_positive) {
+                    util::throw_error("Unsupported: negative lookbehind with non-regular subregex");
+                }
+
+                // Nonregular positive lookbehind --> create a variable for the subregex and run the constraint
+                // generation procedure for the subgraph.
+                const GraphFragment& subregex_fragment = std::get<GraphFragment>(subregex);
+                const app_ref nested_lb_var(mk_fresh_string_var(), m_manager);
+                const app_ref lb_prefix_rest(mk_fresh_string_var(), m_manager);
+                const expr_ref prefix = concat_vars(m_current_path_vars);
+
+                expr_ref_vector split_args(m_manager);
+                split_args.push_back(lb_prefix_rest);
+                split_args.push_back(nested_lb_var);
+                push_constraint({m_manager.mk_eq(prefix, m_util_s.str.mk_concat(split_args, m_str_sort)), m_manager},
+                                num_edge_constraints);
+
+                // inner(la_match) -- run the inner sub-RCG and push the resulting formula
+                const expr_ref inner_result = run_inner_rcg_dfs(subregex_fragment, nested_lb_var);
+                push_constraint({to_app(inner_result.get()), m_manager}, num_edge_constraints);
+            }
+        }
+    }
+
+    void RegexConstraintBuilder::generate_lookahead_constraints(expr_ref_vector final_constraints) {
+        for (const auto& la : m_active_lookaheads) {
+            expr_ref suffix = concat_vars(m_current_path_vars, la.start_index);
+
+            if (la.is_end_anchor) {
+                // '$' anchor: everything after this point must be empty
+                final_constraints.push_back(m_manager.mk_eq(suffix, m_util_s.str.mk_empty(m_str_sort)));
+
+            } else if (std::holds_alternative<app_ref>(la.subregex)) {
+                // Regular lookahead: suffix ∈ RE · Σ*
+                const app_ref& la_regex_base = std::get<app_ref>(la.subregex);
+                app_ref sigma_star = {m_util_s.re.mk_full_seq(nullptr), m_manager};
+                app_ref la_regex = {m_util_s.re.mk_concat(la_regex_base, sigma_star), m_manager};
+                app_ref condition = {m_util_s.re.mk_in_re(suffix, la_regex), m_manager};
+                if (!la.is_positive) {
+                    condition = app_ref(m_manager.mk_not(condition), m_manager);
+                }
+                final_constraints.push_back(condition);
+
+            } else {
+                // Non-regular positive lookahead: suffix = la_match · la_suffix_rest  ∧  inner(la_match)
+                // The fresh la_match variable is the portion of the suffix that the inner pattern
+                // actually consumes; la_suffix_rest is the unconstrained remainder (Σ*).
+                SASSERT(la.is_positive);  // negative case rejected at construction time
+                const GraphFragment& inner_frag = std::get<GraphFragment>(la.subregex);
+                app_ref la_match(mk_fresh_string_var(), m_manager);
+                app_ref la_suffix_rest(mk_fresh_string_var(), m_manager);
+
+                // suffix = la_match · la_suffix_rest
+                expr_ref_vector split_args(m_manager);
+                split_args.push_back(la_match);
+                split_args.push_back(la_suffix_rest);
+                final_constraints.push_back(m_manager.mk_eq(suffix, m_util_s.str.mk_concat(split_args, m_str_sort)));
+
+                // inner(la_match)
+                expr_ref inner_result = run_inner_rcg_dfs(inner_frag, la_match);
+                final_constraints.push_back(inner_result);
+            }
+        }
+    }
+
+    void RegexConstraintBuilder::generate_edge_constraints(const RCGEdge& edge, const app_ref& edge_var,
+                                                           std::size_t& num_edge_constraints, bool& la_pushed) {
+        if (std::holds_alternative<MatchEdge>(edge.payload)) {
+            // Match edge --> make a regular constraint x_i \in RE
+            const app_ref regex = std::get<MatchEdge>(edge.payload).regex;
+            push_constraint(app_ref(m_util_s.re.mk_in_re(edge_var, regex), m_manager), num_edge_constraints);
+        } else if (std::holds_alternative<AssertionEdge>(edge.payload)) {
+            // Assertions (lookarounds or anchors)
+            const AssertionEdge& assertion = std::get<AssertionEdge>(edge.payload);
+            push_constraint({m_manager.mk_eq(edge_var, m_util_s.str.mk_empty(m_str_sort)), m_manager},
+                            num_edge_constraints);
+            if (std::holds_alternative<Anchor>(assertion.payload)) {
+                // Anchors '^', '$'
+                const uint32_t anchor = std::get<Anchor>(assertion.payload);
+                if (anchor == '^') {
+                    // All the string variables up to this point must be empty --> x_1...x_k = epsilon
+                    expr_ref prefix = concat_vars(m_current_path_vars);
+                    push_constraint({m_manager.mk_eq(prefix, m_util_s.str.mk_empty(m_str_sort)), m_manager},
+                                    num_edge_constraints);
+                } else if (anchor == '$') {
+                    // The '$' anchor is postponed and then handled separately as a lookahead
+                    // All the string variables following '$' must be equal to epsilon --> generate when end of
+                    // graph is reached. The dummy_re will not be used at all
+                    const app_ref dummy_re(m_manager.mk_false(), m_manager);
+                    m_active_lookaheads.push_back({dummy_re, true, m_current_path_vars.size() - 1, true});
+                    la_pushed = true;
+                }
+            } else if (std::holds_alternative<Lookaround>(assertion.payload)) {
+                handle_lookaround_constraints(la_pushed, assertion, num_edge_constraints);
+            }
+        } else if (std::holds_alternative<BackrefEdge>(edge.payload)) {
+            // Backreferences --> create a string equation w = x_k...x_l, where x_k...x_l are string variables
+            // representing the contents captured by a corresponding capture group
+            const uint32_t ref_id = std::get<BackrefEdge>(edge.payload).backref_id;
+            if (m_group_vars.contains(ref_id)) {
+                expr_ref captured_string = concat_vars(m_group_vars.at(ref_id));
+                push_constraint(app_ref(m_manager.mk_eq(edge_var, captured_string), m_manager), num_edge_constraints);
+            } else {
+                // Forward reference matches an empty string in ECMAScript standard.
+                // https://tc39.es/ecma262/2020/#sec-backreference-matcher
+                push_constraint(app_ref(m_manager.mk_eq(edge_var, m_util_s.str.mk_empty(m_str_sort)), m_manager),
+                                num_edge_constraints);
+            }
+        }
+    }
+
     void RegexConstraintBuilder::rcg_dfs_visit(const VertexId current_vertex, app* target_string) {
-        // End of graph reached
+        // End of graph reached --> generate path constraints
         if (current_vertex == m_graph.end_vertex) {
             expr_ref_vector final_constraints(m_manager);
 
@@ -1956,51 +2126,13 @@ namespace smt::noodler::ecma {
             }
 
             // Evaluate all postponed lookaheads
-            for (const auto& la : m_active_lookaheads) {
-                expr_ref suffix = concat_vars(m_current_path_vars, la.start_index);
-
-                if (la.is_end_anchor) {
-                    // '$' anchor: everything after this point must be empty
-                    final_constraints.push_back(m_manager.mk_eq(suffix, m_util_s.str.mk_empty(m_str_sort)));
-
-                } else if (std::holds_alternative<app_ref>(la.subregex)) {
-                    // Regular lookahead: suffix ∈ RE · Σ*
-                    const app_ref& la_regex_base = std::get<app_ref>(la.subregex);
-                    app_ref sigma_star = {m_util_s.re.mk_full_seq(nullptr), m_manager};
-                    app_ref la_regex = {m_util_s.re.mk_concat(la_regex_base, sigma_star), m_manager};
-                    app_ref condition = {m_util_s.re.mk_in_re(suffix, la_regex), m_manager};
-                    if (!la.is_positive) {
-                        condition = app_ref(m_manager.mk_not(condition), m_manager);
-                    }
-                    final_constraints.push_back(condition);
-
-                } else {
-                    // Non-regular positive lookahead: suffix = la_match · la_suffix_rest  ∧  inner(la_match)
-                    // The fresh la_match variable is the portion of the suffix that the inner pattern
-                    // actually consumes; la_suffix_rest is the unconstrained remainder (Σ*).
-                    SASSERT(la.is_positive);  // negative case rejected at construction time
-                    const GraphFragment& inner_frag = std::get<GraphFragment>(la.subregex);
-                    app_ref la_match(mk_fresh_string_var(), m_manager);
-                    app_ref la_suffix_rest(mk_fresh_string_var(), m_manager);
-
-                    // suffix = la_match · la_suffix_rest
-                    expr_ref_vector split_args(m_manager);
-                    split_args.push_back(la_match);
-                    split_args.push_back(la_suffix_rest);
-                    final_constraints.push_back(
-                        m_manager.mk_eq(suffix, m_util_s.str.mk_concat(split_args, m_str_sort)));
-
-                    // inner(la_match)
-                    expr_ref inner_result = run_inner_rcg_dfs(inner_frag, la_match);
-                    final_constraints.push_back(inner_result);
-                }
-            }
+            generate_lookahead_constraints(final_constraints);
 
             // All the gathered string variables make the final string
             const expr_ref path_string = concat_vars(m_current_path_vars);
             final_constraints.push_back(app_ref(m_manager.mk_eq(target_string, path_string), m_manager));
 
-            // Every constraint on the path has to be SAT if the path should be SAT
+            // Every constraint on the path has to be SAT if the path should be SAT --> AND them all
             expr_ref_vector and_args {m_manager};
             for (expr* c : final_constraints) {
                 and_args.push_back(c);
@@ -2010,16 +2142,17 @@ namespace smt::noodler::ecma {
             return;
         }
 
-        // Recursive DFS step
+        // Not the end of graph yet --> generate constraints for the selected edge and continue the DFS traversal from
+        // the edge target.
         for (EdgeId eid : m_graph.vertices[current_vertex].outgoing_edges) {
             const RCGEdge& edge = m_graph.edges[eid];
 
-            // For current edge, make a new string variable and save thestate
+            // For current edge, make a new string variable and save the state
             app_ref edge_var(mk_fresh_string_var(), m_manager);
             m_current_path_vars.push_back(edge_var);
 
-
-            // Capture groups -- mark the new ones as active
+            // Capture groups -- mark capture groups starting at this edge as active.
+            // Save the state for later cleanup.
             std::vector<uint32_t> newly_started_groups;
             if (m_graph.group_starts.contains(eid)) {
                 for (uint32_t gid : m_graph.group_starts.at(eid)) {
@@ -2036,94 +2169,13 @@ namespace smt::noodler::ecma {
                 m_group_vars.at(gid).push_back(edge_var);
             }
 
-            // Helper lambda to keep the constraint addition a oneliner.
-            // Also, when the recursion returns here and leaves the current edge, we can clear all the constraints we created.
-            size_t constraints_pushed = 0;
-            auto push_constraint = [&](const app_ref& c) {
-                m_current_path_constraints.push_back(c);
-                constraints_pushed++;
-            };
-
-            // Constraint generation based on the type of edge
+            // A helper counter of generated constraints for the current RCG edge. After the DFS visit of this edge,
+            // `num_edge_constraints` constraints will be removed from current path constraints.
+            std::size_t num_edge_constraints = 0;
             bool la_pushed = false;
-            if (std::holds_alternative<MatchEdge>(edge.payload)) {
-                // Match edge -- make a regular constraint x_i \in RE
-                app_ref regex = std::get<MatchEdge>(edge.payload).regex;
-                push_constraint(app_ref(m_util_s.re.mk_in_re(edge_var, regex), m_manager));
-            } else if (std::holds_alternative<AssertionEdge>(edge.payload)) {
-                const AssertionEdge& assertion = std::get<AssertionEdge>(edge.payload);
-                push_constraint(app_ref(m_manager.mk_eq(edge_var, m_util_s.str.mk_empty(m_str_sort)), m_manager));
+            generate_edge_constraints(edge, edge_var, num_edge_constraints, la_pushed);
 
-                if (std::holds_alternative<Anchor>(assertion.payload)) {
-                    const uint32_t anchor = std::get<Anchor>(assertion.payload);
-                    if (anchor == '^') {
-                        // All the string variables up to this point must be empty --> x_1...x_k = epsilon
-                        expr_ref prefix = concat_vars(m_current_path_vars);
-                        push_constraint(app_ref(m_manager.mk_eq(prefix, m_util_s.str.mk_empty(m_str_sort)), m_manager));
-                    } else if (anchor == '$') {
-                        // The '$' anchor is postponed and then handled separately as a lookahead
-                        // All the string variables following '$' must be equal to epsilon --> generate in when end of graph is reached
-                        // The dummy_re will not be used at all
-                        const app_ref dummy_re(m_manager.mk_false(), m_manager);
-                        m_active_lookaheads.push_back({dummy_re, true, m_current_path_vars.size() - 1, true});
-                        la_pushed = true;
-                    }
-                } else if (std::holds_alternative<Lookaround>(assertion.payload)) {
-                    const Lookaround& la = std::get<Lookaround>(assertion.payload);
-                    if (la.direction == AssertionDirection::FORWARD) {
-                        // Lookahead --> postpone and generate constraints when end of graph is reached (same as '$' anchor)
-                        m_active_lookaheads.push_back({la.subregex, la.is_positive, m_current_path_vars.size() - 1});
-                        la_pushed = true;
-                    } else {
-                        // Lookbehind -- evaluate immediately against the prefix consumed so far
-                        if (std::holds_alternative<app_ref>(la.subregex)) {
-                            // Regular lookbehind: prefix ∈ Σ* · RE
-                            const app_ref& lb_regex_base = std::get<app_ref>(la.subregex);
-                            expr_ref prefix = concat_vars(m_current_path_vars);
-                            app_ref sigma_star = {m_util_s.re.mk_full_seq(nullptr), m_manager};
-                            app_ref lb_regex = {m_util_s.re.mk_concat(sigma_star, lb_regex_base), m_manager};
-                            app_ref condition = {m_util_s.re.mk_in_re(prefix, lb_regex), m_manager};
-                            if (!la.is_positive) {
-                                condition = app_ref(m_manager.mk_not(condition), m_manager);
-                            }
-                            push_constraint(condition);
-                        } else {
-                            // Non-regular positive lookbehind: prefix = la_prefix_rest · la_match  ∧  inner(la_match)
-                            // Negative case would require universal quantifiers -- not supported.
-                            if (!la.is_positive) {
-                                util::throw_error("Unsupported: negative lookbehind with non-regular inner content");
-                            }
-                            const GraphFragment& subregex_frag = std::get<GraphFragment>(la.subregex);
-                            app_ref la_match(mk_fresh_string_var(), m_manager);
-                            app_ref la_prefix_rest(mk_fresh_string_var(), m_manager);
-
-                            // prefix = la_prefix_rest · la_match
-                            expr_ref prefix = concat_vars(m_current_path_vars);
-                            expr_ref_vector split_args(m_manager);
-                            split_args.push_back(la_prefix_rest);
-                            split_args.push_back(la_match);
-                            push_constraint(app_ref(
-                                m_manager.mk_eq(prefix, m_util_s.str.mk_concat(split_args, m_str_sort)), m_manager));
-
-                            // inner(la_match) -- run the inner sub-RCG and push the resulting formula
-                            expr_ref inner_result = run_inner_rcg_dfs(subregex_frag, la_match);
-                            push_constraint(app_ref(to_app(inner_result.get()), m_manager));
-                        }
-                    }
-                }
-            } else if (std::holds_alternative<BackrefEdge>(edge.payload)) {
-                const uint32_t ref_id = std::get<BackrefEdge>(edge.payload).backref_id;
-                if (m_group_vars.contains(ref_id)) {
-                    expr_ref captured_string = concat_vars(m_group_vars.at(ref_id));
-                    push_constraint(app_ref(m_manager.mk_eq(edge_var, captured_string), m_manager));
-                } else {
-                    // Forward reference matches an empty string in ECMAScript standard.
-                    // https://tc39.es/ecma262/2020/#sec-backreference-matcher
-                    push_constraint(app_ref(m_manager.mk_eq(edge_var, m_util_s.str.mk_empty(m_str_sort)), m_manager));
-                }
-            }
-
-            // Capture group ends --> if a capture group ends on this edge, remove it from active groups.
+            // Capture group end markers --> if a capture group ends on this edge, remove it from active groups.
             // Save the state for later cleanup after DFS step.
             std::vector<uint32_t> newly_ended_groups;
             if (m_graph.group_ends.contains(eid)) {
@@ -2137,35 +2189,7 @@ namespace smt::noodler::ecma {
             }
 
             rcg_dfs_visit(edge.target, target_string);
-
-            // State cleanup
-            // 1. Make all the ended groups active again
-            for (uint32_t gid : newly_ended_groups) {
-                m_active_groups.push_back(gid);
-            }
-
-            // 2. Remove the fresh string variable from all active groups
-            for (uint32_t gid : m_active_groups) {
-                m_group_vars.at(gid).pop_back();
-            }
-
-            // 3. Make all the started groups non-active
-            for (uint32_t gid : newly_started_groups) {
-                std::erase(m_active_groups, gid);
-            }
-
-            // 4. If the edge was lookaround, remove it
-            if (la_pushed) {
-                m_active_lookaheads.pop_back();
-            }
-
-            // 5. Remove all the created constraints for this edge
-            for (size_t i = 0; i < constraints_pushed; i++) {
-                m_current_path_constraints.pop_back();
-            }
-
-            // 6. Delete the variable created for this edge
-            m_current_path_vars.pop_back();
+            cleanup_after_edge_visit(newly_started_groups, newly_ended_groups, la_pushed, num_edge_constraints);
         }
     }
 

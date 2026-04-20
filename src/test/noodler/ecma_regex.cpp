@@ -1119,7 +1119,7 @@ namespace smt::noodler::ecma::test {
             const Lookaround& la = std::get<Lookaround>(assertion.payload);
             // The type of lookaround in the serialized rcg
             std::string type_str;
-            if (la.direction == AssertionDirection::FORWARD) {
+            if (la.direction == LookaroundDirection::FORWARD) {
                 type_str = la.is_positive ? "?=" : "?!";
             } else {
                 type_str = la.is_positive ? "?<=" : "?<!";

@@ -172,6 +172,7 @@ NamespaceIndentation: All
 PackConstructorInitializers: Never
 
 PointerAlignment: Left
+PenaltyBreakComment: 0
 PPIndentWidth: -1
 
 QualifierAlignment: Custom
@@ -179,7 +180,7 @@ QualifierOrder:
   [ static, friend, inline, constexpr, const, volatile, type, restrict ]
 
 ReferenceAlignment: Left
-ReflowComments: IndentOnly
+ReflowComments: Always
 
 RemoveBracesLLVM: false
 RemoveEmptyLinesInUnwrappedLines: true

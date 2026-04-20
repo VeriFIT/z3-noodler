@@ -57,7 +57,7 @@ namespace smt::noodler::ecma {
         app_ref regex;
     };
 
-    enum class AssertionDirection {
+    enum class LookaroundDirection {
         FORWARD,
         BACKWARD
     };
@@ -73,7 +73,7 @@ namespace smt::noodler::ecma {
 
     struct Lookaround {
         std::variant<app_ref, GraphFragment> subregex;
-        AssertionDirection direction;
+        LookaroundDirection direction;
         bool is_positive;
     };
 
@@ -191,9 +191,10 @@ namespace smt::noodler::ecma {
 
     // ================== ECMA REGEX AST ==================
 
-    // When building RCG from AST, the methods return either a reference to the built sub-rcg, represented by GraphFragment,
-    // or app* when the AST subtree contains regular parts of ECMA regex that can be compiled into an SMT-LIB regex.
-    // (optimalization -- merging the regular parts of ECMA regex instead of creating edges for all of them)
+    // When building RCG from AST, the methods return either a reference to the built sub-rcg, represented by
+    // GraphFragment, or app* when the AST subtree contains regular parts of ECMA regex that can be compiled into an
+    // SMT-LIB regex. (optimalization -- merging the regular parts of ECMA regex instead of creating edges for all of
+    // them)
     using RegexComponent = std::variant<GraphFragment, app_ref>;
 
     class ASTNode {
@@ -243,7 +244,7 @@ namespace smt::noodler::ecma {
         ASTNodeRef m_subpattern = nullptr;  // for lookarounds (may be null for ^, $, \b, \B)
 
         static GraphFragment make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m, app_ref assert_regex,
-                                                     AssertionDirection dir, bool is_positive);
+                                                     LookaroundDirection dir, bool is_positive);
 
         static GraphFragment make_word_boundary_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m,
                                                          bool is_word_boundary);
@@ -262,7 +263,8 @@ namespace smt::noodler::ecma {
          *  Nonregular fragments under {n,m} quantifiers:
          *  - copy the fragment `m` times,
          *  - chain the first `n` fragments, which are mandatory,
-         *  - the remaining (`m` - `n`) fragments are optional --> alternate it with an epsilon-edge, so it can be skipped,
+         *  - the remaining (`m` - `n`) fragments are optional --> alternate it with an epsilon-edge, so it can be
+         * skipped,
          *  - connect the `m`th copied fragment back to the original flow in the graph.
          * @param graph The graph in which the copies are created.
          * @param util_s z3's seq_util
@@ -420,7 +422,7 @@ namespace smt::noodler::ecma {
         ast_manager& m_manager;
         seq_util m_util_s;
         RegexConstraintGraph m_graph;
-        sort* m_str_sort;
+        sort* m_str_sort = nullptr;
 
         // Global result of DFS traversal (all the unique paths in graph)
         expr_ref_vector m_unique_paths;
@@ -447,6 +449,15 @@ namespace smt::noodler::ecma {
         app* mk_fresh_string_var() const;
         expr_ref concat_vars(const expr_ref_vector& vars, std::size_t start_idx = 0);
         expr_ref run_inner_rcg_dfs(const GraphFragment& fragment, app* target_string);
+        void cleanup_after_edge_visit(const std::vector<uint32_t>& newly_started_groups,
+                                      const std::vector<uint32_t>& newly_ended_groups, bool la_pushed,
+                                      const size_t& num_edge_constraints);
+        void push_constraint(const app_ref& constraint, size_t& num_edge_constraints);
+        void handle_lookaround_constraints(bool& la_pushed, const AssertionEdge& assertion,
+                                           size_t& num_edge_constraints);
+        void generate_lookahead_constraints(expr_ref_vector final_constraints);
+        void generate_edge_constraints(const RCGEdge& edge, const app_ref& edge_var, size_t& num_edge_constraints,
+                                       bool& la_pushed);
         void rcg_dfs_visit(VertexId current_vertex, app* target_string);
     };
 }  // namespace smt::noodler::ecma
