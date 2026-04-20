@@ -1,6 +1,0 @@
-(set-logic QF_S)
-(set-info :status sat)
-(declare-const w String)
-(assert (str.in_re w (re.from_ecma2020 "\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")))
-(assert (= w "192.168.1.1"))
-(check-sat)

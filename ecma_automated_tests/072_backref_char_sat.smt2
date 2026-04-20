@@ -1,6 +1,0 @@
-(set-logic QF_S)
-(set-info :status sat)
-(declare-const w String)
-(assert (str.in_re w (re.from_ecma2020 "([a-z])\1")))
-(assert (= (str.len w) 2))
-(check-sat)

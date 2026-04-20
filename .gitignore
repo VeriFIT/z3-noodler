@@ -120,4 +120,4 @@ genaisrc/genblogpost.genai.mts
 bazel-*
 
 # test files
-input.smt
+input.smt2

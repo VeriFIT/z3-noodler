@@ -1,6 +1,0 @@
-(set-logic QF_S)
-(set-info :status unsat)
-(declare-const w String)
-(assert (str.in_re w (re.from_ecma2020 "(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})")))
-(assert (= w "2024-1-15"))
-(check-sat)

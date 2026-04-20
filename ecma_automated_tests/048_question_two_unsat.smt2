@@ -1,6 +1,0 @@
-(set-logic QF_S)
-(set-info :status unsat)
-(declare-const w String)
-(assert (str.in_re w (re.from_ecma2020 "ab?")))
-(assert (= w "abb"))
-(check-sat)

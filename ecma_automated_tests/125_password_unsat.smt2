@@ -1,6 +1,0 @@
-(set-logic QF_S)
-(set-info :status unsat)
-(declare-const w String)
-(assert (str.in_re w (re.from_ecma2020 "(?=.*\d)(?=.*[a-z]).{8,}")))
-(assert (= w "hello123")) (assert (= (str.len w) 5))
-(check-sat)

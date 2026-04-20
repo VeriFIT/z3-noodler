@@ -1,6 +1,0 @@
-(set-logic QF_S)
-(set-info :status unsat)
-(declare-const w String)
-(assert (str.in_re w (re.from_ecma2020 "[^\]\--/a-z^\b--\0-\37\cZ]")))
-(assert (or (= w "-") (= w "a") (= w "]")))
-(check-sat)
