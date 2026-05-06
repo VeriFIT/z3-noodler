@@ -1,0 +1,56 @@
+name: Z3-Noodler Build & Test
+
+on:
+  push:
+    branches:
+      - devel
+  pull_request:
+    branches: 
+      - devel
+  # allows to run the action from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Test (${{ matrix.os }} / ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu
+            arch: x86_64
+            runner: ubuntu-latest
+          - os: macos
+            arch: x86_64
+            runner: macos-15-intel
+          - os: macos
+            arch: arm64
+            runner: macos-latest
+
+    steps:
+      - name: Checkout Z3-Noodler
+        uses: actions/checkout@v6
+        with: 
+          ref: ${{ github.head_ref }}
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu'
+        run: sudo apt-get update && sudo apt-get install -y catch2 cmake build-essential
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos'
+        run: brew update && brew install catch2 cmake
+
+      - name: Configure & Build Z3-Noodler
+        run: |
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release ..
+          make -j$(nproc || sysctl -n hw.ncpu)
+
+      - name: Build & Run tests
+        run: |
+          cd build/
+          make -j$(nproc || sysctl -n hw.ncpu) test-noodler
+          ./test-noodler

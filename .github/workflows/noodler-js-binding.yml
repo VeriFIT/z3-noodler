@@ -1,0 +1,57 @@
+name: JS Binding (build-&-test)
+
+on:
+  push:
+    branches:
+      - devel
+  pull_request:
+    branches:
+      - devel
+  # allows to run the action from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  ubuntu-build:
+    name: JS Binding Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Check out repository code
+        uses: actions/checkout@v6
+        with: 
+          ref: ${{ github.head_ref }}
+
+      - name: Setup emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.73
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Clone Mata
+        uses: GuillaumeFalourd/clone-github-repo-action@v2.3
+        with:
+          owner: 'VeriFIT'
+          repository: 'mata'
+          branch: devel
+          depth: 1
+
+      - name: Install Mata
+        run: |
+          cd mata
+          mkdir build && cd build
+          emcmake cmake -DCMAKE_BUILD_TYPE=Release -DMATA_BUILD_EXAMPLES:BOOL=OFF -DBUILD_TESTING:BOOL=OFF -DCMAKE_CXX_FLAGS="-pthread" -DCMAKE_EXE_LINKER_FLAGS="-pthread" ..
+          emmake make install
+
+      - name: Compile JS Binding for Z3-Noodler
+        run: |
+          mkdir build
+          cd src/api/js
+          sed -i "s|REPLACE THIS TEXT WITH THE PATH TO libmata.a|${EMSDK}/upstream/emscripten/cache/sysroot/lib/libmata.a|g" scripts/build-wasm.ts
+          npm install
+          npm run build:ts
+          npm run build:wasm
+      
+      - name: Test JS Binding
+        run: |
+          cd src/api/js
+          npm test
