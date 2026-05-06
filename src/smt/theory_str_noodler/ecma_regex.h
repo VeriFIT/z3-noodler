@@ -9,6 +9,7 @@
 #include <memory>
 #include <ostream>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -340,6 +341,24 @@ namespace smt::noodler::ecma {
          * as NONCAPTURE.
          */
         virtual void strip_captures() = 0;
+
+        /**
+         * @brief Recursively collect IDs of all backreferences in this subtree.
+         *
+         * Used as a pre-pass before `build_rcg()` to determine which capture groups are actually referenced. The result
+         * is passed to `strip_unreferenced_captures()` to convert unreferenced CAPTURE groups to NONCAPTURE, leading to
+         * fewer unsupported regex structure errors.
+         *
+         * @param refs Set to which every backreference ID found in the subtree is added.
+         */
+        virtual void collect_backrefs(std::unordered_set<GroupID>& refs) const { }
+
+        /**
+         * @brief Convert every CAPTURE group whose ID is not in @p referenced to NONCAPTURE.
+         * 
+         * @param referenced 
+         */
+        virtual void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) { }
     };
 
     /**
@@ -371,6 +390,8 @@ namespace smt::noodler::ecma {
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         ASTNodeRef clone() const override;
         void strip_captures() override;
+        void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
+        void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
 
     private:
         std::vector<ASTNodeRef> m_alternatives;
@@ -401,6 +422,8 @@ namespace smt::noodler::ecma {
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         ASTNodeRef clone() const override;
         void strip_captures() override;
+        void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
+        void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
 
     private:
         std::vector<ASTNodeRef> m_terms;
@@ -431,6 +454,8 @@ namespace smt::noodler::ecma {
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         ASTNodeRef clone() const override;
         void strip_captures() override;
+        void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
+        void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
 
     private:
         TokenType m_assert_type {};
@@ -500,6 +525,8 @@ namespace smt::noodler::ecma {
          * @return RegexComponent app_ref if the child is regular, GraphFragment otherwise.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
+        void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
+        void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
 
     private:
         QuantifierRange m_range {};
@@ -514,6 +541,7 @@ namespace smt::noodler::ecma {
         uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
         zstring serialize() const override;
         void set_char(uint32_t ch);
+        uint32_t get_char() const;
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         ASTNodeRef clone() const override;
 
@@ -549,6 +577,8 @@ namespace smt::noodler::ecma {
 
         void strip_captures() override { }
 
+        void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
+
     private:
         uint32_t m_backref_id;
     };
@@ -569,7 +599,7 @@ namespace smt::noodler::ecma {
         zstring serialize() const override;
         void set_type(GroupType type);
         void set_expr(ASTNodeRef expr);
-        void set_id(uint32_t gid);
+        void set_id(GroupID gid);
 
         /**
          * @brief Build the subgraph for a group node.
@@ -586,12 +616,14 @@ namespace smt::noodler::ecma {
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         ASTNodeRef clone() const override;
         void strip_captures() override;
+        void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
+        void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
 
     private:
         GroupType m_type = GroupType::CAPTURE;
 
         ASTNodeRef m_child;
-        uint32_t m_gid;
+        GroupID m_gid;
     };
 
     enum class ElementType {

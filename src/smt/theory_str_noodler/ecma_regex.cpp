@@ -825,6 +825,18 @@ namespace smt::noodler::ecma {
         }
     }
 
+    void ASTNodeDisjunction::collect_backrefs(std::unordered_set<GroupID>& refs) const {
+        for (const ASTNodeRef& alternative : m_alternatives) {
+            alternative->collect_backrefs(refs);
+        }
+    }
+
+    void ASTNodeDisjunction::strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) {
+        for (const ASTNodeRef& alternative : m_alternatives) {
+            alternative->strip_unreferenced_captures(referenced);
+        }
+    }
+
     ASTNodeRef ASTNodeDisjunction::clone() const {
         auto cloned = std::make_unique<ASTNodeDisjunction>();
         for (const auto& alt : m_alternatives) {
@@ -863,32 +875,48 @@ namespace smt::noodler::ecma {
             return app_ref(util_s.re.mk_epsilon(util_s.mk_string_sort()), m);
         }
 
-        // First pass -- merge consecutive regular terms into one, since concatenation is associative
-        std::vector<RegexComponent> simplified_terms;
+        // First pass: merge adjacent literals into one string
+        std::vector<RegexComponent> components;
+        zstring literal_buf;
+        auto flush_literals = [&]() {
+            if (!literal_buf.empty()) {
+                components.emplace_back(app_ref(util_s.re.mk_to_re(util_s.str.mk_string(literal_buf)), m));
+                literal_buf = zstring();
+            }
+        };
+
         for (const ASTNodeRef& term : m_terms) {
-            RegexComponent current_term = term->get_subgraph(graph, util_s, m);
-
-            if (simplified_terms.empty()) {
-                simplified_terms.push_back(current_term);
-                continue;
-            }
-
-            RegexComponent& most_recent_term = simplified_terms.back();
-            if (std::holds_alternative<app_ref>(most_recent_term) && std::holds_alternative<app_ref>(current_term)) {
-                app_ref last_regular = std::get<app_ref>(most_recent_term);
-                app_ref current_regular = std::get<app_ref>(current_term);
-                most_recent_term = app_ref(util_s.re.mk_concat(last_regular, current_regular), m);
+            const auto* lit = dynamic_cast<const ASTNodeLiteral*>(term.get());
+            if (lit != nullptr) {
+                literal_buf += lit->get_char();
             } else {
-                simplified_terms.push_back(current_term);
+                flush_literals();
+                components.emplace_back(term->get_subgraph(graph, util_s, m));
+            }
+        }
+        flush_literals();
+
+        if (components.size() == 1) {
+            return components[0];
+        }
+
+        // Second pass: merge adjacent regular components into one regex
+        std::vector<RegexComponent> simplified;
+        for (RegexComponent& comp : components) {
+            if (!simplified.empty() && std::holds_alternative<app_ref>(simplified.back()) &&
+                std::holds_alternative<app_ref>(comp)) {
+                simplified.back() =
+                    app_ref(util_s.re.mk_concat(std::get<app_ref>(simplified.back()), std::get<app_ref>(comp)), m);
+            } else {
+                simplified.emplace_back(std::move(comp));
             }
         }
 
-        // Only one regular term -- return it directly
-        if (simplified_terms.size() == 1 && std::holds_alternative<app_ref>(simplified_terms[0])) {
-            return simplified_terms[0];
+        if (simplified.size() == 1) {
+            return simplified[0];
         }
 
-        // Helper lambda for creating graph fragment from a regex component
+        // Helper lambda for fragment creation
         auto to_fragment = [&](RegexComponent& component) -> GraphFragment {
             if (std::holds_alternative<app_ref>(component)) {
                 const VertexID v_in = graph.create_vertex();
@@ -900,11 +928,10 @@ namespace smt::noodler::ecma {
             return std::get<GraphFragment>(component);
         };
 
-        // Chain all the terms into one fragment
-        GraphFragment result = to_fragment(simplified_terms[0]);
-        for (std::size_t i = 1; i < simplified_terms.size(); i++) {
-            GraphFragment current = to_fragment(simplified_terms[i]);
-            result = chain_fragments(graph, result, current);
+        // Chain all the regular and non-regular fragments together in order
+        GraphFragment result = to_fragment(simplified[0]);
+        for (std::size_t i = 1; i < simplified.size(); i++) {
+            result = chain_fragments(graph, result, to_fragment(simplified[i]));
         }
         return result;
     }
@@ -912,6 +939,18 @@ namespace smt::noodler::ecma {
     void ASTNodeAlternative::strip_captures() {
         for (const ASTNodeRef& term : m_terms) {
             term->strip_captures();
+        }
+    }
+
+    void ASTNodeAlternative::collect_backrefs(std::unordered_set<GroupID>& refs) const {
+        for (const ASTNodeRef& term : m_terms) {
+            term->collect_backrefs(refs);
+        }
+    }
+
+    void ASTNodeAlternative::strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) {
+        for (const ASTNodeRef& term : m_terms) {
+            term->strip_unreferenced_captures(referenced);
         }
     }
 
@@ -1018,7 +1057,8 @@ namespace smt::noodler::ecma {
         }
 
         // Non-regular lookarounds with non-regular inner content are not supported, since they would require universal
-        // quantification. Lookarounds with regular content can be expressed as a negation of regular language --> supported.
+        // quantification. Lookarounds with regular content can be expressed as a negation of regular language -->
+        // supported.
         if (!is_positive) {
             util::throw_error("Unsupported: negative lookaround with non-regular inner content "
                               "(would require universal quantifiers)");
@@ -1060,6 +1100,18 @@ namespace smt::noodler::ecma {
         m_subpattern->strip_captures();
     }
 
+    void ASTNodeAssertion::collect_backrefs(std::unordered_set<GroupID>& refs) const {
+        if (m_subpattern != nullptr) {
+            m_subpattern->collect_backrefs(refs);
+        }
+    }
+
+    void ASTNodeAssertion::strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) {
+        if (m_subpattern != nullptr) {
+            m_subpattern->strip_unreferenced_captures(referenced);
+        }
+    }
+
     ASTNodeRef ASTNodeAssertion::clone() const {
         auto cloned = std::make_unique<ASTNodeAssertion>();
         cloned->m_assert_type = m_assert_type;
@@ -1083,8 +1135,8 @@ namespace smt::noodler::ecma {
 
     GraphFragment ASTNodeAssertion::make_word_boundary_fragment(RegexConstraintGraph& graph, seq_util& util_s,
                                                                 ast_manager& m, const bool is_word_boundary) {
-
-        //  A word boundary matches at a position where one side is a word char (\w) and the other is not. This is modelled as two branches in alternation:
+        //  A word boundary matches at a position where one side is a word char (\w) and the other is not. This is
+        //  modelled as two branches in alternation:
         //    branch1: lookbehind(\w) AND lookahead(\W) -- or the reverse for '\B'
         //    branch2: lookbehind(\W) AND lookahead(\w) -- or the reverse for '\B'
         //  Each branch is built as a chain of two assertion fragments.
@@ -1205,6 +1257,14 @@ namespace smt::noodler::ecma {
         return app_ref(quant, m);
     }
 
+    void ASTNodeQuantifier::collect_backrefs(std::unordered_set<GroupID>& refs) const {
+        m_child->collect_backrefs(refs);
+    }
+
+    void ASTNodeQuantifier::strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) {
+        m_child->strip_unreferenced_captures(referenced);
+    }
+
     uint32_t ASTNodeLiteral::print_dot(std::ostream& out, uint32_t& node_count) const {
         const uint32_t id = ++node_count;
         out << "  node" << id << " [label=\"LITERAL ('" << static_cast<char>(m_char) << "')\"];\n";
@@ -1217,6 +1277,10 @@ namespace smt::noodler::ecma {
 
     void ASTNodeLiteral::set_char(const uint32_t ch) {
         m_char = ch;
+    }
+
+    uint32_t ASTNodeLiteral::get_char() const {
+        return m_char;
     }
 
     RegexComponent ASTNodeLiteral::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
@@ -1272,6 +1336,10 @@ namespace smt::noodler::ecma {
 
     ASTNodeRef ASTNodeBackref::clone() const {
         return std::make_unique<ASTNodeBackref>(*this);
+    }
+
+    void ASTNodeBackref::collect_backrefs(std::unordered_set<GroupID>& refs) const {
+        refs.insert(m_backref_id);
     }
 
     uint32_t ASTNodeGroup::print_dot(std::ostream& out, uint32_t& node_count) const {
@@ -1349,6 +1417,17 @@ namespace smt::noodler::ecma {
             m_type = GroupType::NONCAPTURE;
         }
         m_child->strip_captures();
+    }
+
+    void ASTNodeGroup::collect_backrefs(std::unordered_set<uint32_t>& refs) const {
+        m_child->collect_backrefs(refs);
+    }
+
+    void ASTNodeGroup::strip_unreferenced_captures(const std::unordered_set<uint32_t>& referenced) {
+        if (m_type != GroupType::NONCAPTURE && !referenced.contains(m_gid)) {
+            m_type = GroupType::NONCAPTURE;
+        }
+        m_child->strip_unreferenced_captures(referenced);
     }
 
     ASTNodeRef ASTNodeGroup::clone() const {
@@ -1450,7 +1529,7 @@ namespace smt::noodler::ecma {
                         // HT, VT, FF, SP, NBSP, ZWNBSP, US, LF, CR, LS, PS
                         std::array<uint32_t, 11> whitespaces {0x0009, 0x000B, 0x000C, 0x0020, 0x00A0, 0xFEFF,
                                                               0x001F, 0x000A, 0x000D, 0x2028, 0x2029};
-                        // Unite all the whitespaces 
+                        // Unite all the whitespaces
                         app* re_whitespace = util_s.re.mk_to_re(util_s.str.mk_string(whitespaces[0]));
                         for (std::size_t i = 1; i < whitespaces.size(); i++) {
                             app* whitespace_str = util_s.re.mk_to_re(util_s.str.mk_string(whitespaces[i]));
@@ -2066,6 +2145,11 @@ namespace smt::noodler::ecma {
     RegexConstraintGraph RegexConstraintBuilder::build_rcg() {
         const ASTNodeRef root = m_parser.parse();
         // Get the subgraph from AST
+
+        std::unordered_set<GroupID> referenced_groups;
+        root->collect_backrefs(referenced_groups);
+        root->strip_unreferenced_captures(referenced_groups);
+
         const RegexComponent comp = root->get_subgraph(m_graph, m_util_s, m_manager);
 
         VertexID inner_start = UNKNOWN_VERTEX;
@@ -2200,7 +2284,8 @@ namespace smt::noodler::ecma {
                 // run. The constraints for x_lb are generated in the same way.
                 const expr_ref inner_result = run_inner_rcg_dfs(subregex_fragment, subregex_lb_var, ctx);
 
-                // Restore the original base prefix for the outer DFS run and add the generated constraints for the lookbehind.
+                // Restore the original base prefix for the outer DFS run and add the generated constraints for the
+                // lookbehind.
                 ctx.set_base_prefix(old_base);
                 ctx.add_path_constraint({to_app(inner_result.get()), m_manager});
             }
@@ -2291,7 +2376,8 @@ namespace smt::noodler::ecma {
         else if (std::holds_alternative<BackrefEdge>(edge.payload)) {
             const uint32_t ref_id = std::get<BackrefEdge>(edge.payload).backref_id;
             if (ctx.has_group(ref_id)) {
-                // Backreference -- concatenate all the variables accumulated in the capture group during the current path.
+                // Backreference -- concatenate all the variables accumulated in the capture group during the current
+                // path.
                 expr_ref captured_string = ctx.concat_group_vars(ref_id);
                 ctx.add_path_constraint({m_manager.mk_eq(edge_var, captured_string), m_manager});
             } else {
