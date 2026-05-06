@@ -38,17 +38,19 @@ namespace smt::noodler::ecma {
         QUANTIFIER,              // *, +, ?, {n,m}
     };
 
+    using Z3Char = uint32_t;
+
     struct QuantifierRange {
-        uint32_t min;
-        uint32_t max;
+        uint64_t min;
+        uint64_t max;
     };
 
     // no payload, literal/escape, quantifier_range, capture group names/raw string data
-    using token_payload = std::variant<std::monostate, uint32_t, QuantifierRange, zstring_view>;
+    using TokenPayload = std::variant<std::monostate, Z3Char, QuantifierRange, zstring_view>;
 
     struct Token {
         TokenType type;
-        token_payload payload;
+        TokenPayload payload;
         zstring_view lexeme;
     };
 
@@ -120,7 +122,7 @@ namespace smt::noodler::ecma {
      * is constrained to be empty.
      */
     struct BackrefEdge {
-        uint32_t backref_id;
+        GroupID backref_id;
     };
 
     struct RCGVertex {
@@ -145,7 +147,7 @@ namespace smt::noodler::ecma {
               payload(std::move(edge_payload)) { }
     };
 
-    constexpr uint32_t UNKNOWN_VERTEX = std::numeric_limits<uint32_t>::max();
+    constexpr VertexID UNKNOWN_VERTEX = std::numeric_limits<VertexID>::max();
 
     /**
      * The Regex Constraint Graph (RCG) encodes the structure of an ECMA regex.
@@ -236,7 +238,7 @@ namespace smt::noodler::ecma {
      */
     class ECMALexer {
     public:
-        explicit ECMALexer(const zstring_view regex, std::unordered_map<zstring_view, uint32_t>& named_groups)
+        explicit ECMALexer(const zstring_view regex, std::unordered_map<zstring_view, GroupID>& named_groups)
             : m_regex(regex),
               m_named_groups(named_groups) { }
 
@@ -244,34 +246,34 @@ namespace smt::noodler::ecma {
 
     private:
         zstring_view m_regex;
-        uint32_t m_position = 0;
-        uint32_t m_lexeme_start_pos = 0;
-        uint32_t m_num_capture_groups = 0;
+        std::size_t m_position = 0;
+        std::size_t m_lexeme_start_pos = 0;
+        std::size_t m_num_capture_groups = 0;
         bool m_in_char_class = false;
         bool m_first_in_char_class = false;
         bool m_first_traverse = true;
-        std::unordered_map<zstring_view, uint32_t>& m_named_groups;
+        std::unordered_map<zstring_view, GroupID>& m_named_groups;
 
-        static bool is_digit(uint32_t digit);
-        static bool is_alpha(uint32_t digit);
-        static bool is_alnum(uint32_t digit);
-        static bool is_hex_digit(uint32_t digit);
-        static bool is_octal_digit(uint32_t digit);
-        static bool is_upper(uint32_t digit);
-        static uint32_t alphabet_rank(uint32_t digit);
-        static uint32_t hex2dec(zstring_view number);
-        static uint32_t oct2dec(zstring_view number);
+        static bool is_digit(Z3Char digit);
+        static bool is_alpha(Z3Char digit);
+        static bool is_alnum(Z3Char digit);
+        static bool is_hex_digit(Z3Char digit);
+        static bool is_octal_digit(Z3Char digit);
+        static bool is_upper(Z3Char digit);
+        static uint32_t alphabet_rank(Z3Char digit);
+        static Z3Char hex2char(zstring_view number);
+        static Z3Char oct2char(zstring_view number);
 
-        Token make_token(TokenType type, const token_payload& payload = {}) const;
+        Token make_token(TokenType type, const TokenPayload& payload = {}) const;
         Token get_hex_escape_seq_token();
         Token get_unicode_escape_seq_token();
         Token get_control_escape_seq_token();
         Token get_named_capture_group_token();
         uint32_t get_backref_name_len(uint32_t name_start_pos) const;
         Token get_named_backref_token();
-        Token octal_or_backref(uint32_t first_digit);
-        Token get_octal_escape_sequence_token(bool from_char_class, uint32_t first_digit);
-        uint32_t validate_and_get_bound(uint32_t& bound);
+        Token octal_or_backref(Z3Char first_digit);
+        Token get_octal_escape_sequence_token(bool from_char_class, Z3Char first_digit);
+        uint32_t validate_and_get_bound(uint64_t& bound_value);
         Token get_braced_quant_token();
         Token get_lookbehind_or_named_group_token();
         Token get_special_group_or_lookaround_token();
@@ -280,7 +282,7 @@ namespace smt::noodler::ecma {
         Token get_token_standard();
         Token get_char_class_escape_sequence_token();
         Token get_token_char_class();
-        std::pair<bool, zstring_view> is_capture_or_named_capture(uint32_t position) const;
+        std::pair<bool, zstring_view> is_capture_or_named_capture(size_t position) const;
         void perform_first_traverse();
     };
 
@@ -305,7 +307,7 @@ namespace smt::noodler::ecma {
     class ASTNode {
     public:
         virtual ~ASTNode() = default;
-        virtual uint32_t print_dot(std::ostream& out, uint32_t& node_count) const = 0;
+        virtual uint64_t print_dot(std::ostream& out, uint64_t& node_count) const = 0;
         virtual zstring serialize() const = 0;
 
         /**
@@ -368,7 +370,7 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeDisjunction : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         void add_alternative(ASTNodeRef alt);
 
@@ -404,7 +406,7 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeAlternative : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         void add_term(ASTNodeRef term);
 
@@ -438,10 +440,10 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeAssertion : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         void set_type(TokenType type);
-        void set_payload(uint32_t payload);
+        void set_payload(Z3Char payload);
         void set_expr(ASTNodeRef expr);
 
         /**
@@ -459,7 +461,7 @@ namespace smt::noodler::ecma {
 
     private:
         TokenType m_assert_type {};
-        uint32_t m_payload {};              // for ^, $, \b, \B assertions
+        Z3Char m_payload {};              // for ^, $, \b, \B assertions
         ASTNodeRef m_subpattern = nullptr;  // for lookarounds (may be null for ^, $, \b, \B)
 
         /**
@@ -497,7 +499,7 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeQuantifier : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         void set(const Token& t, ASTNodeRef term);
         ASTNodeRef clone() const override;
@@ -538,17 +540,17 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeLiteral : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
-        void set_char(uint32_t ch);
-        uint32_t get_char() const;
+        void set_char(Z3Char ch);
+        Z3Char get_char() const;
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         ASTNodeRef clone() const override;
 
         void strip_captures() override { }
 
     private:
-        uint32_t m_char = std::numeric_limits<uint32_t>::max();
+        Z3Char m_char = std::numeric_limits<Z3Char>::max();
     };
 
     /**
@@ -556,7 +558,7 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeDot : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         ASTNodeRef clone() const override;
@@ -569,9 +571,9 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeBackref : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
-        void set_ref(uint32_t backref_number);
+        void set_ref(GroupID backref_number);
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         ASTNodeRef clone() const override;
 
@@ -580,7 +582,7 @@ namespace smt::noodler::ecma {
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
 
     private:
-        uint32_t m_backref_id;
+        GroupID m_backref_id;
     };
 
     enum class GroupType {
@@ -595,7 +597,7 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeGroup : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         void set_type(GroupType type);
         void set_expr(ASTNodeRef expr);
@@ -634,8 +636,8 @@ namespace smt::noodler::ecma {
 
     struct CharClassElement {
         ElementType kind = ElementType::SINGLE;
-        uint32_t lower = 0;  // for SINGLE and ESCAPE, this serves as the value
-        uint32_t upper = std::numeric_limits<uint32_t>::max();
+        Z3Char lower = 0;  // for SINGLE and ESCAPE, this serves as the value
+        Z3Char upper = std::numeric_limits<Z3Char>::max();
     };
 
     /**
@@ -646,7 +648,7 @@ namespace smt::noodler::ecma {
      */
     class ASTNodeCharClass : public ASTNode {
     public:
-        uint32_t print_dot(std::ostream& out, uint32_t& node_count) const override;
+        uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         void add_element(CharClassElement elem);
         void set_negation(bool neg);
@@ -672,7 +674,7 @@ namespace smt::noodler::ecma {
      */
     struct CharClassAtom {
         bool is_escape;
-        uint32_t val;
+        Z3Char val;
     };
 
     using ASTNodeCharClassRef = std::unique_ptr<ASTNodeCharClass>;
@@ -686,10 +688,10 @@ namespace smt::noodler::ecma {
         ASTNodeRef parse();
 
     private:
-        std::unordered_map<zstring_view, uint32_t> m_named_groups {};
+        std::unordered_map<zstring_view, GroupID> m_named_groups {};
         ECMALexer m_lexer;
         Token m_current_token;
-        uint32_t m_current_group_id = 0;
+        GroupID m_current_group_id = 0;
 
         void next();
         bool match(TokenType type);
@@ -933,8 +935,8 @@ namespace smt::noodler::ecma {
          * @param end_idx   One-past-last index (default: all variables).
          * @return expr_ref The concatenation of the selected edge variables.
          */
-        expr_ref concat_vars(std::size_t start_idx = 0,
-                             std::size_t end_idx = std::numeric_limits<std::size_t>::max()) const;
+        expr_ref concat_vars(uint32_t start_idx = 0,
+                             uint32_t end_idx = std::numeric_limits<uint32_t>::max()) const;
 
         /**
          * @brief Return the prefix of the target string matched from the beginning, across all DFS levels.
@@ -968,7 +970,7 @@ namespace smt::noodler::ecma {
         std::unordered_map<GroupID, expr_ref_vector> m_group_vars;
         std::vector<ActiveLookahead> m_active_lookaheads;
 
-        expr_ref concat_expr_vector(const expr_ref_vector& vars, std::size_t start_idx, std::size_t end_idx) const;
+        expr_ref concat_expr_vector(const expr_ref_vector& vars, uint32_t start_idx, uint32_t end_idx) const;
     };
 
     // =============== ECMA REGEX HANDLER ===============
