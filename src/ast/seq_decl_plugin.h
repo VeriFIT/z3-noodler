@@ -562,6 +562,7 @@ public:
         app* mk_loop(expr* r, expr* lo);
         app* mk_loop(expr* r, expr* lo, expr* hi);
         app* mk_full_char(sort* s);
+        app* mk_word_char();
         app* mk_full_seq(sort* s);
         app* mk_empty(sort* s);
         app* mk_of_pred(expr* p);

@@ -1307,6 +1307,14 @@ app* seq_util::rex::mk_full_char(sort* s) {
     return m.mk_app(m_fid, OP_RE_FULL_CHAR_SET, 0, nullptr, 0, nullptr, s);
 }
 
+app* seq_util::rex::mk_word_char() {
+    app* digits = mk_range(u.str.mk_string("0"), u.str.mk_string("9"));
+    app* lower = mk_range(u.str.mk_string("a"), u.str.mk_string("z"));
+    app* upper = mk_range(u.str.mk_string("A"), u.str.mk_string("Z"));
+    app* underscore = u.re.mk_to_re(u.str.mk_string("_"));
+    return mk_union(digits, mk_union(lower, mk_union(upper, underscore)));
+}
+
 app* seq_util::rex::mk_full_seq(sort* s) {
     return m.mk_app(m_fid, OP_RE_FULL_SEQ_SET, 0, nullptr, 0, nullptr, s);
 }
