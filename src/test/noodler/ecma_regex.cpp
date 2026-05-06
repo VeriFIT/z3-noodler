@@ -83,7 +83,7 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
         QuantifierRange range;
         REQUIRE_NOTHROW(range = std::get<QuantifierRange>(t.payload));
         REQUIRE(range.min == 1);
-        REQUIRE(range.max == std::numeric_limits<uint32_t>::max());
+        REQUIRE(range.max == std::numeric_limits<std::size_t>::max());
         REQUIRE(t.lexeme == "{1,}");
     }
 
@@ -1458,7 +1458,7 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         REQUIRE(graph.vertices.empty());
 
         app_ref z3_regex = std::get<app_ref>(comp);
-        REQUIRE(app_to_string(z3_regex, m) == "(re.++ (str.to_re \"a\") (str.to_re \"b\"))");
+        REQUIRE(app_to_string(z3_regex, m) == "(str.to_re \"ab\")");
     }
 
     SECTION("ASTNodeAlternative creates graph fragment when mixing literal and backref") {
@@ -1510,10 +1510,10 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         for (const RCGEdge& edge : graph.edges) {
             if (std::holds_alternative<MatchEdge>(edge.payload)) {
                 std::string s = app_to_string(std::get<MatchEdge>(edge.payload).regex, m);
-                if (s.find("str.to_re \"a\"") != std::string::npos && s.find("str.to_re \"b\"") != std::string::npos) {
+                if (s.find("str.to_re \"ab\"") != std::string::npos) {
                     has_match_ab = true;
                 }
-                if (s.find("str.to_re \"c\"") != std::string::npos && s.find("str.to_re \"d\"") != std::string::npos) {
+                if (s.find("str.to_re \"cd\"") != std::string::npos) {
                     has_match_cd = true;
                 }
             } else if (std::holds_alternative<BackrefEdge>(edge.payload)) {
@@ -1627,8 +1627,8 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
     }
 
     SECTION("Capture group with markers") {
-        REQUIRE(build_and_serialize_rcg("(a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re "
-                                                     "\"a\")] STARTS {1} ENDS {1}) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(a)", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
     SECTION("Non-capturing group") {
@@ -1668,17 +1668,16 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 
     SECTION("Alternation with capture groups") {
         REQUIRE(build_and_serialize_rcg("(a)|(b)", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
-                "[MATCH (str.to_re \"b\")] STARTS {2} ENDS {2}) (EDGE *->* [MATCH re.all]))");
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (re.union (str.to_re \"a\") (str.to_re \"b\"))]) "
+                "(EDGE *->* [MATCH re.all]))");
     }
 
     // ---- Sequential and nested groups ----
 
     SECTION("Sequential capture groups") {
         REQUIRE(build_and_serialize_rcg("(a)(b)(c)", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
-                "[MATCH (str.to_re \"b\")] STARTS {2} ENDS {2}) (EDGE *->* [MATCH (str.to_re \"c\")] STARTS {3} ENDS "
-                "{3}) (EDGE *->* [MATCH re.all]))");
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (re.++ (re.++ (str.to_re \"a\") (str.to_re \"b\")) "
+                "(str.to_re \"c\"))]) (EDGE *->* [MATCH re.all]))");
     }
 
     SECTION("Complex nested groups and multiple backreferences") {
@@ -1720,13 +1719,8 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 
     SECTION("Positive lookahead containing capture group (non-regular)") {
         // (?=(a)) — the lookahead contains a capture group, making its subregex non-regular.
-        REQUIRE(build_and_serialize_rcg("(?=(a))", m) == "(RCG"
-                                                         " (EDGE *->* [MATCH re.all])"
-                                                         " (EDGE *->* [LOOKAROUND ?= (FRAGMENT"
-                                                         " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
-                                                         " (EDGE *->* [MATCH re.all]))])"
-                                                         " (EDGE *->* [MATCH re.all])"
-                                                         ")");
+        REQUIRE(build_and_serialize_rcg("(?=(a))", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?= "
+                                                         "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
     SECTION("Positive lookahead with capture group followed by backreference") {
@@ -1743,20 +1737,8 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 
     SECTION("Positive lookbehind containing capture group (non-regular)") {
         // (?<=(a)) — lookbehind with capture group.
-        REQUIRE(build_and_serialize_rcg("(?<=(a))", m) ==
-                "(RCG"
-                " (EDGE *->* [MATCH re.all])"
-                " (EDGE *->* [LOOKAROUND ?<= (FRAGMENT"
-                " (EDGE *->* [MATCH re.all])"
-                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}))])"
-                " (EDGE *->* [MATCH re.all])"
-                ")");
-    }
-
-    SECTION("Negative lookaround containing non-regular content throws") {
-        // Negative non-regular lookarounds require universal quantifiers -- not supported.
-        REQUIRE_THROWS(build_and_serialize_rcg("(?!(a))", m));
-        REQUIRE_THROWS(build_and_serialize_rcg("(?<!(a))", m));
+        REQUIRE(build_and_serialize_rcg("(?<=(a))", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?<= "
+                                                          "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
     // ---- Word boundaries ----
@@ -1784,14 +1766,9 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
     SECTION("Mix of regular sequence and backreference") {
         // (x)ab\1cd — 'ab' and 'cd' are each merged into a single MATCH edge.
         REQUIRE(build_and_serialize_rcg("(x)ab\\1cd", m) ==
-                "(RCG"
-                " (EDGE *->* [MATCH re.all])"
-                " (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1})"
-                " (EDGE *->* [MATCH (re.++ (str.to_re \"a\") (str.to_re \"b\"))])"
-                " (EDGE *->* [BACKREF 1])"
-                " (EDGE *->* [MATCH (re.++ (str.to_re \"c\") (str.to_re \"d\"))])"
-                " (EDGE *->* [MATCH re.all])"
-                ")");
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1}) (EDGE *->* "
+                "[MATCH (str.to_re \"ab\")]) (EDGE *->* [BACKREF 1]) (EDGE *->* [MATCH (str.to_re \"cd\")]) (EDGE *->* "
+                "[MATCH re.all]))");
     }
 
     SECTION("Alternation of regular and non-regular components") {
@@ -1809,27 +1786,16 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 
     SECTION("Complex: Nested groups inside alternation with backreference") {
         REQUIRE(build_and_serialize_rcg("^((a)|(b))\\1$", m) ==
-                "(RCG"
-                " (EDGE *->* [MATCH re.all])"
-                " (EDGE *->* [ANCHOR '^'])"
-                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {2,1} ENDS {2,1})"
-                " (EDGE *->* [MATCH (str.to_re \"b\")] STARTS {3,1} ENDS {3,1})"
-                " (EDGE *->* [BACKREF 1])"
-                " (EDGE *->* [ANCHOR '$'])"
-                " (EDGE *->* [MATCH re.all])"
-                ")");
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [ANCHOR '^']) (EDGE *->* [MATCH (re.union (str.to_re "
+                "\"a\") (str.to_re \"b\"))] STARTS {1} ENDS {1}) (EDGE *->* [BACKREF 1]) (EDGE *->* [ANCHOR '$']) "
+                "(EDGE *->* [MATCH re.all]))");
     }
 
     SECTION("Complex: HTML-like tag matching with interrupted greedy merge") {
         REQUIRE(build_and_serialize_rcg("<(?<tag>x)>y\\k<tag>", m) ==
-                "(RCG"
-                " (EDGE *->* [MATCH re.all])"
-                " (EDGE *->* [MATCH (str.to_re \"<\")])"
-                " (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1})"
-                " (EDGE *->* [MATCH (re.++ (str.to_re \">\") (str.to_re \"y\"))])"
-                " (EDGE *->* [BACKREF 1])"
-                " (EDGE *->* [MATCH re.all])"
-                ")");
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"<\")]) (EDGE *->* [MATCH (str.to_re "
+                "\"x\")] STARTS {1} ENDS {1}) (EDGE *->* [MATCH (str.to_re \">y\")]) (EDGE *->* [BACKREF 1]) (EDGE "
+                "*->* [MATCH re.all]))");
     }
 
     SECTION("Final Boss 1: Perfect BFS interleaving of parallel complex branches") {

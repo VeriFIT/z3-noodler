@@ -20,7 +20,7 @@ public:
     zstring_view() = default;
     zstring_view(const zstring_view& other) = default;
 
-    zstring_view(const uint32_t* str, uint32_t len)
+    zstring_view(const uint32_t* str, const uint32_t len)
         : m_data(str),
           m_size(len) { }
 
@@ -72,7 +72,7 @@ public:
 
 template<>
 struct std::hash<zstring_view> {
-    size_t operator()(const zstring_view& zv) const {
+    std::size_t operator()(const zstring_view& zv) const {
         std::size_t total_hash = 0;
         for (std::size_t i = 0; i < zv.length(); i++) {
             total_hash += std::hash<uint32_t> {}(zv[i]);
