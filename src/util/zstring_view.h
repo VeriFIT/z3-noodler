@@ -60,6 +60,14 @@ public:
         zstring_view other(str);
         return *this == other;
     }
+
+    zstring to_zstring() const {
+        zstring res;
+        for (uint32_t i = 0; i < m_size; ++i) {
+            res += m_data[i];
+        }
+        return res;
+    }
 };
 
 template<>
