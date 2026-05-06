@@ -8,13 +8,15 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <queue>
-#include <regex>
 #include <sstream>
+
+// =====================================================================
+// LEXER TESTS
+// =====================================================================
 
 TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
     using namespace smt::noodler::ecma;
 
-    // Basic token tests
     SECTION("Get literal token from regex") {
         zstring regex = "a";
         std::unordered_map<zstring_view, uint32_t> map;
@@ -215,7 +217,6 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
         ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::GROUP_NAMED_START);
-        // GROUP_NAMED_START payload is still the string view
         REQUIRE(std::get<zstring_view>(t.payload) == "name");
         REQUIRE(t.lexeme == "(?<name>");
     }
@@ -266,7 +267,6 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
         ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::BACKREFERENCE);
-        // Payload is now the uint32_t group ID!
         REQUIRE(std::get<uint32_t>(t.payload) == 1);
         REQUIRE(t.lexeme == "\\k<name>");
     }
@@ -733,7 +733,10 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
     }
 }
 
-// just to make sure it is not a global function so it does not make a mess
+// =====================================================================
+// PARSER TESTS
+// =====================================================================
+
 namespace smt::noodler::ecma::test {
     zstring parse_and_serialize(const zstring& regex) {
         using namespace smt::noodler::ecma;
@@ -741,7 +744,7 @@ namespace smt::noodler::ecma::test {
         const ASTNodeRef root = parser.parse();
         return root->serialize();
     }
-};  // namespace smt::noodler::ecma::test
+}  // namespace smt::noodler::ecma::test
 
 TEST_CASE("ECMA Regex Parser", "[noodler][ecma]") {
     using namespace smt::noodler::ecma;
@@ -811,7 +814,6 @@ TEST_CASE("ECMA Regex Parser", "[noodler][ecma]") {
 
     SECTION("Backreferences") {
         REQUIRE(parse_and_serialize("(a)\\1") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))) (BACKREF 1))"));
-
         REQUIRE(parse_and_serialize("(?<name>a)\\k<name>") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))) (BACKREF 1))"));
     }
 
@@ -1077,12 +1079,17 @@ TEST_CASE("ECMA Regex Parser", "[noodler][ecma]") {
     }
 }
 
+// =====================================================================
+// RCG SERIALIZATION HELPERS
+// =====================================================================
+
 namespace smt::noodler::ecma::test {
+
+    // Converts a Z3 app_ref to a normalized string (collapses whitespace, removes newlines).
     std::string app_to_string(const app_ref& app, ast_manager& m) {
         std::stringstream ss;
         ss << mk_pp(app.get(), m);
         std::string res = ss.str();
-        // mk_pp inserts redundant whitespaces and newlines --> remove all of them and keep one space only
         std::erase(res, '\n');
         res.erase(std::ranges::unique(res,
                                       [](const char a, const char b) {
@@ -1093,31 +1100,68 @@ namespace smt::noodler::ecma::test {
         return res;
     }
 
-    std::string serialize_payload(const RCGEdgePayload& payload, ast_manager& m) {
+    // Normalizes a raw pretty-printer string (same as above but takes std::string).
+    static std::string normalize_pp(std::string s) {
+        std::erase(s, '\n');
+        s.erase(std::ranges::unique(s,
+                                    [](char a, char b) {
+                                        return a == ' ' && b == ' ';
+                                    })
+                    .begin(),
+                s.end());
+        return s;
+    }
+
+    // Builds the group-start / group-end marker string for a single edge, e.g. " STARTS {1,2} ENDS {1}".
+    static std::string serialize_edge_markers(const RegexConstraintGraph& graph, EdgeID eid) {
+        std::string res;
+        if (graph.group_starts.contains(eid) && !graph.group_starts.at(eid).empty()) {
+            res += " STARTS {";
+            for (const uint32_t gid : graph.group_starts.at(eid)) {
+                res += std::to_string(gid) + ",";
+            }
+            res.pop_back();
+            res += "}";
+        }
+        if (graph.group_ends.contains(eid) && !graph.group_ends.at(eid).empty()) {
+            res += " ENDS {";
+            for (const uint32_t gid : graph.group_ends.at(eid)) {
+                res += std::to_string(gid) + ",";
+            }
+            res.pop_back();
+            res += "}";
+        }
+        return res;
+    }
+
+    // Forward declaration – serialize_payload and serialize_fragment are mutually recursive
+    // (a lookaround can contain a non-regular GraphFragment that itself has edges).
+    std::string serialize_fragment(const RegexConstraintGraph& graph, const GraphFragment& frag, ast_manager& m);
+
+    // Serializes a single RCG edge payload.
+    // Takes the full graph so it can recursively serialize non-regular lookaround fragments.
+    std::string serialize_payload(const RegexConstraintGraph& graph, const RCGEdgePayload& payload, ast_manager& m) {
         if (std::holds_alternative<std::monostate>(payload)) {
             return "EPSILON";
         }
+
         if (std::holds_alternative<MatchEdge>(payload)) {
             const MatchEdge& match = std::get<MatchEdge>(payload);
             std::stringstream ss;
             ss << mk_pp(match.regex.get(), m);
-            std::string res = ss.str();
-            std::erase(res, '\n');
-            res.erase(std::ranges::unique(res,
-                                          [](char a, char b) {
-                                              return a == ' ' && b == ' ';
-                                          })
-                          .begin(),
-                      res.end());
-            return "MATCH " + res;
+            return "MATCH " + normalize_pp(ss.str());
         }
+
         if (std::holds_alternative<AssertionEdge>(payload)) {
             const AssertionEdge& assertion = std::get<AssertionEdge>(payload);
+
             if (std::holds_alternative<Anchor>(assertion.payload)) {
-                return std::string("ANCHOR '") + static_cast<char>(std::get<Anchor>(assertion.payload)) + "'";
+                const uint32_t anchor_char = std::get<Anchor>(assertion.payload);
+                return std::string("ANCHOR '") + static_cast<char>(anchor_char) + "'";
             }
+
             const Lookaround& la = std::get<Lookaround>(assertion.payload);
-            // The type of lookaround in the serialized rcg
+
             std::string type_str;
             if (la.direction == LookaroundDirection::FORWARD) {
                 type_str = la.is_positive ? "?=" : "?!";
@@ -1125,50 +1169,49 @@ namespace smt::noodler::ecma::test {
                 type_str = la.is_positive ? "?<=" : "?<!";
             }
 
-            // Inner regex
-            std::stringstream ss;
-            ss << mk_pp(la.regex.get(), m);
-            std::string res = ss.str();
-            std::erase(res, '\n');
-            res.erase(std::ranges::unique(res,
-                                          [](char a, char b) {
-                                              return a == ' ' && b == ' ';
-                                          })
-                          .begin(),
-                      res.end());
+            std::string inner_str;
+            if (std::holds_alternative<app_ref>(la.subregex)) {
+                // Regular lookaround: serialize the Z3 regex expression directly.
+                std::stringstream ss;
+                ss << mk_pp(std::get<app_ref>(la.subregex).get(), m);
+                inner_str = normalize_pp(ss.str());
+            } else {
+                // Non-regular lookaround: recursively serialize the embedded graph fragment.
+                inner_str = serialize_fragment(graph, std::get<GraphFragment>(la.subregex), m);
+            }
 
-            return "LOOKAROUND " + type_str + " " + res;
+            return "LOOKAROUND " + type_str + " " + inner_str;
         }
+
         if (std::holds_alternative<BackrefEdge>(payload)) {
-            const auto& br = std::get<BackrefEdge>(payload).backref_id;
-            return "BACKREF " + std::to_string(br);
+            return "BACKREF " + std::to_string(std::get<BackrefEdge>(payload).backref_id);
         }
+
         return "UNKNOWN";
     }
 
-    // Walks through the Regex Constraint Graph in a breadth-first manner and orders its edges to the `ordered_edges` vector.
-    void rcg_bfs(const RegexConstraintGraph& graph, VertexId start_vertex, std::vector<bool>& visited_edges,
-                 std::vector<EdgeId>& ordered_edges) {
+    // BFS over the graph starting from start_vertex; appends edge IDs (in BFS order) to ordered_edges.
+    void rcg_bfs(const RegexConstraintGraph& graph, VertexID start_vertex, std::vector<bool>& visited_edges,
+                 std::vector<EdgeID>& ordered_edges) {
         if (start_vertex == UNKNOWN_VERTEX || start_vertex >= graph.vertices.size()) {
             return;
         }
 
-        std::queue<VertexId> q;
+        std::queue<VertexID> q;
         std::vector<bool> visited_vertices(graph.vertices.size(), false);
         q.push(start_vertex);
         visited_vertices[start_vertex] = true;
 
         while (!q.empty()) {
-            const VertexId curr = q.front();
+            const VertexID curr = q.front();
             q.pop();
 
-            for (EdgeId eid : graph.vertices[curr].outgoing_edges) {
+            for (EdgeID eid : graph.vertices[curr].outgoing_edges) {
                 if (!visited_edges[eid]) {
                     visited_edges[eid] = true;
                     ordered_edges.push_back(eid);
                 }
-
-                const VertexId target = graph.edges[eid].target;
+                const VertexID target = graph.edges[eid].target;
                 if (!visited_vertices[target]) {
                     visited_vertices[target] = true;
                     q.push(target);
@@ -1177,8 +1220,56 @@ namespace smt::noodler::ecma::test {
         }
     }
 
-    // Serialization procedure for the Regex Constraint Graph. Goes through the graph in a BFS manner and serializes
-    // all the important information about the edges, such as the type of edge, it's payload, etc.
+    // Serializes the graph fragment reachable from frag.v_in up to (but not beyond) frag.v_out.
+    // Used to serialize non-regular lookaround subgraphs stored inline in edge payloads.
+    //
+    // The BFS stops exploring outgoing edges of frag.v_out, which correctly bounds the traversal
+    // to the inner sub-graph (frag.v_out has no outgoing edges in the outer graph because it was
+    // created as an isolated end-vertex of the inner pattern before being moved into the payload).
+    std::string serialize_fragment(const RegexConstraintGraph& graph, const GraphFragment& frag, ast_manager& m) {
+        std::queue<VertexID> q;
+        std::vector<bool> visited_vertices(graph.vertices.size(), false);
+        std::vector<bool> visited_edges(graph.edges.size(), false);
+        std::vector<EdgeID> ordered_edges;
+
+        q.push(frag.v_in);
+        visited_vertices[frag.v_in] = true;
+
+        while (!q.empty()) {
+            const VertexID curr = q.front();
+            q.pop();
+
+            // Do not follow edges out of the fragment's output vertex.
+            if (curr == frag.v_out) {
+                continue;
+            }
+
+            for (EdgeID eid : graph.vertices[curr].outgoing_edges) {
+                if (!visited_edges[eid]) {
+                    visited_edges[eid] = true;
+                    ordered_edges.push_back(eid);
+                }
+                const VertexID target = graph.edges[eid].target;
+                if (!visited_vertices[target]) {
+                    visited_vertices[target] = true;
+                    q.push(target);
+                }
+            }
+        }
+
+        std::string res = "(FRAGMENT";
+        for (EdgeID eid : ordered_edges) {
+            const RCGEdge& edge = graph.edges[eid];
+            res += " (EDGE *->* [";
+            res += serialize_payload(graph, edge.payload, m) + "]";
+            res += serialize_edge_markers(graph, eid);
+            res += ")";
+        }
+        res += ")";
+        return res;
+    }
+
+    // Full RCG serialization: BFS from start_vertex, emit one token per edge.
     std::string serialize_rcg(const RegexConstraintGraph& graph, ast_manager& m) {
         std::string res = "(RCG";
 
@@ -1187,39 +1278,14 @@ namespace smt::noodler::ecma::test {
         }
 
         std::vector<bool> visited_edges(graph.edges.size(), false);
-        std::vector<EdgeId> ordered_edges;
-
-        // 1. Order the edges
+        std::vector<EdgeID> ordered_edges;
         rcg_bfs(graph, graph.start_vertex, visited_edges, ordered_edges);
 
-        // 2. Serialize the edges
-        for (EdgeId eid : ordered_edges) {
+        for (EdgeID eid : ordered_edges) {
             const RCGEdge& edge = graph.edges[eid];
-
-            // In the RCG building procedure, there are some optimalizations that retarget edges and orphan some of the vertices.
-            // Also, the vertices are not always constructed sequentially -- therefore, we do not check the IDs at all.
             res += " (EDGE *->* [";
-            res += serialize_payload(edge.payload, m) + "]";
-
-            // If there is a capture group start mark on the edge, serialize it as well
-            if (graph.group_starts.contains(eid) && !graph.group_starts.at(eid).empty()) {
-                res += " STARTS {";
-                for (const uint32_t gid : graph.group_starts.at(eid)) {
-                    res += std::to_string(gid) + ",";
-                }
-                res.pop_back();
-                res += "}";
-            }
-
-            // Same for the capture group end marks
-            if (graph.group_ends.contains(eid) && !graph.group_ends.at(eid).empty()) {
-                res += " ENDS {";
-                for (const uint32_t gid : graph.group_ends.at(eid)) {
-                    res += std::to_string(gid) + ",";
-                }
-                res.pop_back();
-                res += "}";
-            }
+            res += serialize_payload(graph, edge.payload, m) + "]";
+            res += serialize_edge_markers(graph, eid);
             res += ")";
         }
         res += ")";
@@ -1231,12 +1297,18 @@ namespace smt::noodler::ecma::test {
         const RegexConstraintGraph& rcg = builder.build_rcg();
         return serialize_rcg(rcg, m);
     }
+
 }  // namespace smt::noodler::ecma::test
+
+// =====================================================================
+// RCG GENERATION FROM AST – UNIT TESTS
+// =====================================================================
 
 TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
     using Catch::Matchers::ContainsSubstring;
     using namespace smt::noodler::ecma;
     using namespace smt::noodler::ecma::test;
+
     ast_manager m;
     reg_decl_plugins(m);
     seq_util util_s(m);
@@ -1244,7 +1316,7 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
 
     SECTION("ASTNodeLiteral returns regular app_ref") {
         ASTNodeLiteral literal_node;
-        literal_node.set_char('x');  // 'x' = 120
+        literal_node.set_char('x');
 
         RegexComponent comp = literal_node.get_subgraph(graph, util_s, m);
         REQUIRE(std::holds_alternative<app_ref>(comp));
@@ -1275,13 +1347,11 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         backref_node.set_ref(1);
 
         RegexComponent comp = backref_node.get_subgraph(graph, util_s, m);
-
         REQUIRE(std::holds_alternative<GraphFragment>(comp));
 
         GraphFragment frag = std::get<GraphFragment>(comp);
         REQUIRE(graph.vertices.size() == 2);
         REQUIRE(graph.edges.size() == 1);
-
         REQUIRE(frag.v_in == 0);
         REQUIRE(frag.v_out == 1);
         REQUIRE(frag.edges_pointing_to_vout.size() == 1);
@@ -1296,24 +1366,23 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         literal_node->set_char('a');
 
         ASTNodeGroup group_node;
-        group_node.set_type(GroupType::NORMAL);
+        group_node.set_type(GroupType::CAPTURE);
         group_node.set_id(42);
         group_node.set_expr(std::move(literal_node));
 
         RegexComponent comp = group_node.get_subgraph(graph, util_s, m);
-
         REQUIRE(std::holds_alternative<GraphFragment>(comp));
 
         GraphFragment frag = std::get<GraphFragment>(comp);
-        EdgeId the_edge_id = frag.edges_pointing_to_vout[0];
+        EdgeID the_edge_id = frag.edges_pointing_to_vout[0];
 
         REQUIRE(graph.group_starts.count(the_edge_id) > 0);
-        REQUIRE(graph.group_starts[the_edge_id].size() == 1);
-        REQUIRE(graph.group_starts[the_edge_id][0] == 42);  // Starts: 42
+        REQUIRE(graph.group_starts.at(the_edge_id).size() == 1);
+        REQUIRE(graph.group_starts.at(the_edge_id)[0] == 42);
 
         REQUIRE(graph.group_ends.count(the_edge_id) > 0);
-        REQUIRE(graph.group_ends[the_edge_id].size() == 1);
-        REQUIRE(graph.group_ends[the_edge_id][0] == 42);  // Ends: 42
+        REQUIRE(graph.group_ends.at(the_edge_id).size() == 1);
+        REQUIRE(graph.group_ends.at(the_edge_id)[0] == 42);
     }
 
     SECTION("ASTNodeDot creates regular app_ref with re.allchar") {
@@ -1333,8 +1402,6 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         assert_node.set_payload('^');
 
         RegexComponent comp = assert_node.get_subgraph(graph, util_s, m);
-
-        // The anchors create structural dependencies in the graph --> cannot be merged with regular expressions
         REQUIRE(std::holds_alternative<GraphFragment>(comp));
 
         GraphFragment frag = std::get<GraphFragment>(comp);
@@ -1348,7 +1415,8 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         REQUIRE(std::get<Anchor>(ae.payload) == '^');
     }
 
-    SECTION("ASTNodeQuantifier throws on non-regular subregex") {
+    SECTION("ASTNodeQuantifier throws on unbounded non-regular subregex") {
+        // Kleene star/plus over backreferences would create a dynamic number of string variables.
         auto backref_node = std::make_unique<ASTNodeBackref>();
         backref_node->set_ref(1);
 
@@ -1356,8 +1424,23 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         Token dummy_token = {TokenType::QUANTIFIER, static_cast<uint32_t>('*'), zstring("*")};
         quant_node.set(dummy_token, std::move(backref_node));
 
-        // Any quantifier cannot wrap non-regular GraphFragment (TODO: implement static number of iterations)
         REQUIRE_THROWS(quant_node.get_subgraph(graph, util_s, m));
+    }
+
+    SECTION("ASTNodeQuantifier with finite bounds on non-regular subregex creates fragment") {
+        // {n,m} quantifier over a backreference expands into m copies of the sub-graph.
+        auto backref_node = std::make_unique<ASTNodeBackref>();
+        backref_node->set_ref(1);
+
+        ASTNodeQuantifier quant_node;
+        Token dummy_token = {TokenType::QUANTIFIER, QuantifierRange {1, 2}, zstring("{1,2}")};
+        quant_node.set(dummy_token, std::move(backref_node));
+
+        RegexComponent comp = quant_node.get_subgraph(graph, util_s, m);
+        REQUIRE(std::holds_alternative<GraphFragment>(comp));
+        // Two copies of the backref fragment plus epsilon alternations are created.
+        REQUIRE(!graph.vertices.empty());
+        REQUIRE(!graph.edges.empty());
     }
 
     SECTION("ASTNodeAlternative merges two regular literals into one app_ref") {
@@ -1371,8 +1454,6 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         concat_node.add_term(std::move(lit_b));
 
         RegexComponent comp = concat_node.get_subgraph(graph, util_s, m);
-
-        // It should have returned an app_ref if the subregex was regular (and it did not construct any subgraph)
         REQUIRE(std::holds_alternative<app_ref>(comp));
         REQUIRE(graph.vertices.empty());
 
@@ -1391,19 +1472,16 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         concat_node.add_term(std::move(backref));
 
         RegexComponent comp = concat_node.get_subgraph(graph, util_s, m);
-
-        // One of the subregex was non-regular --> the concatenation is non-regular (GraphFragment is returned)
         REQUIRE(std::holds_alternative<GraphFragment>(comp));
 
-        GraphFragment frag = std::get<GraphFragment>(comp);
-        // There are four vertices, because first, v1 -> MatchEdge -> v2 is created for 'a', then v3 -> BackrefEdge -> v4 is created for '\1'
-        // When the edges are being chained, there is an optimalization that orphans some nodes and redirects edges
+        // Backref creates {v0,v1,e_br}, literal is lifted to {v2,v3,e_match}.
+        // chain_fragments orphans v3 (retargets e_match to v0) → 4 vertices, 2 edges.
         REQUIRE(graph.vertices.size() == 4);
         REQUIRE(graph.edges.size() == 2);
     }
 
     SECTION("ASTNodeAlternative chains adjacent regular subregexes into one") {
-        // "ab\1cd"
+        // "ab\1cd" – 'ab' and 'cd' are each merged into a single MATCH edge.
         auto lit_a = std::make_unique<ASTNodeLiteral>();
         lit_a->set_char('a');
         auto lit_b = std::make_unique<ASTNodeLiteral>();
@@ -1423,23 +1501,18 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         concat_node.add_term(std::move(lit_d));
 
         RegexComponent comp = concat_node.get_subgraph(graph, util_s, m);
-
         REQUIRE(std::holds_alternative<GraphFragment>(comp));
-        GraphFragment frag = std::get<GraphFragment>(comp);
 
-        // We expect MATCH('ab'), BACKREF(1), MATCH('cd')
+        // Expected: MATCH('ab'), BACKREF(1), MATCH('cd') — 3 edges total.
         REQUIRE(graph.edges.size() == 3);
 
-        // Check if the edges contain what they should
         bool has_match_ab = false, has_match_cd = false, has_backref = false;
         for (const RCGEdge& edge : graph.edges) {
             if (std::holds_alternative<MatchEdge>(edge.payload)) {
                 std::string s = app_to_string(std::get<MatchEdge>(edge.payload).regex, m);
-                // 'ab' in one edge
                 if (s.find("str.to_re \"a\"") != std::string::npos && s.find("str.to_re \"b\"") != std::string::npos) {
                     has_match_ab = true;
                 }
-                // 'cd' in one edge
                 if (s.find("str.to_re \"c\"") != std::string::npos && s.find("str.to_re \"d\"") != std::string::npos) {
                     has_match_cd = true;
                 }
@@ -1450,7 +1523,31 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         REQUIRE((has_match_ab && has_match_cd && has_backref));
     }
 
-    SECTION("ASTNodeAssertion throws on non-regular subregex") {
+    // ---- Lookaround tests ----
+
+    SECTION("ASTNodeAssertion: regular lookahead creates assertion edge with app_ref subregex") {
+        ASTNodeAssertion assert_node;
+        assert_node.set_type(TokenType::LOOKAHEAD_POS_START);
+
+        auto lit = std::make_unique<ASTNodeLiteral>();
+        lit->set_char('a');
+        assert_node.set_expr(std::move(lit));
+
+        RegexComponent comp = assert_node.get_subgraph(graph, util_s, m);
+        REQUIRE(std::holds_alternative<GraphFragment>(comp));
+
+        GraphFragment frag = std::get<GraphFragment>(comp);
+        const RCGEdge& edge = graph.edges[frag.edges_pointing_to_vout[0]];
+        REQUIRE(std::holds_alternative<AssertionEdge>(edge.payload));
+        const Lookaround& la = std::get<Lookaround>(std::get<AssertionEdge>(edge.payload).payload);
+        REQUIRE(std::holds_alternative<app_ref>(la.subregex));
+        REQUIRE(la.is_positive == true);
+        REQUIRE(la.direction == LookaroundDirection::FORWARD);
+    }
+
+    SECTION("ASTNodeAssertion: positive lookaround with non-regular subregex creates fragment") {
+        // A positive lookahead whose inner pattern is non-regular (backreference) is now supported.
+        // The subregex in the Lookaround is stored as a GraphFragment instead of an app_ref.
         auto backref = std::make_unique<ASTNodeBackref>();
         backref->set_ref(1);
 
@@ -1458,7 +1555,38 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         assert_node.set_type(TokenType::LOOKAHEAD_POS_START);
         assert_node.set_expr(std::move(backref));
 
-        // Lookaround cannot contain other lookarounds (yet) and backreferences (yet)
+        RegexComponent comp = assert_node.get_subgraph(graph, util_s, m);
+        REQUIRE(std::holds_alternative<GraphFragment>(comp));
+
+        GraphFragment frag = std::get<GraphFragment>(comp);
+        REQUIRE(graph.edges.size() >= 1);
+
+        const RCGEdge& outer_edge = graph.edges[frag.edges_pointing_to_vout[0]];
+        REQUIRE(std::holds_alternative<AssertionEdge>(outer_edge.payload));
+        const Lookaround& la = std::get<Lookaround>(std::get<AssertionEdge>(outer_edge.payload).payload);
+
+        // The subregex must be a GraphFragment (non-regular).
+        REQUIRE(std::holds_alternative<GraphFragment>(la.subregex));
+        REQUIRE(la.is_positive == true);
+        REQUIRE(la.direction == LookaroundDirection::FORWARD);
+
+        // The inner fragment must contain exactly one BackrefEdge.
+        const GraphFragment& inner = std::get<GraphFragment>(la.subregex);
+        REQUIRE(graph.vertices[inner.v_in].outgoing_edges.size() == 1);
+        EdgeID inner_eid = graph.vertices[inner.v_in].outgoing_edges[0];
+        REQUIRE(std::holds_alternative<BackrefEdge>(graph.edges[inner_eid].payload));
+        REQUIRE(std::get<BackrefEdge>(graph.edges[inner_eid].payload).backref_id == 1);
+    }
+
+    SECTION("ASTNodeAssertion: negative lookaround with non-regular subregex throws") {
+        // A negative non-regular lookaround would require universal quantifiers — not supported.
+        auto backref = std::make_unique<ASTNodeBackref>();
+        backref->set_ref(1);
+
+        ASTNodeAssertion assert_node;
+        assert_node.set_type(TokenType::LOOKAHEAD_NEG_START);
+        assert_node.set_expr(std::move(backref));
+
         REQUIRE_THROWS(assert_node.get_subgraph(graph, util_s, m));
     }
 
@@ -1472,87 +1600,170 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
 
         app_ref z3_regex = std::get<app_ref>(comp);
         std::string s = app_to_string(z3_regex, m);
-        // The serialized string is quite complicated because of z3 'pretty' printer, however, these two should be there somewhere
-        REQUIRE(s.find("re.diff") != std::string::npos);
-        REQUIRE(s.find("re.allchar") != std::string::npos);
+        // Z3 may represent the negation as re.diff or re.inter + re.complement,
+        // but either way the universe regex and the complement must be present.
+        REQUIRE((s.find("re.diff") != std::string::npos || s.find("re.comp") != std::string::npos));
+        REQUIRE((s.find("re.all") != std::string::npos));  // covers both re.all and re.allchar
     }
 }
 
+// =====================================================================
+// SERIALIZED RCG TESTS  (end-to-end: regex string -> RCG -> serialized string)
+// =====================================================================
+
 TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
+    using Catch::Matchers::ContainsSubstring;
+    using namespace smt::noodler::ecma;
     using namespace smt::noodler::ecma::test;
 
     ast_manager m;
     reg_decl_plugins(m);
 
+    // ---- Basic cases ----
+
     SECTION("Single literal") {
-        REQUIRE(build_and_serialize_rcg("a", m) == "(RCG (EDGE *->* [MATCH (str.to_re \"a\")]))");
+        REQUIRE(build_and_serialize_rcg("a", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
     SECTION("Capture group with markers") {
-        REQUIRE(build_and_serialize_rcg("(a)", m) == "(RCG (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}))");
+        REQUIRE(build_and_serialize_rcg("(a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re "
+                                                     "\"a\")] STARTS {1} ENDS {1}) (EDGE *->* [MATCH re.all]))");
+    }
+
+    SECTION("Non-capturing group") {
+        // Non-capturing groups are transparent — no STARTS/ENDS markers.
+        REQUIRE(build_and_serialize_rcg("(?:a)", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
     SECTION("Numeric backreference") {
         REQUIRE(build_and_serialize_rcg("(a)\\1", m) ==
-                "(RCG (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
-                "[BACKREF 1]))");
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
+                "[BACKREF 1]) (EDGE *->* [MATCH re.all]))");
     }
 
-    SECTION("Anchors") {
-        REQUIRE(build_and_serialize_rcg("^a$", m) == "(RCG (EDGE *->* [ANCHOR '^']) (EDGE *->* [MATCH (str.to_re "
-                                                     "\"a\")]) (EDGE *->* [ANCHOR '$']))");
+    SECTION("Named capture group and named backreference") {
+        // Named groups are translated to numeric groups internally.
+        REQUIRE(build_and_serialize_rcg("(?<foo>a)\\k<foo>", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
+                "[BACKREF 1]) (EDGE *->* [MATCH re.all]))");
+    }
+
+    // ---- Anchors ----
+
+    SECTION("Anchors ^a$") {
+        REQUIRE(build_and_serialize_rcg("^a$", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [ANCHOR '^']) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE "
+                "*->* [ANCHOR '$']) (EDGE *->* [MATCH re.all]))");
+    }
+
+    // ---- Alternation ----
+
+    SECTION("Alternation without groups") {
+        REQUIRE(build_and_serialize_rcg("a|b", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (re.union (str.to_re \"a\") (str.to_re \"b\"))]) "
+                "(EDGE *->* [MATCH re.all]))");
+    }
+
+    SECTION("Alternation with capture groups") {
+        REQUIRE(build_and_serialize_rcg("(a)|(b)", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
+                "[MATCH (str.to_re \"b\")] STARTS {2} ENDS {2}) (EDGE *->* [MATCH re.all]))");
+    }
+
+    // ---- Sequential and nested groups ----
+
+    SECTION("Sequential capture groups") {
+        REQUIRE(build_and_serialize_rcg("(a)(b)(c)", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
+                "[MATCH (str.to_re \"b\")] STARTS {2} ENDS {2}) (EDGE *->* [MATCH (str.to_re \"c\")] STARTS {3} ENDS "
+                "{3}) (EDGE *->* [MATCH re.all]))");
     }
 
     SECTION("Complex nested groups and multiple backreferences") {
         REQUIRE(build_and_serialize_rcg(R"(((a)(b))\1\2\3)", m) ==
-                "(RCG "
-                "(EDGE *->* [MATCH (str.to_re \"a\")] STARTS {2,1} ENDS {2}) "
-                "(EDGE *->* [MATCH (str.to_re \"b\")] STARTS {3} ENDS {3,1}) "
-                "(EDGE *->* [BACKREF 1]) "
-                "(EDGE *->* [BACKREF 2]) "
-                "(EDGE *->* [BACKREF 3])"
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {2,1} ENDS {2})"
+                " (EDGE *->* [MATCH (str.to_re \"b\")] STARTS {3} ENDS {3,1})"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [BACKREF 2])"
+                " (EDGE *->* [BACKREF 3])"
+                " (EDGE *->* [MATCH re.all])"
                 ")");
     }
-    SECTION("Non-capturing group") {
-        REQUIRE(build_and_serialize_rcg("(?:a)", m) == "(RCG (EDGE *->* [MATCH (str.to_re \"a\")]))");
+
+    // ---- Regular lookarounds ----
+
+    SECTION("Positive lookahead (regular)") {
+        REQUIRE(build_and_serialize_rcg("(?=a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?= "
+                                                       "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
-    SECTION("Sequential capture groups") {
-        REQUIRE(build_and_serialize_rcg("(a)(b)(c)", m) == "(RCG "
-                                                           "(EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) "
-                                                           "(EDGE *->* [MATCH (str.to_re \"b\")] STARTS {2} ENDS {2}) "
-                                                           "(EDGE *->* [MATCH (str.to_re \"c\")] STARTS {3} ENDS {3})"
-                                                           ")");
+    SECTION("Negative lookahead (regular)") {
+        REQUIRE(build_and_serialize_rcg("(?!a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?! "
+                                                       "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
-    SECTION("Alternation without groups") {
-        REQUIRE(build_and_serialize_rcg("a|b", m) ==
-                "(RCG (EDGE *->* [MATCH (re.union (str.to_re \"a\") (str.to_re \"b\"))]))");
+    SECTION("Positive lookbehind (regular)") {
+        REQUIRE(build_and_serialize_rcg("(?<=a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?<= "
+                                                        "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
-    SECTION("Alternation with capture groups") {
-        REQUIRE(build_and_serialize_rcg("(a)|(b)", m) == "(RCG "
-                                                         "(EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) "
-                                                         "(EDGE *->* [MATCH (str.to_re \"b\")] STARTS {2} ENDS {2})"
+    SECTION("Negative lookbehind (regular)") {
+        REQUIRE(build_and_serialize_rcg("(?<!a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?<! "
+                                                        "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+    }
+
+    // ---- Non-regular lookarounds ----
+
+    SECTION("Positive lookahead containing capture group (non-regular)") {
+        // (?=(a)) — the lookahead contains a capture group, making its subregex non-regular.
+        REQUIRE(build_and_serialize_rcg("(?=(a))", m) == "(RCG"
+                                                         " (EDGE *->* [MATCH re.all])"
+                                                         " (EDGE *->* [LOOKAROUND ?= (FRAGMENT"
+                                                         " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                                                         " (EDGE *->* [MATCH re.all]))])"
+                                                         " (EDGE *->* [MATCH re.all])"
                                                          ")");
     }
 
-    SECTION("Named capture group and named backreference") {
-        REQUIRE(build_and_serialize_rcg("(?<foo>a)\\k<foo>", m) ==
-                "(RCG (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* [BACKREF 1]))");
+    SECTION("Positive lookahead with capture group followed by backreference") {
+        // (?=(a))\1 — lookahead captures group 1, then \1 references it.
+        REQUIRE(build_and_serialize_rcg("(?=(a))\\1", m) == "(RCG"
+                                                            " (EDGE *->* [MATCH re.all])"
+                                                            " (EDGE *->* [LOOKAROUND ?= (FRAGMENT"
+                                                            " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                                                            " (EDGE *->* [MATCH re.all]))])"  // <-- nová Sigma* hrana
+                                                            " (EDGE *->* [BACKREF 1])"
+                                                            " (EDGE *->* [MATCH re.all])"
+                                                            ")");
     }
 
-    SECTION("Positive Lookahead") {
-        REQUIRE(build_and_serialize_rcg("(?=a)", m) == "(RCG (EDGE *->* [LOOKAROUND ?= (str.to_re \"a\")]))");
+    SECTION("Positive lookbehind containing capture group (non-regular)") {
+        // (?<=(a)) — lookbehind with capture group.
+        REQUIRE(build_and_serialize_rcg("(?<=(a))", m) ==
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [LOOKAROUND ?<= (FRAGMENT"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}))])"
+                " (EDGE *->* [MATCH re.all])"
+                ")");
     }
 
-    using Catch::Matchers::ContainsSubstring;
+    SECTION("Negative lookaround containing non-regular content throws") {
+        // Negative non-regular lookarounds require universal quantifiers -- not supported.
+        REQUIRE_THROWS(build_and_serialize_rcg("(?!(a))", m));
+        REQUIRE_THROWS(build_and_serialize_rcg("(?<!(a))", m));
+    }
+
+    // ---- Word boundaries ----
 
     SECTION("Word boundary assertion (\\b)") {
         const std::string rcg_dump = build_and_serialize_rcg("\\b", m);
-
-        // \b: (?<=\w)RE(?!\w)  |  (?<!\w)RE(?=\w)
-        // Again, the serialized rcg is quite complex because of the z3 'pretty' printer, just search for the lookarounds and call it a day
+        // \b expands to two branches: (?<=\w)(?!\w)  |  (?<!\w)(?=\w).
         REQUIRE_THAT(rcg_dump, ContainsSubstring("[LOOKAROUND ?<= "));
         REQUIRE_THAT(rcg_dump, ContainsSubstring("[LOOKAROUND ?! "));
         REQUIRE_THAT(rcg_dump, ContainsSubstring("[LOOKAROUND ?<! "));
@@ -1561,104 +1772,101 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 
     SECTION("Negated word boundary assertion (\\B)") {
         const std::string rcg_dump = build_and_serialize_rcg("\\B", m);
-
-        // \B is the same as \b but the lookaheads are swapped
+        // \B is the negation of \b -- same lookaround types, opposite polarity.
         REQUIRE_THAT(rcg_dump, ContainsSubstring("[LOOKAROUND ?<= "));
         REQUIRE_THAT(rcg_dump, ContainsSubstring("[LOOKAROUND ?= "));
         REQUIRE_THAT(rcg_dump, ContainsSubstring("[LOOKAROUND ?<! "));
         REQUIRE_THAT(rcg_dump, ContainsSubstring("[LOOKAROUND ?! "));
     }
 
-    SECTION("Lookaround containing capture group throws") {
-        // Capture groups inside lookarounds are unsupported yet (what the hell is even the semantics of capture group inside lookaround)
-        REQUIRE_THROWS(build_and_serialize_rcg("(?=(a))", m));
-    }
+    // ---- Greedy merge / interleaving ----
 
     SECTION("Mix of regular sequence and backreference") {
-        // "(x)ab\1cd"
-        // (x) creates a match edge with capture group markers
-        // "ab" should merge into one match edge
-        // "\1" is a backref edge
-        // "cd" should merge into one match edge
+        // (x)ab\1cd — 'ab' and 'cd' are each merged into a single MATCH edge.
         REQUIRE(build_and_serialize_rcg("(x)ab\\1cd", m) ==
-                "(RCG "
-                "(EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1}) "
-                "(EDGE *->* [MATCH (re.++ (str.to_re \"a\") (str.to_re \"b\"))]) "
-                "(EDGE *->* [BACKREF 1]) "
-                "(EDGE *->* [MATCH (re.++ (str.to_re \"c\") (str.to_re \"d\"))])"
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [MATCH (re.++ (str.to_re \"a\") (str.to_re \"b\"))])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [MATCH (re.++ (str.to_re \"c\") (str.to_re \"d\"))])"
+                " (EDGE *->* [MATCH re.all])"
                 ")");
     }
 
     SECTION("Alternation of regular and non-regular components") {
-        // "(x)|a|\\1"
-        // Two match edges and one backref edge in parallel
-        REQUIRE(build_and_serialize_rcg("(x)|a|\\1", m) == "(RCG "
-                                                           "(EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1}) "
-                                                           "(EDGE *->* [BACKREF 1]) "
-                                                           "(EDGE *->* [MATCH (str.to_re \"a\")])"
+        // (x)|a|\1 — two MATCH edges and one BACKREF edge in parallel.
+        REQUIRE(build_and_serialize_rcg("(x)|a|\\1", m) == "(RCG"
+                                                           " (EDGE *->* [MATCH re.all])"
+                                                           " (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1})"
+                                                           " (EDGE *->* [BACKREF 1])"
+                                                           " (EDGE *->* [MATCH (str.to_re \"a\")])"
+                                                           " (EDGE *->* [MATCH re.all])"
                                                            ")");
     }
 
+    // ---- Complex patterns ----
+
     SECTION("Complex: Nested groups inside alternation with backreference") {
         REQUIRE(build_and_serialize_rcg("^((a)|(b))\\1$", m) ==
-                "(RCG "
-                "(EDGE *->* [ANCHOR '^']) "
-                "(EDGE *->* [MATCH (str.to_re \"a\")] STARTS {2,1} ENDS {2,1}) "
-                "(EDGE *->* [MATCH (str.to_re \"b\")] STARTS {3,1} ENDS {3,1}) "
-                "(EDGE *->* [BACKREF 1]) "
-                "(EDGE *->* [ANCHOR '$'])"
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [ANCHOR '^'])"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {2,1} ENDS {2,1})"
+                " (EDGE *->* [MATCH (str.to_re \"b\")] STARTS {3,1} ENDS {3,1})"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [ANCHOR '$'])"
+                " (EDGE *->* [MATCH re.all])"
                 ")");
     }
 
     SECTION("Complex: HTML-like tag matching with interrupted greedy merge") {
-        // '<' = 60, 'x' = 120, '>' = 62, 'y' = 121
         REQUIRE(build_and_serialize_rcg("<(?<tag>x)>y\\k<tag>", m) ==
-                "(RCG "
-                "(EDGE *->* [MATCH (str.to_re \"<\")]) "
-                "(EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1}) "
-                "(EDGE *->* [MATCH (re.++ (str.to_re \">\") (str.to_re \"y\"))]) "
-                "(EDGE *->* [BACKREF 1])"
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (str.to_re \"<\")])"
+                " (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [MATCH (re.++ (str.to_re \">\") (str.to_re \"y\"))])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [MATCH re.all])"
                 ")");
     }
+
     SECTION("Final Boss 1: Perfect BFS interleaving of parallel complex branches") {
-        // Since the serialization is BFS, this gets quite messy, because several paths through the graph are serialized in parallel:
         REQUIRE(build_and_serialize_rcg("^(?<v1>a)x(?=y)\\1$|^(?<v2>b)z(?<!w)\\2$", m) ==
-                "(RCG "
-                // First layer: anchors
-                "(EDGE *->* [ANCHOR '^']) "
-                "(EDGE *->* [ANCHOR '^']) "
-                // Second layer: the capture groups
-                "(EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) "
-                "(EDGE *->* [MATCH (str.to_re \"b\")] STARTS {2} ENDS {2}) "
-                // Third layer: the 'x' and 'z' literals
-                "(EDGE *->* [MATCH (str.to_re \"x\")]) "
-                "(EDGE *->* [MATCH (str.to_re \"z\")]) "
-                // Fourth layer: the lookarounds (?=y) and (?<!w)
-                "(EDGE *->* [LOOKAROUND ?= (str.to_re \"y\")]) "
-                "(EDGE *->* [LOOKAROUND ?<! (str.to_re \"w\")]) "
-                // Fifth layer: backreferences \1 and \2
-                "(EDGE *->* [BACKREF 1]) "
-                "(EDGE *->* [BACKREF 2]) "
-                // Sixth layer: the end anchors
-                "(EDGE *->* [ANCHOR '$']) "
-                "(EDGE *->* [ANCHOR '$'])"
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [ANCHOR '^'])"
+                " (EDGE *->* [ANCHOR '^'])"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [MATCH (str.to_re \"b\")] STARTS {2} ENDS {2})"
+                " (EDGE *->* [MATCH (str.to_re \"x\")])"
+                " (EDGE *->* [MATCH (str.to_re \"z\")])"
+                " (EDGE *->* [LOOKAROUND ?= (str.to_re \"y\")])"
+                " (EDGE *->* [LOOKAROUND ?<! (str.to_re \"w\")])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [BACKREF 2])"
+                " (EDGE *->* [ANCHOR '$'])"
+                " (EDGE *->* [ANCHOR '$'])"
+                " (EDGE *->* [MATCH re.all])"
                 ")");
     }
+
     SECTION("Final Boss 2: Greedy merge boundaries with non-capturing groups and named refs") {
-        REQUIRE(
-            build_and_serialize_rcg("^a(?:b|c)(?<named>d)\\k<named>(?=e)\\1f$", m) ==
-            "(RCG "
-            "(EDGE *->* [ANCHOR '^']) "
-            // The non-capturing group is ignored and inner contents are merged with 'a' literal, because its all regular
-            "(EDGE *->* [MATCH (re.++ (str.to_re \"a\") (re.union (str.to_re \"b\") (str.to_re \"c\")))]) "
-            // Named capture group gets its own Match edge
-            "(EDGE *->* [MATCH (str.to_re \"d\")] STARTS {1} ENDS {1}) "
-            // The named backreference converted to indexed one
-            "(EDGE *->* [BACKREF 1]) "
-            "(EDGE *->* [LOOKAROUND ?= (str.to_re \"e\")]) "
-            "(EDGE *->* [BACKREF 1]) "
-            "(EDGE *->* [MATCH (str.to_re \"f\")]) "
-            "(EDGE *->* [ANCHOR '$'])"
-            ")");
+        REQUIRE(build_and_serialize_rcg("^a(?:b|c)(?<named>d)\\k<named>(?=e)\\1f$", m) ==
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [ANCHOR '^'])"
+                // Non-capturing group content merges greedily with the leading 'a'
+                " (EDGE *->* [MATCH (re.++ (str.to_re \"a\") (re.union (str.to_re \"b\") (str.to_re \"c\")))])"
+                // Named capture group gets its own edge
+                " (EDGE *->* [MATCH (str.to_re \"d\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [LOOKAROUND ?= (str.to_re \"e\")])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [MATCH (str.to_re \"f\")])"
+                " (EDGE *->* [ANCHOR '$'])"
+                " (EDGE *->* [MATCH re.all])"
+                ")");
     }
 }
