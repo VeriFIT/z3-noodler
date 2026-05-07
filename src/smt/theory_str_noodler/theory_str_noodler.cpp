@@ -1999,15 +1999,21 @@ namespace smt::noodler {
         expr* r = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, x, r));
 
-        ecma::RegexConstraintBuilder builder(m, pattern);
+        ecma::RegexConstraintBuilder builder(m, pattern, m_params);
         builder.build_rcg();
 
         SASSERT(is_app(x));
-        const expr_ref ecma_formula = builder.generate_constraints(to_app(x));
+        expr_ref ecma_formula = builder.generate_constraints(to_app(x));
 
         STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS ---" << std::endl;
-              tout << mk_pp(ecma_formula.get(), m) << std::endl;
-              tout << ";; ----------------------------------" << std::endl;);
+               tout << mk_pp(ecma_formula.get(), m) << std::endl;
+               tout << ";; ----------------------------------" << std::endl;);
+
+        m_rewrite(ecma_formula);
+
+        STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified) ---" << std::endl;
+               tout << mk_pp(ecma_formula.get(), m) << std::endl;
+               tout << ";; ----------------------------------" << std::endl;);
 
         add_axiom(expr_ref(m.mk_iff(e, ecma_formula), m));
     }

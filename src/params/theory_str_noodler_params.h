@@ -20,6 +20,13 @@ struct theory_str_noodler_params {
     bool is_overapprox = false;
     bool m_ca_constr = false;
 
+    /** @brief Whether to use regex engine semantics when generating ECMA regex constraints.
+    *
+    *  If true, the regex is implicitly wrapped in Sigma*, allowing to match substrings (like in regex engines).
+    *  If false, the regex must match the entire string.
+    */
+    bool m_ecma_engine_semantics = false;
+
     theory_str_noodler_params(params_ref const & p = params_ref()) {
         updt_params(p);
     }

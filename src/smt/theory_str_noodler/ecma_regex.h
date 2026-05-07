@@ -2,6 +2,7 @@
 
 #include "ast/ast.h"
 #include "ast/seq_decl_plugin.h"
+#include "params/theory_str_noodler_params.h"
 #include "util/zstring.h"
 #include "util/zstring_view.h"
 
@@ -986,10 +987,11 @@ namespace smt::noodler::ecma {
      */
     class RegexConstraintBuilder {
     public:
-        explicit RegexConstraintBuilder(ast_manager& m, const zstring& regex_pattern)
+        explicit RegexConstraintBuilder(ast_manager& m, const zstring& regex_pattern, const theory_str_noodler_params& params)
             : m_regex(regex_pattern),
               m_parser(regex_pattern),
               m_manager(m),
+              m_params(params),
               m_util_s(m),
               m_str_sort(m_util_s.mk_string_sort()) { }
 
@@ -1022,6 +1024,7 @@ namespace smt::noodler::ecma {
         zstring_view m_regex;
         ECMAParser m_parser;
         ast_manager& m_manager;
+        const theory_str_noodler_params& m_params;
         seq_util m_util_s;
         RegexConstraintGraph m_graph;
         sort* m_str_sort = nullptr;

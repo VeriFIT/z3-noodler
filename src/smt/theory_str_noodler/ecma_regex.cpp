@@ -2184,16 +2184,23 @@ namespace smt::noodler::ecma {
             inner_end = frag.v_out;
         }
 
-        // Wrap the entire regex in Sigma* to mimic the regex engine matching semantics
-        const app_ref sigma_star(m_util_s.re.mk_full_seq(nullptr), m_manager);
+        if (m_params.m_ecma_engine_semantics) {
+            // Wrap the entire regex in Sigma* to mimic the regex engine matching semantics --> the solution is any
+            // substring
+            const app_ref sigma_star(m_util_s.re.mk_full_seq(nullptr), m_manager);
 
-        m_graph.start_vertex = m_graph.create_vertex();
-        const EdgeID prefix_eid = m_graph.create_edge(inner_start, RCGEdgePayload{MatchEdge{sigma_star}});
-        m_graph.vertices[m_graph.start_vertex].outgoing_edges.push_back(prefix_eid);
+            m_graph.start_vertex = m_graph.create_vertex();
+            const EdgeID prefix_eid = m_graph.create_edge(inner_start, RCGEdgePayload {MatchEdge {sigma_star}});
+            m_graph.vertices[m_graph.start_vertex].outgoing_edges.push_back(prefix_eid);
 
-        m_graph.end_vertex = m_graph.create_vertex();
-        const EdgeID suffix_eid = m_graph.create_edge(m_graph.end_vertex, RCGEdgePayload{MatchEdge{sigma_star}});
-        m_graph.vertices[inner_end].outgoing_edges.push_back(suffix_eid);
+            m_graph.end_vertex = m_graph.create_vertex();
+            const EdgeID suffix_eid = m_graph.create_edge(m_graph.end_vertex, RCGEdgePayload {MatchEdge {sigma_star}});
+            m_graph.vertices[inner_end].outgoing_edges.push_back(suffix_eid);
+        } else {
+            // No engine matching semantics --> the whole string must match the regex
+            m_graph.start_vertex = inner_start;
+            m_graph.end_vertex = inner_end;
+        }
 
         return m_graph;
     }

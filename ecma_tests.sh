@@ -374,7 +374,7 @@ TOTAL=0
 for test_file in "$TEST_DIR"/*.smt2; do
     TOTAL=$((TOTAL + 1))
     EXPECTED=$(grep ":status" "$test_file" | awk '{print $3}' | tr -d ')')
-    OUTPUT=$(timeout "$TIMEOUT" "$Z3_BIN" smt.string_solver=noodler "$test_file" 2>&1)
+    OUTPUT=$(timeout "$TIMEOUT" "$Z3_BIN" smt.string_solver=noodler smt.str.ecma_engine_semantics=true "$test_file" 2>&1)
     EXIT_CODE=$?
 
     if [ "$EXIT_CODE" -eq 124 ]; then RESULT="timeout"

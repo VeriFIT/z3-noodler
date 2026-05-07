@@ -16,6 +16,7 @@ void theory_str_noodler_params::updt_params(params_ref const & _p) {
     m_try_unary_proc = p.str_try_unary_proc();
     m_underapprox_length = p.str_underapprox_length();
     m_ca_constr = p.str_ca_constr();
+    m_ecma_engine_semantics = p.str_ecma_engine_semantics();
     m_produce_models = gparams::get_ref().get_bool("model", false);
 }
 
@@ -34,4 +35,5 @@ void theory_str_noodler_params::display(std::ostream & out) const {
     DISPLAY_PARAM(m_underapprox_length);
     DISPLAY_PARAM(m_produce_models);
     DISPLAY_PARAM(m_ca_constr);
+    DISPLAY_PARAM(m_ecma_engine_semantics);
 }
