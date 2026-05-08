@@ -55,6 +55,14 @@ namespace smt::noodler::ecma {
         zstring_view lexeme;
     };
 
+    /**
+     * @brief Convert utf-8 @p raw_input into a sanitized form where each Z3Char (uint32_t) represents a single Unicode code point.
+     * 
+     * @param raw_input The original ECMA regex pattern as a UTF-8 encoded string. May contain multi-byte characters.
+     * @return zstring The sanitized regex pattern.
+     */
+    zstring sanitize_ecma_regex_input(const zstring& raw_input);
+
     // =============== REGEX CONSTRAINT GRAPH ===============
 
     /**
@@ -987,9 +995,10 @@ namespace smt::noodler::ecma {
      */
     class RegexConstraintBuilder {
     public:
-        explicit RegexConstraintBuilder(ast_manager& m, const zstring& regex_pattern, const theory_str_noodler_params& params)
-            : m_regex(regex_pattern),
-              m_parser(regex_pattern),
+        RegexConstraintBuilder(ast_manager& m, const zstring& regex_pattern, const theory_str_noodler_params& params)
+            : m_sanitized_regex_storage(sanitize_ecma_regex_input(regex_pattern)),
+              m_regex(m_sanitized_regex_storage),
+              m_parser(m_regex),
               m_manager(m),
               m_params(params),
               m_util_s(m),
@@ -1021,6 +1030,7 @@ namespace smt::noodler::ecma {
         expr_ref generate_constraints(app* target_string);
 
     private:
+        zstring m_sanitized_regex_storage; 
         zstring_view m_regex;
         ECMAParser m_parser;
         ast_manager& m_manager;

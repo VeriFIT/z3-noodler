@@ -25,24 +25,109 @@ namespace smt::noodler::ecma {
     constexpr uint64_t UNBOUNDED = std::numeric_limits<uint64_t>::max();
     constexpr bool debug_mode = false;
 
-    constexpr Z3Char CH_HT = 0x0009; // Horizontal Tab
-    constexpr Z3Char CH_VT = 0x000B; // Vertical Tab
-    constexpr Z3Char CH_FF = 0x000C; // Form Feed
-    constexpr Z3Char CH_SP = 0x0020; // Space
-    constexpr Z3Char CH_NBSP = 0x00A0; // Non-Breaking Space
-    constexpr Z3Char CH_ZWNBSP = 0xFEFF; // Zero Width Non-Breaking Space (BOM)
-    constexpr Z3Char CH_US = 0x001F; // Unit Separator
-    constexpr Z3Char CH_LF = 0x000A; // Line Feed
-    constexpr Z3Char CH_CR = 0x000D; // Carriage Return
-    constexpr Z3Char CH_LS = 0x2028; // Line Separator
-    constexpr Z3Char CH_PS = 0x2029; // Paragraph Separator
+    constexpr Z3Char CH_HT = 0x0009;      // Horizontal Tab
+    constexpr Z3Char CH_VT = 0x000B;      // Vertical Tab
+    constexpr Z3Char CH_FF = 0x000C;      // Form Feed
+    constexpr Z3Char CH_SP = 0x0020;      // Space
+    constexpr Z3Char CH_NBSP = 0x00A0;    // Non-Breaking Space
+    constexpr Z3Char CH_ZWNBSP = 0xFEFF;  // Zero Width Non-Breaking Space (BOM)
+    constexpr Z3Char CH_US = 0x001F;      // Unit Separator
+    constexpr Z3Char CH_LF = 0x000A;      // Line Feed
+    constexpr Z3Char CH_CR = 0x000D;      // Carriage Return
+    constexpr Z3Char CH_LS = 0x2028;      // Line Separator
+    constexpr Z3Char CH_PS = 0x2029;      // Paragraph Separator
+
+    zstring sanitize_ecma_regex_input(const zstring& raw_input) {
+        std::ostringstream sanitized;
+
+        auto is_continuation = [&](uint32_t idx) -> bool {
+            bool is_raw_byte = raw_input[idx] <= 0xFF;
+            bool is_continuation_byte = (raw_input[idx] & 0xC0) == 0x80;  // top two bits must be 10xxxxxx
+            return idx < raw_input.length() && is_raw_byte && is_continuation_byte;
+        };
+
+        // Unicode replacement character -- used when invalid byte is encountered
+        auto insert_unicode_replacement = [&]() {
+            sanitized << "\\u{fffd}";
+        };
+
+        uint32_t i = 0;
+        while (i < raw_input.length()) {
+            Z3Char raw_char = raw_input[i];
+
+            // If the character value is > 0xFF, the zstring constructor already parsed it into a valid Unicode code
+            // point --> skip this. Originally, the character was in form \uXXXX or similar.
+            if (raw_char > 0xFF) {
+                sanitized << "\\u{" << std::hex << raw_char << std::dec << "}";
+                i++;
+                continue;
+            }
+
+            if (raw_char < 0x80) {
+                // 0xxxxxxx (1 byte)
+                sanitized << static_cast<char>(raw_char);
+                i++;
+            } else if ((raw_char & 0xE0) == 0xC0) {
+                // 110xxxxx 10xxxxxx (2 bytes)
+                if (!is_continuation(i + 1)) {
+                    insert_unicode_replacement();
+                    i++;
+                    continue;
+                }
+                Z3Char code_point = ((raw_char & 0x1F) << 6) | (raw_input[i + 1] & 0x3F);
+                if (code_point < 0x80) {
+                    insert_unicode_replacement();
+                    i += 2;
+                    continue;
+                }
+                sanitized << "\\u{" << std::hex << code_point << std::dec << "}";
+                i += 2;
+            } else if ((raw_char & 0xF0) == 0xE0) {
+                // 1110xxxx 10xxxxxx 10xxxxxx (3 bytes)
+                if (!is_continuation(i + 1) || !is_continuation(i + 2)) {
+                    insert_unicode_replacement();
+                    i++;
+                    continue;
+                }
+                Z3Char code_point =
+                    ((raw_char & 0x0F) << 12) | ((raw_input[i + 1] & 0x3F) << 6) | (raw_input[i + 2] & 0x3F);
+                if (code_point < 0x800 || (code_point >= 0xD800 && code_point <= 0xDFFF)) {
+                    insert_unicode_replacement();
+                    i += 3;
+                    continue;
+                }
+                sanitized << "\\u{" << std::hex << code_point << std::dec << "}";
+                i += 3;
+            } else if ((raw_char & 0xF8) == 0xF0) {
+                // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (4 bytes)
+                if (!is_continuation(i + 1) || !is_continuation(i + 2) || !is_continuation(i + 3)) {
+                    insert_unicode_replacement();
+                    i++;
+                    continue;
+                }
+                Z3Char code_point = ((raw_char & 0x07) << 18) | ((raw_input[i + 1] & 0x3F) << 12) |
+                                    ((raw_input[i + 2] & 0x3F) << 6) | (raw_input[i + 3] & 0x3F);
+                if (code_point < 0x10000 || code_point > 0x10FFFF) {
+                    insert_unicode_replacement();
+                    i += 4;
+                    continue;
+                }
+                sanitized << "\\u{" << std::hex << code_point << std::dec << "}";
+                i += 4;
+            } else {
+                insert_unicode_replacement();
+                i++;
+            }
+        }
+        return zstring(sanitized.str().c_str());
+    }
 
     GraphFragment chain_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
                                   const GraphFragment& second) {
         for (const EdgeID id : first.edges_pointing_to_vout) {
             graph.edges[id].target = second.v_in;
         }
-        return GraphFragment{first.v_in, second.v_out, second.edges_pointing_to_vout};
+        return GraphFragment {first.v_in, second.v_out, second.edges_pointing_to_vout};
     }
 
     GraphFragment alternate_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
@@ -71,16 +156,16 @@ namespace smt::noodler::ecma {
             new_vout_incoming.push_back(id);
         }
 
-        return GraphFragment{new_vin, new_vout, new_vout_incoming};
+        return GraphFragment {new_vin, new_vout, new_vout_incoming};
     }
 
     GraphFragment make_epsilon_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) {
         const VertexID v_in = graph.create_vertex();
         const VertexID v_out = graph.create_vertex();
         app_ref eps(util_s.re.mk_epsilon(util_s.mk_string_sort()), m);
-        const EdgeID eid = graph.create_edge(v_out, RCGEdgePayload{MatchEdge{eps}});
+        const EdgeID eid = graph.create_edge(v_out, RCGEdgePayload {MatchEdge {eps}});
         graph.vertices[v_in].outgoing_edges.push_back(eid);
-        return GraphFragment{v_in, v_out, {eid}};
+        return GraphFragment {v_in, v_out, {eid}};
     }
 
     // =============== REGEX CONSTRAINT GRAPH ==============
@@ -91,7 +176,7 @@ namespace smt::noodler::ecma {
 
     VertexID RegexConstraintGraph::create_vertex() {
         VertexID new_id = vertices.size();
-        vertices.emplace_back(new_id, std::vector<EdgeID>{});
+        vertices.emplace_back(new_id, std::vector<EdgeID> {});
         return new_id;
     }
 
@@ -107,7 +192,7 @@ namespace smt::noodler::ecma {
 
     EdgeID RegexConstraintGraph::create_edge() {
         EdgeID new_id = edges.size();
-        edges.emplace_back(new_id, UNKNOWN_VERTEX, BackrefEdge{0u});
+        edges.emplace_back(new_id, UNKNOWN_VERTEX, BackrefEdge {0u});
         return new_id;
     }
 
@@ -203,7 +288,7 @@ namespace smt::noodler::ecma {
         // hexadecimal escape sequence in format \xHH
         // currently m_position is right after '\x' -- hence the 1
         if (m_position + 1 >= m_regex.length()) {
-            m_position = m_lexeme_start_pos + 2; // rollback to skip just '\x'
+            m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\x'
             return make_token(TokenType::LITERAL, static_cast<Z3Char>('x'));
         }
 
@@ -212,13 +297,13 @@ namespace smt::noodler::ecma {
 
         // if the hex number is not well-formed, then '\x' is a literal 'x' and the rest is parsed separately
         if (!is_hex_digit(first_hex_digit) || !is_hex_digit(second_hex_digit)) {
-            m_position = m_lexeme_start_pos + 2; // rollback to skip just '\x'
+            m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\x'
             return make_token(TokenType::LITERAL, static_cast<Z3Char>('x'));
         }
 
         // get decimal value of hex digits after '\x'
         Z3Char hex_val = hex2char(zstring_view(&m_regex[m_lexeme_start_pos + 2], HEX_SEQUENCE_LEN));
-        m_position += 2; // consume both hex digits
+        m_position += 2;  // consume both hex digits
         return make_token(TokenType::LITERAL, hex_val);
     }
 
@@ -226,14 +311,14 @@ namespace smt::noodler::ecma {
         // unicode escape sequence in format \uHHHH
         // currently m_position is on the first hex digit right after '\u' -- hence the 3
         if (m_position + 3 >= m_regex.length()) {
-            m_position = m_lexeme_start_pos + 2; // rollback to skip just '\u'
+            m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\u'
             return make_token(TokenType::LITERAL, static_cast<Z3Char>('u'));
         }
 
         for (uint32_t i = 0; i < UNICODE_ESCAPE_SEQUENCE_LEN; i++) {
             const Z3Char current_char = m_regex[m_position + i];
             if (!is_hex_digit(current_char)) {
-                m_position = m_lexeme_start_pos + 2; // rollback to skip just '\u'
+                m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\u'
                 return make_token(TokenType::LITERAL, static_cast<Z3Char>('u'));
             }
         }
@@ -252,7 +337,7 @@ namespace smt::noodler::ecma {
         }
 
         const Z3Char control_char = m_regex[m_position];
-        m_position++; // consume the control character
+        m_position++;  // consume the control character
 
         // [A-Za-z] characters allowed, otherwise error
         if (!is_alpha(control_char)) {
@@ -297,12 +382,12 @@ namespace smt::noodler::ecma {
             util::throw_error("ECMA regex syntax error: Missing '<' in named backreference");
         }
 
-        m_position++; // consume '<'
+        m_position++;  // consume '<'
         const uint32_t name_start_pos = m_position;
         const uint32_t name_length = get_backref_name_len(name_start_pos);
-        m_position += name_length + 1; // consume name and '>'
+        m_position += name_length + 1;  // consume name and '>'
 
-        const zstring_view backref_name{&m_regex[name_start_pos], name_length};
+        const zstring_view backref_name {&m_regex[name_start_pos], name_length};
         auto it = m_named_groups.find(backref_name);
         if (it == m_named_groups.end()) {
             util::throw_error("ECMA regex syntax error: Backreference to undefined named group");
@@ -312,7 +397,7 @@ namespace smt::noodler::ecma {
 
     Token ECMALexer::octal_or_backref(const Z3Char first_digit) {
         Z3Char decimal_val = first_digit - '0';
-        const uint32_t fallback_pos = m_position; // save position right after the first digit
+        const uint32_t fallback_pos = m_position;  // save position right after the first digit
 
         // greedily read as much digits as possible
         while (m_position < m_regex.length()) {
@@ -330,7 +415,7 @@ namespace smt::noodler::ecma {
         }
 
         // cannot be backreference --> match the input to an octal escape sequence
-        m_position = fallback_pos; // fallback to after the first digit
+        m_position = fallback_pos;  // fallback to after the first digit
         return get_octal_escape_sequence_token(false, first_digit);
     }
 
@@ -346,7 +431,7 @@ namespace smt::noodler::ecma {
             max_possible_octal_len = 2;
         }
 
-        uint32_t real_octal_len = 1; // already parsed the first digit
+        uint32_t real_octal_len = 1;  // already parsed the first digit
         while (real_octal_len < max_possible_octal_len && m_position < m_regex.length()) {
             const Z3Char digit = m_regex[m_position];
             if (!is_octal_digit(digit)) {
@@ -410,60 +495,60 @@ namespace smt::noodler::ecma {
         uint32_t bound_digits = validate_and_get_bound(lower_bound);
 
         if (bound_digits == 0 || m_position >= m_regex.length()) {
-            m_position = m_lexeme_start_pos + 1; // rollback to skip only '{'
+            m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
             return make_token(TokenType::LITERAL, static_cast<Z3Char>('{'));
         }
 
         // case '{n}'
         if (m_regex[m_position] == '}') {
-            m_position++; // consume '}'
+            m_position++;  // consume '}'
             if (m_regex[m_position] == '?') {
                 // skip lazy quantifier
                 m_position++;
             }
-            return make_token(TokenType::QUANTIFIER, QuantifierRange{lower_bound, lower_bound});
+            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, lower_bound});
         }
 
         if (m_regex[m_position] != ',') {
-            m_position = m_lexeme_start_pos + 1; // rollback to skip only '{'
+            m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
             return make_token(TokenType::LITERAL, static_cast<Z3Char>('{'));
         }
 
-        m_position++; // skip comma
+        m_position++;  // skip comma
         if (m_position >= m_regex.length()) {
-            m_position = m_lexeme_start_pos + 1; // rollback to skip only '{'
+            m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
             return make_token(TokenType::LITERAL, static_cast<Z3Char>('{'));
         }
 
         // case '{n,}'
         if (m_regex[m_position] == '}') {
-            m_position++; // consume '}'
+            m_position++;  // consume '}'
             if (m_regex[m_position] == '?') {
                 // skip lazy quantifier
                 m_position++;
             }
-            return make_token(TokenType::QUANTIFIER, QuantifierRange{lower_bound, UNBOUNDED});
+            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, UNBOUNDED});
         }
 
         uint64_t upper_bound = 0;
         bound_digits = validate_and_get_bound(upper_bound);
 
         if (bound_digits == 0 || m_position >= m_regex.length()) {
-            m_position = m_lexeme_start_pos + 1; // rollback to skip only '{'
+            m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
             return make_token(TokenType::LITERAL, static_cast<Z3Char>('{'));
         }
 
         // '}' after number -> case {n,m}
         if (m_regex[m_position] == '}') {
-            m_position++; // consume '}'
+            m_position++;  // consume '}'
             if (m_regex[m_position] == '?') {
                 m_position++;
             }
-            return make_token(TokenType::QUANTIFIER, QuantifierRange{lower_bound, upper_bound});
+            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, upper_bound});
         }
 
         // not a well-formed quantifier --> '{' is a literal
-        m_position = m_lexeme_start_pos + 1; // rollback to skip only '{'
+        m_position = m_lexeme_start_pos + 1;  // rollback to skip only '{'
         return make_token(TokenType::LITERAL, static_cast<Z3Char>('{'));
     }
 
@@ -474,7 +559,7 @@ namespace smt::noodler::ecma {
         }
 
         const Z3Char fourth_char = m_regex[m_position];
-        m_position++; // consume the '=' or '!'
+        m_position++;  // consume the '=' or '!'
 
         if (fourth_char == '=') {
             return make_token(TokenType::LOOKBEHIND_POS_START);
@@ -517,7 +602,7 @@ namespace smt::noodler::ecma {
         if (m_position >= m_regex.length() || m_regex[m_position] != '?') {
             return make_token(TokenType::GROUP_START);
         }
-        m_position++; // consume '?'
+        m_position++;  // consume '?'
         return get_special_group_or_lookaround_token();
     }
 
@@ -548,6 +633,16 @@ namespace smt::noodler::ecma {
                 return get_control_escape_seq_token();
             case 'k':
                 return get_named_backref_token();
+            case 't':
+                return make_token(TokenType::LITERAL, CH_HT);
+            case 'n':
+                return make_token(TokenType::LITERAL, CH_LF);
+            case 'r':
+                return make_token(TokenType::LITERAL, CH_CR);
+            case 'f':
+                return make_token(TokenType::LITERAL, CH_FF);
+            case 'v':
+                return make_token(TokenType::LITERAL, CH_VT);
             case '0':
             case '1':
             case '2':
@@ -624,6 +719,16 @@ namespace smt::noodler::ecma {
                 return get_control_escape_seq_token();
             case 'b':
                 return make_token(TokenType::LITERAL, BACKSPACE_LITERAL);
+            case 't':
+                return make_token(TokenType::LITERAL, CH_HT);
+            case 'n':
+                return make_token(TokenType::LITERAL, CH_LF);
+            case 'r':
+                return make_token(TokenType::LITERAL, CH_CR);
+            case 'f':
+                return make_token(TokenType::LITERAL, CH_FF);
+            case 'v':
+                return make_token(TokenType::LITERAL, CH_VT);
             case '0':
             case '1':
             case '2':
@@ -707,14 +812,14 @@ namespace smt::noodler::ecma {
             switch (m_regex[pos]) {
                 case '[':
                     if (escaped) {
-                        escaped = false; // '\[' --> ignore that
+                        escaped = false;  // '\[' --> ignore that
                     } else {
                         in_char_class = true;
                     }
                     break;
                 case ']':
                     if (escaped) {
-                        escaped = false; // '\]' --> ignore that
+                        escaped = false;  // '\]' --> ignore that
                     } else if (in_char_class) {
                         in_char_class = false;
                     }
@@ -724,7 +829,7 @@ namespace smt::noodler::ecma {
                     break;
                 case '(':
                     if (escaped) {
-                        escaped = false; // '\(' --> ignore that
+                        escaped = false;  // '\(' --> ignore that
                     } else if (!in_char_class) {
                         open_parens_count++;
                         auto [is_capture, name] = is_capture_or_named_capture(pos);
@@ -741,7 +846,7 @@ namespace smt::noodler::ecma {
                     break;
                 case ')':
                     if (escaped) {
-                        escaped = false; // '\)' --> ignore that
+                        escaped = false;  // '\)' --> ignore that
                     } else if (!in_char_class) {
                         // match not only capture groups but any group structure (lookarounds,...)
                         // lets us throw early errors
@@ -823,9 +928,9 @@ namespace smt::noodler::ecma {
 
             // Lastly, unite the created regular fragment with all the non-regular ones
             VertexID reg_vout = graph.create_vertex();
-            EdgeID reg_eid = graph.create_edge(reg_vout, RCGEdgePayload{MatchEdge{merged_regular}});
-            VertexID reg_vin = graph.create_vertex(std::vector<EdgeID>{reg_eid});
-            GraphFragment reg_fragment{reg_vin, reg_vout, {reg_eid}};
+            EdgeID reg_eid = graph.create_edge(reg_vout, RCGEdgePayload {MatchEdge {merged_regular}});
+            VertexID reg_vin = graph.create_vertex(std::vector<EdgeID> {reg_eid});
+            GraphFragment reg_fragment {reg_vin, reg_vout, {reg_eid}};
 
             result_fragment = alternate_fragments(graph, result_fragment, reg_fragment);
         }
@@ -935,9 +1040,9 @@ namespace smt::noodler::ecma {
             if (std::holds_alternative<app_ref>(component)) {
                 const VertexID v_in = graph.create_vertex();
                 const VertexID v_out = graph.create_vertex();
-                EdgeID eid = graph.create_edge(v_out, RCGEdgePayload{MatchEdge{std::get<app_ref>(component)}});
+                EdgeID eid = graph.create_edge(v_out, RCGEdgePayload {MatchEdge {std::get<app_ref>(component)}});
                 graph.vertices[v_in].outgoing_edges.push_back(eid);
-                return GraphFragment{v_in, v_out, {eid}};
+                return GraphFragment {v_in, v_out, {eid}};
             }
             return std::get<GraphFragment>(component);
         };
@@ -1050,9 +1155,9 @@ namespace smt::noodler::ecma {
             if (m_payload == '^' || m_payload == '$') {
                 VertexID v_in = graph.create_vertex();
                 VertexID v_out = graph.create_vertex();
-                EdgeID eid = graph.create_edge(v_out, RCGEdgePayload{AssertionEdge{Anchor{m_payload}}});
+                EdgeID eid = graph.create_edge(v_out, RCGEdgePayload {AssertionEdge {Anchor {m_payload}}});
                 graph.vertices[v_in].outgoing_edges.push_back(eid);
-                return GraphFragment{v_in, v_out, {eid}};
+                return GraphFragment {v_in, v_out, {eid}};
             }
             return make_word_boundary_fragment(graph, util_s, m, m_payload == 'b');
         }
@@ -1075,7 +1180,7 @@ namespace smt::noodler::ecma {
         // supported.
         if (!is_positive) {
             util::throw_error("Unsupported: negative lookaround with non-regular inner content "
-                "(would require universal quantifiers)");
+                              "(would require universal quantifiers)");
         }
 
         GraphFragment inner_frag = std::get<GraphFragment>(inner_regex);
@@ -1085,9 +1190,9 @@ namespace smt::noodler::ecma {
         VertexID s_in = graph.create_vertex();
         VertexID s_out = graph.create_vertex();
         EdgeID s_eid =
-            graph.create_edge(s_out, RCGEdgePayload{MatchEdge{app_ref(util_s.re.mk_full_seq(nullptr), m)}});
+            graph.create_edge(s_out, RCGEdgePayload {MatchEdge {app_ref(util_s.re.mk_full_seq(nullptr), m)}});
         graph.vertices[s_in].outgoing_edges.push_back(s_eid);
-        GraphFragment sigma_frag{s_in, s_out, {s_eid}};
+        GraphFragment sigma_frag {s_in, s_out, {s_eid}};
 
         // Chain Sigma* on the correct side of the inner fragment, depending on the lookaround direction
         // Lookaheads --> Pattern concat Sigma*
@@ -1102,9 +1207,9 @@ namespace smt::noodler::ecma {
         VertexID v_in = graph.create_vertex();
         VertexID v_out = graph.create_vertex();
         EdgeID eid =
-            graph.create_edge(v_out, RCGEdgePayload{AssertionEdge{Lookaround{std::move(inner_frag), dir, true}}});
+            graph.create_edge(v_out, RCGEdgePayload {AssertionEdge {Lookaround {std::move(inner_frag), dir, true}}});
         graph.vertices[v_in].outgoing_edges.push_back(eid);
-        return GraphFragment{v_in, v_out, {eid}};
+        return GraphFragment {v_in, v_out, {eid}};
     }
 
     void ASTNodeAssertion::strip_captures() {
@@ -1143,9 +1248,9 @@ namespace smt::noodler::ecma {
         const VertexID v_in = graph.create_vertex();
         const VertexID v_out = graph.create_vertex();
         EdgeID eid = graph.create_edge(
-            v_out, RCGEdgePayload{AssertionEdge{Lookaround{std::move(assert_regex), dir, is_positive}}});
+            v_out, RCGEdgePayload {AssertionEdge {Lookaround {std::move(assert_regex), dir, is_positive}}});
         graph.vertices[v_in].outgoing_edges.push_back(eid);
-        return GraphFragment{v_in, v_out, {eid}};
+        return GraphFragment {v_in, v_out, {eid}};
     }
 
     GraphFragment ASTNodeAssertion::make_word_boundary_fragment(RegexConstraintGraph& graph, seq_util& util_s,
@@ -1258,17 +1363,58 @@ namespace smt::noodler::ecma {
         SASSERT(std::holds_alternative<app_ref>(child_subgraph));
         const app_ref child_expr = std::get<app_ref>(child_subgraph);
         app* quant = nullptr;
+
         if (m_range.max == UNBOUNDED) {
             if (m_range.min == 0) {
                 quant = util_s.re.mk_star(child_expr);
             } else if (m_range.min == 1) {
                 quant = util_s.re.mk_plus(child_expr);
             } else {
-                quant = util_s.re.mk_loop(child_expr, m_range.min);
+                // Přepis a{3,} na a . a . a . a*
+                quant = child_expr;
+                for (uint64_t i = 1; i < m_range.min; i++) {
+                    quant = util_s.re.mk_concat(quant, child_expr);
+                }
+                quant = util_s.re.mk_concat(quant, util_s.re.mk_star(child_expr));
             }
         } else {
-            quant = util_s.re.mk_loop(child_expr, m_range.min, m_range.max);
+            // BOUNDED QUANTIFIER: Eliminace 'mk_loop' kvůli chybám Z3 solveru
+            if (m_range.min == m_range.max) {
+                if (m_range.min == 0) {
+                    quant = util_s.re.mk_epsilon(util_s.mk_string_sort());
+                } else {
+                    // Přesný počet opakování (např. d{16}) -> r . r . r ...
+                    quant = child_expr;
+                    for (uint64_t i = 1; i < m_range.min; i++) {
+                        quant = util_s.re.mk_concat(quant, child_expr);
+                    }
+                }
+            } else {
+                // Rozsah [min, max] (např. \d{1,5})
+                // Část, která musí matchnout (r_min)
+                app* r_min = util_s.re.mk_epsilon(util_s.mk_string_sort());
+                if (m_range.min > 0) {
+                    r_min = child_expr;
+                    for (uint64_t i = 1; i < m_range.min; i++) {
+                        r_min = util_s.re.mk_concat(r_min, child_expr);
+                    }
+                }
+
+                // Volitelná část (eps | r)
+                app* eps = util_s.re.mk_epsilon(util_s.mk_string_sort());
+                app* r_opt = util_s.re.mk_union(eps, child_expr);
+
+                // Zřetězení volitelných částí do maximální délky
+                app* r_rest = r_opt;
+                for (uint64_t i = 1; i < (m_range.max - m_range.min); i++) {
+                    r_rest = util_s.re.mk_concat(r_rest, r_opt);
+                }
+
+                // Výsledek je r_min . r_rest
+                quant = util_s.re.mk_concat(r_min, r_rest);
+            }
         }
+
         SASSERT(quant != nullptr);
         return app_ref(quant, m);
     }
@@ -1345,9 +1491,9 @@ namespace smt::noodler::ecma {
     RegexComponent ASTNodeBackref::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
         const VertexID vin = graph.create_vertex();
         const VertexID vout = graph.create_vertex();
-        const EdgeID backref_eid = graph.create_edge(vout, {BackrefEdge{m_backref_id}});
+        const EdgeID backref_eid = graph.create_edge(vout, {BackrefEdge {m_backref_id}});
         graph.vertices[vin].outgoing_edges.push_back(backref_eid);
-        return GraphFragment{vin, vout, {backref_eid}};
+        return GraphFragment {vin, vout, {backref_eid}};
     }
 
     ASTNodeRef ASTNodeBackref::clone() const {
@@ -1407,9 +1553,9 @@ namespace smt::noodler::ecma {
             // Regular subregex in group -- create a MatchEdge and create a fragment
             const VertexID vin = graph.create_vertex();
             const VertexID vout = graph.create_vertex();
-            const EdgeID eid = graph.create_edge(vout, RCGEdgePayload{MatchEdge{std::get<app_ref>(subregex)}});
+            const EdgeID eid = graph.create_edge(vout, RCGEdgePayload {MatchEdge {std::get<app_ref>(subregex)}});
             graph.vertices[vin].outgoing_edges.push_back(eid);
-            fragment = GraphFragment{vin, vout, {eid}};
+            fragment = GraphFragment {vin, vout, {eid}};
         } else {
             // Nonregular subregex in group -- take the fragment
             fragment = std::get<GraphFragment>(subregex);
@@ -1520,6 +1666,12 @@ namespace smt::noodler::ecma {
                 app* unit_str = util_s.str.mk_string(elem.lower);
                 class_elements.push_back(util_s.re.mk_to_re(unit_str));
             } else if (elem.kind == ElementType::RANGE) {
+                // Same character -- just make a single string
+                if (elem.lower == elem.upper) {
+                    app* unit_str = util_s.str.mk_string(elem.lower);
+                    class_elements.push_back(util_s.re.mk_to_re(unit_str));
+                    continue;
+                }
                 // Range of characters -- make re.range(char1, char2)
                 app* lower = util_s.str.mk_string(elem.lower);
                 app* upper = util_s.str.mk_string(elem.upper);
@@ -1543,9 +1695,8 @@ namespace smt::noodler::ecma {
                     }
                     case 's':
                     case 'S': {
-                        constexpr std::array<Z3Char, 11> whitespaces{
-                            CH_HT, CH_VT, CH_FF, CH_SP, CH_NBSP, CH_ZWNBSP, CH_US, CH_LF, CH_CR, CH_LS, CH_PS
-                        };
+                        constexpr std::array<Z3Char, 11> whitespaces {CH_HT, CH_VT, CH_FF, CH_SP, CH_NBSP, CH_ZWNBSP,
+                                                                      CH_US, CH_LF, CH_CR, CH_LS, CH_PS};
                         // Unite all the whitespaces
                         app* re_whitespace = util_s.re.mk_to_re(util_s.str.mk_string(whitespaces[0]));
                         for (std::size_t i = 1; i < whitespaces.size(); i++) {
@@ -1746,7 +1897,7 @@ namespace smt::noodler::ecma {
             case TokenType::CHAR_CLASS_ESCAPE: {
                 auto char_class = std::make_unique<ASTNodeCharClass>();
                 SASSERT(std::holds_alternative<Z3Char>(t.payload) && "CHAR_CLASS_ESCAPE has no class specifier");
-                const CharClassElement elem{.kind = ElementType::ESCAPE, .lower = std::get<Z3Char>(t.payload)};
+                const CharClassElement elem {.kind = ElementType::ESCAPE, .lower = std::get<Z3Char>(t.payload)};
                 char_class->add_element(elem);
                 next();
                 return char_class;
@@ -1824,7 +1975,7 @@ namespace smt::noodler::ecma {
                                              const CharClassAtom prev_atom) {
         switch (m_current_token.type) {
             case TokenType::CHAR_CLASS_RANGE:
-                next(); // skip '-'
+                next();  // skip '-'
                 parse_dash_tail(char_class_parent, prev_atom);
                 parse_class_ranges(char_class_parent);
                 break;
@@ -1835,7 +1986,7 @@ namespace smt::noodler::ecma {
                 parse_class_ranges_tail(char_class_parent, next_atom);
                 break;
             }
-            default: // epsilon
+            default:  // epsilon
                 add_atom_to_class(char_class_parent, prev_atom);
                 break;
         }
@@ -1862,7 +2013,7 @@ namespace smt::noodler::ecma {
                 next();
                 break;
             }
-            default: // epsilon
+            default:  // epsilon
                 add_atom_to_class(char_class, atom_before_dash);
                 char_class->add_element({ElementType::SINGLE, static_cast<Z3Char>('-'), 0});
                 break;
@@ -2009,7 +2160,7 @@ namespace smt::noodler::ecma {
             return {empty_str, m_manager};
         }
 
-        expr_ref_vector apps_to_concat{m_manager};
+        expr_ref_vector apps_to_concat {m_manager};
         for (uint32_t i = start_idx; i < actual_end; i++) {
             if (vars.get(i) != empty_str) {
                 apps_to_concat.push_back(vars.get(i));
@@ -2176,7 +2327,7 @@ namespace smt::noodler::ecma {
             // If the entire regex is regular, create a match edge and wrap it in two vertices
             inner_start = m_graph.create_vertex();
             inner_end = m_graph.create_vertex();
-            const EdgeID eid = m_graph.create_edge(inner_end, RCGEdgePayload{MatchEdge{std::get<app_ref>(comp)}});
+            const EdgeID eid = m_graph.create_edge(inner_end, RCGEdgePayload {MatchEdge {std::get<app_ref>(comp)}});
             m_graph.vertices[inner_start].outgoing_edges.push_back(eid);
         } else {
             const GraphFragment frag = std::get<GraphFragment>(comp);
@@ -2214,7 +2365,7 @@ namespace smt::noodler::ecma {
         m_global_target_string = target_string;
 
         // Initialize the base DFS context and start the traversal
-        DFSContext ctx{m_manager, m_util_s};
+        DFSContext ctx {m_manager, m_util_s};
         ctx.set_target(target_string);
         ctx.set_base_prefix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
         ctx.set_end_vertex(m_graph.end_vertex);
@@ -2335,7 +2486,7 @@ namespace smt::noodler::ecma {
                 SASSERT(std::holds_alternative<GraphFragment>(la.subregex));
                 if (!la.is_positive) {
                     util::throw_error("Unsupported: negative lookaround with non-regular inner content "
-                        "(would require universal quantifiers)");
+                                      "(would require universal quantifiers)");
                 }
 
                 const GraphFragment& inner_frag = std::get<GraphFragment>(la.subregex);
@@ -2385,13 +2536,13 @@ namespace smt::noodler::ecma {
                         {m_manager.mk_eq(global_prefix, app_ref(m_global_target_string, m_manager)), m_manager});
                 } else {
                     util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: anchor != "
-                        "'$' && anchor != '^'");
+                                      "'$' && anchor != '^'");
                 }
             } else if (std::holds_alternative<Lookaround>(assertion.payload)) {
                 handle_lookaround_constraints(ctx, assertion, global_prefix);
             } else {
                 util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: Assertion is "
-                    "neither Anchor nor Lookaround");
+                                  "neither Anchor nor Lookaround");
             }
         }
         // Backreference --> edge_var must be equal to the concatenation of all variables in the referenced group on the
@@ -2410,7 +2561,7 @@ namespace smt::noodler::ecma {
             }
         } else {
             util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: edge payload is "
-                "neither BackrefEdge, AssertionEdge nor MatchEdge");
+                              "neither BackrefEdge, AssertionEdge nor MatchEdge");
         }
     }
 
@@ -2453,4 +2604,4 @@ namespace smt::noodler::ecma {
     bool GraphFragment::is_initialized() const {
         return v_in == std::numeric_limits<VertexID>::max() && v_out == std::numeric_limits<VertexID>::max();
     }
-} // namespace smt::noodler::ecma
+}  // namespace smt::noodler::ecma
