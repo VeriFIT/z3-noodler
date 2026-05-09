@@ -3,6 +3,7 @@
 #include "ast/ast.h"
 #include "ast/ast_pp.h"
 #include "ast/reg_decl_plugins.h"
+#include "params/theory_str_noodler_params.h"
 
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
@@ -1293,7 +1294,9 @@ namespace smt::noodler::ecma::test {
     }
 
     std::string build_and_serialize_rcg(const zstring& regex, ast_manager& m) {
-        RegexConstraintBuilder builder(m, regex);
+        theory_str_noodler_params params;
+        params.m_ecma_engine_semantics = true;
+        RegexConstraintBuilder builder(m, regex, params);
         const RegexConstraintGraph& rcg = builder.build_rcg();
         return serialize_rcg(rcg, m);
     }
