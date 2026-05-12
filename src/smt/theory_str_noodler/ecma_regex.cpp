@@ -1370,7 +1370,7 @@ namespace smt::noodler::ecma {
             } else if (m_range.min == 1) {
                 quant = util_s.re.mk_plus(child_expr);
             } else {
-                // Přepis a{3,} na a . a . a . a*
+                // Concatenation `min` times followed by kleene star
                 quant = child_expr;
                 for (uint64_t i = 1; i < m_range.min; i++) {
                     quant = util_s.re.mk_concat(quant, child_expr);
@@ -1378,40 +1378,45 @@ namespace smt::noodler::ecma {
                 quant = util_s.re.mk_concat(quant, util_s.re.mk_star(child_expr));
             }
         } else {
-            // BOUNDED QUANTIFIER: Eliminace 'mk_loop' kvůli chybám Z3 solveru
+            // For some reason, using mk_loop and mk_power directly leads to unsoudness of the solver, although the
+            // semantics should be the same as concatenation.
+            // if (m_range.min == m_range.max) {
+            //     quant = util_s.re.mk_power(child_expr, m_range.min);
+            // } else {
+            //     quant = util_s.re.mk_loop(child_expr, m_range.min, m_range.max);
+            // }
             if (m_range.min == m_range.max) {
                 if (m_range.min == 0) {
                     quant = util_s.re.mk_epsilon(util_s.mk_string_sort());
                 } else {
-                    // Přesný počet opakování (např. d{16}) -> r . r . r ...
+                    // A concrete number of concatenations
                     quant = child_expr;
                     for (uint64_t i = 1; i < m_range.min; i++) {
                         quant = util_s.re.mk_concat(quant, child_expr);
                     }
                 }
             } else {
-                // Rozsah [min, max] (např. \d{1,5})
-                // Část, která musí matchnout (r_min)
-                app* r_min = util_s.re.mk_epsilon(util_s.mk_string_sort());
+                // Range [min, max]:
+                // Obligatory part -- at least `min` times
+                app* at_least_min = util_s.re.mk_epsilon(util_s.mk_string_sort());
                 if (m_range.min > 0) {
-                    r_min = child_expr;
+                    at_least_min = child_expr;
                     for (uint64_t i = 1; i < m_range.min; i++) {
-                        r_min = util_s.re.mk_concat(r_min, child_expr);
+                        at_least_min = util_s.re.mk_concat(at_least_min, child_expr);
                     }
                 }
 
-                // Volitelná část (eps | r)
+                // Optional pattern -- union with epsilon
                 app* eps = util_s.re.mk_epsilon(util_s.mk_string_sort());
-                app* r_opt = util_s.re.mk_union(eps, child_expr);
+                app* re_optional = util_s.re.mk_union(eps, child_expr);
 
-                // Zřetězení volitelných částí do maximální délky
-                app* r_rest = r_opt;
+                // Chain the optional pattern `max` - `min` times
+                app* up_to_max = re_optional;
                 for (uint64_t i = 1; i < (m_range.max - m_range.min); i++) {
-                    r_rest = util_s.re.mk_concat(r_rest, r_opt);
+                    up_to_max = util_s.re.mk_concat(up_to_max, re_optional);
                 }
 
-                // Výsledek je r_min . r_rest
-                quant = util_s.re.mk_concat(r_min, r_rest);
+                quant = util_s.re.mk_concat(at_least_min, up_to_max);
             }
         }
 
