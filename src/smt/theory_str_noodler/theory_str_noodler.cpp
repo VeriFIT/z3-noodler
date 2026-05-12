@@ -3,35 +3,34 @@ The skeleton of this code was obtained by Yu-Fang Chen from https://github.com/g
 Eternal glory to Yu-Fang.
 */
 
-#include "theory_str_noodler.h"
+#include <algorithm>
+#include <sstream>
+#include <iostream>
+#include <cmath>
 
 #include "ast/ast_pp.h"
-#include "ast/reg_decl_plugins.h"
-#include "ast/seq_decl_plugin.h"
-#include "decision_procedure.h"
-#include "ecma_regex.h"
-#include "memb_heuristics_procedures.h"
 #include "smt/smt_context.h"
-#include "smt/theory_arith.h"
 #include "smt/theory_lra.h"
-
-#include <algorithm>
-#include <cmath>
-#include <iostream>
-#include <sstream>
+#include "smt/theory_arith.h"
+#include "smt/smt_context.h"
+#include "ast/seq_decl_plugin.h"
+#include "ast/reg_decl_plugins.h"
+#include "theory_str_noodler.h"
+#include "ecma_regex.h"
 
 namespace smt::noodler {
 
-    theory_str_noodler::theory_str_noodler(context& ctx, ast_manager& m, const theory_str_noodler_params& params)
-        : theory(ctx, ctx.get_manager().mk_family_id("seq")),
-          m_params(params),
-          m_rewrite(m),
-          m_util_a(m),
-          m_util_s(m),
-          var_eqs(m_util_a),
-          m_length(m),
-          axiomatized_instances(),
-          sat_length_formula(m) { }
+      theory_str_noodler::theory_str_noodler(context& ctx, ast_manager & m, theory_str_noodler_params const & params):
+        theory(ctx, ctx.get_manager().mk_family_id("seq")),
+        m_params(params),
+        m_rewrite(m),
+        m_util_a(m),
+        m_util_s(m),
+        var_eqs(m_util_a),
+        m_length(m),
+        axiomatized_instances(),
+        sat_length_formula(m)  {
+    }
 
     void theory_str_noodler::display(std::ostream &os) const {
         os << "theory_str display" << std::endl;
@@ -150,10 +149,10 @@ namespace smt::noodler {
                 }
             }
             ctx.mark_as_relevant(ex);
-            string_theory_propagation(ex, true, false);
+            string_theory_propagation(ex, true, false); 
         }
-        // it seems that for quantified formulae, the model generation infrastructure is necessary for
-        // the solving (even though the model is not requested). Probably it has something to do with
+        // it seems that for quantified formulae, the model generation infrastructure is necessary for 
+        // the solving (even though the model is not requested). Probably it has something to do with 
         // model-based quantifier instantiation.
         if(this->input_has_quantifiers) {
             const_cast<theory_str_noodler_params&>(m_params).m_produce_models = true;
@@ -185,7 +184,7 @@ namespace smt::noodler {
         if(init && m.is_eq(ex) && neg) {
             ctx.mark_as_relevant(m.mk_not(ex));
         }
-        // we need to propagate all string predicates (including their negated forms) before the actual solve (in init_search), because we need to ensure these axioms are
+        // we need to propagate all string predicates (including their negated forms) before the actual solve (in init_search), because we need to ensure these axioms are 
         // generated only once on the decision level 0 (if they are generated on a higher level, they can cause looping for some reason)
         if(init && (
                 m_util_s.str.is_prefix(ex) ||
@@ -200,15 +199,15 @@ namespace smt::noodler {
             else ctx.mark_as_relevant(ex);
         }
 
-        // in the initialization phase, we need to mark all string terms as relevant. We want to
-        // prevent the situation when the string functions/predicates are axiomatized
+        // in the initialization phase, we need to mark all string terms as relevant. We want to 
+        // prevent the situation when the string functions/predicates are axiomatized 
         // on higher decision level than 0 (otherwise the axioms are lost).
         // String propagation of the input formula works on level 0.
         if(init && (
-            m_util_s.str.is_index(ex) ||
+            m_util_s.str.is_index(ex) || 
             m_util_s.str.is_at(ex) ||
             m_util_s.str.is_extract(ex) ||
-            m_util_s.str.is_replace(ex) ||
+            m_util_s.str.is_replace(ex) || 
             m_util_s.str.is_replace_all(ex) ||
             m_util_s.str.is_replace_re_all(ex)
         )) {
@@ -218,7 +217,7 @@ namespace smt::noodler {
         // Check if we already axiomatized the expr
         if (propagated_string_theory.contains(ex)) {
             return;
-        }
+        }   
         propagated_string_theory.insert(ex);
 
         sort *expr_sort = ex->get_sort();
@@ -328,7 +327,7 @@ namespace smt::noodler {
             return;
         } else if(!m.is_ite(a_str)) {
             // axiom |t| >= 0 where t is a string term
-            {
+            { 
                 // build LHS
                 expr_ref len_str(m);
                 len_str = m_util_s.str.mk_length(a_str);
@@ -501,13 +500,13 @@ namespace smt::noodler {
         expr *e = ctx.bool_var2expr(v);
         expr *e1 = nullptr, *e2 = nullptr;
         if (m_util_s.str.is_prefix(e, e1, e2)) {
-            // already handled in relevant_eh. It suffices to handle is_prefix only once as it is fully
+            // already handled in relevant_eh. It suffices to handle is_prefix only once as it is fully 
             // axiomatized using basic string constraints ((dis)equations, regexes, and lengths)
         } else if (m_util_s.str.is_suffix(e, e1, e2)) {
-            // already handled in relevant_eh. It suffices to handle is_suffix only once as it is fully
+            // already handled in relevant_eh. It suffices to handle is_suffix only once as it is fully 
             // axiomatized using basic string constraints ((dis)equations, regexes, and lengths)
         } else if (m_util_s.str.is_contains(e, e1, e2)) {
-            // notcontains cannot be fully axiomatized. We need to add it among string constraints solved later in final_check
+            // notcontains cannot be fully axiomatized. We need to add it among string constraints solved later in final_check 
             // (it is not sufficient to add it only once at the beginning of the solver run as it max occurr in different SAT assignments).
             if (!is_true) {
                 assign_not_contains(e);
@@ -679,7 +678,7 @@ namespace smt::noodler {
         ast_manager &m = get_manager();
         context &ctx = get_context();
         expr_ref ex{e, m};
-        // simplify the expression. This was commented before and it caused
+        // simplify the expression. This was commented before and it caused 
         // problems at some point, I am not pretty sure of what kind.
         m_rewrite(ex);
 
@@ -790,7 +789,7 @@ namespace smt::noodler {
         // the case where s is one letter string literal, i.e. (str.at "A" i)
         //   i = 0 -> v = "A"
         //   i != 0 -> v = eps
-        if(zstring str; m_util_s.str.is_string(s, str) && str.length() == 1) {
+        if(zstring str; m_util_s.str.is_string(s, str) && str.length() == 1) { 
             // i = 0 -> v = "A"
             add_axiom({~mk_literal(m.mk_eq(i, m_util_a.mk_int(0))), mk_eq(v, s, false)});
             // i != 0 -> v = eps
@@ -875,7 +874,7 @@ namespace smt::noodler {
         string_theory_propagation(xvy);
 
         expr_ref len_x(m_util_s.str.mk_length(x), m);
-
+ 
         // 0 <= i < |s| -> s = xvy
         add_axiom({~i_ge_0, i_ge_len_s, mk_eq(s, xvy, false)});
         // 0 <= i < |s| -> v in re.allchar
@@ -912,7 +911,7 @@ namespace smt::noodler {
      *  - when s is a one letter string literal
      *  - the case (str.substr s 0 (1 + (str.indexof s t n))) with t a nonempty string literal
      *  - the case (str.substr s 0 (|s|-1))
-     *
+     * 
      * There is also some special handling of x when i is either a numeral or of the form n+|s|
      * where n is a numeral. Furthermore, for l a numeral, there is special handlings of the
      * axioms for |v|.
@@ -1419,7 +1418,7 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Handle replace_re. Just store the instance. It is solved using transducer
+     * @brief Handle replace_re. Just store the instance. It is solved using transducer 
      * constraints in the final_check.
      *
      * @param e replace_re term
@@ -1439,7 +1438,7 @@ namespace smt::noodler {
     /**
      * @brief Handle replace_all. Just store the instance. It is solved using transducer
      * constraints in the final_check.
-     *
+     * 
      * @param e replace_all
      */
     void theory_str_noodler::handle_replace_all(expr *e) {
@@ -1457,7 +1456,7 @@ namespace smt::noodler {
     /**
      * @brief Handle replace_re_all. Just store the instance. It is solved using transducer
      * constraints in the final_check.
-     *
+     * 
      * @param e replace_re_all
      */
     void theory_str_noodler::handle_replace_re_all(expr *e) {
@@ -1841,7 +1840,7 @@ namespace smt::noodler {
 
     /**
      * @brief Handler for assigning boolean value to the not(contains) predicate.
-     *
+     * 
      * @param e Not contains predicate
      */
     void theory_str_noodler::assign_not_contains(expr *e) {
@@ -1861,7 +1860,7 @@ namespace smt::noodler {
     /**
      * @brief Handle str.<
      * Translates to the following theory axioms.
-     *
+     * 
      * not(x < y) -> x = y | y < x
      * x < y -> x != y
      * x < y -> not(y < x)
@@ -1903,7 +1902,7 @@ namespace smt::noodler {
         expr_ref to_code_left(m_util_s.str.mk_to_code(lex_in_left), m);
         expr_ref to_code_right(m_util_s.str.mk_to_code(lex_in_right), m);
 
-        // This is a dirty hack. If I add axiom to_code(v1) < to_code(v2), the LIA solver starts
+        // This is a dirty hack. If I add axiom to_code(v1) < to_code(v2), the LIA solver starts 
         // to solve a nonlinear problem (?). If I use to_code(v1) + k = to_code(v2) where k > 0, it works well.
         expr_ref vark = mk_int_var_fresh("lex_add");
         expr_ref to_code_lt(m.mk_eq(m_util_a.mk_add(to_code_left, vark), to_code_right), m);
@@ -2002,7 +2001,7 @@ void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
             add_axiom({mk_literal(eq_fv)});
             add_axiom({~mk_literal(re_orig), mk_literal(n_re)});
 
-            re_constr = to_app(var);
+            re_constr = to_app(var); 
             re_atom = n_re;
         }
 
@@ -2012,12 +2011,12 @@ void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
 
     /**
      * @brief Handle is_digit
-     *
+     * 
      * Translates into equivalence:
      * is_digit(s) <-> s \in [0-9]
-     *
+     * 
      * @param e str.is_digit(s)
-     *
+     * 
      * TODO: This probably makes is_digit always relevant.
      */
     void theory_str_noodler::handle_is_digit(expr *e) {
@@ -2065,7 +2064,7 @@ void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
         // number bound for the conversion of length constraints into regex constraints.
         // For higher values this conversion could not be beneficial as we would work with
         // big automata in the decision procedure.
-        const int MAX_NUM = 64;
+        const int MAX_NUM = 64; 
         const unsigned MAX_VARS = 4;
         rational val;
         bool val_is_larger;
@@ -2109,7 +2108,7 @@ void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
                 return true;
             } else if (len_arg.size() <= MAX_VARS) {
                 expr_ref re(
-                    val_is_larger ?
+                    val_is_larger ? 
                         m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
                         m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(val)),
                     m
@@ -2125,7 +2124,7 @@ void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
 
     /**
      * @brief Handle to_code, from_code, to_int, from_int
-     *
+     * 
      * Collects (and possibly creates) variables for the argument and result
      * of the term and puts them in m_conversion_todo.
      */
@@ -2353,7 +2352,7 @@ void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
             len_vars.insert(e);
             return;
         }
-        // quantified variables are handled in a different way (e.g., for quantifier
+        // quantified variables are handled in a different way (e.g., for quantifier 
         // instantiation the variable is replaced by a concrete term in final_check)
         if(is_var(e)) {
             return;
@@ -2382,4 +2381,4 @@ void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
         }
         os << std::endl;
     }
-}  // namespace smt::noodler
+}
