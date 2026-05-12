@@ -38,7 +38,6 @@ public:
 
     const uint32_t* operator+(const uint32_t offset) const {
         if (offset > m_size) {
-            // TODO: better exceptions
             throw default_exception("Internal error: zstring_view operator+ offset > size");
         }
         return m_data + offset;
@@ -74,10 +73,12 @@ template<>
 struct std::hash<zstring_view> {
     std::size_t operator()(const zstring_view& zv) const {
         std::size_t total_hash = 0;
+        std::hash<uint32_t> hasher{};
         for (std::size_t i = 0; i < zv.length(); i++) {
-            total_hash += std::hash<uint32_t> {}(zv[i]);
+            // Inspired by boost::hash_combine
+            total_hash ^= hasher(zv[i]) + (total_hash << 6) + (total_hash >> 2);
         }
-        total_hash += std::hash<uint32_t> {}(zv.length());
+        total_hash ^= hasher(zv.length()) + (total_hash << 6) + (total_hash >> 2);
         return total_hash;
     }
 };
