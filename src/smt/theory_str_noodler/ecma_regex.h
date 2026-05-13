@@ -291,7 +291,7 @@ namespace smt::noodler::ecma {
         Token get_token_standard();
         Token get_char_class_escape_sequence_token();
         Token get_token_char_class();
-        std::pair<bool, zstring_view> is_capture_or_named_capture(size_t position) const;
+        std::pair<bool, zstring_view> is_capture_or_named_capture(uint32_t position) const;
         void perform_first_traverse();
     };
 

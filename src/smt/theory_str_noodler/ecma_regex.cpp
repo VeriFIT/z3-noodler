@@ -770,7 +770,7 @@ namespace smt::noodler::ecma {
         }
     }
 
-    std::pair<bool, zstring_view> ECMALexer::is_capture_or_named_capture(size_t position) const {
+    std::pair<bool, zstring_view> ECMALexer::is_capture_or_named_capture(uint32_t position) const {
         position++;
         if (position >= m_regex.length()) {
             return {false, {}};
