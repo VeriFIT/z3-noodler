@@ -1333,7 +1333,7 @@ namespace smt::noodler::ecma {
             disj->add_alternative(std::make_unique<ASTNodeAlternative>());
         }
 
-        // Create chains with 0,...,min; 0,...,min-1; ...; 0,...,max subtrees and alternate them all.
+        // Create chains with (min, min+1, ..., max) subtrees and alternate them all.
         const uint64_t start = std::max(1ul, m_range.min);
         for (uint64_t k = start; k <= m_range.max; ++k) {
             auto alt = std::make_unique<ASTNodeAlternative>();
