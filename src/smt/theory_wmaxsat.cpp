@@ -176,7 +176,7 @@ namespace smt {
         }
     }
 
-    final_check_status theory_wmaxsat::final_check_eh() {
+    final_check_status theory_wmaxsat::final_check_eh(unsigned level) {
         if (m_normalize) normalize();
         TRACE(opt, tout << "cost: " << m_zcost << " min cost: " << m_zmin_cost << "\n";);
         return FC_DONE;
@@ -254,7 +254,7 @@ namespace smt {
                   //ctx.display(tout);                      
                   );
         }
-        expr_ref result(m.mk_or(disj.size(), disj.data()), m);
+        expr_ref result(m.mk_or(disj), m);
         TRACE(opt,
               tout << result << " weight: " << weight << "\n";
               tout << "cost: " << m_zcost << " min-cost: " << m_zmin_cost << "\n";);

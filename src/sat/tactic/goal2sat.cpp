@@ -38,7 +38,6 @@ Notes:
 #include "model/model_v2_pp.h"
 #include "tactic/tactic.h"
 #include "ast/converters/generic_model_converter.h"
-#include "sat/sat_cut_simplifier.h"
 #include "sat/sat_drat.h"
 #include "sat/tactic/goal2sat.h"
 #include "sat/smt/pb_solver.h"
@@ -76,7 +75,6 @@ struct goal2sat::imp : public sat::sat_internalizer {
     bool                        m_default_external;
     bool                        m_euf = false;
     bool                        m_top_level = false;
-    sat::literal_vector         aig_lits;
     
     imp(ast_manager & _m, params_ref const & p, sat::solver_core & s, atom2bool_var & map, dep2asm_map& dep2asm, bool default_external):
         m(_m),
@@ -89,10 +87,6 @@ struct goal2sat::imp : public sat::sat_internalizer {
         m_unhandled_funs(m),
         m_default_external(default_external) {
         updt_params(p);
-    }
-
-    sat::cut_simplifier* aig() {
-        return m_solver.get_cut_simplifier();
     }
 
     void updt_params(params_ref const & p) {
@@ -150,7 +144,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
     }
 
     void mk_clause(unsigned n, sat::literal * lits, euf::th_proof_hint* ph) {
-        TRACE(goal2sat, tout << "mk_clause: "; for (unsigned i = 0; i < n; i++) tout << lits[i] << " "; tout << "\n";);
+        TRACE(goal2sat, tout << "mk_clause: "; for (unsigned i = 0; i < n; ++i) tout << lits[i] << " "; tout << "\n";);
         if (relevancy_enabled())
             ensure_euf()->add_aux(n, lits);
         m_solver.add_clause(n, lits, mk_status(ph));
@@ -172,7 +166,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
     }
 
     void mk_root_clause(unsigned n, sat::literal * lits, euf::th_proof_hint* ph = nullptr) {
-        TRACE(goal2sat, tout << "mk_root_clause: "; for (unsigned i = 0; i < n; i++) tout << lits[i] << " "; tout << "\n";);
+        TRACE(goal2sat, tout << "mk_root_clause: "; for (unsigned i = 0; i < n; ++i) tout << lits[i] << " "; tout << "\n";);
         if (relevancy_enabled())
             ensure_euf()->add_root(n, lits);
         m_solver.add_clause(n, lits, ph ? mk_status(ph) : sat::status::input());
@@ -416,7 +410,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
             SASSERT(num == m_result_stack.size());
             if (sign) {
                 // this case should not really happen.
-                for (unsigned i = 0; i < num; i++) {
+                for (unsigned i = 0; i < num; ++i) {
                     sat::literal l = m_result_stack[i];
                     l.neg();
                     mk_root_clause(l);
@@ -435,21 +429,16 @@ struct goal2sat::imp : public sat::sat_internalizer {
             sat::literal  l(k, false);
             cache(t, l);
             sat::literal * lits = m_result_stack.end() - num;       
-            for (unsigned i = 0; i < num; i++) 
+            for (unsigned i = 0; i < num; ++i) 
                 mk_clause(~lits[i], l, mk_tseitin(~lits[i], l));
                        
             m_result_stack.push_back(~l);
             lits = m_result_stack.end() - num - 1;
-            if (aig()) {
-                aig_lits.reset();
-                aig_lits.append(num, lits);
-            }
+
             // remark: mk_clause may perform destructive updated to lits.
             // I have to execute it after the binary mk_clause above.
             mk_clause(num+1, lits, mk_tseitin(num+1, lits));
-            if (aig()) 
-                aig()->add_or(l, num, aig_lits.data());
-                        
+     
             m_solver.set_phase(~l);               
             m_result_stack.shrink(old_sz);
             if (sign)
@@ -488,7 +477,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
             sat::literal * lits = m_result_stack.end() - num;
 
             // l => /\ lits
-            for (unsigned i = 0; i < num; i++) {
+            for (unsigned i = 0; i < num; ++i) {
                 mk_clause(~l, lits[i], mk_tseitin(~l, lits[i]));
             }
             // /\ lits => l
@@ -497,14 +486,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
             }
             m_result_stack.push_back(l);
             lits = m_result_stack.end() - num - 1;
-            if (aig()) {
-                aig_lits.reset();
-                aig_lits.append(num, lits);
-            }
-            mk_clause(num+1, lits, mk_tseitin(num+1, lits));
-            if (aig()) {
-                aig()->add_and(l, num, aig_lits.data());
-            }        
+            mk_clause(num+1, lits, mk_tseitin(num+1, lits));      
             m_solver.set_phase(l);               
             if (sign)
                 l.neg();
@@ -546,7 +528,6 @@ struct goal2sat::imp : public sat::sat_internalizer {
                 mk_clause(~t, ~e, l, mk_tseitin(~t, ~e, l));
                 mk_clause(t,  e, ~l, mk_tseitin(t, e, ~l));
             }
-            if (aig()) aig()->add_ite(l, c, t, e);
             if (sign)
                 l.neg();
 
@@ -645,7 +626,6 @@ struct goal2sat::imp : public sat::sat_internalizer {
             mk_clause(~l, ~l1,  l2, mk_tseitin(~l, ~l1, l2));
             mk_clause(l,   l1,  l2, mk_tseitin(l, l1, l2));
             mk_clause(l,  ~l1, ~l2, mk_tseitin(l, ~l1, ~l2));
-            if (aig()) aig()->add_iff(l, l1, l2);
 
             cache(t, l);
             if (sign)
@@ -953,7 +933,7 @@ struct goal2sat::imp : public sat::sat_internalizer {
         expr_ref_vector  fmls(m);
         if (m_euf)
             ensure_euf();
-        for (unsigned idx = 0; idx < size; idx++) {
+        for (unsigned idx = 0; idx < size; ++idx) {
             f = g.form(idx);
             // Add assumptions.
             if (g.dep(idx)) {

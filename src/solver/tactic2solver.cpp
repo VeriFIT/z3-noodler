@@ -115,6 +115,10 @@ public:
         m_tactic->user_propagate_register_diseq(diseq_eh);
     }
 
+    void user_propagate_register_on_binding(user_propagator::binding_eh_t& binding_eh) override {
+        m_tactic->user_propagate_register_on_binding(binding_eh);
+    }
+
     void user_propagate_register_expr(expr* e) override {
         m_tactic->user_propagate_register_expr(e);
     }
@@ -229,7 +233,7 @@ lbool tactic2solver::check_sat_core2(unsigned num_assumptions, expr * const * as
     for (expr* e : m_assertions) {
         g->assert_expr(e);
     }
-    for (unsigned i = 0; i < num_assumptions; i++) {
+    for (unsigned i = 0; i < num_assumptions; ++i) {
         proof_ref pr(m.mk_asserted(assumptions[i]), m);
         expr_dependency_ref ans(m.mk_leaf(assumptions[i]), m);    
         g->assert_expr(assumptions[i], pr, ans);
@@ -309,6 +313,8 @@ solver* tactic2solver::translate(ast_manager& m, params_ref const& p) {
 
 void tactic2solver::collect_statistics(statistics & st) const {    
     st.copy(m_stats);
+    if (m_stats.size() == 0 && m_tactic)
+        m_tactic->collect_statistics(st);
     //SASSERT(m_stats.size() > 0);
 }
 
@@ -384,6 +390,11 @@ public:
     solver * operator()(ast_manager & m, params_ref const & p, bool proofs_enabled, bool models_enabled, bool unsat_core_enabled, symbol const & logic) override {
         return mk_tactic2solver(m, m_tactic.get(), p, proofs_enabled, models_enabled, unsat_core_enabled, logic);
     }
+    
+    solver_factory* translate(ast_manager& m) override {
+        tactic* translated_tactic = m_tactic->translate(m);
+        return alloc(tactic2solver_factory, translated_tactic);
+    }
 };
 
 class tactic_factory2solver_factory : public solver_factory {
@@ -395,6 +406,10 @@ public:
     solver * operator()(ast_manager & m, params_ref const & p, bool proofs_enabled, bool models_enabled, bool unsat_core_enabled, symbol const & logic) override {
         tactic * t = (*m_factory)(m, p);
         return mk_tactic2solver(m, t, p, proofs_enabled, models_enabled, unsat_core_enabled, logic);
+    }
+    
+    solver_factory* translate(ast_manager& m) override {
+        return alloc(tactic_factory2solver_factory, m_factory);
     }
 };
 }

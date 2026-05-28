@@ -11,7 +11,6 @@ static bool build_instance(char const * filename, sat::solver& s, sat::local_sea
     // for temporary storage
 
     std::ifstream infile(filename);
-    //if (infile == NULL) //linux
     if (!infile) {
         std::cout << "File not found " << filename << "\n";
         return false;
@@ -122,7 +121,7 @@ void tst_sat_local_search(char ** argv, int argc, int& i) {
     // set up cancellation/timeout environment.
 
     cancel_eh<reslimit> eh(local_search.rlimit());
-    scoped_ctrl_c ctrlc(eh, false, true);
+    scoped_ctrl_c ctrlc(eh);
     scoped_timer timer(cutoff_time*1000, &eh);        
     local_search.check(0, nullptr, nullptr);    
 

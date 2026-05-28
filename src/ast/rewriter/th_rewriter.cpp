@@ -106,6 +106,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         m_ar_rw.updt_params(p);
         m_f_rw.updt_params(p);
         m_seq_rw.updt_params(p);
+        m_rec_rw.updt_params(p);
         updt_local_params(p);
     }
 
@@ -456,11 +457,11 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         new_t2 = nullptr;
         expr_fast_mark1 visited1;
         expr_fast_mark2 visited2;
-        for (unsigned i = 0; i < num1; i++) {
+        for (unsigned i = 0; i < num1; ++i) {
             expr * arg = ms1[i];
             visited1.mark(arg);
         }
-        for (unsigned i = 0; i < num2; i++) {
+        for (unsigned i = 0; i < num2; ++i) {
             expr * arg = ms2[i];
             visited2.mark(arg);
             if (visited1.is_marked(arg))
@@ -469,7 +470,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
                 return false; // more than one missing term
             new_t2 = arg;
         }
-        for (unsigned i = 0; i < num1; i++) {
+        for (unsigned i = 0; i < num1; ++i) {
             expr * arg = ms1[i];
             if (visited2.is_marked(arg))
                 continue;
@@ -485,7 +486,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             new_t2 = m_a_util.mk_numeral(rational::zero(), is_int);
         // mk common part
         ptr_buffer<expr> args;
-        for (unsigned i = 0; i < num1; i++) {
+        for (unsigned i = 0; i < num1; ++i) {
             expr * arg = ms1[i];
             if (arg == new_t1.get())
                 continue;
@@ -634,7 +635,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
         if (st != BR_DONE && st != BR_FAILED) {
             CTRACE(th_rewriter_step, st != BR_FAILED,
                    tout << f->get_name() << "\n";
-                   for (unsigned i = 0; i < num; i++) tout << mk_ismt2_pp(args[i], m()) << "\n";
+                   for (unsigned i = 0; i < num; ++i) tout << mk_ismt2_pp(args[i], m()) << "\n";
                    tout << "---------->\n" << mk_ismt2_pp(result, m()) << "\n";);
             return st;
         }
@@ -656,7 +657,7 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
 
         CTRACE(th_rewriter_step, st != BR_FAILED,
                tout << f->get_name() << "\n";
-               for (unsigned i = 0; i < num; i++) tout << mk_ismt2_pp(args[i], m()) << "\n";
+               for (unsigned i = 0; i < num; ++i) tout << mk_ismt2_pp(args[i], m()) << "\n";
                tout << "---------->\n" << mk_ismt2_pp(result, m()) << "\n";);
         return st;
     }
@@ -933,9 +934,6 @@ struct th_rewriter::imp : public rewriter_tpl<th_rewriter_cfg> {
         return m_cfg.mk_eq(a, b);
     }
 
-    void set_solver(expr_solver* solver) {
-        m_cfg.m_seq_rw.set_solver(solver);
-    }
 };
 
 th_rewriter::th_rewriter(ast_manager & m, params_ref const & p):
@@ -1055,10 +1053,6 @@ expr_ref th_rewriter::mk_app(func_decl* f, unsigned num_args, expr* const* args)
 
 expr_ref th_rewriter::mk_eq(expr* a, expr* b) {
     return m_imp->mk_eq(a, b);
-}
-
-void th_rewriter::set_solver(expr_solver* solver) {
-    m_imp->set_solver(solver);
 }
 
 

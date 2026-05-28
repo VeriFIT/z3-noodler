@@ -115,7 +115,7 @@ extern "C" {
         reset_rcf_cancel(c);
         rcnumeral_vector av;
         unsigned rz = 0;
-        for (unsigned i = 0; i < n; i++) {
+        for (unsigned i = 0; i < n; ++i) {
             if (!rcfm(c).is_zero(to_rcnumeral(a[i])))
                 rz = i + 1;
             av.push_back(to_rcnumeral(a[i]));
@@ -129,7 +129,7 @@ extern "C" {
         rcnumeral_vector rs;
         rcfm(c).isolate_roots(av.size(), av.data(), rs);
         unsigned num_roots = rs.size();
-        for (unsigned i = 0; i < num_roots; i++) {
+        for (unsigned i = 0; i < num_roots; ++i) {
             roots[i] = from_rcnumeral(rs[i]);
         }
         RETURN_Z3_rcf_mk_roots num_roots;
@@ -385,7 +385,7 @@ extern "C" {
         Z3_CATCH_RETURN(nullptr);
     }
 
-    int Z3_API Z3_rcf_interval(Z3_context c, Z3_rcf_num a, int * lower_is_inf, int * lower_is_open, Z3_rcf_num * lower, int * upper_is_inf, int * upper_is_open, Z3_rcf_num * upper) {
+    int Z3_API Z3_rcf_interval(Z3_context c, Z3_rcf_num a, bool * lower_is_inf, bool * lower_is_open, Z3_rcf_num * lower, bool * upper_is_inf, bool * upper_is_open, Z3_rcf_num * upper) {
         Z3_TRY;
         LOG_Z3_rcf_interval(c, a, lower_is_inf, lower_is_open, lower, upper_is_inf, upper_is_open, upper);
         RESET_ERROR_CODE();

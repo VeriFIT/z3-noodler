@@ -32,7 +32,6 @@ class dll_base {
 
 protected:
     dll_base() = default;
-    ~dll_base() = default;
 
 public:
     dll_base(dll_base const&) = delete;
@@ -210,7 +209,7 @@ public:
         return *this;
     }
 
-    T const& operator*() const {
+    T const & operator*() const {
         return *m_elem;
     }
     bool operator!=(dll_iterator const& other) const {

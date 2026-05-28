@@ -46,6 +46,7 @@ namespace dd {
     class pdd_manager;
     class pdd_iterator;
     class pdd_linear_iterator;
+    class pdd_coeff_iterator;
 
     class pdd_manager {
     public:
@@ -55,6 +56,7 @@ namespace dd {
         friend pdd;
         friend pdd_iterator;
         friend pdd_linear_iterator;
+        friend pdd_coeff_iterator;
 
         typedef unsigned PDD;
         typedef vector<std::pair<rational,unsigned_vector>> monomials_t;
@@ -91,12 +93,12 @@ namespace dd {
                 m_index(0)
             {}
 
-            node(): m_refcount(0), m_level(0), m_lo(0), m_hi(0), m_index(0) {}
-            unsigned m_refcount : 10;
-            unsigned m_level : 22;
-            PDD      m_lo;
-            PDD      m_hi;
-            unsigned m_index;
+            node() = default;
+            unsigned m_refcount : 10 = 0;
+            unsigned m_level : 22 = 0;
+            PDD      m_lo = 0;
+            PDD      m_hi = 0;
+            unsigned m_index = 0;
             unsigned hash() const { return mk_mix(m_level, m_lo, m_hi); } 
             bool is_val() const { return m_hi == 0 && (m_lo != 0 || m_index == 0); }
             bool is_internal() const { return m_hi == 0 && m_lo == 0 && m_index != 0; }
@@ -158,13 +160,13 @@ namespace dd {
                 m_rest(UINT_MAX)
             {}
 
-            factor_entry(): m_p(0), m_v(0), m_degree(0), m_lc(UINT_MAX), m_rest(UINT_MAX) {}
+            factor_entry() = default;
 
-            PDD m_p;            // input
-            unsigned m_v;       // input
-            unsigned m_degree;  // input
-            PDD m_lc;           // output
-            PDD m_rest;         // output
+            PDD m_p = 0;            // input
+            unsigned m_v = 0;       // input
+            unsigned m_degree = 0;  // input
+            PDD m_lc = UINT_MAX;           // output
+            PDD m_rest = UINT_MAX;         // output
 
             bool is_valid() { return m_lc != UINT_MAX; }
 
@@ -366,6 +368,8 @@ namespace dd {
         bool is_binary(PDD p);
         bool is_binary(pdd const& p);
 
+        void get_powers(pdd const& p, svector<std::pair<unsigned, unsigned>>& powers);
+
         bool is_monomial(PDD p);
 
         bool is_univariate(PDD p);
@@ -406,6 +410,7 @@ namespace dd {
         friend class pdd_manager;
         friend class pdd_iterator;
         friend class pdd_linear_iterator;
+        friend class pdd_coeff_iterator;
         unsigned     root;
         pdd_manager* m;
         pdd(unsigned root, pdd_manager& pm): root(root), m(&pm) { m->inc_ref(root); }
@@ -413,7 +418,7 @@ namespace dd {
     public:
         pdd(pdd_manager& m): pdd(0, m) { SASSERT(is_zero()); }
         pdd(pdd const& other): pdd(other.root, other.m) { m->inc_ref(root); }
-        pdd(pdd && other) noexcept : pdd(0, other.m) { std::swap(root, other.root); }
+        pdd(pdd && other) noexcept : root(other.root), m(other.m) { other.root = 0; }
         pdd& operator=(pdd const& other);
         pdd& operator=(unsigned k);
         pdd& operator=(rational const& k);
@@ -440,6 +445,7 @@ namespace dd {
         bool is_unary() const { return !is_val() && lo().is_zero() && hi().is_val(); }
         bool is_offset() const { return !is_val() && lo().is_val() && hi().is_one(); }
         bool is_binary() const { return m->is_binary(root); }
+        void get_powers(svector<std::pair<unsigned, unsigned>>& powers) const { m->get_powers(*this, powers); }
         bool is_monomial() const { return m->is_monomial(root); }
         bool is_univariate() const { return m->is_univariate(root); }
         bool is_univariate_in(unsigned v) const { return m->is_univariate_in(root, v); }
@@ -507,6 +513,20 @@ namespace dd {
 
         pdd_iterator begin() const;
         pdd_iterator end() const;
+
+
+        pdd_coeff_iterator begin_coeff() const;
+        pdd_coeff_iterator end_coeff() const;
+
+        class pdd_coeffients {
+            friend class pdd;
+            pdd const& m_pdd;
+            pdd_coeffients(pdd const& p) : m_pdd(p) {}
+        public:
+            pdd_coeff_iterator begin() const;
+            pdd_coeff_iterator end() const;
+        };
+        pdd_coeffients coefficients() const { return pdd_coeffients(*this); }
 
         class pdd_linear_monomials {
             friend class pdd;
@@ -591,6 +611,31 @@ namespace dd {
         pdd_linear_iterator& operator++() { next(); return *this; }
         pdd_linear_iterator operator++(int) { auto tmp = *this; next(); return tmp; }
         bool operator!=(pdd_linear_iterator const& other) const { return m_next != other.m_next; }
+    };
+
+    // iterator class that visits each coefficient with information
+    // if it is a constant or is used as a coefficient to a monomial.
+
+    struct coeff_value {
+        rational coeff;
+        bool is_constant; // true if it is a constant term.
+    };
+
+    class pdd_coeff_iterator {
+        friend class pdd;
+        pdd m_pdd;
+        unsigned_vector m_nodes;
+        coeff_value m_value;
+        bool at_end = true;
+        pdd_coeff_iterator(pdd const& p, bool at_start): m_pdd(p) { if (at_start) first(); }
+        void first();
+        void next();
+    public:
+        coeff_value operator*() const { return m_value; }
+        coeff_value const* operator->() const { return &m_value; }
+        pdd_coeff_iterator& operator++() { next(); return *this; }
+        pdd_coeff_iterator operator++(int) { auto tmp = *this; next(); return tmp; }
+        bool operator!=(pdd_coeff_iterator const& other) const { return at_end != other.at_end; }
     };
 
     class val_pp {

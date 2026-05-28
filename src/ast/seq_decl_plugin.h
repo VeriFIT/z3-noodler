@@ -94,7 +94,12 @@ enum seq_op_kind {
     OP_STRING_SBVTOS,
     OP_STRING_LT,
     OP_STRING_LE,
+    OP_STRING_TO_LOWER,
+    OP_STRING_TO_UPPER,
+    OP_STRING_UPDATE,
+    OP_STRING_TRIM,
     OP_STRING_IS_DIGIT,
+    OP_STRING_DELETE,
     OP_STRING_TO_CODE,
     OP_STRING_FROM_CODE,
 
@@ -322,6 +327,7 @@ public:
         app* mk_index(expr* a, expr* b, expr* i) const { expr* es[3] = { a, b, i}; return m.mk_app(m_fid, OP_SEQ_INDEX, 3, es); }
         app* mk_last_index(expr* a, expr* b) const { expr* es[2] = { a, b}; return m.mk_app(m_fid, OP_SEQ_LAST_INDEX, 2, es); }
         app* mk_replace(expr* a, expr* b, expr* c) const { expr* es[3] = { a, b, c}; return m.mk_app(m_fid, OP_SEQ_REPLACE, 3, es); }
+        app* mk_replace_all(expr* a, expr* b, expr* c) const { expr* es[3] = { a, b, c}; return m.mk_app(m_fid, OP_SEQ_REPLACE_ALL, 3, es); }
         app* mk_unit(expr* u) const { return m.mk_app(m_fid, OP_SEQ_UNIT, 1, &u); }
         app* mk_char(zstring const& s, unsigned idx) const;
         app* mk_char_bit(expr* e, unsigned i);
@@ -336,6 +342,11 @@ public:
         app* mk_lex_le(expr* a, expr* b) const { expr* es[2] = { a, b }; return m.mk_app(m_fid, OP_STRING_LE, 2, es); }
         app* mk_to_code(expr* e) const { return m.mk_app(m_fid, OP_STRING_TO_CODE, 1, &e); }
         app* mk_from_code(expr* e) const { return m.mk_app(m_fid, OP_STRING_FROM_CODE, 1, &e); }
+        app* mk_to_lower(expr* e) const { return m.mk_app(m_fid, OP_STRING_TO_LOWER, 1, &e); }
+        app* mk_to_upper(expr* e) const { return m.mk_app(m_fid, OP_STRING_TO_UPPER, 1, &e); }
+        app* mk_update(expr* a, expr* b, expr* c) const { expr* es[3] = { a, b, c }; return m.mk_app(m_fid, OP_STRING_UPDATE, 3, es); }
+        app* mk_trim(expr* e) const { return m.mk_app(m_fid, OP_STRING_TRIM, 1, &e); }
+        app* mk_delete(expr* a, expr* b, expr* c) const { expr* es[3] = { a, b, c }; return m.mk_app(m_fid, OP_STRING_DELETE, 3, es); }
         app* mk_is_digit(expr* e) const { return m.mk_app(m_fid, OP_STRING_IS_DIGIT, 1, &e); }
 
 
@@ -381,6 +392,11 @@ public:
         bool is_unit(expr const* n)     const { return is_app_of(n, m_fid, OP_SEQ_UNIT); }
         bool is_lt(expr const* n)       const { return is_app_of(n, m_fid, OP_STRING_LT); }
         bool is_le(expr const* n)       const { return is_app_of(n, m_fid, OP_STRING_LE); }
+        bool is_to_lower(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TO_LOWER); }
+        bool is_to_upper(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TO_UPPER); }
+        bool is_update(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_UPDATE); }
+        bool is_trim(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TRIM); }
+        bool is_delete(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_DELETE); }
         bool is_is_digit(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_IS_DIGIT); }
         bool is_from_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_FROM_CODE); }
         bool is_to_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TO_CODE); }
@@ -441,6 +457,11 @@ public:
         MATCH_UNARY(is_stor);
         MATCH_UNARY(is_ubv2s);
         MATCH_UNARY(is_sbv2s);
+        MATCH_UNARY(is_to_lower);
+        MATCH_UNARY(is_to_upper);
+        MATCH_TERNARY(is_update);
+        MATCH_UNARY(is_trim);
+        MATCH_TERNARY(is_delete);
         MATCH_UNARY(is_is_digit);
         MATCH_UNARY(is_from_code);
         MATCH_UNARY(is_to_code);

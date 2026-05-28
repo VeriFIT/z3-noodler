@@ -64,7 +64,7 @@ namespace smt::noodler {
          */
         struct stored_instance {
             expr_ref lengths; // length formula 
-            bool initial_length; // was the length formula obtained from the initial length checking?
+            bool is_overapprox; // is the formula an overapproximation? (obtained from initial or premature length checking)
             // TODO we could also keep here the decision procedure and immediately get the model when loop protection gets sat
         };
 
@@ -204,11 +204,10 @@ namespace smt::noodler {
         void pop_scope_eh(unsigned num_scopes) override;
         void restart_eh() override;
         void reset_eh() override;
-        final_check_status final_check_eh() override;
+        final_check_status final_check_eh(unsigned level) override;
         model_value_proc *mk_value(enode *n, model_generator& mg) override;
         void init_model(model_generator& m) override;
         void finalize_model(model_generator& mg) override;
-        lbool validate_unsat_core(expr_ref_vector& unsat_core) override;
 
         /**
          * @brief Collect statistics (called at the end of the run)
@@ -333,6 +332,9 @@ namespace smt::noodler {
         void handle_lex_lt(expr *e);
         void handle_replace_all(expr *e);
         void handle_replace_re_all(expr *e);
+        void handle_update(expr *e);
+        void handle_trim(expr *e);
+        void handle_delete(expr *e);
 
         /**
          * @brief Marks a string term @p e as length-aware
@@ -488,11 +490,11 @@ namespace smt::noodler {
          * 
          * @param len_formula Length formula corresponding to the current instance
          * @param add_axiomatized Add item to the vector of axiomatized instances (for the loop protection)
-         * @param init_lengths Was the length formula obtained from the initial length checking (for the fool protection)
+         * @param is_overapprox Was the length formula obtained from the initial or premature length checking (for the loop protection)
          * 
          * TODO explain better
          */
-        void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool init_lengths = false);
+        void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool is_overapprox = false);
 
         /**
          * @brief Checks if the current instance is suitable for Nielsen decision procedure.

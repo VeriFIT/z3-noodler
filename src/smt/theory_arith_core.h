@@ -954,7 +954,7 @@ namespace smt {
         collect_vars(r_id, BASE, to_add);
         TRACE(quasi_base_bug_detail,
               display_row_info(tout, r_id);
-              for (unsigned i = 0; i < to_add.size(); i++) {
+              for (unsigned i = 0; i < to_add.size(); ++i) {
                   theory_var v = to_add[i].m_var;
                   SASSERT(is_base(v));
                   SASSERT(!has_var_kind(get_var_row(v), BASE));
@@ -1535,7 +1535,7 @@ namespace smt {
     }
 
     template<typename Ext>
-    final_check_status theory_arith<Ext>::final_check_eh() {
+    final_check_status theory_arith<Ext>::final_check_eh(unsigned level) {
         TRACE(arith_eq_adapter_info, m_arith_eq_adapter.display_already_processed(tout););
         TRACE(arith, display(tout););
 
@@ -1845,7 +1845,7 @@ namespace smt {
     void theory_arith<Ext>::add_rows(unsigned r1, unsigned sz, linear_monomial * a_xs) {
         if (sz == 0)
             return;
-        for (unsigned i = 0; i < sz; i++) {
+        for (unsigned i = 0; i < sz; ++i) {
             linear_monomial & m = a_xs[i];
             numeral c           = m.m_coeff;
             theory_var v        = m.m_var;
@@ -2174,7 +2174,7 @@ namespace smt {
                 bool is_pos = !is_neg;
                 if (x_i != x_j && ((is_pos && above_lower(x_j)) || (is_neg && below_upper(x_j)))) {
                     int num       = get_num_non_free_dep_vars(x_j, best_so_far);
-                    int col_sz    = m_columns[x_j].size();
+                    int col_sz    = static_cast<int>(m_columns[x_j].size());
                     if (num < best_so_far || (num == best_so_far && col_sz < best_col_sz)) {
                         result        = x_j;
                         out_a_ij      = a_ij;
@@ -3081,7 +3081,7 @@ namespace smt {
               if (proof_rule)
                   tout << proof_rule << "\n";
               tout << "@" << ctx.get_scope_level() << "\n";
-              for (unsigned i = 0; i < num_literals; i++) {
+              for (unsigned i = 0; i < num_literals; ++i) {
                   ctx.display_detailed_literal(tout, lits[i]);
                   tout << " ";
                   if (coeffs_enabled()) {
@@ -3089,7 +3089,7 @@ namespace smt {
                   }
                   tout << "\n";
               }
-              for (unsigned i = 0; i < num_eqs; i++) {
+              for (unsigned i = 0; i < num_eqs; ++i) {
                   tout << "#" << eqs[i].first->get_owner_id() << "=#" << eqs[i].second->get_owner_id() << " ";
                   if (coeffs_enabled()) {
                       tout << "bound: " << bounds.eq_coeffs()[i] << "\n";
@@ -3174,9 +3174,10 @@ namespace smt {
 
     template<typename Ext>
     void theory_arith<Ext>::compute_epsilon() {
-        m_epsilon = numeral(1);
+        auto eps = ctx.get_fparams().m_arith_epsilon;        
+        m_epsilon = numeral(eps);
         theory_var num = get_num_vars();
-        for (theory_var v = 0; v < num; v++) {
+        for (theory_var v = 0; v < num; ++v) {
             bound * l = lower(v);
             bound * u = upper(v);
             if (l != nullptr)
@@ -3212,7 +3213,7 @@ namespace smt {
             rational2var mapping;
             theory_var num = get_num_vars();
             bool refine = false;
-            for (theory_var v = 0; v < num; v++) {
+            for (theory_var v = 0; v < num; ++v) {
                 if (is_int_src(v))
                     continue;
                 if (!ctx.is_shared(get_enode(v)))

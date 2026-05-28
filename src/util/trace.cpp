@@ -53,7 +53,7 @@ struct tag_info {
 };
 
 static tag_info s_tag_infos[] = {
-    #define X(tag, tc, desc) { false, false, TraceTag::tag },
+    #define X(tag_class, tag, desc) { false, false, TraceTag::tag },
 #include "util/trace_tags.def"
 #undef  X
 };
@@ -105,17 +105,42 @@ static const tag_info* get_tag_infos() {
 }
 
 
-static bool has_overlap(char const* s, char const* t) {
-    if (s[0] == t[0])
-        return true;
-    return false;
+static size_t levenshtein_distance(std::string_view s, std::string_view t) {
+    size_t len_s = s.length();
+    size_t len_t = t.length();
+    std::vector<size_t> prev(len_t + 1), curr(len_t + 1);
+
+    for (size_t j = 0; j <= len_t; ++j)
+        prev[j] = j;
+
+    for (size_t i = 1; i <= len_s; ++i) {
+        curr[0] = i;
+        for (size_t j = 1; j <= len_t; ++j) {
+            size_t cost = s[i - 1] == t[j - 1] ? 0 : 1;
+            curr[j] = std::min({ prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost });
+        }
+        prev.swap(curr);
+    }
+    return prev[len_t];
 }
 
-void enable_trace(const char * tag_str) {
-    TraceTag tag = find_trace_tag_by_string(tag_str);
+static bool has_overlap(std::string_view s, std::string_view t, size_t k) {
+    // Consider overlap if Levenshtein distance is <= k
+    return levenshtein_distance(s, t) <= k;
+}
+
+void enable_trace(std::string_view tag_str) {
+    std::string tag_string(tag_str); // Convert to std::string for null-termination
+    TraceTag tag = find_trace_tag_by_string(tag_string.c_str());
+    size_t k = tag_str.length();
+
+  
     if (tag == TraceTag::Count) {
-        warning_msg("trace tag '%s' does not exist", tag_str);
-#define X(tag, tag_class, desc) if (has_overlap(#tag, tag_str)) warning_msg("did you mean '%s'?", #tag);
+        warning_msg("trace tag '%s' does not exist", tag_string.c_str());
+#define X(tag_class, tag, desc) k = std::min(levenshtein_distance(#tag, tag_str), k);
+#include "util/trace_tags.def"
+#undef X
+#define X(tag_class, tag, desc) if (has_overlap(#tag, tag_str, k + 2)) warning_msg("did you mean '%s'?", #tag);
 #include "util/trace_tags.def"
 #undef X           
         return;
@@ -138,8 +163,9 @@ void enable_all_trace(bool flag) {
     g_enable_all_trace_tags = flag;
 }
 
-void disable_trace(const char * tag) {
-    TraceTag tag_str = find_trace_tag_by_string(tag);
+void disable_trace(std::string_view tag) {
+    std::string tag_string(tag); // Convert to std::string for null-termination
+    TraceTag tag_str = find_trace_tag_by_string(tag_string.c_str());
     disable_tag(tag_str);
 }
 

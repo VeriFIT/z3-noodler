@@ -1179,7 +1179,7 @@ namespace smt::noodler::regex {
                         tout << next_transducer.print_to_dot(true);
                     }
                 );
-                transducer = mata::nft::compose(transducer, next_transducer, 1, 0);
+                transducer = mata::nft::compose(transducer, next_transducer, 1, 0, true, mata::nft::JumpMode::NoJump);
                 transducer = mata::nft::reduce(mata::nft::remove_epsilon(transducer).trim()).trim();
                 STRACE(str_gather_transducer_constraints,
                     tout << "Size of composed NFT " << transducer.num_of_states() << "\n";

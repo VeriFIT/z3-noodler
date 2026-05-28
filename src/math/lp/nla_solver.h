@@ -33,10 +33,11 @@ namespace nla {
         void add_bounded_division(lpvar q, lpvar x, lpvar y);
         void check_bounded_divisions();
         void set_relevant(std::function<bool(lpvar)>& is_relevant);
+        void updt_params(params_ref const& p);
         void push();
         void pop(unsigned scopes);
         bool need_check();
-        lbool check();
+        lbool check(unsigned level);
         void propagate();
         void simplify() { m_core->simplify(); }
         lbool check_power(lpvar r, lpvar x, lpvar y);
@@ -49,10 +50,12 @@ namespace nla {
         nlsat::anum const& am_value(lp::lpvar v) const;
         scoped_anum& tmp1();
         scoped_anum& tmp2();
-        vector<nla::lemma> const& lemmas() const;
         vector<nla::ineq> const& literals() const;
         vector<lp::fixed_equality> const& fixed_equalities() const;
         vector<lp::equality> const& equalities() const;
         bool should_check_feasible() const { return m_core->should_check_feasible(); }
+        
+        const vector<nla::lemma>&  lemmas() const;
+        
     };
 }

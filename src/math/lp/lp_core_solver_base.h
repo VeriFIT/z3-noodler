@@ -40,7 +40,7 @@ template <typename T, typename X>
 X dot_product(const vector<T> & a, const vector<X> & b) {
     SASSERT(a.size() == b.size());
     auto r = zero_of_type<X>();
-    for (unsigned i = 0; i < a.size(); i++) {
+    for (unsigned i = 0; i < a.size(); ++i) {
         r += a[i] * b[i];
     }
     return r;
@@ -136,9 +136,7 @@ public:
     void allocate_basis_heading();
     void init();
 
-    virtual ~lp_core_solver_base() {
-        
-    }
+    virtual ~lp_core_solver_base() = default;
 
     vector<unsigned> & non_basis() {
         return m_nbasis;
@@ -178,7 +176,7 @@ public:
 
     bool need_to_pivot_to_basis_tableau() const {
         unsigned m = m_A.row_count();
-        for (unsigned i = 0; i < m; i++) {
+        for (unsigned i = 0; i < m; ++i) {
             unsigned bj = m_basis[i];
             SASSERT(m_A.m_columns[bj].size() > 0);
             if (m_A.m_columns[bj].size() > 1)
@@ -200,7 +198,7 @@ public:
         
             
         unsigned n = m_A.column_count();
-        for (unsigned j = 0; j < n; j++) {
+        for (unsigned j = 0; j < n; ++j) {
             if (m_basis_heading[j] >= 0) {
                 if (!is_zero(m_d[j])) {
                     return false;
@@ -339,7 +337,7 @@ public:
     bool pivot_column_general(unsigned j, unsigned j_basic, indexed_vector<T> & w);
     void init_basic_part_of_basis_heading() {
         unsigned m = m_basis.size();
-        for (unsigned i = 0; i < m; i++) {
+        for (unsigned i = 0; i < m; ++i) {
             unsigned column = m_basis[i];
             m_basis_heading[column] = i;
         }
@@ -386,7 +384,7 @@ public:
     void change_basis(unsigned entering, unsigned leaving) {
         TRACE(lar_solver, tout << "entering = " << entering << ", leaving = " << leaving << "\n";);
         SASSERT(m_basis_heading[entering] < 0);
-		SASSERT(m_basis_heading[leaving] >= 0);
+        SASSERT(m_basis_heading[leaving] >= 0);
         
         int place_in_basis =  m_basis_heading[leaving];
         int place_in_non_basis = - m_basis_heading[entering] - 1;
@@ -493,7 +491,7 @@ public:
     }
 
     bool bounds_for_boxed_are_set_correctly() const {
-        for (unsigned j = 0; j < m_column_types.size(); j++) {
+        for (unsigned j = 0; j < m_column_types.size(); ++j) {
             if (m_column_types[j] != column_type::boxed) continue;
             if (m_lower_bounds[j] > m_upper_bounds[j])
                 return false;
@@ -568,17 +566,17 @@ public:
             insert_column_into_inf_heap(j);
     }
     void insert_column_into_inf_heap(unsigned j) {        
-		if (!m_inf_heap.contains(j)) {
+        if (!m_inf_heap.contains(j)) {
             m_inf_heap.reserve(j+1);
-	        m_inf_heap.insert(j);
+            m_inf_heap.insert(j);
             TRACE(lar_solver_inf_heap, tout << "insert into inf_heap j = " << j << "\n";);
         }
         SASSERT(!column_is_feasible(j));
     }
     void remove_column_from_inf_heap(unsigned j) {
-		if (m_inf_heap.contains(j)) {
+        if (m_inf_heap.contains(j)) {
             TRACE(lar_solver_inf_heap, tout << "erase from heap j = " << j << "\n";);
-        	m_inf_heap.erase(j);
+            m_inf_heap.erase(j);
         }
         SASSERT(column_is_feasible(j));
     }
@@ -590,7 +588,7 @@ public:
     
     bool costs_on_nbasis_are_zeros() const {
         SASSERT(this->basis_heading_is_correct());
-        for (unsigned j = 0; j < this->m_n(); j++) {
+        for (unsigned j = 0; j < this->m_n(); ++j) {
             if (this->m_basis_heading[j] < 0)
                 SASSERT(is_zero(this->m_costs[j]));
         }

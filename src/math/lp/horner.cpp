@@ -90,7 +90,9 @@ bool horner::lemmas_on_row(const T& row) {
     cross_nested cn(
         [this, dep](const nex* n) { return c().m_intervals.check_nex(n, dep); },
         [this](unsigned j)   { return c().var_is_fixed(j); },
-        [this]() { return c().random(); }, m_nex_creator);
+        c().reslim(),
+        c().random(),
+        m_nex_creator);
     bool ret = lemmas_on_expr(cn, to_sum(e));
     c().m_intervals.get_dep_intervals().reset(); // clean the memory allocated by the interval bound dependencies
     return ret;
@@ -120,7 +122,7 @@ bool horner::horner_lemmas() {
     unsigned r = c().random();
     unsigned sz = rows.size();
     bool conflict = false;
-    for (unsigned i = 0; i < sz && !conflict; i++) {
+    for (unsigned i = 0; i < sz && !conflict; ++i) {
         m_row_index = rows[(i + r) % sz];
         if (lemmas_on_row(matrix.m_rows[m_row_index])) {
             c().lp_settings().stats().m_horner_conflicts++;

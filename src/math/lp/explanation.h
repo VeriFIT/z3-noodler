@@ -70,7 +70,7 @@ public:
         }
     }
 
-    bool empty() const {  return m_vector.empty() || m_set.empty();  }
+    bool empty() const {  return m_vector.empty() && m_set.empty();  }
     size_t size() const { return std::max(m_vector.size(), m_set.size()); }
 
     class cimpq {
@@ -124,14 +124,12 @@ public:
     struct equality {
         lp::lpvar i, j;
         lp::explanation e;
-        equality(lp::lpvar i, lp::lpvar j, lp::explanation const& e):i(i),j(j),e(e) {}
     };
     
     struct fixed_equality {
         lp::lpvar v;
         rational       k;
         lp::explanation e;
-        fixed_equality(lp::lpvar v, rational const& k, lp::explanation const& e):v(v),k(k),e(e) {}
     };
 
 }

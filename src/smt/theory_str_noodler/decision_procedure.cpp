@@ -14,17 +14,74 @@
 
 namespace smt::noodler {
     lbool DecisionProcedure::compute_next_solution() {
+        // We call the one with length checks but don't check them
+        return compute_next_solution_with_len_checks(nullptr).first;
+    }
+
+    std::pair<lbool, bool> DecisionProcedure::compute_next_solution_with_len_checks(
+        std::function<lbool(bool)> check_lens
+    ) {
         // iteratively select next state of solving that can lead to solution and
         // process one of the unprocessed nodes (or possibly find solution)
         STRACE(str, tout << "------------------------"
                            << "Getting another solution"
                            << "------------------------" << std::endl;);
 
+        bool len_checks_enabled = check_lens != nullptr &&
+                                  m_params.m_try_premature_len_checks &&
+                                  !conversion_handler.are_there_any_conversions() &&
+                                  not_contains.get_predicates().empty() &&
+                                  (!this->m_params.m_postpone_diseqs_stabilization || !this->input_contains_disequations);
+        bool some_skipped = false;
+
         while (!is_worklist_empty()) {
             util::check_limit(m);
             SolvingState element_to_process = pop_from_worklist();
 
+            if (len_checks_enabled &&
+                !element_to_process.predicates_to_process.empty() &&
+                element_to_process.transducers.empty() &&
+                element_to_process.has_siblings) {
+                // Before processing this solving state, we check the
+                // length constraints first to potentionally save some time if it is unsat
+                this->solution = element_to_process;
+                auto lens_sat = check_lens(true);
+
+                STRACE(str_noodle_dot,
+                    tout << element_to_process.DOT_name << " [style=filled,fillcolor=\"" << ((lens_sat == l_true) ? "springGreen" : "salmon") << "\"];\n";
+                );
+
+                if (lens_sat == l_false) {
+                    // Lengths were unsat, we don't have to process this solving state
+                    some_skipped = true;
+                    continue;
+                }
+            }
+
             if (element_to_process.predicates_to_process.empty()) {
+                // Now we are in the state with no equations or transducers left to process (but some postponed disequations might be left). 
+                // First we in get_lengths generate under-approximation of the disequations by length disequality
+                // If the length formula is unsat, we need to solve disequations precisely by translating them to equations and adding to the solving state.
+                if (this->m_params.m_postpone_diseqs_stabilization && !element_to_process.postponed_disequations.get_predicates().empty()) {
+                    this->solution = element_to_process;
+                    lbool underapprox_sat = check_lens(false);
+                    if (underapprox_sat == l_false) {
+                        if (element_to_process.preprocess_disequations_for_unsat(this->m_params) == l_false) {
+                            continue;
+                        }
+                        element_to_process.translate_postponed_disequations_to_equations();
+                    } else if (underapprox_sat == l_true) {
+                        solution = std::move(element_to_process);
+                        return { l_true, false };
+                    } else {
+                        // underapprox_sat == l_undef: length under-approximation is inconclusive.
+                        // Do not assume satisfiability; instead, solve postponed disequations precisely.
+                        element_to_process.translate_postponed_disequations_to_equations();
+                    }
+                    push_to_worklist(element_to_process, true);
+                    continue;
+                }
+
                 // we found another solution, element_to_process contain the automata
                 // assignment and variable substition that satisfy the original
                 // inclusion graph
@@ -49,7 +106,7 @@ namespace smt::noodler {
                     }
                 );
                 STRACE(str_noodle_dot, tout << solution.DOT_name << " [style=filled,fillcolor=\"aqua\"];\n";);
-                return l_true;
+                return { l_true, some_skipped };
             }
 
             // we will now process one inclusion from the inclusion graph which is at front
@@ -67,7 +124,7 @@ namespace smt::noodler {
 
         // there are no solving states left, which means nothing led to solution -> it must be unsatisfiable
         STRACE(str_noodle_dot, tout << "}\n";);
-        return l_false;
+        return { l_false, some_skipped };
     }
 
     void DecisionProcedure::process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state) {
@@ -198,6 +255,7 @@ namespace smt::noodler {
                                                                     right_side_automata,
                                                                     false,
                                                                     {{"reduce", "forward"}});
+        bool more_than_one_noodle = noodles.size() > 1;
 
         for (const auto &noodle : noodles) {
             util::check_limit(m);
@@ -272,6 +330,7 @@ namespace smt::noodler {
 
             // we push to front when the inclusion is not on cycle, because we want to get to the result as fast as possible
             // and if there is no cycle, we do not need to do BFS, the algorithm should end
+            new_element.has_siblings = more_than_one_noodle;
             push_to_worklist(std::move(new_element), is_inclusion_to_process_on_cycle);
         }
 
@@ -327,7 +386,7 @@ namespace smt::noodler {
 
         if (one_side_is_literal) {
             // we apply the literal to the corresponding tape of the transducer, getting the NFA for the nonliteral side
-            mata::nfa::Nfa application_to_literal = transducer_to_process.get_transducer()->apply(util::get_mata_word_zstring(literal), level_of_literal_side).to_nfa_move();
+            mata::nfa::Nfa application_to_literal = transducer_to_process.get_transducer()->apply(util::get_mata_word_zstring(literal), level_of_literal_side, true, mata::nft::JumpMode::NoJump).to_nfa_move();
             application_to_literal = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_literal.trim()));
             
             if (application_to_literal.is_lang_empty()) {
@@ -377,7 +436,7 @@ namespace smt::noodler {
         // this would not work, after processing the inclusion, the fresh_var (which would need to be length) would be substituted and then "fresh_var = T(input_vars)"
         // would be processed again, but input_vars still lead to one automaton so we would repeat this and get stuck.
         if (input_vars_automata.size() == 1 && !solving_state.contains_length_var(input_vars)) {
-            mata::nfa::Nfa application_to_input_automaton = transducer_to_process.get_transducer()->apply(*input_vars_automata[0], 0).to_nfa_move();
+            mata::nfa::Nfa application_to_input_automaton = transducer_to_process.get_transducer()->apply(*input_vars_automata[0], 0, true, mata::nft::JumpMode::NoJump).to_nfa_move();
             application_to_input_automaton = mata::nfa::reduce(mata::nfa::remove_epsilon(application_to_input_automaton.trim()));
             
             if (application_to_input_automaton.is_lang_empty()) {
@@ -498,7 +557,7 @@ namespace smt::noodler {
         LenNodePrecision precision = LenNodePrecision::PRECISE; // start with precise and possibly change it later
 
         if (solution.length_sensitive_vars.empty() && this->not_contains.get_predicates().empty() 
-            && this->disequations.get_predicates().empty()) {
+            && this->solution.postponed_disequations.get_predicates().empty()) {
             // There is not notcontains predicate to be solved and there are no length vars (which also means no
             // disequations nor conversions), it is not needed to create the lengths formula.
             return {LenNode(LenFormulaType::TRUE), precision};
@@ -506,8 +565,8 @@ namespace smt::noodler {
 
         conversion_handler.initialize_solution(solution);
 
-        // start with formula for disequations
-        std::vector<LenNode> conjuncts = disequations_len_formula_conjuncts;
+        // start with formula from disequation replacements
+        std::vector<LenNode> conjuncts(solution.disequations_len_formula_conjuncts.begin(), solution.disequations_len_formula_conjuncts.end());
 
         // add length formula from preprocessing
         conjuncts.push_back(preprocessing_len_formula);
@@ -526,7 +585,16 @@ namespace smt::noodler {
         precision = get_resulting_precision_for_conjunction(precision, conversion_precision);
 
         // get the LIA formula describing solutions for special predicates
-        conjuncts.push_back(get_formula_for_ca_diseqs());
+        if(this->m_params.m_ca_constr) {
+            conjuncts.push_back(get_formula_for_ca_diseqs());
+        }
+        if (!solution.postponed_disequations.get_predicates().empty()) {
+            conjuncts.push_back(solution.get_disequations_underapprox_length_formula());
+            // For postponed disequations we currently encode only |lhs| != |rhs|.
+            // This is an underapproximation of string disequality and must not be
+            // treated as a precise source of unsat.
+            precision = get_resulting_precision_for_conjunction(precision, LenNodePrecision::UNDERAPPROX);
+        }
         auto [not_cont_formula, not_cont_precicions] = get_formula_for_not_contains();
         conjuncts.push_back(not_cont_formula);
         precision = get_resulting_precision_for_conjunction(precision, not_cont_precicions);
@@ -588,12 +656,12 @@ namespace smt::noodler {
                     auto [input_trans, vars_on_tapes_of_input_trans] = get_composed_trans_with_tapes(transducers[i].get_input()[0]);
                     SASSERT(!vars_on_tapes_of_input_trans.empty() && vars_on_tapes_of_input_trans[0] == transducers[i].get_input()[0]);
                     // we compose Ti and Ti' on input_var, getting transducer output_var = Ti''(input_var, x1, x2, ...., xn)
-                    mata::nft::Nft composed_input = mata::nft::compose(invert_trans, input_trans, 1, 0, false).trim();
+                    mata::nft::Nft composed_input = mata::nft::compose(invert_trans, input_trans, 1, 0, false, mata::nft::JumpMode::NoJump).trim();
                     SASSERT(!composed_input.contains_jump_transitions());
                     SASSERT(composed_input.num_of_states() > 0);
                     // we have a transducer output_var = T(y1, y2, ..., ym) computed from previous Tj's, j < i, and we compose here on output_var with Ti''
                     // getting transducer output_var = T'(y1, y2, ..., ym, input_var, x1, x2, ..., xn)
-                    final_trans = mata::nft::compose(final_trans, composed_input, 0, 0, false).trim();
+                    final_trans = mata::nft::compose(final_trans, composed_input, 0, 0, false, mata::nft::JumpMode::NoJump).trim();
                     SASSERT(!final_trans.contains_jump_transitions());
                     SASSERT(final_trans.num_of_states() > 0);
                     // we had vars_on_tapes = {output_var, y1, y2, ..., ym} we add to it vars_on_tapes_of_input_trans getting
@@ -777,26 +845,7 @@ namespace smt::noodler {
     }
 
     LenNode DecisionProcedure::get_formula_for_ca_diseqs() {
-        Formula proj_diseqs {};
-
-        auto proj_concat = [&](const Concat& con) -> Concat {
-            Concat ret {};
-            for(const BasicTerm& bt : con) {
-                Concat subst = this->solution.get_substituted_vars(bt);
-                ret.insert(ret.end(), subst.begin(), subst.end());
-            }
-            return ret;
-        };
-
-        // take the original disequations (taken from input) and
-        // propagate substitutions involved by the current substitution map of
-        // a stable solution
-        for(const Predicate& dis : this->disequations.get_predicates()) {
-            proj_diseqs.add_predicate(Predicate::create_disequation(
-                proj_concat(dis.get_left_side()),
-                proj_concat(dis.get_right_side())
-            ));
-        }
+        Formula proj_diseqs = this->solution.postponed_disequations;
 
         STRACE(str, tout << "CA-DISEQS (original): " << std::endl << this->disequations.to_string() << std::endl;);
         STRACE(str, tout << "CA-DISEQS (substituted): " << std::endl << proj_diseqs.to_string() << std::endl;);
@@ -835,23 +884,25 @@ namespace smt::noodler {
      */
     void DecisionProcedure::init_computation() {
         Formula equations_and_transducers;
+        std::vector<Predicate> disequalities_to_replace;
 
-        bool some_diseq_handled_by_ca = false;
-
+        this->input_contains_disequations = false;
         bool has_transducers = false;
 
         for (auto const &pred : formula.get_predicates()) {
             if (pred.is_equation()) {
                 equations_and_transducers.add_predicate(pred);
             } else if (pred.is_inequation()) {
+                // if there are some disequations, we cannot use the heuristic for pruning solving 
+                // states based on lengths becase the heuristic performs over-approximation but the 
+                // postponing disequalities involves under-approximation
+                this->input_contains_disequations = true;
                 // If we solve diesquations using CA --> we store the disequations to be solved later on
-                if (this->m_params.m_ca_constr) {
+                if (this->m_params.m_ca_constr || this->m_params.m_postpone_diseqs_stabilization) {
+                    // we store postponed disequations to this->disequations
                     init_ca_diseq(pred);
-                    some_diseq_handled_by_ca = true;
                 } else {
-                    for (auto const &eq_from_diseq : replace_disequality(pred)) {
-                        equations_and_transducers.add_predicate(eq_from_diseq);
-                    }
+                    disequalities_to_replace.push_back(pred);
                 }
             } else if (pred.is_transducer()) {
                 has_transducers = true;
@@ -870,8 +921,26 @@ namespace smt::noodler {
             }
         }
 
+        // Build init_solving_state before replacing disequalities so we can use SolvingState::replace_disequality
+        SolvingState init_solving_state;
+        init_solving_state.length_sensitive_vars = std::move(this->init_length_sensitive_vars);
+        init_solving_state.aut_ass = std::move(this->init_aut_ass);
+        for (const auto& subs : init_substitution_map) {
+            init_solving_state.aut_ass.erase(subs.first);
+        }
+        init_solving_state.substitution_map = std::move(this->init_substitution_map);
+        init_solving_state.postponed_disequations = this->disequations;
+        init_solving_state.conversions = this->conversion_handler.get_conversions();
+
+        // Replace disequalities using SolvingState::replace_disequality
+        for (const Predicate& diseq : disequalities_to_replace) {
+            for (const Predicate& eq_from_diseq : init_solving_state.replace_disequality(diseq)) {
+                equations_and_transducers.add_predicate(eq_from_diseq);
+            }
+        }
+
         STRACE(str_dis,
-            tout << "Disequation len formula: " << LenNode(LenFormulaType::AND, disequations_len_formula_conjuncts) << std::endl;
+            tout << "Disequation len formula: " << LenNode(LenFormulaType::AND, init_solving_state.disequations_len_formula_conjuncts) << std::endl;
         );
 
         STRACE(str_dis,
@@ -881,15 +950,7 @@ namespace smt::noodler {
             }
         );
 
-        set_initial_variables(equations_and_transducers);
-
-        SolvingState init_solving_state;
-        init_solving_state.length_sensitive_vars = std::move(this->init_length_sensitive_vars);
-        init_solving_state.aut_ass = std::move(this->init_aut_ass);
-        for (const auto& subs : init_substitution_map) {
-            init_solving_state.aut_ass.erase(subs.first);
-        }
-        init_solving_state.substitution_map = std::move(this->init_substitution_map);
+        set_initial_variables(equations_and_transducers, init_solving_state);
 
         if (!equations_and_transducers.get_predicates().empty()) {
             FormulaGraph incl_graph = FormulaGraph::create_inclusion_graph(equations_and_transducers);
@@ -1055,107 +1116,12 @@ namespace smt::noodler {
             return l_false;
         } else if (this->formula.get_predicates().empty()) {
             // preprocessing solved all (dis)equations => we set the solution (for lengths check)
-            this->solution = SolvingState(this->init_aut_ass, {}, {}, {}, {}, this->init_length_sensitive_vars, {});
+            this->solution = SolvingState(this->init_aut_ass, {}, {}, {}, {}, this->init_length_sensitive_vars, {}, false);
             return l_true;
         } else {
             // preprocessing was not able to solve it
             return l_undef;
         }
-    }
-
-    /**
-     * Replace disequality @p diseq L != P by equalities L = x1a1y1 and R = x2a2y2
-     * where x1,x2,y1,y2 \in \Sigma* and a1,a2 \in \Sigma \cup {\epsilon} and
-     * also create arithmetic formula:
-     *   |x1| = |x2| && to_code(a1) != to_code(a2) && (|a1| = 0 => |y1| = 0) && (|a2| = 0 => |y2| = 0)
-     * The variables a1/a2 represent the characters on which the two sides differ
-     * (they have different code values). They have to occur on the same position,
-     * i.e. lengths of x1 and x2 are equal. The situation where one of the a1/a2
-     * is empty word (to_code returns -1) represents that one of the sides is
-     * longer than the other (they differ on the character just after the last
-     * character of the shorter side). We have to force that nothing is after
-     * the empty a1/a2, i.e. length of y1/y2 must be 0.
-     */
-    std::vector<Predicate> DecisionProcedure::replace_disequality(Predicate diseq) {
-
-        // automaton accepting empty word or exactly one symbol
-        std::shared_ptr<mata::nfa::Nfa> sigma_eps_automaton = std::make_shared<mata::nfa::Nfa>(init_aut_ass.sigma_eps_automaton());
-
-        // function that will take a1 and a2 and create the "to_code(a1) != to_code(a2)" part of the arithmetic formula
-        auto create_to_code_ineq = [this](const BasicTerm& var1, const BasicTerm& var2) {
-                // we are going to check that to_code(var1) != to_code(var2), we need exact languages, so we make them length
-                init_length_sensitive_vars.insert(var1);
-                init_length_sensitive_vars.insert(var2);
-
-                // variables that are results of to_code applied to var1/var2
-                BasicTerm var1_to_code = util::mk_internal_noodler_var(var1.get_name() + zstring("!ineq_to_code"));
-                BasicTerm var2_to_code = util::mk_internal_noodler_var(var2.get_name() + zstring("!ineq_to_code"));
-
-                // add the information that we need to process "var1_to_code = to_code(var1)" and "var2_to_code = to_code(var2)"
-                conversion_handler.add_conversion(TermConversion{ConversionType::TO_CODE, var1, var1_to_code});
-                conversion_handler.add_conversion(TermConversion{ConversionType::TO_CODE, var2, var2_to_code});
-
-                // add to_code(var1) != to_code(var2) to the len formula for disequations
-                disequations_len_formula_conjuncts.push_back(LenNode(LenFormulaType::NEQ, {var1_to_code, var2_to_code}));
-        };
-
-        // This optimization represents the situation where L = a1 and R = a2
-        // and we know that a1,a2 \in \Sigma \cup {\epsilon}, i.e. we do not create new equations.
-        if(diseq.get_left_side().size() == 1 && diseq.get_right_side().size() == 1) {
-            BasicTerm a1 = diseq.get_left_side()[0];
-            BasicTerm a2 = diseq.get_right_side()[0];
-            auto autl = init_aut_ass.at(a1);
-            auto autr = init_aut_ass.at(a2);
-
-            if(mata::nfa::is_included(*autl, *sigma_eps_automaton) && mata::nfa::is_included(*autr, *sigma_eps_automaton)) {
-                // create to_code(a1) != to_code(a2)
-                create_to_code_ineq(a1, a2);
-                STRACE(str_dis, tout << "from disequation " << diseq << " no new equations were created" << std::endl;);
-                return std::vector<Predicate>();
-            }
-        }
-
-        // automaton accepting everything
-        std::shared_ptr<mata::nfa::Nfa> sigma_star_automaton = std::make_shared<mata::nfa::Nfa>(init_aut_ass.sigma_star_automaton());
-
-        BasicTerm x1 = util::mk_noodler_var_fresh("diseq_start");
-        init_aut_ass[x1] = sigma_star_automaton;
-        BasicTerm a1 = util::mk_noodler_var_fresh("diseq_char");
-        init_aut_ass[a1] = sigma_eps_automaton;
-        BasicTerm y1 = util::mk_noodler_var_fresh("diseq_end");
-        init_aut_ass[y1] = sigma_star_automaton;
-        BasicTerm x2 = util::mk_noodler_var_fresh("diseq_start");
-        init_aut_ass[x2] = sigma_star_automaton;
-        BasicTerm a2 = util::mk_noodler_var_fresh("diseq_char");
-        init_aut_ass[a2] = sigma_eps_automaton;
-        BasicTerm y2 = util::mk_noodler_var_fresh("diseq_end");
-        init_aut_ass[y2] = sigma_star_automaton;
-
-        std::vector<Predicate> new_eqs;
-        // L = x1a1y1
-        new_eqs.push_back(Predicate::create_equation(diseq.get_left_side(), Concat{x1, a1, y1}));
-        // R = x2a2y2
-        new_eqs.push_back(Predicate::create_equation(diseq.get_right_side(), Concat{x2, a2, y2}));
-
-        // we want |x1| == |x2|, making x1 and x2 length ones
-        init_length_sensitive_vars.insert(x1);
-        init_length_sensitive_vars.insert(x2);
-        // |x1| = |x2|
-        disequations_len_formula_conjuncts.push_back(LenNode(LenFormulaType::EQ, {x1, x2}));
-
-        // create to_code(a1) != to_code(a2)
-        create_to_code_ineq(a1, a2);
-
-        // we are also going to check for the lengths of y1 and y2, so they have to be length
-        init_length_sensitive_vars.insert(y1);
-        init_length_sensitive_vars.insert(y2);
-        // (|a1| = 0) => (|y1| = 0)
-        disequations_len_formula_conjuncts.push_back(LenNode(LenFormulaType::OR, {LenNode(LenFormulaType::NEQ, {a1, 0}), LenNode(LenFormulaType::EQ, {y1, 0})}));
-        // (|a2| = 0) => (|y2| = 0)
-        disequations_len_formula_conjuncts.push_back(LenNode(LenFormulaType::OR, {LenNode(LenFormulaType::NEQ, {a2, 0}), LenNode(LenFormulaType::EQ, {y2, 0})}));
-
-        STRACE(str_dis, tout << "from disequation " << diseq << " created equations: " << new_eqs[0] << " and " << new_eqs[1] << std::endl;);
-        return new_eqs;
     }
 
     void DecisionProcedure::init_model(const std::map<BasicTerm,rational>& arith_model) {
@@ -1381,7 +1347,7 @@ namespace smt::noodler {
                     SASSERT(predicate_with_var_on_right_side.get_input().size() == 1 && predicate_with_var_on_right_side.get_input()[0] == var);
 
                     // we get the possible inputs of transducer when output is model of output_var
-                    mata::nfa::Nfa possible_inputs = predicate_with_var_on_right_side.get_transducer()->apply(util::get_mata_word_zstring(output_var_model), 1).to_nfa_move();
+                    mata::nfa::Nfa possible_inputs = predicate_with_var_on_right_side.get_transducer()->apply(util::get_mata_word_zstring(output_var_model), 1, true, mata::nft::JumpMode::NoJump).to_nfa_move();
                     possible_inputs = mata::nfa::reduce(mata::nfa::remove_epsilon(possible_inputs.trim()));
                     // the model of var is then some word from possible_inputs and the langauge of var
                     mata::Word accepted_word = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word().value();
@@ -1447,16 +1413,16 @@ namespace smt::noodler {
         return needed_vars;
     }
 
-    void DecisionProcedure::set_initial_variables(const Formula& f) {
+    void DecisionProcedure::set_initial_variables(const Formula& f, const SolvingState& state) {
         initial_variables = f.get_vars();
-        for (const auto& [var,_aut] : init_aut_ass) {
+        for (const auto& [var, _aut] : state.aut_ass) {
             initial_variables.insert(var);
         }
-        for (const auto& var : init_length_sensitive_vars) {
+        for (const auto& var : state.length_sensitive_vars) {
             initial_variables.insert(var);
         }
-        for (const BasicTerm& conv_string_var : conversion_handler.get_string_vars_in_conversions()) {
-            initial_variables.insert(conv_string_var);
+        for (const TermConversion& conv : state.conversions) {
+            initial_variables.insert(conv.string_var);
         }
         for (const auto& incl : inclusions_from_preprocessing) {
             for (const auto& var : incl.get_vars()) {

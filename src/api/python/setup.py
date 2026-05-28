@@ -24,6 +24,7 @@ ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
 SRC_DIR_LOCAL = os.path.join(ROOT_DIR, 'core')
 SRC_DIR_REPO = os.path.join(ROOT_DIR, '..', '..', '..')
 SRC_DIR = SRC_DIR_LOCAL if os.path.exists(SRC_DIR_LOCAL) else SRC_DIR_REPO
+BUILD_DIR = build_env.get('Z3BUILD', 'build')
 
 IS_SINGLE_THREADED = False
 ENABLE_LTO = True
@@ -34,7 +35,7 @@ IS_PYODIDE = 'PYODIDE_ROOT' in os.environ and os.environ.get('_PYTHON_HOST_PLATF
 # determine where binaries are
 RELEASE_DIR = os.environ.get('PACKAGE_FROM_RELEASE', None)
 if RELEASE_DIR is None:
-    BUILD_DIR = os.path.join(SRC_DIR, 'build') # implicit in configure script
+    BUILD_DIR = os.path.join(SRC_DIR, BUILD_DIR) # implicit in configure script
     HEADER_DIRS = [os.path.join(SRC_DIR, 'src', 'api'), os.path.join(SRC_DIR, 'src', 'api', 'c++')]
     RELEASE_METADATA = None
     if IS_PYODIDE:
@@ -113,14 +114,21 @@ def _clean_native_build():
 
 def _z3_version():
     post = os.getenv('Z3_VERSION_SUFFIX', '')
+    print("z3_version", "release dir", RELEASE_DIR)   
     if RELEASE_DIR is None:
-        fn = os.path.join(SRC_DIR, 'scripts', 'mk_project.py')
-        if os.path.exists(fn):
-            with open(fn) as f:
-                for line in f:
-                    n = re.match(r".*set_version\((.*), (.*), (.*), (.*)\).*", line)
-                    if not n is None:
-                        return n.group(1) + '.' + n.group(2) + '.' + n.group(3) + '.' + n.group(4) + post
+        dirs = [SRC_DIR, ROOT_DIR, SRC_DIR_REPO, SRC_DIR_LOCAL, os.path.join(ROOT_DIR, '..', '..')]
+        for d in dirs:
+            if os.path.exists(d):
+               print(d, ": ", os.listdir(d))
+        fns = [os.path.join(d, 'scripts', 'VERSION.txt') for d in dirs]        
+        for fn in fns:
+            print("loading version file", fn, "exists", os.path.exists(fn))
+            if os.path.exists(fn):
+                with open(fn) as f:
+                    for line in f:
+                        n = re.match(r"(.*)\.(.*)\.(.*)\.(.*)", line)
+                        if not n is None:
+                            return n.group(1) + '.' + n.group(2) + '.' + n.group(3) + '.' + n.group(4) + post
         return "?.?.?.?"
     else:
         version = RELEASE_METADATA[0]
@@ -284,7 +292,7 @@ class sdist(_sdist):
 # The Azure Dev Ops pipelines use internal OS version tagging that don't correspond
 # to releases.
 
-internal_build_re = re.compile("(.+)\_7")
+internal_build_re = re.compile("(.+)_7")
 
 class bdist_wheel(_bdist_wheel):
 
@@ -308,6 +316,7 @@ class bdist_wheel(_bdist_wheel):
                 # windows arm64 is not supported by pypi yet
                 ("win", "x64"): "win_amd64",
                 ("win", "x86"): "win32",
+                ("win", "arm64"): "win_arm64",
                 ("osx", "x64"): f"macosx_{os_version_tag}_x86_64",
                 ("osx", "arm64"): f"macosx_{os_version_tag}_arm64",
                 ("darwin", "x86_64"): f"macosx_{os_version_tag}_x86_64",

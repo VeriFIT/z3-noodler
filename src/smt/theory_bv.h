@@ -54,8 +54,7 @@ namespace smt {
         };
 
         struct bit_atom : public atom {
-            var_pos_occ * m_occs;
-            bit_atom():m_occs(nullptr) {}
+            var_pos_occ * m_occs = nullptr;
             bool is_bit() const override { return true; }
         };
 
@@ -244,7 +243,7 @@ namespace smt {
         void relevant_eh(app * n) override;
         void push_scope_eh() override;
         void pop_scope_eh(unsigned num_scopes) override;
-        final_check_status final_check_eh() override;
+        final_check_status final_check_eh(unsigned) override;
         void reset_eh() override;
         bool include_func_interp(func_decl* f) override;
         svector<theory_var>   m_merge_aux[2]; //!< auxiliary vector used in merge_zero_one_bits

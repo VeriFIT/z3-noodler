@@ -23,7 +23,7 @@
         void tst_##MODULE();                                 \
         if (do_display_usage)                                \
             std::cout << "    " << #MODULE << "\n";          \
-        for (int i = 0; i < argc; i++)                       \
+        for (int i = 0; i < argc; ++i)                       \
             if (test_all || strcmp(argv[i], #MODULE) == 0) { \
                 enable_debug(#MODULE);                       \
                 timeit timeit(true, s.c_str());              \
@@ -38,7 +38,7 @@
     void tst_##MODULE(char** argv, int argc, int& i);   \
     if (do_display_usage)                               \
         std::cout << "    " << #MODULE << "(...)\n";    \
-    for (int i = 0; i < argc; i++)                      \
+    for (int i = 0; i < argc; ++i)                      \
     if (strcmp(argv[i], #MODULE) == 0) {                \
         enable_trace(#MODULE);                          \
         enable_debug(#MODULE);                          \
@@ -175,6 +175,11 @@ int main(int argc, char ** argv) {
     TST(var_subst);
     TST(simple_parser);
     TST(api);
+    TST(api_algebraic);
+    TST(api_polynomial);
+    TST(api_pb);
+    TST(api_datalog);
+    TST(parametric_datatype);
     TST(cube_clause);
     TST(old_interval);
     TST(get_implied_equalities);
@@ -199,7 +204,9 @@ int main(int argc, char ** argv) {
     TST(egraph);
     TST(ex);
     TST(nlarith_util);
+    TST(api_ast_map);
     TST(api_bug);
+    TST(api_special_relations);
     TST(arith_rewriter);
     TST(check_assumptions);
     TST(smt_context);
@@ -210,11 +217,17 @@ int main(int argc, char ** argv) {
     TST(smt2print_parse);
     TST(substitution);
     TST(polynomial);
+    TST(polynomial_factorization);
     TST(upolynomial);
     TST(algebraic);
+    TST(algebraic_numbers);
+    TST(monomial_bounds);
+    TST(nla_intervals);
+    TST(horner);
     TST(prime_generator);
     TST(permutation);
     TST(nlsat);
+    TST(nlsat_mv);
     TST(zstring);
     if (test_all) return 0;
     TST(ext_numeral);
@@ -270,4 +283,5 @@ int main(int argc, char ** argv) {
     TST(sls_test);
     TST(scoped_vector);
     TST(sls_seq_plugin);
+    TST(ho_matcher);
 }

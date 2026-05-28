@@ -240,6 +240,23 @@ class Context:
     def param_descrs(self):
         """Return the global parameter description set."""
         return ParamDescrsRef(Z3_get_global_param_descrs(self.ref()), self)
+
+    def set_ast_print_mode(self, mode):
+        """Set the pretty printing mode for ASTs.
+
+        The following modes are available:
+        - Z3_PRINT_SMTLIB_FULL (0): Print AST nodes in SMTLIB verbose format.
+        - Z3_PRINT_LOW_LEVEL (1): Print AST nodes using a low-level format.
+        - Z3_PRINT_SMTLIB2_COMPLIANT (2): Print AST nodes in SMTLIB 2.x compliant format.
+
+        Example:
+        >>> c = Context()
+        >>> x = Int('x', c)
+        >>> c.set_ast_print_mode(Z3_PRINT_SMTLIB2_COMPLIANT)
+        >>> print(x)
+        x
+        """
+        Z3_set_ast_print_mode(self.ref(), mode)
         
 
 # Global Z3 context
@@ -653,6 +670,10 @@ class SortRef(AstRef):
         """
         return not Z3_is_eq_sort(self.ctx_ref(), self.ast, other.ast)
 
+    def __gt__(self, other):
+        """Create the function space Array(self, other)"""
+        return ArraySort(self, other)
+
     def __hash__(self):
         """ Hash code. """
         return AstRef.__hash__(self)
@@ -849,7 +870,7 @@ class FuncDeclRef(AstRef):
             elif k == Z3_PARAMETER_ZSTRING:
                 result[i] = "internal string"
             else:
-                assert(False)
+                raise Z3Exception("Unexpected parameter kind")
         return result
 
     def __call__(self, *args):
@@ -1150,6 +1171,30 @@ class ExprRef(AstRef):
         else:
             return []
 
+    def update(self, *args):
+        """Update the arguments of the expression.
+        
+        Return a new expression with the same function declaration and updated arguments.
+        The number of new arguments must match the current number of arguments.
+        
+        >>> f = Function('f', IntSort(), IntSort(), IntSort())
+        >>> a = Int('a')
+        >>> b = Int('b')
+        >>> c = Int('c')
+        >>> t = f(a, b)
+        >>> t.update(c, c)
+        f(c, c)
+        """
+        if z3_debug():
+            _z3_assert(is_app(self), "Z3 application expected")
+            _z3_assert(len(args) == self.num_args(), "Number of arguments does not match")
+            _z3_assert(all([is_expr(arg) for arg in args]), "Z3 expressions expected")
+        num = len(args)
+        _args = (Ast * num)()
+        for i in range(num):
+            _args[i] = args[i].as_ast()
+        return _to_expr_ref(Z3_update_term(self.ctx_ref(), self.as_ast(), num, _args), self.ctx)
+
     def from_string(self, s):
         pass
 
@@ -1241,6 +1286,18 @@ def _coerce_expr_merge(s, a):
     else:
         return s
 
+def _check_same_sort(a, b, ctx=None):
+    if not isinstance(a, ExprRef):
+        return False
+    if not isinstance(b, ExprRef):
+        return False
+    if ctx is None:
+        ctx = a.ctx
+
+    a_sort = Z3_get_sort(ctx.ctx, a.ast)
+    b_sort = Z3_get_sort(ctx.ctx, b.ast)
+    return Z3_is_eq_sort(ctx.ctx, a_sort, b_sort)
+
 
 def _coerce_exprs(a, b, ctx=None):
     if not is_expr(a) and not is_expr(b):
@@ -1254,6 +1311,9 @@ def _coerce_exprs(a, b, ctx=None):
         a = RealVal(a, b.ctx)
     if isinstance(b, float) and isinstance(a, ArithRef):
         b = RealVal(b, a.ctx)
+
+    if _check_same_sort(a, b, ctx):
+        return (a, b)
 
     s = None
     s = _coerce_expr_merge(s, a)
@@ -1506,6 +1566,8 @@ def Consts(names, sort):
 
 def FreshConst(sort, prefix="c"):
     """Create a fresh constant of a specified sort"""
+    if z3_debug():
+        _z3_assert(is_sort(sort), f"Z3 sort expected, got {type(sort)}")
     ctx = _get_ctx(sort.ctx)
     return _to_expr_ref(Z3_mk_fresh_const(ctx.ref(), prefix, sort.ast), ctx)
 
@@ -3312,6 +3374,8 @@ def RatVal(a, b, ctx=None):
     if z3_debug():
         _z3_assert(_is_int(a) or isinstance(a, str), "First argument cannot be converted into an integer")
         _z3_assert(_is_int(b) or isinstance(b, str), "Second argument cannot be converted into an integer")
+    if b == 0:
+        pass # division by 0 is legal in z3 expressions.
     return simplify(RealVal(a, ctx) / RealVal(b, ctx))
 
 
@@ -4216,21 +4280,44 @@ def Concat(*args):
 
 
 def Extract(high, low, a):
-    """Create a Z3 bit-vector extraction expression.
-    Extract is overloaded to also work on sequence extraction.
-    The functions SubString and SubSeq are redirected to Extract.
-    For this case, the arguments are reinterpreted as:
-        high - is a sequence (string)
-        low  - is an offset
-        a    - is the length to be extracted
+    """Create a Z3 bit-vector extraction expression or sequence extraction expression.
+    
+    Extract is overloaded to work with both bit-vectors and sequences:
+    
+    **Bit-vector extraction**: Extract(high, low, bitvector)
+        Extracts bits from position `high` down to position `low` (both inclusive).
+        - high: int - the highest bit position to extract (0-indexed from right)
+        - low: int - the lowest bit position to extract (0-indexed from right)  
+        - bitvector: BitVecRef - the bit-vector to extract from
+        Returns a new bit-vector containing bits [high:low]
+    
+    **Sequence extraction**: Extract(sequence, offset, length)
+        Extracts a subsequence starting at the given offset with the specified length.
+        The functions SubString and SubSeq are redirected to this form of Extract.
+        - sequence: SeqRef or str - the sequence to extract from
+        - offset: int - the starting position (0-indexed)
+        - length: int - the number of elements to extract
+        Returns a new sequence containing the extracted subsequence
 
+    >>> # Bit-vector extraction examples
     >>> x = BitVec('x', 8)
-    >>> Extract(6, 2, x)
+    >>> Extract(6, 2, x)  # Extract bits 6 down to 2 (5 bits total)
     Extract(6, 2, x)
-    >>> Extract(6, 2, x).sort()
+    >>> Extract(6, 2, x).sort()  # Result is a 5-bit vector
     BitVec(5)
-    >>> simplify(Extract(StringVal("abcd"),2,1))
+    >>> Extract(7, 0, x)  # Extract all 8 bits
+    Extract(7, 0, x)
+    >>> Extract(3, 3, x)  # Extract single bit at position 3
+    Extract(3, 3, x)
+    
+    >>> # Sequence extraction examples  
+    >>> s = StringVal("hello")
+    >>> Extract(s, 1, 3)  # Extract 3 characters starting at position 1
+    str.substr("hello", 1, 3)
+    >>> simplify(Extract(StringVal("abcd"), 2, 1))  # Extract 1 character at position 2
     "c"
+    >>> simplify(Extract(StringVal("abcd"), 0, 2))  # Extract first 2 characters  
+    "ab"
     """
     if isinstance(high, str):
         high = StringVal(high)
@@ -4966,13 +5053,6 @@ def Ext(a, b):
         _z3_assert(is_array_sort(a) and (is_array(b) or b.is_lambda()), "arguments must be arrays")
     return _to_expr_ref(Z3_mk_array_ext(ctx.ref(), a.as_ast(), b.as_ast()), ctx)
 
-
-def SetHasSize(a, k):
-    ctx = a.ctx
-    k = _py2expr(k, ctx)
-    return _to_expr_ref(Z3_mk_set_has_size(ctx.ref(), a.as_ast(), k.as_ast()), ctx)
-
-
 def is_select(a):
     """Return `True` if `a` is a Z3 array select application.
 
@@ -5445,10 +5525,56 @@ class DatatypeRef(ExprRef):
         """Return the datatype sort of the datatype expression `self`."""
         return DatatypeSortRef(Z3_get_sort(self.ctx_ref(), self.as_ast()), self.ctx)
 
-def DatatypeSort(name, ctx = None):
-    """Create a reference to a sort that was declared, or will be declared, as a recursive datatype"""
+    def update_field(self, field_accessor, new_value):
+        """Return a new datatype expression with the specified field updated.
+        
+        Args:
+            field_accessor: The accessor function declaration for the field to update
+            new_value: The new value for the field
+            
+        Returns:
+            A new datatype expression with the field updated, other fields unchanged
+            
+        Example:
+            >>> Person = Datatype('Person')
+            >>> Person.declare('person', ('name', StringSort()), ('age', IntSort()))
+            >>> Person = Person.create()
+            >>> person_age = Person.accessor(0, 1)  # age accessor
+            >>> p = Const('p', Person)
+            >>> p2 = p.update_field(person_age, IntVal(30))
+        """
+        if z3_debug():
+            _z3_assert(is_func_decl(field_accessor), "Z3 function declaration expected")
+            _z3_assert(is_expr(new_value), "Z3 expression expected")
+        return _to_expr_ref(
+            Z3_datatype_update_field(self.ctx_ref(), field_accessor.ast, self.as_ast(), new_value.as_ast()),
+            self.ctx
+        )
+
+def DatatypeSort(name, params=None, ctx=None):
+    """Create a reference to a sort that was declared, or will be declared, as a recursive datatype.
+    
+    Args:
+        name: name of the datatype sort
+        params: optional list/tuple of sort parameters for parametric datatypes
+        ctx: Z3 context (optional)
+    
+    Example:
+        >>> # Non-parametric datatype
+        >>> TreeRef = DatatypeSort('Tree')
+        >>> # Parametric datatype with one parameter
+        >>> ListIntRef = DatatypeSort('List', [IntSort()])
+        >>> # Parametric datatype with multiple parameters
+        >>> PairRef = DatatypeSort('Pair', [IntSort(), BoolSort()])
+    """
     ctx = _get_ctx(ctx)
-    return DatatypeSortRef(Z3_mk_datatype_sort(ctx.ref(), to_symbol(name, ctx)), ctx)
+    if params is None or len(params) == 0:
+        return DatatypeSortRef(Z3_mk_datatype_sort(ctx.ref(), to_symbol(name, ctx), 0, (Sort * 0)()), ctx)
+    else:
+        _params = (Sort * len(params))()
+        for i in range(len(params)):
+            _params[i] = params[i].ast
+        return DatatypeSortRef(Z3_mk_datatype_sort(ctx.ref(), to_symbol(name, ctx), len(params), _params), ctx)
 
 def TupleSort(name, sorts, ctx=None):
     """Create a named tuple sort base on a set of underlying sorts
@@ -5772,7 +5898,9 @@ class Goal(Z3PPObject):
         >>> g[1]
         y > x
         """
-        if arg >= len(self):
+        if arg < 0:
+            arg += len(self)
+        if arg < 0 or arg >= len(self):
             raise IndexError
         return self.get(arg)
 
@@ -6014,7 +6142,9 @@ class AstVector(Z3PPObject):
         >>> A[0]
         x
         """
-        if i >= self.__len__():
+        if i < 0:
+            i += self.__len__()
+        if i < 0 or i >= self.__len__():
             raise IndexError
         Z3_ast_vector_set(self.ctx.ref(), self.vector, i, v.as_ast())
 
@@ -6703,7 +6833,9 @@ class ModelRef(Z3PPObject):
         f -> [else -> 0]
         """
         if _is_int(idx):
-            if idx >= len(self):
+            if idx < 0:
+                idx += len(self)
+            if idx < 0 or idx >= len(self):
                 raise IndexError
             num_consts = Z3_model_get_num_consts(self.ctx.ref(), self.model)
             if (idx < num_consts):
@@ -7234,7 +7366,7 @@ class Solver(Z3PPObject):
         >>> s.reset()
         >>> s.add(2**x == 4)
         >>> s.check()
-        unknown
+        sat
         """
         s = BoolSort(self.ctx)
         assumptions = _get_args(assumptions)
@@ -7478,7 +7610,7 @@ class Solver(Z3PPObject):
 
         >>> x = Int('x')
         >>> s = SimpleSolver()
-        >>> s.add(2**x == 4)
+        >>> s.add(x == 2**x)
         >>> s.check()
         unknown
         >>> s.reason_unknown()
@@ -8310,7 +8442,9 @@ class ApplyResult(Z3PPObject):
         >>> r[1]
         [a == 1, Or(b == 0, b == 1), a > b]
         """
-        if idx >= len(self):
+        if idx < 0:
+            idx += len(self)
+        if idx < 0 or idx >= len(self):
             raise IndexError
         return Goal(goal=Z3_apply_result_get_subgoal(self.ctx.ref(), self.result, idx), ctx=self.ctx)
 
@@ -9975,7 +10109,7 @@ class FPNumRef(FPRef):
     """
 
     def sign(self):
-        num = (ctypes.c_int)()
+        num = ctypes.c_bool()
         nsign = Z3_fpa_get_numeral_sign(self.ctx.ref(), self.as_ast(), byref(num))
         if nsign is False:
             raise Z3Exception("error retrieving the sign of a numeral.")
@@ -11186,12 +11320,30 @@ def Strings(names, ctx=None):
 
 
 def SubString(s, offset, length):
-    """Extract substring or subsequence starting at offset"""
+    """Extract substring or subsequence starting at offset.
+    
+    This is a convenience function that redirects to Extract(s, offset, length).
+    
+    >>> s = StringVal("hello world") 
+    >>> SubString(s, 6, 5)  # Extract "world"
+    str.substr("hello world", 6, 5)
+    >>> simplify(SubString(StringVal("hello"), 1, 3))
+    "ell"
+    """
     return Extract(s, offset, length)
 
 
 def SubSeq(s, offset, length):
-    """Extract substring or subsequence starting at offset"""
+    """Extract substring or subsequence starting at offset.
+    
+    This is a convenience function that redirects to Extract(s, offset, length).
+    
+    >>> s = StringVal("hello world")
+    >>> SubSeq(s, 0, 5)  # Extract "hello"  
+    str.substr("hello world", 0, 5)
+    >>> simplify(SubSeq(StringVal("testing"), 2, 4))
+    "stin"
+    """
     return Extract(s, offset, length)
 
 
@@ -11361,7 +11513,7 @@ def SeqFoldLeftI(f, i, a, s):
     ctx = _get_ctx2(f, s)
     s = _coerce_seq(s, ctx)
     a = _py2expr(a)
-    i = _py2epxr(i)
+    i = _py2expr(i)
     return _to_expr_ref(Z3_mk_seq_foldli(s.ctx_ref(), f.as_ast(), i.as_ast(), a.as_ast(), s.as_ast()), ctx)
 
 def StrToInt(s):
@@ -11771,6 +11923,16 @@ def user_prop_decide(ctx, cb, t_ref, idx, phase):
     t = _to_expr_ref(to_Ast(t_ref), prop.ctx())
     prop.decide(t, idx, phase)
     prop.cb = old_cb
+
+def user_prop_binding(ctx, cb, q_ref, inst_ref):
+    prop = _prop_closures.get(ctx)
+    old_cb = prop.cb
+    prop.cb = cb
+    q = _to_expr_ref(to_Ast(q_ref), prop.ctx())
+    inst = _to_expr_ref(to_Ast(inst_ref), prop.ctx())
+    r = prop.binding(q, inst)
+    prop.cb = old_cb
+    return r
     
 
 _user_prop_push = Z3_push_eh(user_prop_push)
@@ -11782,6 +11944,7 @@ _user_prop_final = Z3_final_eh(user_prop_final)
 _user_prop_eq = Z3_eq_eh(user_prop_eq)
 _user_prop_diseq = Z3_eq_eh(user_prop_diseq)
 _user_prop_decide = Z3_decide_eh(user_prop_decide)
+_user_prop_binding = Z3_on_binding_eh(user_prop_binding)
 
 
 def PropagateFunction(name, *sig):
@@ -11830,6 +11993,7 @@ class UserPropagateBase:
         self.diseq = None
         self.decide = None
         self.created = None
+        self.binding = None
         if ctx:
             self.fresh_ctx = ctx
         if s:
@@ -11854,46 +12018,67 @@ class UserPropagateBase:
         return self.ctx().ref()
 
     def add_fixed(self, fixed):
-        assert not self.fixed
-        assert not self._ctx
+        if self.fixed:
+            raise Z3Exception("fixed callback already registered")
+        if self._ctx:
+            raise Z3Exception("context already initialized")
         if self.solver:
             Z3_solver_propagate_fixed(self.ctx_ref(), self.solver.solver, _user_prop_fixed)
         self.fixed = fixed
 
     def add_created(self, created):
-        assert not self.created
-        assert not self._ctx
+        if self.created:
+            raise Z3Exception("created callback already registered")
+        if self._ctx:
+            raise Z3Exception("context already initialized")
         if self.solver:
             Z3_solver_propagate_created(self.ctx_ref(), self.solver.solver, _user_prop_created)
         self.created = created
         
     def add_final(self, final):
-        assert not self.final
-        assert not self._ctx
+        if self.final:
+            raise Z3Exception("final callback already registered")
+        if self._ctx:
+            raise Z3Exception("context already initialized")
         if self.solver:
             Z3_solver_propagate_final(self.ctx_ref(), self.solver.solver, _user_prop_final)
         self.final = final
 
     def add_eq(self, eq):
-        assert not self.eq
-        assert not self._ctx
+        if self.eq:
+            raise Z3Exception("eq callback already registered")
+        if self._ctx:
+            raise Z3Exception("context already initialized")
         if self.solver:
             Z3_solver_propagate_eq(self.ctx_ref(), self.solver.solver, _user_prop_eq)
         self.eq = eq
 
     def add_diseq(self, diseq):
-        assert not self.diseq
-        assert not self._ctx
+        if self.diseq:
+            raise Z3Exception("diseq callback already registered")
+        if self._ctx:
+            raise Z3Exception("context already initialized")
         if self.solver:
             Z3_solver_propagate_diseq(self.ctx_ref(), self.solver.solver, _user_prop_diseq)
         self.diseq = diseq
 
     def add_decide(self, decide):
-        assert not self.decide
-        assert not self._ctx
+        if self.decide:
+            raise Z3Exception("decide callback already registered")
+        if self._ctx:
+            raise Z3Exception("context already initialized")
         if self.solver:
             Z3_solver_propagate_decide(self.ctx_ref(), self.solver.solver, _user_prop_decide)
-        self.decide = decide        
+        self.decide = decide   
+        
+    def add_on_binding(self, binding):
+        if self.binding:
+            raise Z3Exception("binding callback already registered")
+        if self._ctx:
+            raise Z3Exception("context already initialized")
+        if self.solver:
+            Z3_solver_propagate_on_binding(self.ctx_ref(), self.solver.solver, _user_prop_binding)
+        self.binding = binding
 
     def push(self):
         raise Z3Exception("push needs to be overwritten")
@@ -11905,7 +12090,8 @@ class UserPropagateBase:
         raise Z3Exception("fresh needs to be overwritten")
 
     def add(self, e):
-        assert not self._ctx
+        if self._ctx:
+            raise Z3Exception("context already initialized")
         if self.solver:
             Z3_solver_propagate_register(self.ctx_ref(), self.solver.solver, e.ast)
         else:

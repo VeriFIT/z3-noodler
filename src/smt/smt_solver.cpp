@@ -196,7 +196,7 @@ namespace {
         }
 
         lbool check_sat_core2(unsigned num_assumptions, expr * const * assumptions) override {
-            TRACE(solver_na2as, tout << "smt_solver::check_sat_core: " << num_assumptions << "\n";);
+            TRACE(solver_na2as, tout << "smt_solver::check_sat_core:\n"; for (unsigned i = 0; i < num_assumptions; ++i) tout << mk_pp(assumptions[i], m) << "\n";);
             return m_context.check(num_assumptions, assumptions);
         }
 
@@ -244,6 +244,10 @@ namespace {
             m_context.user_propagate_register_expr(e);
         }
 
+        void user_propagate_register_on_binding(user_propagator::binding_eh_t& binding_eh) override {
+            m_context.user_propagate_register_on_binding(binding_eh);
+        }
+
         void user_propagate_register_created(user_propagator::created_eh_t& c) override {
             m_context.user_propagate_register_created(c);
         }
@@ -273,7 +277,7 @@ namespace {
         void get_unsat_core(expr_ref_vector & r) override {
 
             unsigned sz = m_context.get_unsat_core_size();
-            for (unsigned i = 0; i < sz; i++) {
+            for (unsigned i = 0; i < sz; ++i) {
                 r.push_back(m_context.get_unsat_core_expr(i));
             }
 
@@ -393,11 +397,11 @@ namespace {
                 collect_fds_proc p(m, m_fds);
 
                 unsigned sz = n->get_num_patterns();
-                for (unsigned i = 0; i < sz; i++)
+                for (unsigned i = 0; i < sz; ++i)
                     quick_for_each_expr(p, m_visited, n->get_pattern(i));
 
                 sz = n->get_num_no_patterns();
-                for (unsigned i = 0; i < sz; i++)
+                for (unsigned i = 0; i < sz; ++i)
                     quick_for_each_expr(p, m_visited, n->get_no_pattern(i));
             }
         };
@@ -436,7 +440,7 @@ namespace {
             func_decl_set pattern_fds;
             vector<func_decl_set> assrtn_fds;
 
-            for (unsigned d = 0; d < m_core_extend_patterns_max_distance; d++) {
+            for (unsigned d = 0; d < m_core_extend_patterns_max_distance; ++d) {
                 new_core_literals.reset();
 
                 for (expr* c : core) {
@@ -522,6 +526,10 @@ class smt_solver_factory : public solver_factory {
 public:
     solver * operator()(ast_manager & m, params_ref const & p, bool proofs_enabled, bool models_enabled, bool unsat_core_enabled, symbol const & logic) override {
         return mk_smt_solver(m, p, logic);
+    }
+    
+    solver_factory* translate(ast_manager& m) override {
+        return alloc(smt_solver_factory);
     }
 };
 }

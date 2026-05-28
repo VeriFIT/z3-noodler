@@ -21,6 +21,7 @@ Revision History:
 #include "ast/array_decl_plugin.h"
 #include "ast/ast_pp.h"
 #include <sstream>
+#include <format>
 
 
 seq_decl_plugin::seq_decl_plugin(): m_init(false),
@@ -82,10 +83,8 @@ void seq_decl_plugin::match_assoc(psig& sig, unsigned dsz, sort *const* dom, sor
     ptr_vector<sort> binding;
     ast_manager& m = *m_manager;
     if (dsz == 0) {
-        std::ostringstream strm;
-        strm << "Unexpected number of arguments to '" << sig.m_name << "' ";
-        strm << "at least one argument expected " << dsz << " given";
-        m.raise_exception(strm.str());
+        m.raise_exception(std::format("Unexpected number of arguments to '{}' at least one argument expected {} given",
+                                       sig.m_name.str(), dsz));
     }
     bool is_match = true;
     for (unsigned i = 0; is_match && i < dsz; ++i) {
@@ -96,17 +95,16 @@ void seq_decl_plugin::match_assoc(psig& sig, unsigned dsz, sort *const* dom, sor
         is_match = match(binding, range, sig.m_range);
     }
     if (!is_match) {
-        std::ostringstream strm;
-        strm << "Sort of function '" << sig.m_name << "' ";
-        strm << "does not match the declared type. Given domain: ";
+        std::string domain_str;
         for (unsigned i = 0; i < dsz; ++i) {
-            strm << mk_pp(dom[i], m) << " ";
+            domain_str += to_string(mk_pp(dom[i], m)) + " ";
         }
+        std::string range_str;
         if (range) {
-            strm << " and range: " << mk_pp(range, m);
+            range_str = std::format(" and range: {}", to_string(mk_pp(range, m)));
         }
-        STRACE(str, strm.str());
-        m.raise_exception(strm.str());
+        m.raise_exception(std::format("Sort of function '{}' does not match the declared type. Given domain: {}{}",
+                                       sig.m_name.str(), domain_str, range_str));
     }
     range_out = apply_binding(binding, sig.m_range);
     SASSERT(range_out);
@@ -116,10 +114,8 @@ void seq_decl_plugin::match(psig& sig, unsigned dsz, sort *const* dom, sort* ran
     m_binding.reset();
     ast_manager& m = *m_manager;
     if (sig.m_dom.size() != dsz) {
-        std::ostringstream strm;
-        strm << "Unexpected number of arguments to '" << sig.m_name << "' ";
-        strm << sig.m_dom.size() << " arguments expected " << dsz << " given";
-        m.raise_exception(strm.str());
+        m.raise_exception(std::format("Unexpected number of arguments to '{}' {} arguments expected {} given",
+                                       sig.m_name.str(), sig.m_dom.size(), dsz));
     }
     bool is_match = true;
     for (unsigned i = 0; is_match && i < dsz; ++i) {
@@ -129,28 +125,25 @@ void seq_decl_plugin::match(psig& sig, unsigned dsz, sort *const* dom, sort* ran
         is_match = match(m_binding, range, sig.m_range);
     }
     if (!is_match) {
-        std::ostringstream strm;
-        strm << "Sort of polymorphic function '" << sig.m_name << "' ";
-        strm << "does not match the declared type. ";
-        strm << "\nGiven domain: ";
+        std::string given_domain;
         for (unsigned i = 0; i < dsz; ++i) {
-            strm << mk_pp(dom[i], m) << " ";
+            given_domain += to_string(mk_pp(dom[i], m)) + " ";
         }
+        std::string range_str;
         if (range) {
-            strm << " and range: " << mk_pp(range, m);
+            range_str = std::format(" and range: {}", to_string(mk_pp(range, m)));
         }
-        strm << "\nExpected domain: ";
+        std::string expected_domain;
         for (unsigned i = 0; i < dsz; ++i) {
-            strm << mk_pp(sig.m_dom[i].get(), m) << " ";
+            expected_domain += to_string(mk_pp(sig.m_dom[i].get(), m)) + " ";
         }
 
-        m.raise_exception(strm.str());
+        m.raise_exception(std::format("Sort of polymorphic function '{}' does not match the declared type. \nGiven domain: {}{}\nExpected domain: {}",
+                                       sig.m_name.str(), given_domain, range_str, expected_domain));
     }
     if (!range && dsz == 0) {
-        std::ostringstream strm;
-        strm << "Sort of polymorphic function '" << sig.m_name << "' ";
-        strm << "is ambiguous. Function takes no arguments and sort of range has not been constrained";
-        m.raise_exception(strm.str());
+        m.raise_exception(std::format("Sort of polymorphic function '{}' is ambiguous. Function takes no arguments and sort of range has not been constrained",
+                                       sig.m_name.str()));
     }
     range_out = apply_binding(m_binding, sig.m_range);
     SASSERT(range_out);
@@ -210,6 +203,7 @@ void seq_decl_plugin::init() {
     sort* strTint2T[3] = { strT, intT, intT };
     sort* strTreT[2] = { strT, reT };
     sort* str2TintT[3] = { strT, strT, intT };
+    sort* strTintTstrT[3] = { strT, intT, strT };
     sort* seqAintT[2] = { seqA, intT };
     sort* seq3A[3] = { seqA, seqA, seqA };
     sort* realTintT[2] = { realT, intT };
@@ -270,6 +264,11 @@ void seq_decl_plugin::init() {
     m_sigs[OP_STRING_STOR]		 = alloc(psig, m, "str.to_real", 0, 1, &strT, realT);
     m_sigs[OP_STRING_LT]         = alloc(psig, m, "str.<", 0, 2, str2T, boolT);
     m_sigs[OP_STRING_LE]         = alloc(psig, m, "str.<=", 0, 2, str2T, boolT);
+    m_sigs[OP_STRING_TO_LOWER]   = alloc(psig, m, "str.to_lower", 0, 1, &strT, strT);
+    m_sigs[OP_STRING_TO_UPPER]   = alloc(psig, m, "str.to_upper", 0, 1, &strT, strT);
+    m_sigs[OP_STRING_UPDATE]     = alloc(psig, m, "str.update", 0, 3, strTintTstrT, strT);
+    m_sigs[OP_STRING_TRIM]       = alloc(psig, m, "str.trim", 0, 1, &strT, strT);
+    m_sigs[OP_STRING_DELETE]     = alloc(psig, m, "str.delete", 0, 3, strTint2T, strT);
     m_sigs[OP_STRING_IS_DIGIT]   = alloc(psig, m, "str.is_digit", 0, 1, &strT, boolT);
     m_sigs[OP_STRING_TO_CODE]    = alloc(psig, m, "str.to_code", 0, 1, &strT, intT);
     m_sigs[OP_STRING_FROM_CODE]  = alloc(psig, m, "str.from_code", 0, 1, &intT, strT);
@@ -438,6 +437,11 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
 	case OP_STRING_STOR:
     case OP_STRING_LT:
     case OP_STRING_LE:
+    case OP_STRING_TO_LOWER:
+    case OP_STRING_TO_UPPER:
+    case OP_STRING_UPDATE:
+    case OP_STRING_TRIM:
+    case OP_STRING_DELETE:
     case OP_STRING_IS_DIGIT:
     case OP_STRING_TO_CODE:
     case OP_STRING_FROM_CODE:
@@ -1480,7 +1484,7 @@ bool seq_util::rex::pp::print_seq(std::ostream& out, expr* s) const {
             print(out, e);
     }
     else if (re.u.str.is_string(s, z)) {
-        for (unsigned i = 0; i < z.length(); i++)
+        for (unsigned i = 0; i < z.length(); ++i)
             out << (char)z[i];
     }
     else if (re.u.str.is_at(s, x, i))

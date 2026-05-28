@@ -288,7 +288,7 @@ public:
 
     static void tst2() {
         tst_hash(0);
-        for (int i = 0; i <= 10000; i++) {
+        for (int i = 0; i <= 10000; ++i) {
             int r = rand() % INT_MAX;
             if (rand()%2 == 1) r = -r;
             tst_hash(r);
@@ -299,7 +299,7 @@ public:
 static void tst7() {
     rational p;
     p = power(rational(2), 32);
-    for (unsigned i = 1; i < 1000; i++) {
+    for (unsigned i = 1; i < 1000; ++i) {
         rational n(i);
         rational x;
         rational y;
@@ -312,37 +312,37 @@ static void tst7() {
 
 static void tst8() {
     rational r;
-    ENSURE(!rational(-4).is_int_perfect_square(r) && r.is_zero());
-    ENSURE(!rational(-3).is_int_perfect_square(r) && r.is_zero());
-    ENSURE(!rational(-2).is_int_perfect_square(r) && r.is_zero());
-    ENSURE(!rational(-1).is_int_perfect_square(r) && r.is_zero());
+    ENSURE(!rational(-4).is_int_perfect_square(r));
+    ENSURE(!rational(-3).is_int_perfect_square(r));
+    ENSURE(!rational(-2).is_int_perfect_square(r));
+    ENSURE(!rational(-1).is_int_perfect_square(r));
     ENSURE(rational(0).is_int_perfect_square(r) && r.is_zero());
     ENSURE(rational(1).is_int_perfect_square(r) && r.is_one());
-    ENSURE(!rational(2).is_int_perfect_square(r) && r == rational(2));
-    ENSURE(!rational(3).is_int_perfect_square(r) && r == rational(2));
+    ENSURE(!rational(2).is_int_perfect_square(r));
+    ENSURE(!rational(3).is_int_perfect_square(r));
     ENSURE(rational(4).is_int_perfect_square(r) && r == rational(2));
-    ENSURE(!rational(5).is_int_perfect_square(r) && r == rational(3));
-    ENSURE(!rational(6).is_int_perfect_square(r) && r == rational(3));
-    ENSURE(!rational(7).is_int_perfect_square(r) && r == rational(3));
-    ENSURE(!rational(8).is_int_perfect_square(r) && r == rational(3));
+    ENSURE(!rational(5).is_int_perfect_square(r));
+    ENSURE(!rational(6).is_int_perfect_square(r));
+    ENSURE(!rational(7).is_int_perfect_square(r));
+    ENSURE(!rational(8).is_int_perfect_square(r));
     ENSURE(rational(9).is_int_perfect_square(r) && r == rational(3));
-    ENSURE(!rational(10).is_int_perfect_square(r) && r == rational(4));
-    ENSURE(!rational(11).is_int_perfect_square(r) && r == rational(4));
-    ENSURE(!rational(12).is_int_perfect_square(r) && r == rational(4));
-    ENSURE(!rational(13).is_int_perfect_square(r) && r == rational(4));
-    ENSURE(!rational(14).is_int_perfect_square(r) && r == rational(4));
-    ENSURE(!rational(15).is_int_perfect_square(r) && r == rational(4));
+    ENSURE(!rational(10).is_int_perfect_square(r));
+    ENSURE(!rational(11).is_int_perfect_square(r));
+    ENSURE(!rational(12).is_int_perfect_square(r));
+    ENSURE(!rational(13).is_int_perfect_square(r));
+    ENSURE(!rational(14).is_int_perfect_square(r));
+    ENSURE(!rational(15).is_int_perfect_square(r));
     ENSURE(rational(16).is_int_perfect_square(r) && r == rational(4));
-    ENSURE(!rational(17).is_int_perfect_square(r) && r == rational(5));
-    ENSURE(!rational(18).is_int_perfect_square(r) && r == rational(5));
-    ENSURE(!rational(19).is_int_perfect_square(r) && r == rational(5));
-    ENSURE(!rational(20).is_int_perfect_square(r) && r == rational(5));
-    ENSURE(!rational(21).is_int_perfect_square(r) && r == rational(5));
-    ENSURE(!rational(22).is_int_perfect_square(r) && r == rational(5));
-    ENSURE(!rational(23).is_int_perfect_square(r) && r == rational(5));
-    ENSURE(!rational(24).is_int_perfect_square(r) && r == rational(5));
+    ENSURE(!rational(17).is_int_perfect_square(r));
+    ENSURE(!rational(18).is_int_perfect_square(r));
+    ENSURE(!rational(19).is_int_perfect_square(r));
+    ENSURE(!rational(20).is_int_perfect_square(r));
+    ENSURE(!rational(21).is_int_perfect_square(r));
+    ENSURE(!rational(22).is_int_perfect_square(r));
+    ENSURE(!rational(23).is_int_perfect_square(r));
+    ENSURE(!rational(24).is_int_perfect_square(r));
     ENSURE(rational(25).is_int_perfect_square(r) && r == rational(5));
-    ENSURE(!rational(26).is_int_perfect_square(r) && r == rational(6));
+    ENSURE(!rational(26).is_int_perfect_square(r));
     ENSURE(rational(36).is_int_perfect_square(r) && r == rational(6));
 
     ENSURE(rational(1,9).is_perfect_square(r) && r == rational(1,3));
@@ -396,7 +396,7 @@ static void tst10(bool use_ints) {
     vals.resize(NUM_RATIONALS);
     vals2.resize(NUM_RATIONALS);
     fvals.resize(NUM_RATIONALS);
-    for (unsigned i = 0; i < NUM_RATIONALS; i++) {
+    for (unsigned i = 0; i < NUM_RATIONALS; ++i) {
         int r1 = rand() % MAGNITUDE;
         int r2 = use_ints ? 1 : rand() % MAGNITUDE;
         if (r2 == 0) r2 = 1;
@@ -407,13 +407,13 @@ static void tst10(bool use_ints) {
     }
     {
         timeit t(true, "multiplication with rationals");
-        for (unsigned i = 0; i < NUM_RATIONALS - 1; i++) {
+        for (unsigned i = 0; i < NUM_RATIONALS - 1; ++i) {
             vals[i] *= vals[i+1];
         }
     }
     {
         timeit t(true, "multiplication with floats: ");
-        for (unsigned i = 0; i < NUM_RATIONALS - 1; i++) {
+        for (unsigned i = 0; i < NUM_RATIONALS - 1; ++i) {
             fvals[i] *= fvals[i+1];
         }
     }
@@ -428,7 +428,7 @@ static void tst11(bool use_ints) {
     vector<float>    fvals;
     vals.resize(NUM_RATIONALS2);
     fvals.resize(NUM_RATIONALS2);
-    for (unsigned i = 0; i < NUM_RATIONALS2; i++) {
+    for (unsigned i = 0; i < NUM_RATIONALS2; ++i) {
         int r1 = rand() % MAGNITUDE2;
         int r2 = use_ints ? 1 : rand() % MAGNITUDE2;
         if (r2 == 0) r2 = 1;
@@ -438,15 +438,15 @@ static void tst11(bool use_ints) {
     }
     {
         timeit t(true, "multiplication with big rationals");
-        for (unsigned j = 0; j < 10; j++)
-            for (unsigned i = 0; i < NUM_RATIONALS2-1; i++) {
+        for (unsigned j = 0; j < 10; ++j)
+            for (unsigned i = 0; i < NUM_RATIONALS2-1; ++i) {
                 vals[i] *= vals[i+1];
             }
     }
     {
         timeit t(true, "multiplication with floats: ");
-        for (unsigned j = 0; j < 10; j++)
-            for (unsigned i = 0; i < NUM_RATIONALS2-1; i++) {
+        for (unsigned j = 0; j < 10; ++j)
+            for (unsigned i = 0; i < NUM_RATIONALS2-1; ++i) {
                 fvals[i] *= fvals[i+1];
             }
     }

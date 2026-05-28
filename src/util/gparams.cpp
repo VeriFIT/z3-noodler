@@ -236,13 +236,13 @@ public:
             name++;
         std::string tmp = name;
         unsigned n = static_cast<unsigned>(tmp.size());
-        for (unsigned i = 0; i < n; i++) {
+        for (unsigned i = 0; i < n; ++i) {
             if (tmp[i] >= 'A' && tmp[i] <= 'Z')
                 tmp[i] = tmp[i] - 'A' + 'a';
             else if (tmp[i] == '-')
                 tmp[i] = '_';
         }
-        for (unsigned i = 0; i < n; i++) {
+        for (unsigned i = 0; i < n; ++i) {
             if (tmp[i] == '.') {
                 param_name = tmp.c_str() + i + 1;
                 tmp.resize(i);
@@ -416,7 +416,7 @@ public:
         symbol sp(p.c_str());
         std::ostringstream buffer;
         ps.display(buffer, sp);
-        return buffer.str();
+        return std::move(buffer).str();
     }
 
     std::string get_default(param_descrs const & d, std::string const & p, std::string const & m) {

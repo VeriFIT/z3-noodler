@@ -1,5 +1,6 @@
 #include <cassert>
 
+#include "util/gparams.h"
 #include "util/z3_exception.h"
 
 #include "util.h"
@@ -9,8 +10,17 @@
 
 namespace smt::noodler::util {
 
+    namespace {
+        bool enable_throw_error_warnings() {
+            return gparams::get_module("smt").get_bool("str.enable_warnings", false);
+        }
+    }
+
     void throw_error(std::string errMsg) {
-        // TODO maybe for benchnarking throw_error in release should also really throw error
+        if (enable_throw_error_warnings()) {
+            // always throw error if it is enabled by param
+            throw std::runtime_error(errMsg);
+        }
 #ifndef NDEBUG
         // for debugging, we use std::runtime_error, because that one is not caught by z3
         throw std::runtime_error(errMsg);

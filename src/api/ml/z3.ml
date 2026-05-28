@@ -15,7 +15,7 @@ type context = Z3native.context
 module Log =
 struct
   let open_ filename =
-    lbool_of_int (Z3native.open_log filename) = L_TRUE
+    (Z3native.open_log filename)
   let close = Z3native.close_log
   let append = Z3native.append_log
 end
@@ -216,6 +216,8 @@ sig
   val to_string : sort -> string
   val mk_uninterpreted : context -> Symbol.symbol -> sort
   val mk_uninterpreted_s : context -> string -> sort
+  val mk_type_variable : context -> Symbol.symbol -> sort
+  val mk_type_variable_s : context -> string -> sort
 end = struct
   type sort = Z3native.sort
   let gc a = Z3native.context_of_ast a
@@ -228,6 +230,8 @@ end = struct
   let to_string (x:sort) = Z3native.sort_to_string (gc x) x
   let mk_uninterpreted ctx s = Z3native.mk_uninterpreted_sort ctx s
   let mk_uninterpreted_s (ctx:context) (s:string) = mk_uninterpreted ctx (Symbol.mk_string ctx s)
+  let mk_type_variable ctx s = Z3native.mk_type_variable ctx s
+  let mk_type_variable_s (ctx:context) (s:string) = mk_type_variable ctx (Symbol.mk_string ctx s)
 end
 
 and FuncDecl :
@@ -239,11 +243,13 @@ sig
     type parameter =
         P_Int of int
       | P_Dbl of float
+      | P_Rat of string
       | P_Sym of Symbol.symbol
       | P_Srt of Sort.sort
       | P_Ast of AST.ast
       | P_Fdl of func_decl
-      | P_Rat of string
+      | P_Internal of string
+      | P_ZStr of string
 
     val get_kind : parameter -> Z3enums.parameter_kind
     val get_int : parameter -> int
@@ -284,20 +290,25 @@ end = struct
     type parameter =
       | P_Int of int
       | P_Dbl of float
+      | P_Rat of string
       | P_Sym of Symbol.symbol
       | P_Srt of Sort.sort
       | P_Ast of AST.ast
       | P_Fdl of func_decl
-      | P_Rat of string
+      | P_Internal of string
+      | P_ZStr of string
 
     let get_kind = function
       | P_Int _ -> PARAMETER_INT
       | P_Dbl _ -> PARAMETER_DOUBLE
+      | P_Rat _ -> PARAMETER_RATIONAL
       | P_Sym _ -> PARAMETER_SYMBOL
       | P_Srt _ -> PARAMETER_SORT
       | P_Ast _ -> PARAMETER_AST
       | P_Fdl _ -> PARAMETER_FUNC_DECL
-      | P_Rat _ -> PARAMETER_RATIONAL
+      | P_Internal _ -> PARAMETER_INTERNAL
+      | P_ZStr _ -> PARAMETER_ZSTRING
+
 
     let get_int = function
       | P_Int x -> x
@@ -306,6 +317,10 @@ end = struct
     let get_float = function
       | P_Dbl x -> x
       | _ -> raise (Error "parameter is not a float")
+
+    let get_rational = function
+      | P_Rat x -> x
+      | _ -> raise (Error "parameter is not a rational string")
 
     let get_symbol = function
       | P_Sym x -> x
@@ -322,10 +337,6 @@ end = struct
     let get_func_decl = function
       | P_Fdl x -> x
       | _ -> raise (Error "parameter is not a func_decl")
-
-    let get_rational = function
-      | P_Rat x -> x
-      | _ -> raise (Error "parameter is not a rational string")
   end
 
   let mk_func_decl (ctx:context) (name:Symbol.symbol) (domain:Sort.sort list) (range:Sort.sort) =
@@ -378,11 +389,14 @@ end = struct
       match parameter_kind_of_int (Z3native.get_decl_parameter_kind (gc x) x i) with
       | PARAMETER_INT -> Parameter.P_Int (Z3native.get_decl_int_parameter (gc x) x i)
       | PARAMETER_DOUBLE -> Parameter.P_Dbl (Z3native.get_decl_double_parameter (gc x) x i)
+      | PARAMETER_RATIONAL -> Parameter.P_Rat (Z3native.get_decl_rational_parameter (gc x) x i)
       | PARAMETER_SYMBOL-> Parameter.P_Sym (Z3native.get_decl_symbol_parameter (gc x) x i)
       | PARAMETER_SORT -> Parameter.P_Srt (Z3native.get_decl_sort_parameter (gc x) x i)
       | PARAMETER_AST -> Parameter.P_Ast (Z3native.get_decl_ast_parameter (gc x) x i)
       | PARAMETER_FUNC_DECL -> Parameter.P_Fdl (Z3native.get_decl_func_decl_parameter (gc x) x i)
-      | PARAMETER_RATIONAL -> Parameter.P_Rat (Z3native.get_decl_rational_parameter (gc x) x i)
+      | PARAMETER_INTERNAL -> Parameter.P_Internal ("interal parameter")
+      | PARAMETER_ZSTRING -> Parameter.P_ZStr ("internal string")
+      
     in
     List.init n f
 
@@ -898,11 +912,24 @@ struct
   let mk_sort_s (ctx:context) (name:string) (constructors:Constructor.constructor list) =
     mk_sort ctx (Symbol.mk_string ctx name) constructors
 
+  let mk_polymorphic_sort (ctx:context) (name:Symbol.symbol) (type_params:Sort.sort list) (constructors:Constructor.constructor list) =
+    let (x,_) = Z3native.mk_polymorphic_datatype ctx name (List.length type_params) type_params (List.length constructors) constructors in
+    x
+
+  let mk_polymorphic_sort_s (ctx:context) (name:string) (type_params:Sort.sort list) (constructors:Constructor.constructor list) =
+    mk_polymorphic_sort ctx (Symbol.mk_string ctx name) type_params constructors
+
   let mk_sort_ref (ctx: context) (name:Symbol.symbol) =
-    Z3native.mk_datatype_sort ctx name
+    Z3native.mk_datatype_sort ctx name 0 []
 
   let mk_sort_ref_s (ctx: context) (name: string) =
     mk_sort_ref ctx (Symbol.mk_string ctx name)
+
+  let mk_sort_ref_p (ctx: context) (name:Symbol.symbol) (params:Sort.sort list) =
+    Z3native.mk_datatype_sort ctx name (List.length params) params
+
+  let mk_sort_ref_ps (ctx: context) (name: string) (params:Sort.sort list) =
+    mk_sort_ref_p ctx (Symbol.mk_string ctx name) params
 
   let mk_sorts (ctx:context) (names:Symbol.symbol list) (c:Constructor.constructor list list) =
     let n = List.length names in
@@ -934,6 +961,9 @@ struct
       let g j = Z3native.get_datatype_sort_constructor_accessor (Sort.gc x) x i j in
       List.init ds g) in
     List.init n f
+
+  let update_field (ctx:context) (field_access:FuncDecl.func_decl) (t:Expr.expr) (v:Expr.expr) =
+    Z3native.datatype_update_field ctx field_access t v
 end
 
 

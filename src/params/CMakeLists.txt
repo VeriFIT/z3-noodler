@@ -10,9 +10,8 @@ z3_add_component(params
     theory_array_params.cpp
     theory_bv_params.cpp
     theory_pb_params.cpp
-    theory_seq_params.cpp
-    theory_str_params.cpp     
-    theory_str_noodler_params.cpp   
+    theory_seq_params.cpp  
+    theory_str_noodler_params.cpp
   COMPONENT_DEPENDENCIES
     util
     ast
@@ -30,6 +29,7 @@ z3_add_component(params
     seq_rewriter_params.pyg
     sls_params.pyg
     smt_params_helper.pyg
+    smt_parallel_params.pyg
     solver_params.pyg
     tactic_params.pyg
   EXTRA_REGISTER_MODULE_HEADERS

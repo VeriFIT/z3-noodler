@@ -120,5 +120,7 @@ genaisrc/genblogpost.genai.mts
 bazel-*
 
 # test files
-input.smt2
 ecma_automated_tests/
+# Local issue tracking
+.beads
+.claude

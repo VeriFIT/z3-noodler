@@ -35,7 +35,7 @@ namespace nlsat {
         imp * m_imp;
     public:
         explain(solver & s, assignment const & x2v, polynomial::cache & u, 
-                atom_vector const& atoms, atom_vector const& x2eq, evaluator & ev, bool use_cell_sample_proj);
+                atom_vector const& atoms, atom_vector const& x2eq, evaluator & ev, bool canonicalize);
 
         ~explain();
 
@@ -44,7 +44,8 @@ namespace nlsat {
         void set_full_dimensional(bool f);
         void set_minimize_cores(bool f);
         void set_factor(bool f);
-        void set_signed_project(bool f);
+        void set_add_all_coeffs(bool f);
+        void set_add_zero_disc(bool f);
 
         /**
            \brief Given a set of literals ls[0], ... ls[n-1] s.t.
@@ -63,7 +64,7 @@ namespace nlsat {
                  - s_1, ..., s_m do not contain variable x.
                  - s_1, ..., s_m are false in the current interpretation
         */
-        void operator()(unsigned n, literal const * ls, scoped_literal_vector & result);
+        void compute_conflict_explanation(unsigned n, literal const * ls, scoped_literal_vector & result);
 
         
         /**
@@ -103,10 +104,14 @@ namespace nlsat {
         void maximize(var x, unsigned n, literal const * ls, scoped_anum& val, bool& unbounded);
 
         /**
+           Print the polynomials that were passed to levelwise in the last call (for debugging).
+         */
+        void display_last_lws_input(std::ostream& out);
+
+        /**
            Unit test routine.
          */
         void test_root_literal(atom::kind k, var y, unsigned i, poly* p, scoped_literal_vector & result);
     };
 
 };
-

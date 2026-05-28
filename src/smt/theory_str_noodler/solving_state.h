@@ -4,8 +4,8 @@
 #include <memory>
 #include <deque>
 #include <algorithm>
-#include <functional>
 
+#include "params/theory_str_noodler_params.h"
 #include "formula.h"
 #include "aut_assignment.h"
 #include "util.h"
@@ -14,6 +14,13 @@ namespace smt::noodler {
 
     /// A state of decision procedure that can lead to a solution
     struct SolvingState {
+
+    private:
+        
+        /// @brief Apply substitutions from substitution_map directly to disequations.
+        void apply_substitutions_to_disequations();
+
+    public:
         // aut_ass[x] assigns variable x to some automaton while substitution_map[x] maps variable x to
         // the concatenation of variables for which x was substituted (i.e. its automaton is concatenation
         // of the automata from these variables). Each variable is either assigned in aut_ass or
@@ -36,6 +43,17 @@ namespace smt::noodler {
         // the variables that have length constraint on them in the rest of formula
         std::unordered_set<BasicTerm> length_sensitive_vars;
 
+        // disequations postponed to be handled after finding stable solutions
+        Formula postponed_disequations;
+
+        // conversions local to this solving state
+        std::vector<TermConversion> conversions;
+
+        // length conjuncts generated while replacing disequalities in this state
+        std::vector<LenNode> disequations_len_formula_conjuncts;
+
+        // indicates whether this solving state has any siblings in the solving state tree
+        bool has_siblings = false;
 
         SolvingState() = default;
         SolvingState(AutAssignment aut_ass,
@@ -44,14 +62,20 @@ namespace smt::noodler {
                      std::set<Predicate> transducers,
                      std::set<Predicate> predicates_not_on_cycle,
                      std::unordered_set<BasicTerm> length_sensitive_vars,
-                     std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map)
+                     std::unordered_map<BasicTerm, std::vector<BasicTerm>> substitution_map,
+                     bool has_siblings,
+                     Formula disequations = {},
+                     std::vector<TermConversion> conversions = {})
                         : aut_ass(aut_ass),
                           substitution_map(substitution_map),
                           inclusions(inclusions),
                           transducers(transducers),
                           predicates_not_on_cycle(predicates_not_on_cycle),
                           predicates_to_process(predicates_to_process),
-                          length_sensitive_vars(length_sensitive_vars) {}
+                          length_sensitive_vars(length_sensitive_vars),
+                          postponed_disequations(disequations),
+                          conversions(conversions),
+                          has_siblings(has_siblings) {}
 
         /// pushes predicate to the beginning of predicates_to_process but only if it is not in it yet
         void push_front_unique(const Predicate &predicate) {
@@ -238,8 +262,6 @@ namespace smt::noodler {
             return false;
         }
 
-        // substitutes vars and merge same nodes + delete copies of the merged nodes from the predicates_to_process (and also inclusions that have same sides are deleted)
-
         /**
          * @brief Substitutes variables from @p vars_to_substitute in predicates using substitution_map and removes unnnecessary nodes
          * 
@@ -248,6 +270,21 @@ namespace smt::noodler {
          * one). Furthermore, it removes inclusions that have both sides equal after substitution.
          */
         void substitute_vars(const std::set<BasicTerm>& vars_to_substitute);
+
+        /**
+         * @brief Get under-approximation of the postponed disequations length formula. For each disquation L != R add to 
+         * the resulting conjunction a formula |L| != |R|.
+         * 
+         * @return LenNode Postponed disequations length under-approximation 
+         */
+        LenNode get_disequations_underapprox_length_formula() const;
+
+        /**
+         * @brief Collect vars that are referenced by constraints stored directly in this state
+         *        (e.g., postponed disequality-length conjuncts and conversions) and therefore
+         *        must not be fully removed from substitution-related structures.
+         */
+        std::set<BasicTerm> get_vars_referenced_by_state_constraints() const;
 
         /// @brief Remove vars @p vars_to_remove (except those in @p vars_to_keep ) from the subtitution_map/aut_ass
         void remove_vars(const std::set<BasicTerm>& vars_to_remove, const std::set<BasicTerm>& vars_to_keep);
@@ -372,6 +409,45 @@ namespace smt::noodler {
          * If @p replacements is empty, it only deletes dummy symbols from transducers.
          */
         void replace_dummy_symbol_in_transducers_with(std::set<mata::Symbol> replacements);
+
+        /**
+         * @brief Replace disequality L != R with equalities while updating this solving state.
+         *
+         * The method updates this state (automata assignment and length-sensitive vars),
+         * It stores created disequality-related length constraints into
+         * disequations_len_formula_conjuncts and stores needed to_code
+         * conversions in this state's conversions.
+         *
+         * @param diseq Disequality to replace.
+         * @return Vector with created equalities.
+         */
+        std::vector<Predicate> replace_disequality(const Predicate& diseq);
+
+        /**
+         * @brief Expand postponed disequations into equations and enqueue them.
+         *
+         * Each postponed disequation is replaced by equations via replace_disequality().
+         * The resulting equations are added to this state and also pushed for processing.
+         */
+        void translate_postponed_disequations_to_equations();
+
+        /**
+         * @brief Run lightweight preprocessing focused on postponed disequations and
+         *        detect whether they are immediately unsatisfiable in this state.
+         *
+         * This method runs a local FormulaPreprocessor over `postponed_disequations`
+         * using the current `aut_ass`, `length_sensitive_vars` and any conversion
+         * variables. If the preprocessor detects immediate unsatisfiability it
+         * returns `l_false` and does not change this state. Otherwise the method
+         * persists the preprocessor's simplified disequations and the refined
+         * automata/length information back into this `SolvingState` (it updates
+         * `postponed_disequations`, `aut_ass` and inserts any discovered length
+         * variables into `length_sensitive_vars`) and returns `l_true`.
+         *
+         * @return `l_false` iff preprocessing proves some disequation branch unsat,
+         *         `l_true` otherwise.
+         */
+        lbool preprocess_disequations_for_unsat(const theory_str_noodler_params& params);
 
         std::string DOT_name = "init";
         std::string set_new_DOT_name() {

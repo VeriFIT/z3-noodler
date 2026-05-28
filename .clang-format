@@ -1,249 +1,92 @@
-Language: Cpp
-Standard: Latest
 
-AccessModifierOffset: -4
+# Z3 Theorem Prover clang-format configuration
+# Based on analysis of existing codebase style patterns
 
-AlignAfterOpenBracket: Align
-AlignArrayOfStructures: None
+BasedOnStyle: LLVM
 
-AlignConsecutiveAssignments:
-  Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-  AlignCompound: false
-  AlignFunctionPointers: false
-  PadOperators: true
-
-AlignConsecutiveBitFields:
-  Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-  AlignCompound: false
-  AlignFunctionPointers: false
-  PadOperators: false
-
-AlignConsecutiveDeclarations:
-  Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-  AlignCompound: false
-  AlignFunctionPointers: false
-  PadOperators: true
-
-AlignConsecutiveMacros:
-  Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-  AlignCompound: false
-  AlignFunctionPointers: false
-  PadOperators: true
-
-AlignConsecutiveShortCaseStatements:
-  Enabled: false
-  AcrossEmptyLines: false
-  AcrossComments: false
-
-AlignEscapedNewlines: Left
-AlignOperands: Align
-
-AlignTrailingComments:
-  Kind: Always
-  OverEmptyLines: 0
-
-AllowAllArgumentsOnNextLine: true
-AllowAllParametersOfDeclarationOnNextLine: true
-AllowBreakBeforeNoexceptSpecifier: Never
-
-AllowShortBlocksOnASingleLine: Empty
-AllowShortCaseLabelsOnASingleLine: false
-AllowShortCompoundRequirementOnASingleLine: true
-AllowShortEnumsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: Empty
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLambdasOnASingleLine: Empty
-AllowShortLoopsOnASingleLine: false
-
-AlwaysBreakBeforeMultilineStrings: false
-BreakTemplateDeclarations: Yes
-BinPackArguments: true
-BinPackParameters: true
-
-BitFieldColonSpacing: Both
-
-BraceWrapping:
-  AfterCaseLabel: false
-  AfterClass: false
-  AfterControlStatement: Never
-  AfterEnum: false
-  AfterExternBlock: false
-  AfterFunction: false
-  AfterNamespace: false
-  AfterObjCDeclaration: false
-  AfterStruct: false
-  AfterUnion: false
-  BeforeCatch: false
-  BeforeElse: false
-  BeforeLambdaBody: false
-  BeforeWhile: false
-  IndentBraces: false
-  SplitEmptyFunction: false
-  SplitEmptyRecord: false
-  SplitEmptyNamespace: false
-
-BreakAdjacentStringLiterals: true
-BreakAfterAttributes: Leave
-BreakAfterReturnType: None
-BreakArrays: true
-BreakBeforeBinaryOperators: None
-BreakBeforeConceptDeclarations: Always
-BreakBeforeBraces: Attach
-BreakBeforeInlineASMColon: OnlyMultiline
-BreakBeforeTernaryOperators: true
-BreakConstructorInitializers: BeforeColon
-BreakInheritanceList: BeforeColon
-BreakStringLiterals: true
-
-ColumnLimit: 120
-CompactNamespaces: false
-ConstructorInitializerIndentWidth: 4
-Cpp11BracedListStyle: true
-DerivePointerAlignment: false
-DisableFormat: false
-
-EmptyLineAfterAccessModifier: Never
-EmptyLineBeforeAccessModifier: LogicalBlock
-
-ExperimentalAutoDetectBinPacking: false
-FixNamespaceComments: true
-
-IncludeBlocks: Regroup
-IncludeCategories:
-  - Regex: "^(llvm|llvm-c|clang|clang-c)/"
-    Priority: 2
-    SortPriority: 0
-    CaseSensitive: false
-  - Regex: "^(<|(gtest|gmock|isl|json)/)"
-    Priority: 3
-    SortPriority: 0
-    CaseSensitive: false
-  - Regex: ".*"
-    Priority: 1
-    SortPriority: 0
-    CaseSensitive: false
-
-IncludeIsMainRegex: "(Test)?$"
-IncludeIsMainSourceRegex: ""
-
-IndentAccessModifiers: false
-IndentCaseBlocks: false
-IndentCaseLabels: true
-IndentExternBlock: Indent
-IndentGotoLabels: false
-IndentPPDirectives: AfterHash
-IndentRequiresClause: true
+# Indentation
 IndentWidth: 4
-IndentWrappedFunctionNames: false
-
-InsertBraces: true
-InsertNewlineAtEOF: false
-InsertTrailingCommas: None
-
-IntegerLiteralSeparator:
-  Binary: 4
-  BinaryMinDigits: 8
-  Decimal: 3
-  DecimalMinDigits: 5
-  Hex: 4
-  HexMinDigits: 8
-
-KeepEmptyLines:
-  AtEndOfFile: false
-  AtStartOfBlock: false
-  AtStartOfFile: false
-
-LambdaBodyIndentation: Signature
-LineEnding: DeriveLF
-
-MacroBlockBegin: ""
-MacroBlockEnd: ""
-
-MaxEmptyLinesToKeep: 2
-NamespaceIndentation: All
-PackConstructorInitializers: Never
-
-PointerAlignment: Left
-PenaltyBreakComment: 0
-PPIndentWidth: -1
-
-QualifierAlignment: Custom
-QualifierOrder:
-  [ static, friend, inline, constexpr, const, volatile, type, restrict ]
-
-ReferenceAlignment: Left
-ReflowComments: Always
-
-RemoveBracesLLVM: false
-RemoveEmptyLinesInUnwrappedLines: true
-RemoveParentheses: Leave
-RemoveSemicolon: false
-
-RequiresClausePosition: OwnLine
-RequiresExpressionIndentation: OuterScope
-
-SeparateDefinitionBlocks: Always
-ShortNamespaceLines: 0
-SkipMacroDefinitionBody: false
-
-SortIncludes:
-  Enabled: true
-  IgnoreCase: false
-
-SortUsingDeclarations: Lexicographic
-
-SpaceAfterCStyleCast: false
-SpaceAfterLogicalNot: false
-SpaceAfterTemplateKeyword: false
-SpaceAroundPointerQualifiers: Default
-SpaceBeforeAssignmentOperators: true
-SpaceBeforeCaseColon: false
-SpaceBeforeCpp11BracedList: true
-SpaceBeforeCtorInitializerColon: true
-SpaceBeforeInheritanceColon: true
-
-SpaceBeforeParens: ControlStatements
-SpaceBeforeParensOptions:
-  AfterControlStatements: true
-  AfterForeachMacros: true
-  AfterFunctionDefinitionName: false
-  AfterFunctionDeclarationName: false
-  AfterIfMacros: true
-  AfterNot: true
-  AfterOverloadedOperator: false
-  AfterPlacementOperator: true
-  AfterRequiresInClause: false
-  AfterRequiresInExpression: false
-  BeforeNonEmptyParentheses: false
-
-SpaceBeforeRangeBasedForLoopColon: true
-SpaceBeforeSquareBrackets: false
-SpaceInEmptyBlock: true
-
-SpacesBeforeTrailingComments: 2
-SpacesInAngles: Never
-SpacesInContainerLiterals: false
-
-SpacesInLineCommentPrefix:
-  Minimum: 1
-  Maximum: -1
-
-SpacesInParens: Never
-SpacesInParensOptions:
-  InCStyleCasts: false
-  InConditionalStatements: false
-  InEmptyParentheses: false
-  Other: false
-
-SpacesInSquareBrackets: false
-
 TabWidth: 4
 UseTab: Never
+
+
+# Column width
+ColumnLimit: 120
+
+# Braces
+Cpp11BracedListStyle: true
+
+# Classes and structs
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerIndentWidth: 4
+AccessModifierOffset: -4
+
+# Function definitions
+AlwaysBreakAfterReturnType: None
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+# Ensure function-opening brace is attached to the signature
+BreakBeforeBraces: Custom
+# Explicitly ensure function brace is not placed on a new line
+BraceWrapping:
+   AfterFunction: false
+   AfterClass: false
+   AfterControlStatement: false
+   AfterNamespace: false
+   AfterStruct: false
+   BeforeElse : true
+   AfterCaseLabel: false
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Alignment
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+AlignTrailingComments: true
+
+# Line breaks
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+# BreakBeforeElse: true
+
+# Includes
+SortIncludes: false  # Z3 has specific include ordering conventions
+
+# Namespaces
+NamespaceIndentation: All
+
+# Switch statements
+IndentCaseLabels: false
+AllowShortCaseLabelsOnASingleLine: true
+IndentCaseBlocks: false
+
+# Comments and documentation
+ReflowComments: true
+SpacesBeforeTrailingComments: 2
+
+# Language standards
+Standard: c++20
+
+# Penalties (for line breaking decisions)
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 60
+
+# Misc
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1

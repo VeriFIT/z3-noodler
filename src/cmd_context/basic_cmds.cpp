@@ -273,7 +273,7 @@ ATOMIC_CMD(labels_cmd, "labels", "retrieve Simplify-like labels", {
     svector<symbol> labels;
     ctx.get_check_sat_result()->get_labels(labels);
     ctx.regular_stream() << "(labels";
-    for (unsigned i = 0; i < labels.size(); i++) {
+    for (unsigned i = 0; i < labels.size(); ++i) {
         ctx.regular_stream() << " " << labels[i];
     }
     ctx.regular_stream() << ")" << std::endl;
@@ -332,6 +332,52 @@ public:
         SASSERT(m_var && m_value);
         ctx.set_initial_value(m_var, m_value);
     }    
+};
+
+class prefer_cmd : public cmd {
+    expr *m_formula = nullptr;
+
+public:
+    prefer_cmd() : cmd("prefer") {}
+    char const *get_usage() const override {
+        return "<formula>";
+    }
+    char const *get_descr(cmd_context &ctx) const override {
+        return "set a preferred formula for the solver";
+    }
+    unsigned get_arity() const override {
+        return 1;
+    }
+    void prepare(cmd_context &ctx) override {
+        m_formula = nullptr;
+    }
+    cmd_arg_kind next_arg_kind(cmd_context &ctx) const override {
+        return CPK_EXPR;
+    }
+    void set_next_arg(cmd_context &ctx, expr *e) override {
+        m_formula = e;
+    }
+    void execute(cmd_context &ctx) override {
+        SASSERT(m_formula);
+        ctx.set_preferred(m_formula);
+    }
+};
+
+class reset_preferences_cmd : public cmd {
+    public:
+    reset_preferences_cmd() : cmd("reset-preferences") {}
+    char const *get_usage() const override {
+        return "";
+    }
+    char const *get_descr(cmd_context &ctx) const override {
+        return "reset all preferred formulas";
+    }
+    unsigned get_arity() const override {
+        return 0;
+    }
+    void execute(cmd_context &ctx) override {
+        ctx.reset_preferred();
+    }
 };
 
 class set_get_option_cmd : public cmd {
@@ -848,7 +894,7 @@ public:
         ptr_vector<sort> & array_sort_args = m_domain;
         sort_ref_buffer domain(ctx.m());
         unsigned arity = m_f->get_arity();
-        for (unsigned i = 0; i < arity; i++) {
+        for (unsigned i = 0; i < arity; ++i) {
             array_sort_args.push_back(m_f->get_domain(i));
             domain.push_back(array_sort->instantiate(ctx.pm(), array_sort_args.size(), array_sort_args.data()));
             array_sort_args.pop_back();
@@ -927,6 +973,8 @@ void install_basic_cmds(cmd_context & ctx) {
     ctx.insert(alloc(get_info_cmd));
     ctx.insert(alloc(set_info_cmd));
     ctx.insert(alloc(set_initial_value_cmd));
+    ctx.insert(alloc(prefer_cmd));
+    ctx.insert(alloc(reset_preferences_cmd));
     ctx.insert(alloc(get_consequences_cmd));
     ctx.insert(alloc(builtin_cmd, "assert", "<term>", "assert term."));
     ctx.insert(alloc(builtin_cmd, "check-sat", "<boolean-constants>*", "check if the current context is satisfiable. If a list of boolean constants B is provided, then check if the current context is consistent with assigning every constant in B to true."));

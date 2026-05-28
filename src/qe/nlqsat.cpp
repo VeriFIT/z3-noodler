@@ -385,10 +385,9 @@ namespace qe {
             // They are sorted by size, so we project the largest variables first to avoid 
             // renaming variables. 
             for (unsigned i = vars.size(); i-- > 0;) {
-                new_result.reset();
                 ex.project(vars[i], result.size(), result.data(), new_result);
                 TRACE(qe, display_project(tout, vars[i], result, new_result););
-                result.swap(new_result);
+                result = std::move(new_result);
             }
             negate_clause(result);
         }
@@ -833,7 +832,6 @@ namespace qe {
             m_answer_simplify(m),
             m_trail(m),
             m_div_mc(nullptr) {
-            s.m_solver.get_explain().set_signed_project(true);
             m_nftactic = mk_tseitin_cnf_tactic(m);
         }
 
@@ -859,7 +857,7 @@ namespace qe {
             ptr_vector<expr> fmls;
             expr_ref fml(m);
             in->get_formulas(fmls);
-            fml = mk_and(m, fmls.size(), fmls.data());
+            fml = mk_and(m, fmls);
             if (m_mode == elim_t) {
                 fml = m.mk_not(fml);
             }                         

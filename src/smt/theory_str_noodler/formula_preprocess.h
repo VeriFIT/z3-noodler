@@ -411,6 +411,7 @@ namespace smt::noodler {
 
         void remove_regular();
         void propagate_variables();
+        void propagate_singletons();
         void propagate_eps();
         void generate_identities();
         void reduce_regular_sequence(unsigned mn);

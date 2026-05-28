@@ -208,11 +208,10 @@ namespace smt {
 
         svector<expr_bool_pair> sorted_exprs;
         top_sort_expr(exprs, num_exprs, sorted_exprs);
-        TRACE(deep_internalize, for (auto & kv : sorted_exprs) tout << "#" << kv.first->get_id() << " " << kv.second << "\n"; );
-        for (auto & kv : sorted_exprs) {
-            expr* e = kv.first;
+        TRACE(deep_internalize, for (auto & [e, b] : sorted_exprs) tout << "#" << e->get_id() << " " << b << "\n"; );
+        for (auto & [e, b] : sorted_exprs) {
             SASSERT(should_internalize_rec(e));
-            internalize_rec(e, kv.second);
+            internalize_rec(e, b);
         }
     }
     void context::internalize_deep(expr* n) {
@@ -546,10 +545,10 @@ namespace smt {
     }
 
     static bool check_patterns(quantifier * q) {
-        for (unsigned i = 0; i < q->get_num_patterns(); i++) {
+        for (unsigned i = 0; i < q->get_num_patterns(); ++i) {
             SASSERT(check_pattern(q->get_pattern(i)));
         }
-        for (unsigned i = 0; i < q->get_num_no_patterns(); i++) {
+        for (unsigned i = 0; i < q->get_num_no_patterns(); ++i) {
             SASSERT(check_pattern(q->get_no_pattern(i)));
         }
         return true;
@@ -696,6 +695,10 @@ namespace smt {
                 mk_or_cnstr(to_app(n));
                 add_or_rel_watches(to_app(n));
                 break;
+            case OP_IMPLIES:
+                mk_implies_cnstr(to_app(n));
+                add_implies_rel_watches(to_app(n));
+                break;
             case OP_EQ:
                 if (m.is_iff(n))
                     mk_iff_cnstr(to_app(n), false);
@@ -711,8 +714,7 @@ namespace smt {
                 mk_iff_cnstr(to_app(n), true);
                 break;
             case OP_DISTINCT:
-            case OP_IMPLIES:
-                throw default_exception("formula has not been simplified");
+                throw default_exception(std::string("formula has not been simplified") + " : " + mk_pp(n, m));
             case OP_OEQ:
                 UNREACHABLE();
             default:
@@ -930,6 +932,10 @@ namespace smt {
         m_activity.reserve(v+1);
         m_bool_var2expr.reserve(v+1);
         m_bool_var2expr[v] = n;
+        m_lit_scores[0].reserve(v + 1);
+        m_lit_scores[1].reserve(v + 1);
+        m_lit_scores[0][v] = m_lit_scores[1][v] = 0.0;
+
         literal l(v, false);
         literal not_l(v, true);
         unsigned aux = std::max(l.index(), not_l.index()) + 1;
@@ -957,6 +963,15 @@ namespace smt {
         SASSERT(check_bool_var_vector_sizes());
         return v;
     }
+
+    void context::add_scores(unsigned n, literal const *lits) {
+        for (unsigned i = 0; i < n; ++i) {
+            auto lit = lits[i];
+            unsigned v = lit.var();  // unique key per literal
+            m_lit_scores[lit.sign()][v] += 1.0 / n;
+        }
+    }
+
     
     void context::undo_mk_bool_var() {
         SASSERT(!m_b_internalized_stack.empty());
@@ -1013,11 +1028,9 @@ namespace smt {
             }
             else {
                 if (cgc_enabled) {
-                    enode_bool_pair pair = m_cg_table.insert(e);
-                    enode * e_prime      = pair.first;
+                    auto [e_prime, used_commutativity] = m_cg_table.insert(e);
                     if (e != e_prime) {
                         e->m_cg = e_prime;
-                        bool used_commutativity = pair.second;
                         push_new_congruence(e, e_prime, used_commutativity);
                     }
                     else {
@@ -1139,7 +1152,7 @@ namespace smt {
         std::sort(lits, lits + num_lits);
         literal prev = null_literal;
         unsigned j = 0;
-        for (unsigned i = 0; i < num_lits; i++) {
+        for (unsigned i = 0; i < num_lits; ++i) {
             literal curr = lits[i];
             lbool   val  = get_assignment(curr);
             switch (val) {
@@ -1150,7 +1163,6 @@ namespace smt {
                     simp_lits.push_back(~curr);
                 }
                 break; // ignore literal                
-                // fall through
             case l_undef:
                 if (curr == ~prev)
                     return false; // clause is equivalent to true
@@ -1197,7 +1209,7 @@ namespace smt {
         literal prev = null_literal;
         unsigned i = 0;
         unsigned j = 0;
-        for (; i < num_lits; i++) {
+        for (; i < num_lits; ++i) {
             literal curr = lits[i];
             bool_var var = curr.var();
             lbool   val  = l_undef;
@@ -1245,7 +1257,7 @@ namespace smt {
     */
     unsigned context::get_max_iscope_lvl(unsigned num_lits, literal const * lits) const {
         unsigned r = 0;
-        for (unsigned i = 0; i < num_lits; i++) {
+        for (unsigned i = 0; i < num_lits; ++i) {
             unsigned ilvl = get_intern_level(lits[i].var());
             if (ilvl > r)
                 r = ilvl;
@@ -1293,7 +1305,7 @@ namespace smt {
         int max_false_idx = -1;
         unsigned max_lvl  = UINT_MAX;
         int num_lits      = cls->get_num_literals();
-        for (int i = 1; i < num_lits; i++) {
+        for (int i = 1; i < num_lits; ++i) {
             literal l    = cls->get_literal(i);
             lbool val    = get_assignment(l);
             SASSERT(val == l_false || val == l_undef);
@@ -1336,7 +1348,7 @@ namespace smt {
         int max_false_idx = -1;
         int unknown_idx   = -1;
         int n = cls->get_num_literals();
-        for (int i = starting_at; i < n; i++) {
+        for (int i = starting_at; i < n; ++i) {
             literal l   = cls->get_literal(i);
             switch(get_assignment(l)) {
             case l_false:
@@ -1416,6 +1428,7 @@ namespace smt {
             break;
         case CLS_LEARNED:
             dump_lemma(num_lits, lits);
+            add_scores(num_lits, lits);
             break;
         default:
             break;
@@ -1583,7 +1596,7 @@ namespace smt {
 
     proof * context::mk_clause_def_axiom(unsigned num_lits, literal * lits, expr * root_gate) {
         ptr_buffer<expr> new_lits;
-        for (unsigned i = 0; i < num_lits; i++) {
+        for (unsigned i = 0; i < num_lits; ++i) {
             literal l      = lits[i];
             bool_var v     = l.var();
             expr * atom    = m_bool_var2expr[v]; 
@@ -1592,7 +1605,7 @@ namespace smt {
         if (root_gate)
             new_lits.push_back(m.mk_not(root_gate));
         SASSERT(num_lits > 1);
-        expr * fact        = m.mk_or(new_lits.size(), new_lits.data());
+        expr * fact        = m.mk_or(new_lits);
         return m.mk_def_axiom(fact);
         
     }
@@ -1605,7 +1618,7 @@ namespace smt {
         }
         else if (clause_proof_active()) {
             ptr_buffer<expr> new_lits;
-            for (unsigned i = 0; i < num_lits; i++) {
+            for (unsigned i = 0; i < num_lits; ++i) {
                 literal l      = lits[i];
                 bool_var v     = l.var();
                 expr * atom    = m_bool_var2expr[v]; 
@@ -1687,6 +1700,14 @@ namespace smt {
         }
     }
 
+    void context::add_implies_rel_watches(app* n) {
+        if (relevancy()) {
+            relevancy_eh* eh = m_relevancy_propagator->mk_implies_relevancy_eh(n);
+            add_rel_watch(~get_literal(n->get_arg(0)), eh);
+            add_rel_watch(get_literal(n->get_arg(1)), eh);
+        }
+    }
+
     void context::add_ite_rel_watches(app * n) {
         if (relevancy()) {
             relevancy_eh * eh = m_relevancy_propagator->mk_ite_relevancy_eh(n);
@@ -1733,9 +1754,24 @@ namespace smt {
         mk_gate_clause(buffer.size(), buffer.data());
     }
 
+    void context::mk_implies_cnstr(app* n) {
+        literal l = get_literal(n);
+        literal_buffer buffer;
+        buffer.push_back(~l);
+        auto arg1 = n->get_arg(0);
+        literal l_arg1 = get_literal(arg1);
+        mk_gate_clause(l, l_arg1);
+        buffer.push_back(~l_arg1);
+        auto arg2 = n->get_arg(1);
+        literal l_arg2 = get_literal(arg2);
+        mk_gate_clause(l, ~l_arg2);
+        buffer.push_back(l_arg2);
+        mk_gate_clause(buffer.size(), buffer.data());
+    }
+
     void context::mk_iff_cnstr(app * n, bool sign) {
         if (n->get_num_args() != 2) 
-            throw default_exception("formula has not been simplified");
+            throw default_exception(std::string("formula has not been simplified") + " : " + mk_pp(n, m));
         literal l  = get_literal(n);
         literal l1 = get_literal(n->get_arg(0));
         literal l2 = get_literal(n->get_arg(1));

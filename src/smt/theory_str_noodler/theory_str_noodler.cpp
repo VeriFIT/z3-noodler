@@ -204,12 +204,16 @@ namespace smt::noodler {
         // on higher decision level than 0 (otherwise the axioms are lost).
         // String propagation of the input formula works on level 0.
         if(init && (
-            m_util_s.str.is_index(ex) || 
+            m_util_s.str.is_index(ex) ||
             m_util_s.str.is_at(ex) ||
             m_util_s.str.is_extract(ex) ||
-            m_util_s.str.is_replace(ex) || 
+            m_util_s.str.is_replace(ex) ||
             m_util_s.str.is_replace_all(ex) ||
-            m_util_s.str.is_replace_re_all(ex)
+            m_util_s.str.is_replace_re_all(ex) ||
+            m_util_s.str.is_replace_re(ex) ||
+            m_util_s.str.is_update(ex) ||
+            m_util_s.str.is_trim(ex) ||
+            m_util_s.str.is_delete(ex)
         )) {
             ctx.mark_as_relevant(ex);
         }
@@ -431,6 +435,12 @@ namespace smt::noodler {
             handle_replace_re(n);
         } else if(m_util_s.str.is_replace_re_all(n)) { // str.replace_re_all
             handle_replace_re_all(n);
+        } else if(m_util_s.str.is_update(n)) {
+            handle_update(n);
+        } else if(m_util_s.str.is_trim(n)) {
+            handle_trim(n);
+        } else if(m_util_s.str.is_delete(n)) {
+            handle_delete(n);
         } else if (m_util_s.str.is_is_digit(n)) { // str.is_digit
             handle_is_digit(n);
         } else if (
@@ -626,6 +636,7 @@ namespace smt::noodler {
         m_membership_todo.push_scope();
         m_not_contains_todo.push_scope();
         m_conversion_todo.push_scope();
+        var_eqs.push_scope();
         STRACE(str, tout << "push_scope: " << m_scope_level << '\n';);
     }
 
@@ -641,6 +652,7 @@ namespace smt::noodler {
         m_membership_todo.pop_scope(num_scopes);
         m_not_contains_todo.pop_scope(num_scopes);
         m_conversion_todo.pop_scope(num_scopes);
+        var_eqs.pop_scope(num_scopes);
         m_rewrite.reset();
         // for incremental solving, we assume (TODO: should be done differently?) that if we added another assert, then pop must have been called and the satisfiability of the last run does not matter
         if (m_scope_level < scope_with_last_run_was_sat) {
@@ -660,10 +672,6 @@ namespace smt::noodler {
     void theory_str_noodler::reset_eh() {
         theory::reset_eh();
         STRACE(str, tout << "reset" << '\n';);
-    }
-
-    lbool theory_str_noodler::validate_unsat_core(expr_ref_vector &unsat_core) {
-        return l_undef;
     }
 
     expr_ref theory_str_noodler::mk_sub(expr *a, expr *b) {
@@ -1471,6 +1479,211 @@ namespace smt::noodler {
         expr_ref v = get_fresh_var_for_string_function("replace_re_all", e);
     }
 
+    /**
+     * @brief Handling of str.update(w, i, r)
+     * Starts replacing characters in w at index i with characters in r
+     * The resulting string will always have the same length as w,
+     * meaning if r is too long to fit into w, it will get truncated
+     * (e.g. str.update("aaaa", 2, "bbbb") = "aabb")
+     *
+     * 0 <= i < |w| && |r| > 0  ->  str.update(w, i, r) = u1 u2 u3
+     * 0 <= i < |w| && |r| > 0  ->  w = u1 x u3
+     * 0 <= i < |w| && |r| > 0  ->  |u1| = i
+     * 0 <= i < |w| && |r| > 0  ->  |x| = |u2|
+     * 0 <= i < |w| && |r| > 0  ->  r = u2 y
+     * 0 <= i < |w| && |r| > 0 && |r| >  |w| - i  ->  |u2| = |w| - i
+     * 0 <= i < |w| && |r| > 0 && |r| <= |w| - i  ->  |u2| = |r|
+     *
+     * i < 0   -> str.update(w, i, r) = w;
+     * i >=|w| -> str.update(w, i, r) = w;
+     * |r| <= 0 -> str.update = w (not completely necessary, helps z3)
+     *
+     * @param e The str.update(w, i, r) term
+     */
+    void theory_str_noodler::handle_update(expr *e) {
+        if (axiomatized_persist_terms.contains(e)) { return; }
+        axiomatized_persist_terms.insert(e);
+
+        expr *w = nullptr, *i = nullptr, *r = nullptr;
+        VERIFY(m_util_s.str.is_update(e, w, i, r));
+
+        expr_ref x = mk_str_var_fresh("update_removing");
+        expr_ref y = mk_str_var_fresh("update_overflow");
+        expr_ref u1 = mk_str_var_fresh("update_left");
+        expr_ref u2 = mk_str_var_fresh("update_center");
+        expr_ref u3 = mk_str_var_fresh("update_right");
+
+        expr_ref result = get_fresh_var_for_string_function("update", e);
+
+        expr_ref u1_x_u3 = mk_concat(u1, mk_concat(x, u3));
+        expr_ref u2_y = mk_concat(u2, y);
+        expr_ref u1_u2_u3 = mk_concat(u1, mk_concat(u2, u3));
+
+        expr_ref zero(m_util_a.mk_int(0), m);
+
+        // |r| > |w| - i
+        literal will_overflow = mk_literal(m_util_a.mk_gt(mk_sub(m_util_s.str.mk_length(r), m_util_a.mk_sub(m_util_s.str.mk_length(w), i)), zero));
+        // i >= 0
+        literal i_ge_zero = mk_literal(m_util_a.mk_ge(i, zero));
+        // i < |w|
+        literal i_lt_len_w = mk_literal(m_util_a.mk_lt(mk_sub(i, m_util_s.str.mk_length(w)), zero));
+        // |r| <= 0
+        literal r_len_le_zero = mk_literal(m_util_a.mk_le(m_util_s.str.mk_length(r), zero));
+
+        // 0 <= i < |w| && |r| > 0  ->  str.update(w, i, r) = u1 u2 u3
+        add_axiom({~i_ge_zero, ~i_lt_len_w, r_len_le_zero, mk_eq(u1_u2_u3, result, false)});
+        // 0 <= i < |w| && |r| > 0  ->  w = u1 x u3
+        add_axiom({~i_ge_zero, ~i_lt_len_w, r_len_le_zero, mk_eq(u1_x_u3, w, false)});
+        // 0 <= i < |w| && |r| > 0  ->  |u1| = i
+        add_axiom({~i_ge_zero, ~i_lt_len_w, r_len_le_zero, mk_eq(i, m_util_s.str.mk_length(u1), false)});
+        // 0 <= i < |w| && |r| > 0  ->  |x| = |u2|
+        add_axiom({~i_ge_zero, ~i_lt_len_w, r_len_le_zero, mk_eq(m_util_s.str.mk_length(x), m_util_s.str.mk_length(u2), false)});
+        // 0 <= i < |w| && |r| > 0  ->  r = u2 y
+        add_axiom({~i_ge_zero, ~i_lt_len_w, r_len_le_zero, mk_eq(u2_y, r, false)});
+        // 0 <= i < |w| && |r| > 0 && |r| >  |w| - i ->  |u2| = |w| - i
+        add_axiom({~i_ge_zero, ~i_lt_len_w, r_len_le_zero, ~will_overflow, mk_eq(m_util_s.str.mk_length(u2), m_util_a.mk_sub(m_util_s.str.mk_length(w), i), false)});
+        // 0 <= i < |w| && |r| > 0 && |r| <= |w| - i ->  |u2| = |r|
+        add_axiom({~i_ge_zero, ~i_lt_len_w, r_len_le_zero, will_overflow, mk_eq(m_util_s.str.mk_length(u2), m_util_s.str.mk_length(r) , false)});
+
+        // i < 0   -> str.update(w, i, r) = w;
+        add_axiom({i_ge_zero, mk_eq(result, w, false)});
+        // i >=|w| -> str.update(w, i, r) = w;
+        add_axiom({i_lt_len_w, mk_eq(result, w, false)});
+        // |r| <= 0 -> str.update = w (not completely necessary, helps z3)
+        add_axiom({~r_len_le_zero, mk_eq(result, w, false)});
+
+        mark_expression_as_length(u1);
+        mark_expression_as_length(x);
+        mark_expression_as_length(u2);
+        mark_expression_as_length(r);
+        mark_expression_as_length(w);
+    }
+
+    /**
+     * @brief Handling of str.trim(w)
+     * Trims the whitespace at the edges of w
+     *
+     * str.trim(w) = u
+     * w = tl u tr
+     * tl, tr ∈ WS*
+     * u ∈ (Σ\WS)* + (Σ\WS)Σ*(Σ\WS) (u must not start and end with whitespace)
+     * WS = " " + "\f" + "\n" + "\r" + "\t" + "\v"
+     *
+     * @param e The str.trim(w) term
+     */
+    void theory_str_noodler::handle_trim(expr *e) {
+        if (axiomatized_persist_terms.contains(e)) { return; }
+        axiomatized_persist_terms.insert(e);
+
+        expr *w = nullptr;
+        VERIFY(m_util_s.str.is_trim(e, w));
+
+        expr_ref tl = mk_str_var_fresh("trim_left");
+        expr_ref tr = mk_str_var_fresh("trim_right");
+
+        expr_ref u = get_fresh_var_for_string_function("trim", e);
+
+        expr_ref tl_u_tr = mk_concat(tl, mk_concat(u, tr));
+
+        // WS = " " + "\f" + "\n" + "\r" + "\t" + "\v"
+        expr_ref whitespace_re(m_util_s.re.mk_to_re(m_util_s.str.mk_string(" ")), m);
+        for (auto ws : { "\f", "\n", "\r", "\t", "\v" }) {
+            whitespace_re = expr_ref(m_util_s.re.mk_union(
+                        whitespace_re,
+                        m_util_s.re.mk_to_re(m_util_s.str.mk_string(ws))), m);
+        }
+        // sigma \ WS
+        expr_ref sigma_minus_ws(m_util_s.re.mk_diff(m_util_s.re.mk_full_char(nullptr), whitespace_re), m);
+        // sigma*
+        expr_ref sigma_star(m_util_s.re.mk_star(m_util_s.re.mk_full_char(nullptr)), m);
+        // WS*
+        expr_ref ws_star(m_util_s.re.mk_star(whitespace_re), m);
+        // (sigma \ WS)* + ((sigma \ WS) . sigma_star . (sigma \ WS))
+        expr_ref middle_regex(m_util_s.re.mk_union(
+                    // u is either in (sigma\WS)* - covers if u is eps or one character long
+                    m_util_s.re.mk_star(sigma_minus_ws),
+                    // or u is in (sigma\WS)sigma*(sigma\WS) - sigma star surrounded with non whitespace characters
+                    m_util_s.re.mk_concat(sigma_minus_ws, m_util_s.re.mk_concat(sigma_star, sigma_minus_ws))
+                    ), m);
+
+
+        // w = tl u tr
+        add_axiom({mk_eq(w, tl_u_tr, false)});
+        // tl is whitespace
+        add_axiom({mk_literal(m_util_s.re.mk_in_re(tl, ws_star))});
+        // tr is whitespace
+        add_axiom({mk_literal(m_util_s.re.mk_in_re(tr, ws_star))});
+        // u does not begin and end with whitespace characters
+        add_axiom({mk_literal(m_util_s.re.mk_in_re(u, middle_regex))});
+    }
+
+    /**
+     * @brief Handling of str.delete(w, i, l)
+     * Deletes a substring of length l from w at index i
+     *
+     * l <= 0   ->  str.delete(w, i, l) = w
+     * i <  0   ->  str.delete(w, i, l) = w
+     * i >= |w| ->  str.delete(w, i, l) = w
+     *
+     * 0 <= i < |w| && l > 0 -> str.delete(w, i, l) = u1 u2
+     * 0 <= i < |w| && l > 0 -> w = u1 x u2
+     * 0 <= i < |w| && l > 0 -> |u1| = i
+     * 0 <= i < |w| && l > 0 && i + l >= |w| -> u2 = ε
+     * 0 <= i < |w| && l > 0 && i + l <  |w| -> |x| = l
+     *
+     * @param e The str.delete(w, i, l) term
+     */
+    void theory_str_noodler::handle_delete(expr *e) {
+        if (axiomatized_persist_terms.contains(e)) { return; }
+        axiomatized_persist_terms.insert(e);
+
+        expr *w = nullptr, *i = nullptr, *l = nullptr;
+        VERIFY(m_util_s.str.is_delete(e, w, i, l));
+
+        STRACE(str, tout << "handle delete: " << mk_pp(e, m) << '\n';);
+
+        expr_ref u1 = mk_str_var_fresh("delete_left");
+        expr_ref u2 = mk_str_var_fresh("delete_right");
+        expr_ref x = mk_str_var_fresh("delete_remove");
+
+        expr_ref result = get_fresh_var_for_string_function("delete", e);
+
+        expr_ref u1_x_u2 = mk_concat(u1, mk_concat(x, u2));
+        expr_ref u1_u2 = mk_concat(u1, u2);
+
+        expr_ref zero(m_util_a.mk_int(0), m);
+        // i >= 0
+        literal i_ge_zero = mk_literal(m_util_a.mk_ge(i, zero));
+        // i < |w|
+        literal i_lt_len_w = mk_literal(m_util_a.mk_lt(mk_sub(i, m_util_s.str.mk_length(w)), zero));
+        // l > 0
+        literal l_gt_zero = mk_literal(m_util_a.mk_gt(l, zero));
+        // i + l >= |w|
+        literal i_plus_l_ge_len_w = mk_literal(m_util_a.mk_ge(mk_sub(m_util_a.mk_add(i, l), m_util_s.str.mk_length(w)), zero));
+
+        // l <= 0   ->  str.delete(w, i, l) = w
+        add_axiom({l_gt_zero, mk_eq(result, w, false)});
+        // i <  0   ->  str.delete(w, i, l) = w
+        add_axiom({i_ge_zero, mk_eq(result, w, false)});
+        // i >= |w| ->  str.delete(w, i, l) = w
+        add_axiom({i_lt_len_w, mk_eq(result, w, false)});
+
+        // 0 <= i < |w| && l > 0 -> str.delete(w, i, l) = u1 u2
+        add_axiom({~i_ge_zero, ~i_lt_len_w, ~l_gt_zero, mk_eq(result, u1_u2, false)});
+        // 0 <= i < |w| && l > 0 -> w = u1 x u2
+        add_axiom({~i_ge_zero, ~i_lt_len_w, ~l_gt_zero, mk_eq(w, u1_x_u2, false)});
+        // 0 <= i < |w| && l > 0 -> |u1| = i
+        add_axiom({~i_ge_zero, ~i_lt_len_w, ~l_gt_zero, mk_eq(m_util_s.str.mk_length(u1), i, false)});
+        // 0 <= i < |w| && l > 0 && i + l >= |w| -> u2 = ε
+        add_axiom({~i_ge_zero, ~i_lt_len_w, ~l_gt_zero, ~i_plus_l_ge_len_w, mk_eq(u2, m_util_s.str.mk_string(""), false)});
+        // 0 <= i < |w| && l > 0 && i + l <  |w| -> |x| = l
+        add_axiom({~i_ge_zero, ~i_lt_len_w, ~l_gt_zero, i_plus_l_ge_len_w, mk_eq(l, m_util_s.str.mk_length(x), false)});
+
+        mark_expression_as_length(w);
+        mark_expression_as_length(u1);
+        mark_expression_as_length(x);
+    }
+
     expr_ref theory_str_noodler::mk_concat(expr* e1, expr* e2) {
         return expr_ref(m_util_s.str.mk_concat(e1, e2), m);
     }
@@ -1963,7 +2176,7 @@ namespace smt::noodler {
         add_axiom(expr_ref(m.mk_iff(e, ecma_formula), m));
     }
 
-void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
+    void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
         STRACE(str, tout  << "handle in_re " << mk_pp(e, m) << " " << is_true << std::endl;);
 
         expr *s = nullptr, *re = nullptr;

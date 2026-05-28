@@ -37,9 +37,9 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Class for union-find like data structure. Allows to handle equivalence classes of 
+     * @brief Class for union-find like data structure. Allows to handle equivalence classes of
      * z3 expressions. It is implemented naively so-far.
-     * 
+     *
      */
     class var_union_find {
 
@@ -56,13 +56,59 @@ namespace smt::noodler {
 
         std::map<expr*, int> key_to_value; // -1 means key is not a numeral
 
+        // --- scoping trail ---
+        //
+        // Scoping (push_scope / pop_scope) follows the standard SMT trail pattern:
+        //
+        //  m_trail        — ordered log of every mutation made to `un_find` and
+        //                   `key_to_value` since the last push_scope().  Each entry
+        //                   carries enough information to reverse the change.  Entries
+        //                   are only appended while at least one scope is active (i.e.
+        //                   while m_scope_trail is non-empty), so there is zero overhead
+        //                   at the base level.
+        //
+        //  m_scope_trail  — stack of checkpoints: each push_scope() records the
+        //                   current size of m_trail here.  pop_scope() reads the top
+        //                   checkpoint to know how far back to replay the undo log.
+        //
+        //  m_pinned_trail — parallel stack for m_pinned (the expr_ref_vector that
+        //                   holds reference counts so Z3's GC cannot collect expr*
+        //                   pointers stored in un_find / key_to_value).  Each
+        //                   push_scope() records the current size of m_pinned here;
+        //                   pop_scope() shrinks m_pinned back to that size, releasing
+        //                   the GC pins acquired inside the popped scope.
+
+        // Tags the kind of mutation recorded in an UndoEntry.
+        enum class UndoKind {
+            NEW_KEY,        // a fresh key was inserted into un_find
+            NEW_VAL,        // a fresh value was added to an existing key's inner map
+            UPDATE_PRECISE  // the `precise` flag of an existing (key, val) pair changed
+        };
+
+        // One reversible mutation recorded on m_trail.
+        struct UndoEntry {
+            UndoKind kind;
+            expr* key;
+            expr* val;        // used by NEW_VAL and UPDATE_PRECISE
+            bool old_precise; // used by UPDATE_PRECISE: the value to restore on undo
+        };
+
+        // Log of reversible mutations; entries are appended by add() and consumed
+        // (in reverse) by pop_scope().
+        std::vector<UndoEntry> m_trail;
+        // Sizes of m_trail at each push_scope() — forms the scope checkpoint stack.
+        std::vector<unsigned> m_scope_trail;
+        // Sizes of m_pinned at each push_scope() — tracks which GC pins to release
+        // when the corresponding scope is popped.
+        std::vector<unsigned> m_pinned_trail;
+
     public:
         var_union_find(arith_util& m_util_a) : un_find(), m_util_a(m_util_a), m(m_util_a.get_manager()), m_pinned(m) { }
 
         /**
          * @brief Add new item to the equivalence
-         * 
-         * @param key Key of the element. Each element @p val has a key (e.g., 
+         *
+         * @param key Key of the element. Each element @p val has a key (e.g.,
          * length term) that is then used for equivalence class merging.
          * @param val Value (variable) associated with the key.
          * @param precise If true, the (key,val) relation is considered precise
@@ -71,30 +117,99 @@ namespace smt::noodler {
             m_pinned.push_back(key);
             m_pinned.push_back(val);
 
-            obj_map<expr, bool> found;
-            if (this->un_find.find(key, found)) {
+            if (this->un_find.contains(key)) {
                 bool already_precise = false;
                 if (this->un_find[key].find(val, already_precise)) {
-                    this->un_find[key].insert(val, already_precise || precise);
+                    bool new_precise = already_precise || precise;
+                    if (new_precise != already_precise) {
+                        if (!m_scope_trail.empty())
+                            m_trail.push_back({UndoKind::UPDATE_PRECISE, key, val, already_precise});
+                        this->un_find[key].insert(val, new_precise);
+                    }
                 }
                 else {
+                    if (!m_scope_trail.empty())
+                        m_trail.push_back({UndoKind::NEW_VAL, key, val, false});
                     this->un_find[key].insert(val, precise);
                 }
             }
             else {
+                if (!m_scope_trail.empty())
+                    m_trail.push_back({UndoKind::NEW_KEY, key, nullptr, false});
+                obj_map<expr, bool> found;
                 found.insert(val, precise);
                 this->un_find.insert(key, found);
             }
 
             // we remember the value of key now, because sometimes it happened that the expr* for key stopped being a valid expression in z3
             // and if we did the following in get_equivalence_bt() we would get segfault
-            // TODO: this should be probably fixed by using var_union_find with the option to push/pop scope or something like that
-            // TODO: this bug might occur even for @p val, either map it now to variable or fix it trough scopes
             rational rat;
             if(this->m_util_a.is_numeral(key, rat)) {
                 key_to_value[key] = rat.get_int32();
             } else {
                 key_to_value[key] = -1;
+            }
+        }
+
+        /**
+         * @brief Open a new backtracking scope.
+         *
+         * Records checkpoints for both the undo log (m_scope_trail) and the GC-pin
+         * vector (m_pinned_trail).  Subsequent calls to add() will append undo entries
+         * to m_trail so that all changes made inside this scope can be reversed by
+         * pop_scope().
+         */
+        void push_scope() {
+            m_scope_trail.push_back(m_trail.size());
+            m_pinned_trail.push_back(m_pinned.size());
+        }
+
+        /**
+         * @brief Close and undo @p num_scopes backtracking scopes.
+         *
+         * For each scope being popped the method:
+         *  1. Reads the m_trail checkpoint saved by the corresponding push_scope().
+         *  2. Replays the undo log in reverse order, inverting every mutation that
+         *     add() recorded since that push_scope():
+         *       - NEW_KEY       → remove the key from un_find and key_to_value
+         *       - NEW_VAL       → remove the value from the key's inner map
+         *       - UPDATE_PRECISE→ restore the previous `precise` flag
+         *  3. Reads the m_pinned checkpoint and shrinks m_pinned back to that size,
+         *     releasing the reference counts on expr* objects that were pinned inside
+         *     the popped scope so Z3's GC may reclaim them.
+         */
+        void pop_scope(unsigned num_scopes) {
+            for (unsigned i = 0; i < num_scopes; ++i) {
+                SASSERT(!m_scope_trail.empty());
+                unsigned trail_sz = m_scope_trail.back();
+                m_scope_trail.pop_back();
+                unsigned pinned_sz = m_pinned_trail.back();
+                m_pinned_trail.pop_back();
+
+                // Undo trail entries in reverse order before shrinking m_pinned,
+                // because the expr* pointers in UndoEntry must still be valid.
+                while (m_trail.size() > trail_sz) {
+                    const UndoEntry& e = m_trail.back();
+                    switch (e.kind) {
+                    case UndoKind::NEW_KEY:
+                        // The entire key bucket was added in this scope — remove it.
+                        un_find.remove(e.key);
+                        key_to_value.erase(e.key);
+                        break;
+                    case UndoKind::NEW_VAL:
+                        // A new value was inserted into an existing key's bucket.
+                        un_find[e.key].remove(e.val);
+                        break;
+                    case UndoKind::UPDATE_PRECISE:
+                        // The precise flag was flipped; restore the old value.
+                        un_find[e.key].insert(e.val, e.old_precise);
+                        break;
+                    }
+                    m_trail.pop_back();
+                }
+
+                // Release GC pins for all expr* objects added during this scope.
+                m_pinned.shrink(pinned_sz);
             }
         }
 

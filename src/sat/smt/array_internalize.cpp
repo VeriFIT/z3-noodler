@@ -137,10 +137,6 @@ namespace array {
             add_equiv(eq, sub);
             break;
         }            
-        case OP_SET_HAS_SIZE:
-        case OP_SET_CARD:
-            ctx.unhandled_function(n->get_decl());
-            break;
         default:
             UNREACHABLE();
             break;
@@ -184,10 +180,6 @@ namespace array {
             break;
         case OP_SET_SUBSET:
             break;
-        case OP_SET_HAS_SIZE:
-        case OP_SET_CARD:
-            ctx.unhandled_function(n->get_decl());
-            break;
         default:
             UNREACHABLE();
             break;
@@ -219,13 +211,13 @@ namespace array {
             unsigned num_args = parent->num_args();
             if (a.is_store(p)) {
                 set_array(parent->get_arg(0));
-                for (unsigned i = 1; i < num_args - 1; i++)
+                for (unsigned i = 1; i < num_args - 1; ++i)
                     set_index(parent->get_arg(i));
                 set_value(parent->get_arg(num_args - 1));
             }
             else if (a.is_select(p)) {
                 set_array(parent->get_arg(0));
-                for (unsigned i = 1; i < num_args - 1; i++)
+                for (unsigned i = 1; i < num_args - 1; ++i)
                     set_index(parent->get_arg(i));
             }
             else if (a.is_const(p)) {

@@ -189,6 +189,30 @@ public class Expr<R extends Sort> extends AST
     }
 
     /**
+     * Substitute functions in {@code from} with the expressions in {@code to}.
+     * The expressions in {@code to} can have free variables. The free variable
+     * in {@code to[i]} at de-Bruijn index 0 refers to the first argument of
+     * {@code from[i]}, the free variable at index 1 corresponds to the second
+     * argument, and so on.
+     * Remarks: The arrays {@code from} and {@code to} must have the same size.
+     * @param from Array of function declarations to be substituted
+     * @param to Array of expressions to substitute with
+     * @throws Z3Exception on error
+     * @return an Expr
+     **/
+    public Expr<R> substituteFuns(FuncDecl<?>[] from, Expr<?>[] to)
+    {
+        getContext().checkContextMatch(from);
+        getContext().checkContextMatch(to);
+        if (from.length != to.length) {
+            throw new Z3Exception("Arrays 'from' and 'to' must have the same length");
+        }
+        return (Expr<R>) Expr.create(getContext(), Native.substituteFuns(getContext().nCtx(),
+                getNativeObject(), from.length, AST.arrayToNative(from),
+                Expr.arrayToNative(to)));
+    }
+
+    /**
      * Translates (copies) the term to the Context {@code ctx}.
      * 
      * @param ctx A context
@@ -2148,8 +2172,15 @@ public class Expr<R extends Sort> extends AST
     static Expr<?> create(Context ctx, long obj)
     {
         Z3_ast_kind k = Z3_ast_kind.fromInt(Native.getAstKind(ctx.nCtx(), obj));
-        if (k == Z3_ast_kind.Z3_QUANTIFIER_AST)
-            return new Quantifier(ctx, obj);
+        if (k == Z3_ast_kind.Z3_QUANTIFIER_AST) {
+			// a quantifier AST is a lambda iff it is neither a forall nor an exists. 
+            boolean isLambda = !Native.isQuantifierExists(ctx.nCtx(), obj) && !Native.isQuantifierForall(ctx.nCtx(), obj);
+            if (isLambda) {
+               return new Lambda(ctx, obj);
+            } else {
+               return new Quantifier(ctx, obj);
+            }
+		}
         long s = Native.getSort(ctx.nCtx(), obj);
         Z3_sort_kind sk = Z3_sort_kind
                 .fromInt(Native.getSortKind(ctx.nCtx(), s));

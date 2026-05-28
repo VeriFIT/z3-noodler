@@ -50,7 +50,10 @@ namespace datalog {
 
         sort_domain(sort_kind k, context & ctx, sort * s)
             : m_kind(k), m_sort(s, ctx.get_manager()) {
-                m_limited_size = ctx.get_decl_util().try_get_size(s, m_size);
+                auto opt_size = ctx.get_decl_util().try_get_size(s);
+                m_limited_size = opt_size.has_value();
+                if (m_limited_size)
+                    m_size = *opt_size;
         }
     public:
         virtual ~sort_domain() = default;
@@ -638,7 +641,7 @@ namespace datalog {
         SASSERT(is_fact(head));
         relation_fact fact(get_manager());
         unsigned n = head->get_num_args();
-        for (unsigned i = 0; i < n; i++) {
+        for (unsigned i = 0; i < n; ++i) {
             fact.push_back(to_app(head->get_arg(i)));
         }
         add_fact(head->get_decl(), fact);
@@ -776,9 +779,25 @@ namespace datalog {
         array_util    ar;
         DL_ENGINE     m_engine_type;
 
-        bool is_large_bv(sort* s) {
+        bool is_large_bv(expr *e) {
+            sort *s = e->get_sort();
+            if (bv.is_bv_sort(s)) {
+                unsigned sz = bv.get_bv_size(s);
+                if (sz > 24)
+                    return true;
+            }
+            if (is_app(e)) {
+                unsigned sz = 0;
+                for (auto arg : *to_app(e)) {
+                    if (bv.is_bv(arg))
+                        sz += bv.get_bv_size(arg->get_sort());
+                }
+                if (sz > 24)
+                    return true;
+            }
             return false;
         }
+
 
     public:
         engine_type_proc(ast_manager& m): m(m), a(m), dt(m), bv(m), ar(m), m_engine_type(DATALOG_ENGINE) {}
@@ -795,7 +814,7 @@ namespace datalog {
             else if (dt.is_datatype(e->get_sort())) {
                 m_engine_type = SPACER_ENGINE;
             }
-            else if (is_large_bv(e->get_sort())) {
+            else if (is_large_bv(e)) {
                 m_engine_type = SPACER_ENGINE;
             }
             else if (!e->get_sort()->get_num_elements().is_finite()) {

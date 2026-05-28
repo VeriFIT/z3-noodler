@@ -1,0 +1,8 @@
+(set-option :produce-unsat-cores true)
+(set-info :status unsat)
+(declare-const x Bool)
+(declare-const y Bool)
+(declare-const z Bool)
+(assert (or x y))
+(assert (or x z))
+(check-sat-assuming (and (not x) (not y) (not z)))

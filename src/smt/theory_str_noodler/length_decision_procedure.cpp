@@ -676,6 +676,9 @@ namespace smt::noodler {
             }
         }
 
+        // Substitute singleton variables with their unique word as a literal so that
+        // the constraint pool's align_literals mechanism can detect content incompatibilities.
+        prep_handler.propagate_singletons();
         prep_handler.propagate_eps();
         prep_handler.propagate_variables();
         prep_handler.generate_identities();

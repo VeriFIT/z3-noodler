@@ -101,8 +101,8 @@ void theory_seq::add_consequence(bool uses_eq, expr_ref_vector const& clause) {
     linearize(dep, eqs, lits);
     for (auto& lit : lits)
         lit.neg();
-    for (auto eq : eqs)
-        lits.push_back(~mk_eq(eq.first->get_expr(), eq.second->get_expr(), false));
+    for (auto const& [n1, n2] : eqs)
+        lits.push_back(~mk_eq(n1->get_expr(), n2->get_expr(), false));
     for (auto f : clause)
         lits.push_back(mk_literal(f));    
     add_axiom(lits);
@@ -150,7 +150,8 @@ bool theory_seq::has_len_offset(expr_ref_vector const& ls, expr_ref_vector const
         return true;
     }
 
-    if (m_offset_eq.find(root1, root2, offset)) {
+    if (auto opt_offset = m_offset_eq.find(root1, root2)) {
+        offset = *opt_offset;
         TRACE(seq, tout << "(" << mk_pp(l_fst, m) << ", " << mk_pp(r_fst,m) << " " << offset << ")\n";);
         return true;
     }
@@ -459,7 +460,8 @@ bool theory_seq::branch_binary_variable(depeq const& e) {
     }
     if (lenX + rational(xs.size()) != lenY + rational(ys.size())) {
         // |x| - |y| = |ys| - |xs|
-        expr_ref a(mk_sub(mk_len(x), mk_len(y)), m);
+        auto p0 = mk_len(x);
+        expr_ref a(mk_sub(p0, mk_len(y)), m);
         expr_ref b(m_autil.mk_int(rational(ys.size())-rational(xs.size())), m);
         propagate_lit(e.dep(), 0, nullptr, mk_eq(a, b, false));
         return true;
@@ -702,7 +704,8 @@ bool theory_seq::branch_quat_variable(depeq const& e) {
     
     literal_vector lits;
     if (xs == ys) {
-        literal lit = mk_eq(mk_len(x1), mk_len(y1), false);
+        auto p0 = mk_len(x1);
+        literal lit = mk_eq(p0, mk_len(y1), false);
         if (ctx.get_assignment(lit) == l_undef) {
             TRACE(seq, tout << mk_pp(x1, m) << " = " << mk_pp(y1, m) << "?\n";);
             ctx.mark_as_relevant(lit);
@@ -1007,7 +1010,8 @@ bool theory_seq::propagate_length_coherence(expr* e) {
         // len(e) <= hi => len(tail) <= hi - lo
         expr_ref high1(m_autil.mk_le(len_e, m_autil.mk_numeral(hi, true)), m);
         if (hi == lo) {
-            add_axiom(~mk_literal(high1), mk_seq_eq(seq, emp));
+            auto p0 = ~mk_literal(high1);
+            add_axiom(p0, mk_seq_eq(seq, emp));
             added = true;
         }
         else {
@@ -1212,9 +1216,11 @@ bool theory_seq::find_better_rep(expr_ref_vector const& ls, expr_ref_vector cons
 
     if (ls.empty() || rs.empty())
         return false;
-    expr* l_fst = find_fst_non_empty_var(ls);
-    expr* r_fst = find_fst_non_empty_var(rs);
-    if (!r_fst) return false;
+    auto opt_l_fst = find_fst_non_empty_var(ls);
+    auto opt_r_fst = find_fst_non_empty_var(rs);
+    if (!opt_r_fst) return false;
+    expr* l_fst = opt_l_fst.value_or(nullptr);
+    expr* r_fst = *opt_r_fst;
     expr_ref len_r_fst = mk_len(r_fst);
     expr_ref len_l_fst(m);
     enode * root2;
@@ -1299,11 +1305,11 @@ int theory_seq::find_fst_non_empty_idx(expr_ref_vector const& xs) {
     return -1;
 }
 
-expr* theory_seq::find_fst_non_empty_var(expr_ref_vector const& x) {
+std::optional<expr*> theory_seq::find_fst_non_empty_var(expr_ref_vector const& x) {
     int i = find_fst_non_empty_idx(x);
     if (i >= 0)
         return x[i];
-    return nullptr;
+    return std::nullopt;
 }
 
 #endif

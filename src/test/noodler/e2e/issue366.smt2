@@ -1,0 +1,16 @@
+(set-logic QF_SLIA)
+(set-info :status unsat)
+
+(declare-const x String)
+(declare-const a String)
+(declare-const b String)
+(declare-const i Int)
+(declare-const j Int)
+(assert (str.in_re a (re.* (str.to_re "a"))))
+(assert (str.in_re b (re.* (str.to_re "b"))))
+(assert (= (str.len a) 4))
+(assert (= (str.len b) 4))
+(assert (= x (str.++ a b)))
+(assert (= (str.substr x i j) "abba"))
+
+(check-sat)

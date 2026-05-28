@@ -406,10 +406,10 @@ namespace upolynomial {
             unsigned sz  = pm.size(p);
             unsigned deg = pm.total_degree(p);
             r.reserve(deg+1);
-            for (unsigned i = 0; i <= deg; i++) {
+            for (unsigned i = 0; i <= deg; ++i) {
                 m().reset(r[i]);
             }
-            for (unsigned i = 0; i < sz; i++) {
+            for (unsigned i = 0; i < sz; ++i) {
                 unsigned k = pm.total_degree(pm.get_monomial(p, i));
                 SASSERT(k <= deg);
                 m().set(r[k], pm.coeff(p, i));
@@ -429,10 +429,10 @@ namespace upolynomial {
             unsigned sz  = pm.size(p);
             unsigned deg = pm.degree(p, x);
             r.reserve(deg+1);
-            for (unsigned i = 0; i <= deg; i++) {
+            for (unsigned i = 0; i <= deg; ++i) {
                 m().reset(r[i]);
             }
-            for (unsigned i = 0; i < sz; i++) {
+            for (unsigned i = 0; i < sz; ++i) {
                 typename polynomial::monomial * mon = pm.get_monomial(p, i);
                 if (pm.size(mon) == 0) {
                     m().set(r[0], pm.coeff(p, i));
@@ -468,6 +468,7 @@ namespace upolynomial {
         std::ostream& display_smt2(std::ostream & out, numeral_vector const & p, char const * var_name = "x") const { 
             return display_smt2(out, p.size(), p.data(), var_name); 
         }
+        std::ostream& display_smt2_no_power(std::ostream & out, unsigned sz, numeral const * p, char const * var_name = "x") const;
     };
 
     class scoped_set_z {
@@ -917,4 +918,3 @@ namespace upolynomial {
     };
 
 };
-

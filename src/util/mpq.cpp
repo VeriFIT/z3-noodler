@@ -109,7 +109,7 @@ void mpq_manager<SYNCH>::gcd(unsigned sz, mpq const * as, mpq & g) {
         break;
     }
     gcd(as[0], as[1], g);
-    for (unsigned i = 2; i < sz; i++) {
+    for (unsigned i = 2; i < sz; ++i) {
         if (is_one(g))
             return;
         gcd(g, as[i], g);
@@ -196,7 +196,7 @@ void mpq_manager<SYNCH>::display_decimal(std::ostream & out, mpq const & a, unsi
     if (is_zero(n1))
         goto end; // number is an integer
     out << ".";
-    for (unsigned i = 0; i < prec; i++) {
+    for (unsigned i = 0; i < prec; ++i) {
         mul(n1, ten, n1);
         div(n1, d1, v1);
         SASSERT(lt(v1, ten));
@@ -313,6 +313,14 @@ void mpq_manager<SYNCH>::set(mpq & a, char const * val) {
 
 template<bool SYNCH>
 void mpq_manager<SYNCH>::power(mpq const & a, unsigned p, mpq & b) {
+    if (p == 1) {
+        set(b, a);
+        return;
+    }
+    if (p == 0) {
+        set(b, 1);
+        return;
+    }
     unsigned mask = 1;
     mpq power;
     set(power, a);

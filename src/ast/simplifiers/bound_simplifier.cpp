@@ -135,7 +135,12 @@ bool bound_simplifier::reduce_arg(expr* arg, expr_ref& result) {
 }
 
 void bound_simplifier::reduce() {
-    
+
+    #if 0
+    smt_params_helper sp(p);
+    if (!sp.bound_simplifier())
+        return;
+    #endif
     bool updated = true, found_bound = false;
     for (unsigned i = 0; i < 5 && updated; ++i) {
         updated = false;
@@ -484,7 +489,7 @@ void bound_simplifier::restore_bounds() {
         m_fmls.add(dependent_expr(m, tmp, nullptr, nullptr));
     };
 
-    for (unsigned x = 0; x < sz; x++) {
+    for (unsigned x = 0; x < sz; ++x) {
         expr* p = m_var2expr.get(x);
         has_l = bp.lower(x, l, strict_l, ts);
         has_u = bp.upper(x, u, strict_u, ts);
@@ -636,7 +641,7 @@ void find_ite_bounds(expr* root) {
 
 void find_ite_bounds() {
     unsigned sz = m_new_goal->size();
-    for (unsigned i = 0; i < sz; i++) {
+    for (unsigned i = 0; i < sz; ++i) {
         expr* f = m_new_goal->form(i);
         if (m.is_ite(f))
             find_ite_bounds(to_app(f));

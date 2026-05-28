@@ -244,19 +244,11 @@ namespace smt {
 
 
         struct var_info {
-            ineq_watch*  m_lit_watch[2];
-            ineq*        m_ineq;
+            ineq_watch*  m_lit_watch[2] = { nullptr, nullptr };
+            ineq*        m_ineq = nullptr;
 
-            card_watch*  m_lit_cwatch[2];
-            card*        m_card;
-            
-            var_info(): m_ineq(nullptr), m_card(nullptr)
-            {
-                m_lit_watch[0] = nullptr;
-                m_lit_watch[1] = nullptr;
-                m_lit_cwatch[0] = nullptr;
-                m_lit_cwatch[1] = nullptr;
-            }
+            card_watch*  m_lit_cwatch[2] = { nullptr, nullptr };
+            card*        m_card = nullptr;
 
             void reset() {
                 dealloc(m_lit_watch[0]);
@@ -417,7 +409,7 @@ namespace smt {
         void new_diseq_eh(theory_var v1, theory_var v2) override { }
         bool use_diseqs() const override { return false; }
         bool build_models() const override { return false; }
-        final_check_status final_check_eh() override;
+        final_check_status final_check_eh(unsigned) override;
         void reset_eh() override;
         void assign_eh(bool_var v, bool is_true) override;
         void init_search_eh() override;

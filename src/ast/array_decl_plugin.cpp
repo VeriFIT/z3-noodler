@@ -17,6 +17,7 @@ Revision History:
 
 --*/
 #include<sstream>
+#include<format>
 #include "ast/array_decl_plugin.h"
 #include "util/warning.h"
 #include "ast/ast_pp.h"
@@ -35,9 +36,7 @@ array_decl_plugin::array_decl_plugin():
     m_set_complement_sym("complement"),
     m_set_subset_sym("subset"),
     m_array_ext_sym("array-ext"),
-    m_as_array_sym("as-array"),
-    m_set_has_size_sym("set-has-size"),
-    m_set_card_sym("card") {
+    m_as_array_sym("as-array") {
 }
 
 #define ARRAY_SORT_STR "Array"
@@ -58,7 +57,7 @@ sort * array_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, paramete
         return nullptr;
     }
     
-    for (unsigned i = 0; i < num_parameters; i++) {
+    for (unsigned i = 0; i < num_parameters; ++i) {
         if (!parameters[i].is_ast() || !is_sort(parameters[i].get_ast())) {
             m_manager->raise_exception("invalid array sort definition, parameter is not a sort");
             return nullptr;
@@ -72,7 +71,7 @@ sort * array_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, paramete
     }
     bool is_infinite = false;
     bool is_very_big = false;
-    for (unsigned i = 0; i < num_parameters; i++) {
+    for (unsigned i = 0; i < num_parameters; ++i) {
         sort * s = to_sort(parameters[i].get_ast());
         if (s->is_infinite()) {
             is_infinite = true;
@@ -91,7 +90,7 @@ sort * array_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, paramete
     else {
         rational domain_sz(1);
         rational num_elements;
-        for (unsigned i = 0; i < num_parameters - 1; i++) {
+        for (unsigned i = 0; i < num_parameters - 1; ++i) {
             domain_sz *= rational(to_sort(parameters[i].get_ast())->get_num_elements().size(),rational::ui64());
         }
         if (domain_sz <= rational(128)) {
@@ -141,10 +140,8 @@ func_decl * array_decl_plugin::mk_const(sort * s, unsigned arity, sort * const *
 
 func_decl * array_decl_plugin::mk_map(func_decl* f, unsigned arity, sort* const* domain) {
     if (arity != f->get_arity()) {
-        std::ostringstream buffer;
-        buffer << "map expects to take as many arguments as the function being mapped, "
-               << "it was given " << arity << " but expects " << f->get_arity();
-        m_manager->raise_exception(buffer.str());
+        m_manager->raise_exception(std::format("map expects to take as many arguments as the function being mapped, it was given {} but expects {}",
+                                                arity, f->get_arity()));
         return nullptr;
     }
     if (arity == 0) {
@@ -159,32 +156,21 @@ func_decl * array_decl_plugin::mk_map(func_decl* f, unsigned arity, sort* const*
     unsigned dom_arity = get_array_arity(domain[0]);
     for (unsigned i = 0; i < arity; ++i) {
         if (!is_array_sort(domain[i])) {
-            std::ostringstream buffer;
-            buffer << "map expects an array sort as argument at position " << i;
-            m_manager->raise_exception(buffer.str());
+            m_manager->raise_exception(std::format("map expects an array sort as argument at position {}", i));
             return nullptr;
         }
         if (get_array_arity(domain[i]) != dom_arity) {
-            std::ostringstream buffer;
-            buffer << "map expects all arguments to have the same array domain,  "
-                   << "this is not the case for argument " << i;
-            m_manager->raise_exception(buffer.str());
+            m_manager->raise_exception(std::format("map expects all arguments to have the same array domain,  this is not the case for argument {}", i));
             return nullptr;
         }
         for (unsigned j = 0; j < dom_arity; ++j) {
             if (get_array_domain(domain[i],j) != get_array_domain(domain[0],j)) {
-                std::ostringstream buffer;
-                buffer << "map expects all arguments to have the same array domain, "
-                       << "this is not the case for argument " << i;
-                m_manager->raise_exception(buffer.str());
+                m_manager->raise_exception(std::format("map expects all arguments to have the same array domain, this is not the case for argument {}", i));
                 return nullptr;
             }
         }
         if (get_array_range(domain[i]) != f->get_domain(i)) {
-            std::ostringstream buffer;
-            buffer << "map expects the argument at position " << i 
-                   << " to have the array range the same as the function";
-            m_manager->raise_exception(buffer.str());
+            m_manager->raise_exception(std::format("map expects the argument at position {} to have the array range the same as the function", i));
             return nullptr;
         }
     }
@@ -245,9 +231,8 @@ func_decl* array_decl_plugin::mk_select(unsigned arity, sort * const * domain) {
     parameter const* parameters = s->get_parameters();
  
     if (num_parameters != arity) {
-        std::stringstream strm;
-        strm << "select requires " << num_parameters << " arguments, but was provided with " << arity << " arguments";
-        m_manager->raise_exception(strm.str());
+        m_manager->raise_exception(std::format("select requires {} arguments, but was provided with {} arguments", 
+                                                num_parameters, arity));
         return nullptr;
     }
     ptr_buffer<sort> new_domain; // we need this because of coercions.
@@ -256,10 +241,9 @@ func_decl* array_decl_plugin::mk_select(unsigned arity, sort * const * domain) {
         if (!parameters[i].is_ast() || 
             !is_sort(parameters[i].get_ast()) || 
             !m_manager->compatible_sorts(domain[i+1], to_sort(parameters[i].get_ast()))) {
-            std::stringstream strm;
-            strm << "domain sort " << sort_ref(domain[i+1], *m_manager) << " and parameter ";
-            strm << parameter_pp(parameters[i], *m_manager) << " do not match";
-            m_manager->raise_exception(strm.str());
+            m_manager->raise_exception(std::format("domain sort {} and parameter {} do not match",
+                                                    to_string(sort_ref(domain[i+1], *m_manager)),
+                                                    to_string(parameter_pp(parameters[i], *m_manager))));
             return nullptr;
         }
         new_domain.push_back(to_sort(parameters[i].get_ast()));
@@ -283,10 +267,8 @@ func_decl * array_decl_plugin::mk_store(unsigned arity, sort * const * domain) {
         return nullptr;
     }
     if (arity != num_parameters+1) {
-        std::ostringstream buffer;
-        buffer << "store expects the first argument to be an array taking " << num_parameters+1 
-               << ", instead it was passed " << (arity - 1) << "arguments";
-        m_manager->raise_exception(buffer.str());
+        m_manager->raise_exception(std::format("store expects the first argument to be an array taking {}, instead it was passed {} arguments",
+                                                num_parameters+1, arity - 1));
         UNREACHABLE();
         return nullptr;
     }
@@ -300,9 +282,9 @@ func_decl * array_decl_plugin::mk_store(unsigned arity, sort * const * domain) {
         sort* srt1 = to_sort(parameters[i].get_ast());
         sort* srt2 = domain[i+1];
         if (!m_manager->compatible_sorts(srt1, srt2)) {
-            std::stringstream strm;
-            strm << "domain sort " << sort_ref(srt2, *m_manager) << " and parameter sort " << sort_ref(srt1, *m_manager) << " do not match";
-            m_manager->raise_exception(strm.str());
+            m_manager->raise_exception(std::format("domain sort {} and parameter sort {} do not match",
+                                                    to_string(sort_ref(srt2, *m_manager)),
+                                                    to_string(sort_ref(srt1, *m_manager))));
             UNREACHABLE();
             return nullptr;
         }
@@ -335,15 +317,11 @@ func_decl * array_decl_plugin::mk_array_ext(unsigned arity, sort * const * domai
 bool array_decl_plugin::check_set_arguments(unsigned arity, sort * const * domain) {
     for (unsigned i = 0; i < arity; ++i) {
         if (domain[i] != domain[0]) {
-            std::ostringstream buffer;
-            buffer << "arguments " << 1 << " and " << (i+1) << " have different sorts";
-            m_manager->raise_exception(buffer.str());
+            m_manager->raise_exception(std::format("arguments {} and {} have different sorts", 1, i+1));
             return false;
         }
         if (domain[i]->get_family_id() != m_family_id) {
-            std::ostringstream buffer;
-            buffer << "argument " << (i+1) << " is not of array sort";
-            m_manager->raise_exception(buffer.str());
+            m_manager->raise_exception(std::format("argument {} is not of array sort", i+1));
             return false;
         }
     }
@@ -442,44 +420,10 @@ func_decl * array_decl_plugin::mk_set_subset(unsigned arity, sort * const * doma
                                    func_decl_info(m_family_id, OP_SET_SUBSET));
 }
 
-func_decl * array_decl_plugin::mk_set_card(unsigned arity, sort * const* domain) {
-    if (arity != 1) {
-        m_manager->raise_exception("card takes only one argument");
-        return nullptr;
-    }    
-
-    arith_util arith(*m_manager);
-    if (!is_array_sort(domain[0]) || !m_manager->is_bool(get_array_range(domain[0]))) {
-        m_manager->raise_exception("card expects an array of Booleans");
-    }
-    sort * int_sort = arith.mk_int();
-    return m_manager->mk_func_decl(m_set_card_sym, arity, domain, int_sort,
-                                   func_decl_info(m_family_id, OP_SET_CARD));
-}
-
-func_decl * array_decl_plugin::mk_set_has_size(unsigned arity, sort * const* domain) {
-    if (arity != 2) {
-        m_manager->raise_exception("set-has-size takes two arguments");
-        return nullptr;
-    }    
-    m_manager->raise_exception("set-has-size is not supported");
-    // domain[0] is a Boolean array,
-    // domain[1] is Int
-    arith_util arith(*m_manager);
-    if (!arith.is_int(domain[1])) {
-        m_manager->raise_exception("set-has-size expects second argument to be an integer");
-    }
-    if (!is_array_sort(domain[0]) || !m_manager->is_bool(get_array_range(domain[0]))) {
-        m_manager->raise_exception("set-has-size expects first argument to be an array of Booleans");
-    }
-    sort * bool_sort = m_manager->mk_bool_sort();
-    return m_manager->mk_func_decl(m_set_has_size_sym, arity, domain, bool_sort,
-                                   func_decl_info(m_family_id, OP_SET_HAS_SIZE));
-}
 
 func_decl * array_decl_plugin::mk_as_array(func_decl * f) {
     vector<parameter> parameters;
-    for (unsigned i = 0; i < f->get_arity(); i++) {
+    for (unsigned i = 0; i < f->get_arity(); ++i) {
         parameters.push_back(parameter(f->get_domain(i)));
     }
     parameters.push_back(parameter(f->get_range()));
@@ -541,10 +485,6 @@ func_decl * array_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters
         return mk_set_complement(arity, domain);
     case OP_SET_SUBSET:
         return mk_set_subset(arity, domain);
-    case OP_SET_HAS_SIZE:
-        return mk_set_has_size(arity, domain);
-    case OP_SET_CARD:
-        return mk_set_card(arity, domain);
     case OP_AS_ARRAY: {
         if (num_parameters != 1 ||
             !parameters[0].is_ast() || 
@@ -568,6 +508,7 @@ func_decl * array_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters
 void array_decl_plugin::get_sort_names(svector<builtin_name>& sort_names, symbol const & logic) {
     sort_names.push_back(builtin_name(ARRAY_SORT_STR, ARRAY_SORT));
     sort_names.push_back(builtin_name("=>", ARRAY_SORT));
+    sort_names.push_back(builtin_name("->", ARRAY_SORT));
     if (logic == symbol::null || logic == symbol("HORN") || logic == symbol("ALL")) {
         // this could easily break users even though it is already used in CVC4: 
         sort_names.push_back(builtin_name("Set", _SET_SORT));
@@ -609,7 +550,7 @@ expr * array_decl_plugin::get_some_value(sort * s) {
 bool array_decl_plugin::is_fully_interp(sort * s) const {
     SASSERT(s->is_sort_of(m_family_id, ARRAY_SORT));
     unsigned sz = get_array_arity(s);
-    for (unsigned i = 0; i < sz; i++) {
+    for (unsigned i = 0; i < sz; ++i) {
         if (!m_manager->is_fully_interp(get_array_domain(s, i)))
             return false;
     }

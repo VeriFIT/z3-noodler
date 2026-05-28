@@ -18,6 +18,7 @@ Revision History:
 --*/
 #pragma once
 
+#include <optional>
 #include "ast/seq_decl_plugin.h"
 #include "ast/rewriter/th_rewriter.h"
 #include "ast/rewriter/seq_skolem.h"
@@ -168,7 +169,7 @@ namespace smt {
                 m_util.str.get_concat_units(e, ls);
             for (expr* e : r)
                 m_util.str.get_concat_units(e, rs);
-            return depeq(m_eq_id++, ls, rs, dep);
+            return depeq(++m_eq_id, ls, rs, dep);
         }        
 
         // equalities that are decomposed by conacatenations
@@ -379,7 +380,7 @@ namespace smt {
         obj_hashtable<expr>            m_fixed;            // string variables that are fixed length.
         obj_hashtable<expr>            m_is_digit;         // expressions that have been constrained to be digits
 
-        final_check_status final_check_eh() override;
+        final_check_status final_check_eh(unsigned) override;
         bool internalize_atom(app* atom, bool) override;
         bool internalize_term(app*) override;
         void internalize_eq_eh(app * atom, bool_var v) override;
@@ -414,7 +415,7 @@ namespace smt {
         void get_ite_concat(ptr_vector<expr>& head, ptr_vector<expr>& tail);
         
         int find_fst_non_empty_idx(expr_ref_vector const& x);
-        expr* find_fst_non_empty_var(expr_ref_vector const& x);
+        std::optional<expr*> find_fst_non_empty_var(expr_ref_vector const& x);
         bool has_len_offset(expr_ref_vector const& ls, expr_ref_vector const& rs, int & diff);
         
         // final check 

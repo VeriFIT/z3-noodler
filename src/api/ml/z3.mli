@@ -290,6 +290,12 @@ sig
 
   (** Create a new uninterpreted sort. *)
   val mk_uninterpreted_s : context -> string -> sort
+
+  (** Create a type variable sort for use in polymorphic datatypes. *)
+  val mk_type_variable : context -> Symbol.symbol -> sort
+
+  (** Create a type variable sort for use in polymorphic datatypes. *)
+  val mk_type_variable_s : context -> string -> sort
 end
 
 (** Function declarations *)
@@ -304,11 +310,13 @@ sig
     type parameter =
         P_Int of int
       | P_Dbl of float
+      | P_Rat of string
       | P_Sym of Symbol.symbol
       | P_Srt of Sort.sort
       | P_Ast of AST.ast
       | P_Fdl of func_decl
-      | P_Rat of string
+      | P_Internal of string
+      | P_ZStr of string
 
     (** The kind of the parameter. *)
     val get_kind : parameter -> Z3enums.parameter_kind
@@ -1085,11 +1093,25 @@ sig
   (* [mk_sort_ref_s ctx s] is [mk_sort_ref ctx (Symbol.mk_string ctx s)] *)
   val mk_sort_ref_s : context -> string -> Sort.sort
 
+  (** Create a forward reference to a parametric datatype sort. *)
+  val mk_sort_ref_p : context -> Symbol.symbol -> Sort.sort list -> Sort.sort
+
+  (** Create a forward reference to a parametric datatype sort. *)
+  val mk_sort_ref_ps : context -> string -> Sort.sort list -> Sort.sort
+
   (** Create a new datatype sort. *)
   val mk_sort : context -> Symbol.symbol -> Constructor.constructor list -> Sort.sort
 
   (** Create a new datatype sort. *)
   val mk_sort_s : context -> string -> Constructor.constructor list -> Sort.sort
+
+  (** Create a new polymorphic datatype sort with type parameters.
+      Type parameters should be created using Sort.mk_type_variable. *)
+  val mk_polymorphic_sort : context -> Symbol.symbol -> Sort.sort list -> Constructor.constructor list -> Sort.sort
+
+  (** Create a new polymorphic datatype sort with type parameters.
+      Type parameters should be created using Sort.mk_type_variable. *)
+  val mk_polymorphic_sort_s : context -> string -> Sort.sort list -> Constructor.constructor list -> Sort.sort
 
   (** Create mutually recursive datatypes. *)
   val mk_sorts : context -> Symbol.symbol list -> Constructor.constructor list list -> Sort.sort list
@@ -1108,6 +1130,12 @@ sig
 
   (** The constructor accessors. *)
   val get_accessors : Sort.sort -> FuncDecl.func_decl list list
+
+  (** Update a datatype field at expression [t] with value [v].
+      The function performs a record update at [t]. The field
+      that is passed in as argument is updated with value [v],
+      the remaining fields of [t] are unchanged. *)
+  val update_field : context -> FuncDecl.func_decl -> Expr.expr -> Expr.expr -> Expr.expr
 end
 
 (** Functions to manipulate Enumeration expressions *)

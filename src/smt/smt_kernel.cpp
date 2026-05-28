@@ -43,7 +43,7 @@ namespace smt {
             // TODO: it will be replaced with assertion_stack.display
             unsigned num = m_kernel.get_num_asserted_formulas();
             out << "(kernel";
-            for (unsigned i = 0; i < num; i++) {
+            for (unsigned i = 0; i < num; ++i) {
                 expr* f = m_kernel.get_asserted_formula(i);
                 out << "\n  " << mk_ismt2_pp(f, m(), 2);
             }
@@ -306,6 +306,10 @@ namespace smt {
 
     void kernel::user_propagate_register_fixed(user_propagator::fixed_eh_t& fixed_eh) {
         m_imp->m_kernel.user_propagate_register_fixed(fixed_eh);
+    }
+
+    void kernel::user_propagate_register_on_binding(user_propagator::binding_eh_t& on_binding) {
+        m_imp->m_kernel.user_propagate_register_on_binding(on_binding);
     }
     
     void kernel::user_propagate_register_final(user_propagator::final_eh_t& final_eh) {

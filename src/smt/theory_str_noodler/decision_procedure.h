@@ -131,8 +131,9 @@ namespace smt::noodler {
 
         // the length formula from preprocessing, get_lengths should create conjunct with it
         LenNode preprocessing_len_formula = LenNode(LenFormulaType::TRUE,{});
-        // keeps the length formulas from replace_disequality(), they need to hold for solution to be satisfiable (get_lengths should create conjunct from them)
-        std::vector<LenNode> disequations_len_formula_conjuncts;
+
+        // remembers whether the input formula passed to init_computation() contained any disequation
+        bool input_contains_disequations = false;
 
         std::set<BasicTerm> code_subst_vars_handled_by_parikh;
 
@@ -141,16 +142,8 @@ namespace smt::noodler {
         /// @brief We save here all string variables that exist before the decision procedure is run (useful for removing variables created in decision procedure, @sa SolvingState::remove_vars())
         std::set<BasicTerm> initial_variables;
 
-        /// @brief Sets the initial_variables by adding all variables from @p f and other stuff (init_aut_ass, init_length_sensitive_vars, conversions, inclusions_from_preprocessing)
-        void set_initial_variables(const Formula& f);
-
-        /**
-         * @brief Replace disequality L != R with equalities and a length constraint saved in disequations_len_formula_conjuncts.
-         * 
-         * @param diseq Disequality to replace
-         * @return Vector with created equalities
-         */
-        std::vector<Predicate> replace_disequality(Predicate diseq);
+        /// @brief Sets initial_variables by collecting all variables from @p f, @p state (aut_ass, length_sensitive_vars, conversions), and inclusions_from_preprocessing.
+        void set_initial_variables(const Formula& f, const SolvingState& state);
 
         void process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state);
         void process_transducer(const Predicate& transducer_to_process, SolvingState& solving_state);
@@ -378,6 +371,20 @@ namespace smt::noodler {
 
         void init_computation() override;
         lbool compute_next_solution() override;
+        /**
+         * Same as compute_next_solution, but checks length constraints while running
+         * to potentionally skip processing some noodles which are found unsat.
+         *
+         * @param check_lens length check function; the boolean argument indicates whether
+         *                   the formula should be added to the blocking formula (true) or
+         *                   only satisfiability should be checked without blocking (false).
+         *
+         * @return first: True if there is a satisfiable element in the worklist.
+         *         second: if any solving states were skipped (the length check was unsat)
+         */
+        std::pair<lbool, bool> compute_next_solution_with_len_checks(
+            std::function<lbool(bool)> check_lens
+        );
 
         LenNode get_initial_lengths(bool all_vars = false) override;
 

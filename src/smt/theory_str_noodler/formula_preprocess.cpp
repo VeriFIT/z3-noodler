@@ -376,6 +376,40 @@ namespace smt::noodler {
     }
 
     /**
+     * @brief Replace singleton variables with their unique literal word.
+     * This allows the align_literals mechanism in the length procedure to detect
+     * content incompatibilities between singleton-constrained variables and literals.
+     */
+    void FormulaPreprocessor::propagate_singletons() {
+        STRACE(str_prep, tout << "Preprocessing step - propagate_singletons\n";);
+        std::set<BasicTerm> all_vars;
+        for (const Predicate& pr : this->formula.get_predicates_set()) {
+            auto vars = pr.get_vars();
+            all_vars.insert(vars.begin(), vars.end());
+        }
+        std::vector<std::pair<BasicTerm, zstring>> singletons;
+        for (const BasicTerm& v : all_vars) {
+            if (!this->aut_ass.count(v)) continue;
+            mata::nfa::Nfa aut = *this->aut_ass.at(v);
+            aut.trim();
+            zstring found_literal;
+            // aut_encodes_literal rejects automata with dummy-symbol transitions,
+            // preventing false positives for variables constrained to re.allchar
+            // over a collapsed (dummy) alphabet.
+            if (AutAssignment::aut_encodes_literal(mata::nfa::reduce(aut), found_literal)) {
+                singletons.push_back({v, found_literal});
+            }
+        }
+        for (const auto& [v, word_str] : singletons) {
+            BasicTerm lit(BasicTermType::Literal, word_str);
+            this->aut_ass[lit] = this->aut_ass.at(v);
+            this->formula.replace({v}, {lit});
+            substitute_var(v, {lit});
+        }
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
+    }
+
+    /**
      * @brief Propagate variables. Propagate all equations of the form X=Y
      * (find all Y in the formula and replace with X).
      */
@@ -1837,22 +1871,19 @@ namespace smt::noodler {
             if(pred.get_left_side().size() > 1 || pred.get_left_side().empty()) {
                 continue;
             }
-            mata::nft::Nft nft = *(trans[0]);
 
-            auto nfa = this->aut_ass.at(pred.get_left_side()[0]);
-
-            // restrict the input variable --> T_1(Aut(x), y)
-            // it is not necessary for correctness, but it makes the heuristics later more succesful
-            mata::nft::Nft lang_nft(*nfa, 2);
-            nft = mata::nft::compose(lang_nft, nft, 0, 0, true);
-            // compose first tapes of all transducers with identical parameters (and project out the synchronizing tape)
-            // nft = [T_1(y), T_2(y), ...]
-            for(size_t i = 1; i < trans.size(); i++) {
-                auto tr = mata::nft::compose(lang_nft, *trans[i], 0, 0, true);
-                nft = mata::nft::compose(nft, tr, 0, 0, true);
+            // Taking
+            //    T_1(x,y), T_2(x,y), T_3(x,y), ...
+            // we construct T_y(y_1, y_2, ...) by intersecting on the input variable of
+            // each T_i starting with the automaton for x.
+            mata::nft::Nft nft_for_y_tapes(*(this->aut_ass.at(pred.get_left_side()[0])));
+            for(size_t i = 0; i < trans.size()-1; i++) {
+                nft_for_y_tapes = mata::nft::compose(nft_for_y_tapes, *trans[i], 0, 0, false, mata::nft::JumpMode::NoJump);
             }
+            // last composition will remove the x tape
+            nft_for_y_tapes = mata::nft::compose(nft_for_y_tapes, *trans.back(), 0, 0, true, mata::nft::JumpMode::NoJump);
 
-            if(util::contains_trans_identity(nft, 4) == l_false) {
+            if(util::contains_trans_identity(nft_for_y_tapes, 4) == l_false) {
                 return true;
             }
         }

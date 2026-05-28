@@ -170,6 +170,19 @@ namespace algebraic_numbers {
         void isolate_roots(polynomial_ref const & p, polynomial::var2anum const & x2v, numeral_vector & roots);
 
         /**
+           \brief Isolate the closest real roots of a multivariate polynomial p around the rational point s.
+
+           The method behaves like isolate_roots(p, x2v, roots) but only returns:
+           - the last root r such that r <= s (if it exists), and
+           - the first root r such that r >  s (if it exists),
+           or a single root if s itself is a root.
+
+           The returned roots are sorted increasingly. The associated 1-based root indices
+           (with respect to the full increasing root list) are stored in \c indices.
+        */
+        void isolate_roots_closest(polynomial_ref const & p, polynomial::var2anum const & x2v, mpq const & s, numeral_vector & roots, svector<unsigned> & indices);
+
+        /**
            \brief Isolate the roots of the given polynomial, and compute its sign between them.
         */
         void isolate_roots(polynomial_ref const & p, polynomial::var2anum const & x2v, numeral_vector & roots, svector<sign> & signs);
@@ -346,6 +359,12 @@ namespace algebraic_numbers {
         std::ostream& display_root_smt2(std::ostream & out, numeral const & a) const;
 
         /**
+           \brief Display algebraic number using an SMT-RAT style root expression: (root p i x)
+           where the final argument denotes the variable bound to this root.
+        */
+        std::ostream& display_root_smtrat(std::ostream & out, numeral const & a, char const* var_name) const;
+
+        /**
            \brief Display algebraic number in Mathematica format.
         */
         std::ostream& display_mathematica(std::ostream & out, numeral const & a) const;
@@ -495,4 +514,3 @@ inline std::ostream & operator<<(std::ostream & out, interval_pp const & n) {
     n.m.display_interval(out, n.n);
     return out;
 }
-

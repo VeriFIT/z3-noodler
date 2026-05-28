@@ -89,7 +89,7 @@ bool intervals::check_nex(const nex* n, u_dependency* initial_deps) {
     m_core->lp_settings().stats().m_cross_nested_forms++;
     scoped_dep_interval i(get_dep_intervals());
     std::function<void (const lp::explanation&)> f = [this](const lp::explanation& e) {
-        new_lemma lemma(*m_core, "check_nex");
+        lemma_builder lemma(*m_core, "check_nex");
         lemma &= e;
     };
     if (!interval_of_expr<e_with_deps::without_deps>(n, 1, i, f)) {
@@ -159,7 +159,7 @@ lp::lar_term intervals::expression_to_normalized_term(const nex_sum* e, rational
             t.add_monomial(p.first, p.second);
         }
     } else {
-        for (unsigned k = 0; k < v.size(); k++) {
+        for (unsigned k = 0; k < v.size(); ++k) {
             auto& p = v[k];
             if (k != a_index) 
                 t.add_monomial(p.first/a, p.second);
@@ -314,7 +314,7 @@ bool intervals::interval_of_sum_no_term(const nex_sum& e, scoped_dep_interval & 
     
     if (!interval_of_expr<wd>(e[0], 1, sdi, f))
         return false;
-    for (unsigned k = 1; k < e.size(); k++) {
+    for (unsigned k = 1; k < e.size(); ++k) {
         TRACE(nla_intervals_details, tout << "e[" << k << "]= " << *e[k] << "\n";);
         scoped_dep_interval  b(get_dep_intervals());
         if (!interval_of_expr<wd>(e[k], 1, b, f)) {

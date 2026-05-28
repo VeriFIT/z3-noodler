@@ -188,8 +188,12 @@ void arith_decl_plugin::set_manager(ast_manager * m, family_id id) {
 
     m_to_real_decl = m->mk_func_decl(symbol("to_real"), i, r, func_decl_info(id, OP_TO_REAL));
     m->inc_ref(m_to_real_decl);
+    m_r_to_real_decl = m->mk_func_decl(symbol("to_real"), r, r, func_decl_info(id, OP_TO_REAL));
+    m->inc_ref(m_r_to_real_decl);
     m_to_int_decl = m->mk_func_decl(symbol("to_int"), r, i, func_decl_info(id, OP_TO_INT));
     m->inc_ref(m_to_int_decl);
+    m_i_to_int_decl = m->mk_func_decl(symbol("to_int"), i, i, func_decl_info(id, OP_TO_INT));
+    m->inc_ref(m_i_to_int_decl);
     m_is_int_decl = m->mk_func_decl(symbol("is_int"), r, m->mk_bool_sort(), func_decl_info(id, OP_IS_INT));
     m->inc_ref(m_is_int_decl);
 
@@ -311,6 +315,8 @@ void arith_decl_plugin::finalize() {
     DEC_REF(m_i_rem_decl);
     DEC_REF(m_to_real_decl);
     DEC_REF(m_to_int_decl);
+    DEC_REF(m_r_to_real_decl);
+    DEC_REF(m_i_to_int_decl);
     DEC_REF(m_is_int_decl);
     DEC_REF(m_i_power_decl);
     DEC_REF(m_r_power_decl);
@@ -368,8 +374,8 @@ inline func_decl * arith_decl_plugin::mk_func_decl(decl_kind k, bool is_real) {
             return m_manager->mk_func_decl(symbol("^0"), m_real_decl, m_real_decl, m_real_decl, func_decl_info(m_family_id, OP_POWER0));
         }
         return m_manager->mk_func_decl(symbol("^0"), m_int_decl, m_int_decl, m_real_decl, func_decl_info(m_family_id, OP_POWER0));
-    case OP_TO_REAL: return m_to_real_decl;
-    case OP_TO_INT:  return m_to_int_decl;
+    case OP_TO_REAL: return is_real ? m_r_to_real_decl : m_to_real_decl;
+    case OP_TO_INT:  return is_real ? m_to_int_decl : m_i_to_int_decl;
     case OP_IS_INT:  return m_is_int_decl;
     case OP_POWER:   return is_real ? m_r_power_decl : m_i_power_decl;
     case OP_ABS:     return is_real ? m_r_abs_decl : m_i_abs_decl;
@@ -484,14 +490,14 @@ static bool use_coercion(decl_kind k) {
 }
 
 static bool has_real_arg(unsigned arity, sort * const * domain, sort * real_sort) {
-    for (unsigned i = 0; i < arity; i++)
+    for (unsigned i = 0; i < arity; ++i)
         if (domain[i] == real_sort)
             return true;
     return false;
 }
 
 static bool has_real_arg(ast_manager * m, unsigned num_args, expr * const * args, sort * real_sort) {
-    for (unsigned i = 0; i < num_args; i++)
+    for (unsigned i = 0; i < num_args; ++i)
         if (args[i]->get_sort() == real_sort)
             return true;
     return false;

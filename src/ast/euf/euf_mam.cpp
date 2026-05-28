@@ -115,7 +115,7 @@ namespace euf {
         void display(std::ostream & out) const {
             out << "lbl-hasher:\n";
             bool first = true;
-            for (unsigned i = 0; i < m_lbl2hash.size(); i++) {
+            for (unsigned i = 0; i < m_lbl2hash.size(); ++i) {
                 if (m_lbl2hash[i] != -1) {
                     if (first)
                         first = false;
@@ -134,7 +134,7 @@ namespace euf {
     //
     // ------------------------------------
     typedef enum {
-        INIT1=0, INIT2,  INIT3,  INIT4,  INIT5,  INIT6,  INITN,
+        INIT1=0, INIT2,  INIT3,  INIT4,  INIT5,  INIT6,  INITN, INITAC,
         BIND1,   BIND2,  BIND3,  BIND4,  BIND5,  BIND6,  BINDN,
         YIELD1,  YIELD2, YIELD3, YIELD4, YIELD5, YIELD6, YIELDN,
         COMPARE, CHECK, FILTER, CFILTER, PFILTER, CHOOSE, NOOP, CONTINUE,
@@ -150,7 +150,7 @@ namespace euf {
         unsigned       m_counter; // how often it was executed
 #endif
         bool is_init() const {
-            return m_opcode >= INIT1 && m_opcode <= INITN;
+            return m_opcode >= INIT1 && m_opcode <= INITAC;
         }
     };
 
@@ -282,30 +282,30 @@ namespace euf {
         out << "(GET_CGR";
         display_num_args(out, c.m_num_args);
         out << " " << c.m_label->get_name() << " " << c.m_oreg;
-        for (unsigned i = 0; i < c.m_num_args; i++)
+        for (unsigned i = 0; i < c.m_num_args; ++i)
             out << " " << c.m_iregs[i];
-        out << ")";
+        out << ')';
     }
 
     void display_is_cgr(std::ostream & out, const is_cgr & c) {
         out << "(IS_CGR " << c.m_label->get_name() << " " << c.m_ireg;
-        for (unsigned i = 0; i < c.m_num_args; i++)
+        for (unsigned i = 0; i < c.m_num_args; ++i)
             out << " " << c.m_iregs[i];
-        out << ")";
+        out << ')';
     }
 
     void display_yield(std::ostream & out, const yield & y) {
         out << "(YIELD";
         display_num_args(out, y.m_num_bindings);
         out << " #" << y.m_qa->get_id();
-        for (unsigned i = 0; i < y.m_num_bindings; i++) {
+        for (unsigned i = 0; i < y.m_num_bindings; ++i) {
             out << " " << y.m_bindings[i];
         }
         out << ")";
     }
 
     void display_joints(std::ostream & out, unsigned num_joints, enode * const * joints) {
-        for (unsigned i = 0; i < num_joints; i++) {
+        for (unsigned i = 0; i < num_joints; ++i) {
             if (i > 0)
                 out << " ";
             enode * bare = joints[i];
@@ -332,12 +332,14 @@ namespace euf {
 
     std::ostream & operator<<(std::ostream & out, const instruction & instr) {
         switch (instr.m_opcode) {
-        case INIT1: case INIT2: case INIT3: case INIT4: case INIT5: case INIT6: case INITN:
+        case INIT1: case INIT2: case INIT3: case INIT4: case INIT5: case INIT6: case INITN: case INITAC:
             out << "(INIT";
             if (instr.m_opcode <= INIT6)
                 out << (instr.m_opcode - INIT1 + 1);
-            else
+            else if (instr.m_opcode == INITN)
                 out << "N";
+            else
+                out << "AC";
             out << ")";
             break;
         case BIND1: case BIND2: case BIND3: case BIND4: case BIND5: case BIND6: case BINDN:
@@ -423,7 +425,7 @@ namespace euf {
         friend class code_tree_manager;
 
         void spaces(std::ostream& out, unsigned indent) const {
-            for (unsigned i = 0; i < indent; i++) 
+            for (unsigned i = 0; i < indent; ++i) 
                 out << "    ";
         }
 
@@ -518,6 +520,10 @@ namespace euf {
             return m_counter;
         }
 #endif
+
+        bool arg_compatible(app* f) const {
+            return expected_num_args() == f->get_num_args();
+        }
 
         unsigned expected_num_args() const {
             return m_num_args;
@@ -626,24 +632,34 @@ namespace euf {
     // ------------------------------------
 
     class code_tree_manager {
-        euf::mam_solver &     ctx;
-        label_hasher &    m_lbl_hasher;
-        region &          m_region;
+        euf::mam_solver& ctx;
+        label_hasher& m_lbl_hasher;
+        region& m_region;
 
         template<typename OP>
-        OP * mk_instr(opcode op, unsigned size) {
-            void * mem = m_region.allocate(size);
-            OP * r = new (mem) OP;
+        OP* mk_instr(opcode op, unsigned size) {
+            void* mem = m_region.allocate(size);
+            OP* r = new (mem) OP;
             r->m_opcode = op;
-            r->m_next   = nullptr;
+            r->m_next = nullptr;
 #ifdef _PROFILE_MAM
             r->m_counter = 0;
 #endif
             return r;
         }
-
-        instruction * mk_init(unsigned n) {
+    
+        bool is_ac(func_decl* f) const {
+            return f->is_associative() && f->is_commutative();
+        }
+        
+        instruction * mk_init(func_decl* f, unsigned n) {
             SASSERT(n >= 1);
+            if (is_ac(f)) {
+                auto* r = mk_instr<initn>(INITAC, sizeof(initn));
+                r->m_num_args = n;
+                return r;
+            }
+
             opcode op = n <= 6 ? static_cast<opcode>(INIT1 + n - 1) : INITN;
             if (op == INITN) {
                 // We store the actual number of arguments for INITN.
@@ -666,9 +682,10 @@ namespace euf {
             m_region(ctx.get_region()) {
         }
 
-        code_tree * mk_code_tree(func_decl * lbl, unsigned short num_args, bool filter_candidates) {
+        code_tree * mk_code_tree(app* p, unsigned short num_args, bool filter_candidates) {
+            func_decl* lbl = p->get_decl();
             code_tree * r = alloc(code_tree,m_lbl_hasher, lbl, num_args, filter_candidates);
-            r->m_root     = mk_init(num_args);
+            r->m_root     = mk_init(lbl, num_args);
             return r;
         }
 
@@ -871,7 +888,7 @@ namespace euf {
             app * p = to_app(mp->get_arg(first_idx));
             SASSERT(t->get_root_lbl() == p->get_decl());
             unsigned num_args = p->get_num_args();
-            for (unsigned i = 0; i < num_args; i++) {
+            for (unsigned i = 0; i < num_args; ++i) {
                 set_register(i+1, p->get_arg(i));
                 m_todo.push_back(i+1);
             }
@@ -879,7 +896,7 @@ namespace euf {
             if (num_decls > m_vars.size()) {
                 m_vars.resize(num_decls, -1);
             }
-            for (unsigned j = 0; j < num_decls; j++) {
+            for (unsigned j = 0; j < num_decls; ++j) {
                 m_vars[j] = -1;
             }
         }
@@ -1027,7 +1044,7 @@ namespace euf {
                 if (IS_CGR_SUPPORT && all_args_are_bound_vars(first_app)) {
                     // use IS_CGR instead of BIND
                     sbuffer<unsigned> iregs;                    
-                    for (unsigned i = 0; i < num_args; i++) {
+                    for (unsigned i = 0; i < num_args; ++i) {
                         expr * arg = to_app(first_app)->get_arg(i);
                         SASSERT(is_var(arg));
                         SASSERT(m_vars[to_var(arg)->get_idx()] != -1);
@@ -1039,7 +1056,7 @@ namespace euf {
                     // Generate a BIND operation for this application.
                     unsigned oreg           = m_tree->m_num_regs;
                     m_tree->m_num_regs     += num_args;
-                    for (unsigned j = 0; j < num_args; j++) {
+                    for (unsigned j = 0; j < num_args; ++j) {
                         set_register(oreg + j, first_app->get_arg(j));
                         m_aux.push_back(oreg + j);
                     }
@@ -1120,13 +1137,13 @@ namespace euf {
         void linearise_multi_pattern(unsigned first_idx) {
             unsigned num_args = m_mp->get_num_args();
             // multi_pattern support
-            for (unsigned i = 1; i < num_args; i++) {
+            for (unsigned i = 1; i < num_args; ++i) {
                 // select the pattern with the biggest number of bound variables
                 app *    best  = nullptr;
                 unsigned best_num_bvars = 0;
                 unsigned best_j = 0;
                 bool     found_bounded_mp = false;
-                for (unsigned j = 0; j < m_mp->get_num_args(); j++) {
+                for (unsigned j = 0; j < m_mp->get_num_args(); ++j) {
                     if (m_mp_already_processed[j])
                         continue;
                     app * p            = to_app(m_mp->get_arg(j));
@@ -1162,7 +1179,7 @@ namespace euf {
                     m_tree->m_num_regs     += num_args;
                     ptr_buffer<enode>       joints;
                     bool has_depth1_joint   = false; // VAR_TAG or GROUND_TERM_TAG
-                    for (unsigned j = 0; j < num_args; j++) {
+                    for (unsigned j = 0; j < num_args; ++j) {
                         expr * curr = p->get_arg(j);
                         SASSERT(!is_quantifier(curr));
                         set_register(oreg + j, curr);
@@ -1206,7 +1223,7 @@ namespace euf {
                             }
                             unsigned num_args2 = to_app(curr)->get_num_args();
                             unsigned k = 0;
-                            for (; k < num_args2; k++) {
+                            for (; k < num_args2; ++k) {
                                 expr * arg = to_app(curr)->get_arg(k);
                                 if (!is_var(arg))
                                     continue;
@@ -1238,14 +1255,14 @@ namespace euf {
             m_matched_exprs.reset();
             while (!m_todo.empty())
                 linearise_core();
-
+            
             if (m_mp->get_num_args() > 1) {
                 m_mp_already_processed.reset();
                 m_mp_already_processed.resize(m_mp->get_num_args());
                 m_mp_already_processed[first_idx] = true;
                 linearise_multi_pattern(first_idx);
             }
-            for (unsigned i = 0; i < m_qa->get_num_decls(); i++) 
+            for (unsigned i = 0; i < m_qa->get_num_decls(); ++i) 
                 if (m_vars[i] == -1)
                     return;
             
@@ -1430,7 +1447,7 @@ namespace euf {
 
         bool is_compatible(cont * instr) const {
             unsigned oreg = instr->m_oreg;
-            for (unsigned i = 0; i < instr->m_num_args; i++)
+            for (unsigned i = 0; i < instr->m_num_args; ++i)
                 if (m_registers[oreg + i] != 0)
                     return false;
             return true;
@@ -1464,7 +1481,7 @@ namespace euf {
                         unsigned oreg     = static_cast<bind*>(curr)->m_oreg;
                         unsigned num_args = static_cast<bind*>(curr)->m_num_args;
                         SASSERT(n->get_num_args() == num_args);
-                        for (unsigned i = 0; i < num_args; i++) {
+                        for (unsigned i = 0; i < num_args; ++i) {
                             set_register(oreg + i, n->get_arg(i));
                             m_to_reset.push_back(oreg + i);
                         }
@@ -1525,7 +1542,7 @@ namespace euf {
                             app * app         = to_app(m_registers[ireg]);
                             unsigned oreg     = bnd->m_oreg;
                             unsigned num_args = bnd->m_num_args;
-                            for (unsigned i = 0; i < num_args; i++) {
+                            for (unsigned i = 0; i < num_args; ++i) {
                                 set_register(oreg + i, app->get_arg(i));
                                 m_todo.push_back(oreg + i);
                             }
@@ -1761,6 +1778,10 @@ namespace euf {
             m_use_filters(use_filters) {
         }
 
+        bool is_ac(func_decl* f) const {
+            return f->is_associative() && f->is_commutative();
+        }
+
         /**
            \brief Create a new code tree for the given quantifier.
 
@@ -1772,9 +1793,11 @@ namespace euf {
             SASSERT(m.is_pattern(mp));
             app * p = to_app(mp->get_arg(first_idx));
             unsigned num_args = p->get_num_args();
-            code_tree * r     = m_ct_manager.mk_code_tree(p->get_decl(), num_args, filter_candidates);
+            code_tree * r     = m_ct_manager.mk_code_tree(p, num_args, filter_candidates);
             init(r, qa, mp, first_idx);
             linearise(r->m_root, first_idx);
+            if (is_ac(p->get_decl()))
+                ++m_num_choices;
             r->m_num_choices  = m_num_choices;
             TRACE(mam_compiler, tout << "new tree for:\n" << mk_pp(mp, m) << "\n" << *r;);
             return r;
@@ -1786,7 +1809,7 @@ namespace euf {
            - is_tmp_tree: trail for update operations is created if is_tmp_tree = false.
         */
         void insert(code_tree * tree, quantifier * qa, app * mp, unsigned first_idx, bool is_tmp_tree) {
-            if (tree->expected_num_args() != to_app(mp->get_arg(first_idx))->get_num_args()) {
+            if (!tree->arg_compatible(to_app(mp->get_arg(first_idx)))) {
                 // We have to check the number of arguments because of nary + and * operators.
                 // The E-matching engine that was built when all + and * applications were binary.
                 // We ignore the pattern if it does not have the expected number of arguments.
@@ -1883,6 +1906,9 @@ namespace euf {
         unsigned_vector     m_min_top_generation, m_max_top_generation;
 
         pool<enode_vector>  m_pool;
+        ptr_buffer<enode>   m_acargs;
+        bool_vector         m_acbitset;
+        unsigned_vector     m_acpatarg;
 
         enode_vector * mk_enode_vector() {
             enode_vector * r = m_pool.mk();
@@ -1956,12 +1982,12 @@ namespace euf {
                 return false;
             default: {
                 m_args.reserve(num_args+1, 0);
-                for (unsigned i = 0; i < num_args; i++)
+                for (unsigned i = 0; i < num_args; ++i)
                     m_args[i] = m_registers[pc->m_iregs[i]]->get_root();
                 for (enode* n : euf::enode_class(r)) {
                     if (n->get_decl() == f && num_args == n->num_args()) {
                         unsigned i = 0;
-                        for (; i < num_args; i++) {
+                        for (; i < num_args; ++i) {
                             if (n->get_arg(i)->get_root() != m_args[i])
                                 break;
                         }
@@ -1986,6 +2012,8 @@ namespace euf {
         void display_instr_input_reg(std::ostream & out, instruction const * instr);
 
         void display_pc_info(std::ostream & out);
+
+        bool next_ac_match(initn const* pc);
 
 #define INIT_ARGS_SIZE 16
 
@@ -2114,7 +2142,7 @@ namespace euf {
         unsigned short num_args = c->m_num_args;
         enode * r;
         // quick filter... check if any of the joint points have zero parents...
-        for (unsigned i = 0; i < num_args; i++) {
+        for (unsigned i = 0; i < num_args; ++i) {
             void * bare = c->m_joints[i];
             enode * n   = nullptr;
             switch (GET_TAG(bare)) {
@@ -2139,7 +2167,7 @@ namespace euf {
         }
         // traverse each joint and select the best one.
         enode_vector * best_v   = nullptr;
-        for (unsigned i = 0; i < num_args; i++) {
+        for (unsigned i = 0; i < num_args; ++i) {
             enode * bare          = c->m_joints[i];
             enode_vector * curr_v = nullptr;
             switch (GET_TAG(bare)) {
@@ -2219,7 +2247,7 @@ namespace euf {
 
     void interpreter::display_instr_input_reg(std::ostream & out, const instruction * instr) {
         switch (instr->m_opcode) {
-        case INIT1: case INIT2: case INIT3: case INIT4: case INIT5: case INIT6: case INITN:
+        case INIT1: case INIT2: case INIT3: case INIT4: case INIT5: case INIT6: case INITN: case INITAC:
             display_reg(out, 0);
             break;
         case BIND1: case BIND2: case BIND3: case BIND4: case BIND5: case BIND6: case BINDN:
@@ -2236,7 +2264,7 @@ namespace euf {
             display_reg(out, static_cast<const filter *>(instr)->m_reg);
             break;
         case YIELD1: case YIELD2: case YIELD3: case YIELD4: case YIELD5: case YIELD6: case YIELDN:
-            for (unsigned i = 0; i < static_cast<const yield *>(instr)->m_num_bindings; i++) {
+            for (unsigned i = 0; i < static_cast<const yield *>(instr)->m_num_bindings; ++i) {
                 display_reg(out, static_cast<const yield *>(instr)->m_bindings[i]);
             }
             break;
@@ -2254,8 +2282,71 @@ namespace euf {
         display_instr_input_reg(out, m_pc);
     }
 
+    // 
+    // plan:
+    // - bit-set of matched elements in m_acargs (m_acbitset)
+    // - for each pattern index an index into m_acargs that it matches (m_acpatarg)
+    // when backtracking, take previous pattern index and clear bit-set at position
+    // of pattern_index: try binding the next available position not in the bit-index
+    // 
+    // If pattern argument is a variable it can bind to multiple m_acargs
+    // Initially: simply punt. Dont consider these as matches
+    // Naive: iterate over all subsets not in current bitset and use a sequence binding.
+    // Established: use Diophantine equations to capture matchability.
+    //
+
+    bool interpreter::next_ac_match(initn const* pc) {
+        unsigned f_args = pc->m_num_args;
+        SASSERT(f_args <= m_acargs.size());        
+        for (unsigned i = f_args; i-- > 0;) {
+            unsigned j = m_acpatarg[i];
+            m_acbitset[j] = false;
+        next_j:
+            ++j;
+            for (; j < m_acargs.size(); ++j) {
+                if (m_acbitset[j])
+                    continue;
+                m_registers[i + 1] = m_acargs[j];
+                m_acbitset[j] = true;
+                m_acpatarg[i] = j;
+                break;
+            }
+            if (j == m_acargs.size())
+                continue;
+            
+            for (unsigned ii = i + 1; ii < f_args; ++ii) {
+                unsigned k = 0;
+                // populate arguments after i
+                for (; k < m_acargs.size(); ++k) {
+                    if (!m_acbitset[k]) {
+                        m_registers[ii + 1] = m_acargs[k];
+                        m_acbitset[k] = true;
+                        m_acpatarg[ii] = k;
+                        break;
+                    }
+                }
+                if (k == m_acargs.size()) {
+                    --ii;
+                    // clean up 
+                    for (; ii >= i; --ii) {
+                        k = m_acpatarg[ii];
+                        m_acbitset[k] = false;
+                    }
+                    goto next_j;
+                }
+            }
+            IF_VERBOSE(2,
+                verbose_stream() << "next ac: ";
+            for (unsigned j = 0; j < f_args; ++j)
+                verbose_stream() << m_acpatarg[j] << " ";
+            verbose_stream() << "\n";);
+            return true;
+        }
+        return false;
+    }
+
     bool interpreter::execute_core(code_tree * t, enode * n) {
-        TRACE(trigger_bug, tout << "interpreter::execute_core\n"; t->display(tout); tout << "\nenode\n" << mk_ismt2_pp(n->get_expr(), m) << "\n";);
+        TRACE(trigger_bug, tout << "interpreter::execute_core\n"; t->display(tout); tout << "\nenode: " << mk_ismt2_pp(n->get_expr(), m) << "\n";);
         unsigned since_last_check = 0;
 
 #ifdef _PROFILE_MAM
@@ -2359,10 +2450,52 @@ namespace euf {
             m_num_args = m_app->num_args();
             if (m_num_args != static_cast<const initn *>(m_pc)->m_num_args)
                 goto backtrack;
-            for (unsigned i = 0; i < m_num_args; i++)
+            for (unsigned i = 0; i < m_num_args; ++i)
                 m_registers[i+1] = m_app->get_arg(i);
             m_pc = m_pc->m_next;
             goto main_loop;
+
+        case INITAC: {
+            m_app = m_registers[0];
+            m_acargs.reset();
+            m_acargs.push_back(m_app);
+            auto* f = m_app->get_decl();
+            auto num_pat_args = static_cast<const initn*>(m_pc)->m_num_args;
+            for (unsigned i = 0; i < m_acargs.size(); ++i) {
+                auto* arg = m_acargs[i];
+                if (!is_app(arg->get_expr()))
+                    continue;                
+                auto fa = arg->get_decl();
+                if (f == fa) {
+                    m_acargs.append(arg->num_args(), arg->args());
+                    m_acargs[i] = m_acargs.back();
+                    m_acargs.pop_back();
+                    --i;
+                }
+            }
+            TRACE(mam_bug, tout << "initac:\n";
+            for (auto arg : m_acargs) tout << mk_pp(arg->get_expr(), m) << "\n";
+            tout << "\n";
+            display_instr_input_reg(tout, m_pc);
+                );
+               
+            if (num_pat_args > m_acargs.size())
+                goto backtrack;
+            m_acbitset.reset();
+            m_acbitset.reserve(m_acargs.size(), false);
+            m_acpatarg.reset();
+            m_acpatarg.reserve(m_acargs.size(), 0);
+            m_backtrack_stack[m_top].m_instr = m_pc;                                                  
+            m_backtrack_stack[m_top].m_old_max_generation = m_curr_max_generation;      
+            ++m_top;            
+            for (unsigned i = 0; i < num_pat_args; ++i) {
+                m_acpatarg[i] = i;
+                m_acbitset[i] = true;
+                m_registers[i + 1] = m_acargs[i];
+            }
+            m_pc = m_pc->m_next;
+            goto main_loop;
+        }
 
         case COMPARE:
             m_n1 = m_registers[static_cast<const compare *>(m_pc)->m_reg1];
@@ -2425,7 +2558,7 @@ namespace euf {
                  m_app  = get_first_f_app(static_cast<const bind *>(m_pc)->m_label, static_cast<const bind *>(m_pc)->m_num_args, m_n1); \
                  if (!m_app)                                                                                            \
                      goto backtrack;                                                                                    \
-                 TRACE(mam_int, tout << "bind candidate: " << mk_pp(m_app->get_expr(), m) << "\n";);     \
+                 TRACE(mam_int, tout << "bind candidate: " << mk_pp(m_app->get_expr(), m) << " " << m_top << " " << m_backtrack_stack.size() << "\n";);     \
                  m_backtrack_stack[m_top].m_instr              = m_pc;                                                  \
                  m_backtrack_stack[m_top].m_old_max_generation = m_curr_max_generation;                                 \
                  m_backtrack_stack[m_top].m_curr               = m_app;                                                 \
@@ -2484,7 +2617,7 @@ namespace euf {
         case BINDN:
             BIND_COMMON();
             m_num_args = static_cast<const bind *>(m_pc)->m_num_args;
-            for (unsigned i = 0; i < m_num_args; i++)
+            for (unsigned i = 0; i < m_num_args; ++i)
                 m_registers[m_oreg+i] = m_app->get_arg(i);
             m_pc = m_pc->m_next;
             goto main_loop;
@@ -2548,7 +2681,7 @@ namespace euf {
 
         case YIELDN:
             m_num_args = static_cast<const yield *>(m_pc)->m_num_bindings;
-            for (unsigned i = 0; i < m_num_args; i++)
+            for (unsigned i = 0; i < m_num_args; ++i)
                 m_bindings[i] = m_registers[static_cast<const yield *>(m_pc)->m_bindings[m_num_args - i - 1]];
             ON_MATCH(m_num_args);
             goto backtrack;
@@ -2607,7 +2740,7 @@ namespace euf {
         case GET_CGRN:
             m_num_args = static_cast<const get_cgr *>(m_pc)->m_num_args;
             m_args.reserve(m_num_args, 0);
-            for (unsigned i = 0; i < m_num_args; i++)
+            for (unsigned i = 0; i < m_num_args; ++i)
                 m_args[i] = m_registers[static_cast<const get_cgr *>(m_pc)->m_iregs[i]];
             goto cgr_common;
 
@@ -2625,7 +2758,7 @@ namespace euf {
                 goto backtrack;
             m_pattern_instances.push_back(m_app);
             TRACE(mam_int, tout << "continue candidate:\n" << mk_ll_pp(m_app->get_expr(), m););
-            for (unsigned i = 0; i < m_num_args; i++)
+            for (unsigned i = 0; i < m_num_args; ++i)
                 m_registers[m_oreg+i] = m_app->get_arg(i);
             m_pc = m_pc->m_next;
             goto main_loop;
@@ -2751,9 +2884,18 @@ namespace euf {
         case BINDN:
             BBIND_COMMON();
             m_num_args = m_b->m_num_args;
-            for (unsigned i = 0; i < m_num_args; i++)
+            for (unsigned i = 0; i < m_num_args; ++i)
                 m_registers[m_oreg+i] = m_app->get_arg(i);
             m_pc = m_b->m_next;
+            goto main_loop;
+
+        case INITAC:
+            // this is a backtracking point.
+            if (!next_ac_match(static_cast<initn const*>(bp.m_instr))) {
+                --m_top;
+                goto backtrack;
+            }            
+            m_pc = bp.m_instr->m_next;
             goto main_loop;
 
         case CONTINUE:
@@ -2778,7 +2920,7 @@ namespace euf {
                     TRACE(mam_int, tout << "continue next candidate:\n" << mk_ll_pp(m_app->get_expr(), m););
                     m_num_args = c->m_num_args;
                     m_oreg     = c->m_oreg;
-                    for (unsigned i = 0; i < m_num_args; i++)
+                    for (unsigned i = 0; i < m_num_args; ++i)
                         m_registers[m_oreg+i] = m_app->get_arg(i);
                     m_pc = c->m_next;
                     goto main_loop;
@@ -2862,12 +3004,14 @@ namespace euf {
             SASSERT(m.is_pattern(mp));
             SASSERT(first_idx < mp->get_num_args());
             app * p           = to_app(mp->get_arg(first_idx));
+            if (is_ground(p))
+                return;
             func_decl * lbl   = p->get_decl();
             unsigned lbl_id   = lbl->get_small_id();
             m_trees.reserve(lbl_id+1, nullptr);
             if (m_trees[lbl_id] == nullptr) {
                 m_trees[lbl_id] = m_compiler.mk_tree(qa, mp, first_idx, false);
-                SASSERT(m_trees[lbl_id]->expected_num_args() == p->get_num_args());
+                SASSERT(m_trees[lbl_id]->arg_compatible(p)); 
                 DEBUG_CODE(m_trees[lbl_id]->set_egraph(m_egraph););
                 ctx.get_trail().push(mk_tree_trail(m_trees, lbl_id));
             }
@@ -2877,7 +3021,7 @@ namespace euf {
                 // The E-matching engine that was built when all + and * applications were binary.
                 // We ignore the pattern if it does not have the expected number of arguments.
                 // This is not the ideal solution, but it avoids possible crashes.
-                if (tree->expected_num_args() == p->get_num_args()) 
+                if (tree->arg_compatible(p)) 
                     m_compiler.insert(tree, qa, mp, first_idx, false);
             }
             DEBUG_CODE(if (first_idx == 0) {
@@ -3012,7 +3156,7 @@ namespace euf {
         void display(std::ostream & out, unsigned indent) {
             path_tree * curr = this;
             while (curr != nullptr) {
-                for (unsigned i = 0; i < indent; i++) out << "  ";
+                for (unsigned i = 0; i < indent; ++i) out << "  ";
                 out << curr->m_label->get_name() << ":" << curr->m_arg_idx;
                 if (curr->m_ground_arg)
                     out << ":#" << curr->m_ground_arg->get_expr_id() << ":" << curr->m_ground_arg_idx;
@@ -3146,7 +3290,7 @@ namespace euf {
 
         void update_children_plbls(enode * app, unsigned char elem) {
             unsigned num_args = app->num_args();
-            for (unsigned i = 0; i < num_args; i++) {
+            for (unsigned i = 0; i < num_args; ++i) {
                 enode * c            = app->get_arg(i);
                 approx_set & r_plbls = c->get_root()->get_plbls();
                 if (!r_plbls.may_contain(elem)) {
@@ -3182,8 +3326,8 @@ namespace euf {
         }
 
         void reset_pp_pc() {
-            for (unsigned i = 0; i < APPROX_SET_CAPACITY; i++) {
-                for (unsigned j = 0; j < APPROX_SET_CAPACITY; j++) {
+            for (unsigned i = 0; i < APPROX_SET_CAPACITY; ++i) {
+                for (unsigned j = 0; j < APPROX_SET_CAPACITY; ++j) {
                     m_pp[i][j].first  = 0;
                     m_pp[i][j].second = 0;
                     m_pc[i][j]        = nullptr;
@@ -3350,7 +3494,7 @@ namespace euf {
         enode * get_ground_arg(app * pat, quantifier * qa, unsigned & pos) {
             pos = 0;
             unsigned num_args = pat->get_num_args();
-            for (unsigned i = 0; i < num_args; i++) {
+            for (unsigned i = 0; i < num_args; ++i) {
                 expr * arg = pat->get_arg(i);
                 if (is_ground(arg)) {
                     pos = i;
@@ -3370,7 +3514,7 @@ namespace euf {
             unsigned ground_arg_pos = 0;
             enode * ground_arg      = get_ground_arg(pat, qa, ground_arg_pos);
             func_decl * plbl        = pat->get_decl();
-            for (unsigned short i = 0; i < num_args; i++) {
+            for (unsigned short i = 0; i < num_args; ++i) {
                 expr * child = pat->get_arg(i);
                 path * new_path = new (m_tmp_region) path(plbl, i, ground_arg_pos, ground_arg, pat_idx, p);
 
@@ -3412,7 +3556,7 @@ namespace euf {
             unsigned num_vars = qa->get_num_decls();
             if (num_vars >= m_var_paths.size())
                 m_var_paths.resize(num_vars+1);
-            for (unsigned i = 0; i <= num_vars; i++)
+            for (unsigned i = 0; i <= num_vars; ++i)
                 m_var_paths[i].reset();
             m_tmp_region.reset();
             // Given a multi-pattern (p_1, ..., p_n)
@@ -3422,15 +3566,15 @@ namespace euf {
             //  ...
             //  (p_n, p_2, ..., p_1)
             unsigned num_patterns = mp->get_num_args();
-            for (unsigned i = 0; i < num_patterns; i++) {
+            for (unsigned i = 0; i < num_patterns; ++i) {
                 app * pat = to_app(mp->get_arg(i));
                 update_filters(pat, nullptr, qa, mp, i);
             }
         }
 
         void display_filter_info(std::ostream & out) {
-            for (unsigned i = 0; i < APPROX_SET_CAPACITY; i++) {
-                for (unsigned j = 0; j < APPROX_SET_CAPACITY; j++) {
+            for (unsigned i = 0; i < APPROX_SET_CAPACITY; ++i) {
+                for (unsigned j = 0; j < APPROX_SET_CAPACITY; ++j) {
                     if (m_pp[i][j].first) {
                         out << "pp[" << i << "][" << j << "]:\n";
                         m_pp[i][j].first->display(out, 1);
@@ -3747,9 +3891,10 @@ namespace euf {
             // Ground patterns are discarded.
             // However, the simplifier may turn a non-ground pattern into a ground one.
             // So, we should check it again here.
-            for (expr* arg : *mp)
-                if (is_ground(arg) || has_quantifiers(arg))
-                    return; // ignore multi-pattern containing ground pattern.
+            if (all_of(*mp, [](expr* arg) { return is_ground(arg); }))
+                return; // ignore multi-pattern containing only ground pattern.
+            if (any_of(*mp, [](expr* arg) { return has_quantifiers(arg); }))
+                return; // patterns with quantifiers are not handled.
             update_filters(qa, mp);
             m_new_patterns.push_back(qp_pair(qa, mp));
             ctx.get_trail().push(push_back_trail<qp_pair, false>(m_new_patterns));
@@ -3757,7 +3902,7 @@ namespace euf {
             // e-matching. So, for a multi-pattern [ p_1, ..., p_n ],
             // we have to make n insertions. In the i-th insertion,
             // the pattern p_i is assumed to be the first one.
-            for (unsigned i = 0; i < mp->get_num_args(); i++)
+            for (unsigned i = 0; i < mp->get_num_args(); ++i)
                 m_trees.add_pattern(qa, mp, i);
         }
 

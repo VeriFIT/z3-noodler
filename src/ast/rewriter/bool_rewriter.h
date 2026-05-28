@@ -63,7 +63,7 @@ class bool_rewriter {
     bool           m_elim_ite;
     ptr_vector<expr> m_todo1, m_todo2;
     unsigned_vector m_counts1, m_counts2;
-    expr_fast_mark1 m_marked;
+    expr_mark       m_marked;
 
     br_status mk_flat_and_core(unsigned num_args, expr * const * args, expr_ref & result);
     br_status mk_flat_or_core(unsigned num_args, expr * const * args, expr_ref & result);
@@ -159,7 +159,7 @@ public:
     void mk_and(unsigned num_args, expr * const * args, expr_ref & result) {
         if (mk_and_core(num_args, args, result) == BR_FAILED) {
             SASSERT(!m_elim_and);
-            result = m().mk_and(num_args, args);
+            result = m().mk_and(std::span<expr* const>(args, num_args));
         }
     }
     void mk_or(unsigned num_args, expr * const * args, expr_ref & result) {

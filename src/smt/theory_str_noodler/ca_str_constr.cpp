@@ -614,7 +614,7 @@ namespace smt::noodler::ca {
 
             bool are_all_words_have_length_one = true;  // In principle, nothing prevents us from dealing with the general case, but the implementation would have to be much more complex
             for (const mata::Word& word : words) {
-                if (word.size() > 1) {
+                if (word.size() != 1) {
                     are_all_words_have_length_one = false;
                     break;
                 }

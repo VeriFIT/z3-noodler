@@ -19,6 +19,9 @@ struct theory_str_noodler_params {
     bool m_produce_models = false;
     bool is_overapprox = false;
     bool m_ca_constr = false;
+    bool m_postpone_diseqs_stabilization = true;
+    bool m_try_premature_len_checks = true;
+    bool m_enable_warnings = false;
 
     /** @brief Whether to use regex engine semantics when generating ECMA regex constraints.
     *

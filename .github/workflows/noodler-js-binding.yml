@@ -18,8 +18,11 @@ jobs:
 
       - name: Check out repository code
         uses: actions/checkout@v6
-        with: 
-          ref: ${{ github.head_ref }}
+        with:
+          fetch-depth: 0
+          # if PR, checkout the PR's repo (needed for PRs coming from forks)
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup emscripten
         uses: mymindstorm/setup-emsdk@v14

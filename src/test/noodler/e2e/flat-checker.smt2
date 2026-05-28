@@ -1,0 +1,8 @@
+(set-logic ALL)
+(set-info :status unsat)
+(declare-const s String)
+(assert (str.in_re s (re.opt (str.to_re "a"))))
+(assert (> (str.len s) 0))
+(assert (not (str.in_re (str.substr s 0 (- 1 0)) (re.opt (str.to_re "a")))))
+(check-sat)
+(exit)

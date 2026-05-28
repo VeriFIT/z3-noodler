@@ -1,0 +1,7 @@
+(set-logic QF_SLIA)
+(set-info :status unsat)
+(set-option :produce-proofs true)
+(set-option :produce-unsat-cores true)
+(declare-const r String)
+(assert (and (or (and (= 0 (str.to_code r)) (= 1 (str.to_code r))) (and (= 0 (str.to_code r)) (= 2 (str.to_code r)))) (str.contains r "=")))
+(check-sat)

@@ -30,7 +30,6 @@ namespace smt {
         model_ref m_model;
     public:
         theory_sls(context& ctx);
-        ~theory_sls() override {}
         model_ref get_model() { return m_model; }
         char const* get_name() const override { return "sls"; }
         smt::theory* mk_fresh(context* new_ctx) override { return alloc(theory_sls, *new_ctx); }
@@ -118,7 +117,7 @@ namespace smt {
         void new_eq_eh(theory_var v1, theory_var v2) override {}
         void new_diseq_eh(theory_var v1, theory_var v2) override {}
         void restart_eh() override;
-        final_check_status final_check_eh() override;
+        final_check_status final_check_eh(unsigned) override;
 
         // sls::smt_context interface
         ast_manager& get_manager() override { return m; }

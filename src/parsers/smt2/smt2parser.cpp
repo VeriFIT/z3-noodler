@@ -105,6 +105,7 @@ namespace smt2 {
         symbol               m_declare_type_var;
         symbol               m_declare_datatypes;
         symbol               m_declare_datatype;
+        symbol               m_subterm_keyword;
         symbol               m_par;
         symbol               m_push;
         symbol               m_pop;
@@ -941,7 +942,7 @@ namespace smt2 {
                 dts->commit(pm());
                 m_ctx.insert_aux_pdecl(dts.get());
             }
-            for (unsigned i = 0; i < sz; i++) {
+            for (unsigned i = 0; i < sz; ++i) {
                 pdatatype_decl * d = new_dt_decls[i];
                 check_duplicate(d, line, pos);
                 if (!is_smt2_6) {
@@ -955,7 +956,7 @@ namespace smt2 {
             next();
         }
 
-        // ( declare-datatype symbol datatype_dec) 
+        // ( declare-datatype symbol datatype_dec [:subterm <subterm>]) 
         void parse_declare_datatype() {
             SASSERT(curr_is_identifier());
             SASSERT(curr_id() == m_declare_datatype);
@@ -974,8 +975,15 @@ namespace smt2 {
             pdatatype_decl_ref d(pm());                
             pconstructor_decl_ref_buffer new_ct_decls(pm());
             parse_datatype_dec(&dt_name, new_ct_decls);
+            
+            symbol subterm_name = parse_subterm_decl();
+
             d = pm().mk_pdatatype_decl(m_sort_id2param_idx.size(), dt_name, new_ct_decls.size(), new_ct_decls.data());
             
+            if (subterm_name != symbol::null) {
+                d->set_subterm(subterm_name);
+            }
+
             check_missing(d, line, pos);
             check_duplicate(d, line, pos);
 
@@ -983,6 +991,18 @@ namespace smt2 {
             check_rparen("invalid end of datatype declaration, ')' expected");
             m_ctx.print_success();
             next();
+        }
+
+        // [:subterm <subterm>]
+        symbol parse_subterm_decl() {
+            symbol predicate_name = symbol::null;
+            if ((curr_is_identifier() || curr() == scanner::KEYWORD_TOKEN) && curr_id() == m_subterm_keyword) {
+                next(); // consume :subterm keyword
+                check_identifier("expected name for subterm predicate");
+                predicate_name = curr_id();
+                next();
+            }
+            return predicate_name;
         }
 
 
@@ -1621,7 +1641,7 @@ namespace smt2 {
             if (curr_id_is_underscore()) {
                 has_as = false;
                 return parse_indexed_identifier_core();
-            }
+            } 
             else {
                 SASSERT(curr_id_is_as());
                 has_as   = true;
@@ -1638,8 +1658,10 @@ namespace smt2 {
         //    '(' 'as' <identifier> <sort> ')'
         //    '(' '_'  <identifier> <num>+ ')'
         //    '(' 'as' <identifier '(' '_' <identifier> (<num>|<func-decl-ref>)+ ')' <sort> ')'
-        symbol parse_qualified_identifier(bool & has_as) {
+        //    '(' lambda (...) <expr> ')'
+        symbol parse_qualified_identifier(bool & has_as, bool & is_lambda) {
             SASSERT(curr_is_lparen() || curr_is_identifier());
+            is_lambda = false;
             if (curr_is_identifier()) {
                 has_as   = false;
                 symbol r = curr_id();
@@ -1648,6 +1670,12 @@ namespace smt2 {
             }
             SASSERT(curr_is_lparen());
             next();
+            if (curr_id_is_lambda()) {
+                is_lambda = true;
+                has_as = false;
+                return symbol("select");
+            }
+                           
             if (!curr_is_identifier() || (!curr_id_is_underscore() && !curr_id_is_as()))
                 throw parser_exception("invalid qualified/indexed identifier, '_' or 'as' expected");
             return parse_qualified_identifier_core(has_as);
@@ -1860,11 +1888,14 @@ namespace smt2 {
             SASSERT(curr_is_lparen() || curr_is_identifier());
             unsigned param_spos  = m_param_stack.size();
             unsigned expr_spos  = expr_stack().size();
-            bool     has_as;
-            symbol   f = parse_qualified_identifier(has_as);
-            void * mem      = m_stack.allocate(sizeof(quant_frame));
+            bool has_as, is_lambda;
+            auto f = parse_qualified_identifier(has_as, is_lambda);
+
+            void * mem      = m_stack.allocate(sizeof(app_frame));
             new (mem) app_frame(f, expr_spos, param_spos, has_as);
             m_num_expr_frames++;
+            if (is_lambda) 
+                push_quant_frame(lambda_k);            
         }
 
         void push_expr_frame(expr_frame * curr) {
@@ -2005,7 +2036,7 @@ namespace smt2 {
             unsigned begin_pats = fr->m_pat_spos;
             unsigned end_pats   = pattern_stack().size();
             unsigned j = begin_pats;
-            for (unsigned i = begin_pats; i < end_pats; i++) {
+            for (unsigned i = begin_pats; i < end_pats; ++i) {
                 expr * pat = pattern_stack().get(i);
                 if (!pat_validator()(num_decls, pat, m_scanner.get_line(), m_scanner.get_pos())) {
                     if (!ignore_bad_patterns())
@@ -2693,7 +2724,7 @@ namespace smt2 {
             expr ** expr_it  = expr_stack().data() + spos;
             expr ** expr_end = expr_it + m_cached_strings.size();
             md->compress();
-            for (unsigned i = 0; expr_it < expr_end; expr_it++, i++) {
+            for (unsigned i = 0; expr_it < expr_end; ++expr_it, ++i) {
                 model::scoped_model_completion _scm(md, true);
                 expr_ref v = (*md)(*expr_it);
                 if (i > 0)
@@ -3077,6 +3108,7 @@ namespace smt2 {
             m_declare_type_var("declare-type-var"),
             m_declare_datatypes("declare-datatypes"),
             m_declare_datatype("declare-datatype"),
+            m_subterm_keyword(":subterm"),
             m_par("par"),
             m_push("push"),
             m_pop("pop"),

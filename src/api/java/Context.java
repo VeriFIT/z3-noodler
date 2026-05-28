@@ -389,6 +389,54 @@ public class Context implements AutoCloseable {
     }
 
     /**
+     * Create a forward reference to a datatype sort.
+     * This is useful for creating recursive datatypes or parametric datatypes.
+     * @param name name of the datatype sort
+     * @param params optional array of sort parameters for parametric datatypes
+     **/
+    public <R> DatatypeSort<R> mkDatatypeSortRef(Symbol name, Sort[] params)
+    {
+        checkContextMatch(name);
+        if (params != null)
+            checkContextMatch(params);
+        
+        int numParams = (params == null) ? 0 : params.length;
+        long[] paramsNative = (params == null) ? new long[0] : AST.arrayToNative(params);
+        return new DatatypeSort<>(this, Native.mkDatatypeSort(nCtx(), name.getNativeObject(), numParams, paramsNative));
+    }
+
+    /**
+     * Create a forward reference to a datatype sort (non-parametric).
+     * This is useful for creating recursive datatypes.
+     * @param name name of the datatype sort
+     **/
+    public <R> DatatypeSort<R> mkDatatypeSortRef(Symbol name)
+    {
+        return mkDatatypeSortRef(name, null);
+    }
+
+    /**
+     * Create a forward reference to a datatype sort.
+     * This is useful for creating recursive datatypes or parametric datatypes.
+     * @param name name of the datatype sort
+     * @param params optional array of sort parameters for parametric datatypes
+     **/
+    public <R> DatatypeSort<R> mkDatatypeSortRef(String name, Sort[] params)
+    {
+        return mkDatatypeSortRef(mkSymbol(name), params);
+    }
+
+    /**
+     * Create a forward reference to a datatype sort (non-parametric).
+     * This is useful for creating recursive datatypes.
+     * @param name name of the datatype sort
+     **/
+    public <R> DatatypeSort<R> mkDatatypeSortRef(String name)
+    {
+        return mkDatatypeSortRef(name, null);
+    }
+
+    /**
      * Create mutually recursive datatypes. 
      * @param names names of datatype sorts 
      * @param c list of constructors, one list per sort.
@@ -423,6 +471,88 @@ public class Context implements AutoCloseable {
 
     {
         return mkDatatypeSorts(mkSymbols(names), c);
+    }
+
+    /**
+     * Create a type variable for use in polymorphic functions and datatypes.
+     * Type variables can be used as sort parameters in polymorphic datatypes.
+     * @param name name of the type variable
+     * @return a new type variable sort
+     **/
+    public TypeVarSort mkTypeVariable(Symbol name)
+    {
+        checkContextMatch(name);
+        return new TypeVarSort(this, name);
+    }
+
+    /**
+     * Create a type variable for use in polymorphic functions and datatypes.
+     * Type variables can be used as sort parameters in polymorphic datatypes.
+     * @param name name of the type variable
+     * @return a new type variable sort
+     **/
+    public TypeVarSort mkTypeVariable(String name)
+    {
+        return mkTypeVariable(mkSymbol(name));
+    }
+
+    /**
+     * Create a polymorphic (parametric) datatype sort.
+     * A polymorphic datatype is parameterized by type variables, allowing it to
+     * work with different types. This is similar to generic types in programming languages.
+     * 
+     * @param name name of the datatype sort
+     * @param parameters array of type variable sorts to parameterize the datatype
+     * @param constructors array of constructor specifications
+     * @return a new polymorphic datatype sort
+     * 
+     * Example:
+     * <pre>
+     * // Create a polymorphic List datatype: List[T]
+     * TypeVarSort T = ctx.mkTypeVariable("T");
+     * Constructor&lt;Object&gt; nil = ctx.mkConstructor("nil", "is_nil", null, null, null);
+     * Constructor&lt;Object&gt; cons = ctx.mkConstructor("cons", "is_cons",
+     *     new String[]{"head", "tail"},
+     *     new Sort[]{T, null}, // head has type T, tail is recursive reference
+     *     new int[]{0, 0}); // sortRef 0 refers back to List[T]
+     * DatatypeSort&lt;Object&gt; listSort = ctx.mkPolymorphicDatatypeSort("List",
+     *     new Sort[]{T}, new Constructor[]{nil, cons});
+     * </pre>
+     **/
+    public <R> DatatypeSort<R> mkPolymorphicDatatypeSort(Symbol name, Sort[] parameters, Constructor<R>[] constructors)
+    {
+        checkContextMatch(name);
+        checkContextMatch(parameters);
+        checkContextMatch(constructors);
+        
+        int numParams = parameters.length;
+        long[] paramsNative = AST.arrayToNative(parameters);
+        
+        int numConstructors = constructors.length;
+        long[] constructorsNative = new long[numConstructors];
+        for (int i = 0; i < numConstructors; i++) {
+            constructorsNative[i] = constructors[i].getNativeObject();
+        }
+        
+        long nativeSort = Native.mkPolymorphicDatatype(nCtx(), name.getNativeObject(),
+                numParams, paramsNative, numConstructors, constructorsNative);
+        
+        return new DatatypeSort<>(this, nativeSort);
+    }
+
+    /**
+     * Create a polymorphic (parametric) datatype sort.
+     * A polymorphic datatype is parameterized by type variables, allowing it to
+     * work with different types. This is similar to generic types in programming languages.
+     * 
+     * @param name name of the datatype sort
+     * @param parameters array of type variable sorts to parameterize the datatype
+     * @param constructors array of constructor specifications
+     * @return a new polymorphic datatype sort
+     **/
+    public <R> DatatypeSort<R> mkPolymorphicDatatypeSort(String name, Sort[] parameters, Constructor<R>[] constructors)
+    {
+        return mkPolymorphicDatatypeSort(mkSymbol(name), parameters, constructors);
     }
 
     /**
@@ -2032,7 +2162,7 @@ public class Context implements AutoCloseable {
     public SeqExpr<CharSort> mkString(String s)
     {
         StringBuilder buf = new StringBuilder();
-        for (int i = 0; i < s.length(); ++i) {
+        for (int i = 0; i < s.length(); i += Character.charCount(s.codePointAt(i))) {
             int code = s.codePointAt(i);
             if (code <= 32 || 127 < code) 
                 buf.append(String.format("\\u{%x}", code));
@@ -2179,12 +2309,88 @@ public class Context implements AutoCloseable {
     }
 
     /**
+     * Extract the last index of sub-string.
+     */
+    public final <R extends Sort> IntExpr mkLastIndexOf(Expr<SeqSort<R>> s, Expr<SeqSort<R>> substr)
+    {
+        checkContextMatch(s, substr);
+        return (IntExpr)Expr.create(this, Native.mkSeqLastIndex(nCtx(), s.getNativeObject(), substr.getNativeObject()));
+    }
+
+    /**
+     * Map function f over sequence s.
+     * Returns a new sequence where f is applied to each element of s.
+     */
+    public final <R extends Sort> SeqExpr<R> mkSeqMap(Expr<?> f, Expr<SeqSort<R>> s)
+    {
+        checkContextMatch(f, s);
+        return (SeqExpr<R>) Expr.create(this, Native.mkSeqMap(nCtx(), f.getNativeObject(), s.getNativeObject()));
+    }
+
+    /**
+     * Map function f over sequence s starting at index i.
+     * Returns a new sequence where f is applied to each element of s along with its index starting from i.
+     */
+    public final <R extends Sort> SeqExpr<R> mkSeqMapi(Expr<?> f, Expr<IntSort> i, Expr<SeqSort<R>> s)
+    {
+        checkContextMatch(f, i, s);
+        return (SeqExpr<R>) Expr.create(this, Native.mkSeqMapi(nCtx(), f.getNativeObject(), i.getNativeObject(), s.getNativeObject()));
+    }
+
+    /**
+     * Left fold of function f over sequence s with accumulator a.
+     * Applies f to accumulate values from left to right over the sequence.
+     */
+    public final <R extends Sort, A extends Sort> Expr<A> mkSeqFoldl(Expr<?> f, Expr<A> a, Expr<SeqSort<R>> s)
+    {
+        checkContextMatch(f, a, s);
+        return (Expr<A>) Expr.create(this, Native.mkSeqFoldl(nCtx(), f.getNativeObject(), a.getNativeObject(), s.getNativeObject()));
+    }
+
+    /**
+     * Left fold of function f over sequence s with accumulator a starting at index i.
+     * Applies f to accumulate values from left to right over the sequence, tracking the index starting from i.
+     */
+    public final <R extends Sort, A extends Sort> Expr<A> mkSeqFoldli(Expr<?> f, Expr<IntSort> i, Expr<A> a, Expr<SeqSort<R>> s)
+    {
+        checkContextMatch(f, i, a, s);
+        return (Expr<A>) Expr.create(this, Native.mkSeqFoldli(nCtx(), f.getNativeObject(), i.getNativeObject(), a.getNativeObject(), s.getNativeObject()));
+    }
+
+    /**
      * Replace the first occurrence of src by dst in s.
      */
     public final <R extends Sort> SeqExpr<R> mkReplace(Expr<SeqSort<R>> s, Expr<SeqSort<R>> src, Expr<SeqSort<R>> dst)
     {
         checkContextMatch(s, src, dst);
         return (SeqExpr<R>) Expr.create(this, Native.mkSeqReplace(nCtx(), s.getNativeObject(), src.getNativeObject(), dst.getNativeObject()));
+    }
+
+    /**
+     * Replace all occurrences of src by dst in s.
+     */
+    public final <R extends Sort> SeqExpr<R> mkReplaceAll(Expr<SeqSort<R>> s, Expr<SeqSort<R>> src, Expr<SeqSort<R>> dst)
+    {
+        checkContextMatch(s, src, dst);
+        return (SeqExpr<R>) Expr.create(this, Native.mkSeqReplaceAll(nCtx(), s.getNativeObject(), src.getNativeObject(), dst.getNativeObject()));
+    }
+
+    /**
+     * Replace the first occurrence of regular expression re with dst in s.
+     */
+    public final <R extends Sort> SeqExpr<R> mkReplaceRe(Expr<SeqSort<R>> s, ReExpr<SeqSort<R>> re, Expr<SeqSort<R>> dst)
+    {
+        checkContextMatch(s, re, dst);
+        return (SeqExpr<R>) Expr.create(this, Native.mkSeqReplaceRe(nCtx(), s.getNativeObject(), re.getNativeObject(), dst.getNativeObject()));
+    }
+
+    /**
+     * Replace all occurrences of regular expression re with dst in s.
+     */
+    public final <R extends Sort> SeqExpr<R> mkReplaceReAll(Expr<SeqSort<R>> s, ReExpr<SeqSort<R>> re, Expr<SeqSort<R>> dst)
+    {
+        checkContextMatch(s, re, dst);
+        return (SeqExpr<R>) Expr.create(this, Native.mkSeqReplaceReAll(nCtx(), s.getNativeObject(), re.getNativeObject(), dst.getNativeObject()));
     }
 
     /**
@@ -4207,7 +4413,7 @@ public class Context implements AutoCloseable {
     }
 
     /**
-     * Creates or a partial order.
+     * Creates a partial order.
      * @param index The index of the order.
      * @param sort The sort of the order.
      */
@@ -4218,6 +4424,40 @@ public class Context implements AutoCloseable {
                     nCtx(),
                     sort.getNativeObject(),
                     index
+                )
+        );
+    }
+
+    /**
+     * Create the transitive closure of a binary relation.
+     * The resulting relation is recursive.
+     * @param f function declaration of a binary relation
+     */
+    public final <R extends Sort> FuncDecl<BoolSort> mkTransitiveClosure(FuncDecl<BoolSort> f) {
+        return (FuncDecl<BoolSort>) FuncDecl.create(
+                this,
+                Native.mkTransitiveClosure(
+                    nCtx(),
+                    f.getNativeObject()
+                )
+        );
+    }
+
+    /**
+     * Return the nonzero subresultants of p and q with respect to the "variable" x.
+     * Note that any subterm that cannot be viewed as a polynomial is assumed to be a variable.
+     * @param p arithmetic term
+     * @param q arithmetic term
+     * @param x variable
+     */
+    public final <R extends Sort> ASTVector polynomialSubresultants(Expr<R> p, Expr<R> q, Expr<R> x) {
+        return new ASTVector(
+                this,
+                Native.polynomialSubresultants(
+                    nCtx(),
+                    p.getNativeObject(),
+                    q.getNativeObject(),
+                    x.getNativeObject()
                 )
         );
     }
@@ -4310,6 +4550,14 @@ public class Context implements AutoCloseable {
         checkContextMatch(other1);
         checkContextMatch(other2);
         checkContextMatch(other3);
+    }
+
+    void checkContextMatch(Z3Object other1, Z3Object other2, Z3Object other3, Z3Object other4)
+    {
+        checkContextMatch(other1);
+        checkContextMatch(other2);
+        checkContextMatch(other3);
+        checkContextMatch(other4);
     }
 
     void checkContextMatch(Z3Object[] arr)
