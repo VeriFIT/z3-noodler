@@ -1334,7 +1334,7 @@ namespace smt::noodler::ecma {
         }
 
         // Create chains with (min, min+1, ..., max) subtrees and alternate them all.
-        const uint64_t start = std::max(1ul, m_range.min);
+        const uint64_t start = std::max<uint64_t>(1, m_range.min);
         for (uint64_t k = start; k <= m_range.max; ++k) {
             auto alt = std::make_unique<ASTNodeAlternative>();
             for (uint64_t i = 0; i < k; ++i) {
