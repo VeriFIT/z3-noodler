@@ -2153,7 +2153,7 @@ namespace smt::noodler::ecma {
         for (expr* c : final_constraints) {
             conjunction.push_back(c);
         }
-        m_unique_paths.push_back(m_manager.mk_and(conjunction.size(), conjunction.data()));
+        m_unique_paths.push_back(m_manager.mk_and(conjunction));
     }
 
     expr_ref DFSContext::concat_expr_vector(const expr_ref_vector& vars, const uint32_t start_idx,
