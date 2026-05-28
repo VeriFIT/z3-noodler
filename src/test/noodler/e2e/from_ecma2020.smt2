@@ -1,4 +1,5 @@
 (set-logic QF_S)
+(set-info :status sat)
 
 (declare-const w String)
 
