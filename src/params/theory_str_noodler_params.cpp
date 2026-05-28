@@ -16,6 +16,7 @@ void theory_str_noodler_params::updt_params(params_ref const & _p) {
     m_try_unary_proc = p.str_try_unary_proc();
     m_underapprox_length = p.str_underapprox_length();
     m_ca_constr = p.str_ca_constr();
+    m_ecma_engine_semantics = p.str_ecma_engine_semantics();
     m_postpone_diseqs_stabilization = p.str_postpone_diseqs_stabilization();
     m_try_premature_len_checks = p.str_try_premature_length_checks();
     m_enable_warnings = p.str_enable_warnings();
@@ -37,6 +38,7 @@ void theory_str_noodler_params::display(std::ostream & out) const {
     DISPLAY_PARAM(m_underapprox_length);
     DISPLAY_PARAM(m_produce_models);
     DISPLAY_PARAM(m_ca_constr);
+    DISPLAY_PARAM(m_ecma_engine_semantics);
     DISPLAY_PARAM(m_postpone_diseqs_stabilization);
     DISPLAY_PARAM(m_enable_warnings);
 }

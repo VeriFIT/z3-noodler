@@ -114,8 +114,13 @@ CppProperties.json
 test-input
 genaisrc/genblogpost.genai.mts
 *.mts
+.cache/
+.idea/
 # Bazel generated files
 bazel-*
+
+# test files
+ecma_automated_tests/
 # Local issue tracking
 .beads
 .claude
