@@ -28,8 +28,6 @@ namespace smt::noodler::regex {
     using expr_pair = std::pair<expr_ref, expr_ref>;
     using expr_pair_flag = std::tuple<expr_ref, expr_ref, bool>;
 
-    // bound for loop (above this number an optimized construction is used)
-    const unsigned LOOP_BOUND = 5000;
     // simulation reduction bound in states (bigger automata are not reduced)
     const unsigned RED_BOUND = 1000;
 
@@ -175,15 +173,6 @@ namespace smt::noodler::regex {
      * @return RegexInfo 
      */
     RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s);
-
-    /**
-     * @brief Create bounded iteration of a given automaton. 
-     * 
-     * @param body_nfa Core NFA
-     * @param count Number of concatenations
-     * @return mata::nfa::Nfa NFA
-     */
-    mata::nfa::Nfa create_large_concat(const mata::nfa::Nfa& body_nfa, unsigned count);
 
     /**
      * @brief Get the sum of loops of a regex (loop inside a loop is multiplied)

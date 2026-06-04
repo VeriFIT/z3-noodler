@@ -411,14 +411,35 @@ namespace smt::noodler {
         }
 
         /**
-         * @brief Check if the automaton corresponding to @p t is flat. 
-         * Flat automaton is an NFA whose every SCC is a simple loop. Basically each state in an 
+         * @brief Check if the automaton corresponding to @p t is flat.
+         * Flat automaton is an NFA whose every SCC is a simple loop. Basically each state in an
          * SCC has at most one successor within this SCC.
-         * 
-         * @param t Term 
+         *
+         * @param t Term
          * @return true <-> the corresponding automaton is flat
          */
         bool is_flat(const BasicTerm& t) const;
+
+        /**
+         * @brief If the language of @p t is of the form w* for some non-empty word w,
+         * return the base word w; otherwise return std::nullopt.
+         *
+         * Minimizes and trims the automaton for @p t, then checks whether it is a simple
+         * cycle whose unique initial state is also the unique final state.  If so, the
+         * symbols along the cycle give the base word w.
+         *
+         * @param t Term
+         * @return The base word w such that L(t) = w*, or std::nullopt if not applicable.
+         */
+        std::optional<mata::Word> get_word_power_base(const BasicTerm& t) const;
+
+        /**
+         * @brief Check if the language of @p t is of the form w* for some non-empty word w.
+         *
+         * @param t Term
+         * @return true iff L(t) = w* for some non-empty word w
+         */
+        bool is_lang_word_power(const BasicTerm& t) const { return get_word_power_base(t).has_value(); }
 
     };
 

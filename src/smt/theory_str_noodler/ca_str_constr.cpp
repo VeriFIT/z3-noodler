@@ -752,6 +752,40 @@ namespace smt::noodler::ca {
         return result;
     }
 
+    /**
+     * @brief Heuristic for not-contains when every variable's language is of the form w* for some word w.
+     *
+     * If all variables occurring in @p not_contains_predicates have a language of the form w* (a simple
+     * word-power language) and all share the same base word w, then not-contains(haystack, needle)
+     * is equivalent to |needle| > |haystack| (since haystack = w^k and needle = w^j, and w^j is a substring
+     * of w^k iff j <= k).
+     *
+     * @return The formula |needle| > |haystack| if the heuristic applies, or std::nullopt otherwise.
+     */
+    std::optional<LenNode> try_notcontains_word_power_heuristic(const std::vector<Predicate>& not_contains_predicates, const AutAssignment& aut_assignment) {
+        // Require every variable across all predicates to be a power of the *same* base word w.
+        // Under this condition not-contains(haystack, needle) holds iff |needle| > |haystack|:
+        // haystack = w^k, needle = w^j, and w^j is a substring of w^k iff j <= k.
+        std::optional<mata::Word> common_base;
+
+        std::set<BasicTerm> used_terms;
+        for (const Predicate& pred : not_contains_predicates) {
+            used_terms.insert(pred.get_haystack().begin(), pred.get_haystack().end());
+            used_terms.insert(pred.get_needle().begin(), pred.get_needle().end());
+        }
+
+        for (const BasicTerm& t : used_terms) {
+            if (!aut_assignment.contains(t)) return std::nullopt;
+            auto base = aut_assignment.get_word_power_base(t);
+            if (!base.has_value()) return std::nullopt;
+            if (!common_base.has_value()) common_base = base;
+            else if (*common_base != *base) return std::nullopt;
+        }
+
+        if (!common_base.has_value()) return std::nullopt;
+        return try_making_rhs_longer_than_lhs(not_contains_predicates, aut_assignment);
+    }
+
     std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& formula, const AutAssignment& var_assignment, bool use_tag_proc) {
         if (formula.get_predicates().empty()) {
             return { LenNode(LenFormulaType::TRUE), LenNodePrecision::PRECISE };
@@ -776,6 +810,15 @@ namespace smt::noodler::ca {
             std::optional<LenNode> heuristic_solution = try_solving_notcontains_with_finite_rhs({not_contains_with_literals}, actual_var_assignment);
             if (heuristic_solution.has_value()) {
                 return { heuristic_solution.value(), LenNodePrecision::PRECISE };
+            }
+
+            // Word-power heuristic: if every variable's language is w* for some word w,
+            // not-contains(haystack, needle) holds whenever |needle| > |haystack|.
+            const std::vector<Predicate>& all_predicates = formula.get_predicates();
+            std::optional<LenNode> word_power_solution = try_notcontains_word_power_heuristic(all_predicates, actual_var_assignment);
+            if (word_power_solution.has_value()) {
+                STRACE(str_not_contains, tout << "* Word-power heuristic applied: returning |needle| > |haystack|\n";);
+                return { word_power_solution.value(), LenNodePrecision::PRECISE };
             }
         }
 

@@ -326,17 +326,8 @@ namespace smt::noodler::regex {
                         body_nfa.unify_initial();
 
                         body_nfa = mata::nfa::reduce(body_nfa);
-                        result = mata::nfa::builder::create_empty_string_nfa();
-                    
-                        if(low >= LOOP_BOUND) {
-                            result = create_large_concat(body_nfa, low);
-                        } else {
-                            // we need to repeat body_nfa at least low times
-                            for (unsigned i = 0; i < low; ++i) {
-                                result.concatenate(body_nfa);
-                                result.trim();
-                            }
-                        }
+                        result = mata::nfa::concatenate_nth_power(body_nfa, low);
+                        result.trim();
 
                         // we will now either repeat body_nfa high-low times (if is_high_set) or
                         // unlimited times (if it is not set), but we have to accept after each loop,
@@ -347,13 +338,12 @@ namespace smt::noodler::regex {
 
                         body_nfa.unify_initial();
                         body_nfa = mata::nfa::reduce(body_nfa);
+                        body_nfa.trim();
 
                         if (is_high_set) {
                             // if high is set, we repeat body_nfa another high-low times
-                            for (unsigned i = 0; i < high - low; ++i) {
-                                result.concatenate(body_nfa);
-                                result.trim();
-                            }
+                            result.concatenate(concatenate_nth_power(std::move(body_nfa), high - low));
+                            result.trim();
                         } else {
                             // if high is not set, we can repeat body_nfa unlimited more times
                             // so we do star operation on body_nfa and add it to end of nfa
@@ -681,29 +671,6 @@ namespace smt::noodler::regex {
             util::throw_error("unsupported operation in regex");
         }
         return RegexInfo{.min_length = 0, .universal = l_undef, .empty = l_undef};
-    }
-
-    mata::nfa::Nfa create_large_concat(const mata::nfa::Nfa& body_nfa, unsigned count) {
-        mata::nfa::Nfa nfa_part = mata::nfa::builder::create_empty_string_nfa();
-        mata::nfa::Nfa nfa = mata::nfa::builder::create_empty_string_nfa();
-        const unsigned CONCAT = 100;
-
-        for(unsigned i = 0; i < CONCAT; i++) {
-            nfa_part.concatenate(body_nfa);
-            nfa_part.trim();
-        }
-        unsigned cnt = 0;
-        for(unsigned i = 0; i < count / CONCAT; i++) {
-            nfa.concatenate(nfa_part);
-            nfa.trim();
-            cnt += CONCAT;
-        }
-        for(; cnt <= count; cnt++) {
-            nfa.concatenate(body_nfa);
-            nfa.trim();
-        }
-
-        return nfa;
     }
 
     unsigned get_loop_sum(const app* reg, const seq_util& m_util_s) {

@@ -24,7 +24,7 @@ If Mata is not found on your system, it will be **automatically fetched and buil
 
 However, if you plan to **develop or frequently rebuild Z3-Noodler**, it is recommended to install Mata manually. This avoids repeatedly downloading and rebuilding Mata and significantly speeds up development workflows.
 
-The minimum required Mata version is `v1.32.0`.
+The minimum required Mata version is `v1.32.7`.
 
 To install mata, run:
 ```shell
