@@ -13,6 +13,7 @@ Eternal glory to Yu-Fang.
 #include "smt/theory_lra.h"
 #include "smt/theory_arith.h"
 #include "smt/smt_context.h"
+#include "ast/expr_abstract.h"
 #include "ast/seq_decl_plugin.h"
 #include "ast/reg_decl_plugins.h"
 #include "theory_str_noodler.h"
@@ -2167,13 +2168,70 @@ namespace smt::noodler {
                tout << mk_pp(ecma_formula.get(), m) << std::endl;
                tout << ";; ----------------------------------" << std::endl;);
 
-        m_rewrite(ecma_formula);
+        // Two separate axioms encode the biconditional e ↔ ∃fresh.C(x,fresh) without ever
+        // passing a quantified formula to Noodler's string solver:
+        //
+        // (1) Positive axiom  e → C(x,sko1,...,skn)
+        //     Ground implication with Skolem constants.  When e is true, Noodler processes
+        //     the auxiliary string variables directly, exactly as it does for ordinary Skolem
+        //     witnesses.  No quantifier machinery is involved.
+        //
+        // (2) Negative axiom  (∃fresh.C(x,fresh)) → e
+        //     m_rewrite is applied to the ∃ form before adding the axiom:
+        //       - When x is concrete or constrained enough, the rewriter evaluates the
+        //         existential to true/false and the implication becomes a ground axiom.
+        //         E.g. "(a)\1" + x="aa"  →  true → e  (forces e=true, so ¬e is UNSAT).
+        //       - When the rewriter cannot eliminate the quantifier (e.g. "(a*)\1" with free x),
+        //         the implication  ∃y.C → e  is still trivially satisfied at the propositional
+        //         level whenever e is already assigned true, so no quantifier instantiation is
+        //         triggered for the positive case, preserving Noodler's performance.
+        //         For the negative case Z3's quantifier engine handles it.
+        //
+        // For purely regular patterns (no auxiliary variables) the exact ground biconditional
+        // is used directly.
+        const app_ref_vector& fresh_vars = builder.get_fresh_vars();
+        if (fresh_vars.empty()) {
+            m_rewrite(ecma_formula);
+            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified) ---" << std::endl;
+                   tout << mk_pp(ecma_formula.get(), m) << std::endl;
+                   tout << ";; ----------------------------------" << std::endl;);
+            add_axiom(expr_ref(m.mk_iff(e, ecma_formula), m));
+        } else {
+            // (1) Positive axiom: e → C_ground(x, sko1,...,skon)
+            expr_ref pos_formula = ecma_formula;
+            m_rewrite(pos_formula);
+            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified, positive) ---" << std::endl;
+                   tout << mk_pp(pos_formula.get(), m) << std::endl;
+                   tout << ";; ----------------------------------" << std::endl;);
+            add_axiom(expr_ref(m.mk_implies(e, pos_formula), m));
 
-        STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified) ---" << std::endl;
-               tout << mk_pp(ecma_formula.get(), m) << std::endl;
-               tout << ";; ----------------------------------" << std::endl;);
+            // (2) Negative axiom: e ∨ ∀fresh.¬C(x,fresh)  (equivalently (∃fresh.C)→e)
+            //
+            // Z3's add_axiom only supports mk_forall quantifiers (internalize_quantifier
+            // asserts gate_ctx and rejects existentials).  Strategy:
+            //   - First try mk_exists + m_rewrite.  When x is concrete enough the rewriter
+            //     evaluates the existential (e.g. "aa" matches (a)\1 → true), yielding a
+            //     ground formula whose negation gives a cheap ground axiom.
+            //   - If the existential survives rewriting, fall back to the forall form which
+            //     add_axiom can handle.  When e is already true at the propositional level
+            //     the clause "e ∨ forall" is trivially satisfied without quantifier evaluation,
+            //     so the positive case stays free of quantifier overhead.
+            expr_ref exists_formula = mk_exists(m, fresh_vars.size(), fresh_vars.data(), ecma_formula);
+            m_rewrite(exists_formula);
+            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified, negative) ---" << std::endl;
+                   tout << mk_pp(exists_formula.get(), m) << std::endl;
+                   tout << ";; ----------------------------------" << std::endl;);
 
-        add_axiom(expr_ref(m.mk_iff(e, ecma_formula), m));
+            if (!is_quantifier(exists_formula.get())) {
+                // Existential evaluated to a ground formula F; add  e ∨ ¬F.
+                add_axiom(expr_ref(m.mk_or(e, m.mk_not(exists_formula)), m));
+            } else {
+                // Existential survived: use the forall form  e ∨ ∀fresh.¬C.
+                expr_ref forall_neg = mk_forall(m, fresh_vars.size(), fresh_vars.data(),
+                                                expr_ref(m.mk_not(ecma_formula), m));
+                add_axiom(expr_ref(m.mk_or(e, forall_neg), m));
+            }
+        }
     }
 
     void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {

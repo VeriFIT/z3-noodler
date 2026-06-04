@@ -1,6 +1,7 @@
 #include "ecma_regex.h"
 
 #include "ast/ast.h"
+#include "ast/expr_abstract.h"
 #include "ast/seq_decl_plugin.h"
 #include "util.h"
 #include "util/debug.h"
@@ -2093,8 +2094,14 @@ namespace smt::noodler::ecma {
         return m_unique_paths;
     }
 
-    app_ref DFSContext::mk_fresh_string_var() const {
-        return {m_manager.mk_fresh_const("ecma_re", m_str_sort), m_manager};
+    app_ref DFSContext::mk_fresh_string_var() {
+        app_ref var(m_manager.mk_fresh_const("ecma_re", m_str_sort), m_manager);
+        m_all_created_vars.push_back(var);
+        return var;
+    }
+
+    const app_ref_vector& DFSContext::get_all_fresh_vars() const {
+        return m_all_created_vars;
     }
 
     app_ref DFSContext::create_edge_var() {
@@ -2378,14 +2385,28 @@ namespace smt::noodler::ecma {
 
         // OR all the paths that were generated along the graph traversal
         expr_ref_vector& unique_paths = ctx.get_unique_paths();
+        expr_ref result(m_manager);
         if (unique_paths.empty()) {
-            return {m_manager.mk_false(), m_manager};
-        }
-        if (unique_paths.size() == 1) {
+            result = {m_manager.mk_false(), m_manager};
+        } else if (unique_paths.size() == 1) {
             SASSERT(is_expr(unique_paths.get(0)));
-            return {unique_paths.get(0), m_manager};
+            result = {unique_paths.get(0), m_manager};
+        } else {
+            result = {m_manager.mk_or(unique_paths), m_manager};
         }
-        return {m_manager.mk_or(unique_paths), m_manager};
+
+        // Snapshot the fresh Skolem variables for the caller (used to build the existentially quantified form
+        // for the negative implication -- see handle_ecma_re in theory_str_noodler.cpp).
+        m_fresh_vars.reset();
+        for (unsigned i = 0; i < ctx.get_all_fresh_vars().size(); i++) {
+            m_fresh_vars.push_back(ctx.get_all_fresh_vars().get(i));
+        }
+
+        return result;
+    }
+
+    const app_ref_vector& RegexConstraintBuilder::get_fresh_vars() const {
+        return m_fresh_vars;
     }
 
     expr_ref RegexConstraintBuilder::run_inner_rcg_dfs(const GraphFragment& fragment, app* target_string,

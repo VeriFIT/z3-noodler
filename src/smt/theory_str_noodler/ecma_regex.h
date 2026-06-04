@@ -805,7 +805,8 @@ namespace smt::noodler::ecma {
               m_base_prefix(manager),
               m_unique_paths(manager),
               m_current_path_vars(manager),
-              m_current_path_constraints(manager) { }
+              m_current_path_constraints(manager),
+              m_all_created_vars(manager) { }
 
         void set_target(app* target);
         app* get_target() const;
@@ -854,9 +855,21 @@ namespace smt::noodler::ecma {
         /**
          * @brief Create a fresh string variable without adding it to the path.
          *
+         * The variable is also tracked in the internal list of all created fresh variables so it can later
+         * be existentially quantified over in the generated formula.
+         *
          * @return app_ref The new string variable.
          */
-        app_ref mk_fresh_string_var() const;
+        app_ref mk_fresh_string_var();
+
+        /**
+         * @brief Return all fresh string variables created during the entire DFS (including inner DFS runs).
+         *
+         * Used to existentially quantify over all auxiliary variables introduced during constraint generation.
+         *
+         * @return app_ref_vector The list of all created fresh variables.
+         */
+        const app_ref_vector& get_all_fresh_vars() const;
 
         /**
          * @brief Create a fresh string variable for the current edge and append it to the path variable list.
@@ -979,6 +992,10 @@ namespace smt::noodler::ecma {
         std::unordered_map<GroupID, expr_ref_vector> m_group_vars;
         std::vector<ActiveLookahead> m_active_lookaheads;
 
+        // Accumulates every fresh variable created via mk_fresh_string_var() across the entire DFS (including inner
+        // DFS runs for lookarounds). Used to existentially quantify over auxiliary variables in the final formula.
+        app_ref_vector m_all_created_vars;
+
         expr_ref concat_expr_vector(const expr_ref_vector& vars, uint32_t start_idx, uint32_t end_idx) const;
     };
 
@@ -1002,7 +1019,8 @@ namespace smt::noodler::ecma {
               m_manager(m),
               m_params(params),
               m_util_s(m),
-              m_str_sort(m_util_s.mk_string_sort()) { }
+              m_str_sort(m_util_s.mk_string_sort()),
+              m_fresh_vars(m) { }
 
         /**
          * @brief Build the Regex Constraint Graph (RCG) from the regex pattern.
@@ -1023,11 +1041,22 @@ namespace smt::noodler::ecma {
         /**
          * @brief Generate constraints for the given target string based on the RCG built from the regex pattern.
          *
+         * Returns a ground formula whose auxiliary (fresh) string variables are Skolem constants. The list of those
+         * constants is available via get_fresh_vars() after this call returns.
+         *
          * @param target_string The string for which the regex constraints are to be generated.
-         * @return expr_ref A Z3 expression representing the constraints that the target string must satisfy to match
-         * the regex pattern.
+         * @return expr_ref A ground Z3 expression that is satisfiable iff target matches the regex pattern.
          */
         expr_ref generate_constraints(app* target_string);
+
+        /**
+         * @brief Return the fresh Skolem variables introduced during the last generate_constraints() call.
+         *
+         * Used by the caller to build the existentially-quantified form needed for the negative implication.
+         *
+         * @return const app_ref_vector& All fresh variables created during DFS (including inner DFS for lookarounds).
+         */
+        const app_ref_vector& get_fresh_vars() const;
 
     private:
         zstring m_sanitized_regex_storage; 
@@ -1041,6 +1070,9 @@ namespace smt::noodler::ecma {
 
         // used by anchor evaluation -- ^ and $ compare against the full original target string
         app* m_global_target_string = nullptr;
+
+        // Populated by generate_constraints(); holds every fresh Skolem constant introduced during DFS.
+        app_ref_vector m_fresh_vars;
 
         /**
          * @brief Run an inner DFS on a subgraph to evaluate a non-regular lookaround.
