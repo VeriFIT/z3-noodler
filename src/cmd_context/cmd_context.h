@@ -34,6 +34,7 @@ Notes:
 #include "ast/recfun_decl_plugin.h"
 #include "ast/rewriter/seq_rewriter.h"
 #include "ast/rewriter/var_subst.h"
+#include "ast/rewriter/input_rewriter.h"
 #include "ast/converters/generic_model_converter.h"
 #include "solver/solver.h"
 #include "solver/check_logic.h"
@@ -288,6 +289,7 @@ protected:
     std::vector<std::string>     m_assertion_strings;
     ptr_vector<expr>             m_assertion_names; // named assertions are represented using boolean variables.
     scoped_ptr<var_subst>        m_std_subst, m_rev_subst;
+    scoped_ptr<input_rewriter>   m_input_rewriter;
     simplifier_factory           m_simplifier_factory;
 
     struct scope {
@@ -439,6 +441,7 @@ public:
 
     void set_solver_factory(solver_factory * s);
     void set_simplifier_factory(simplifier_factory& sf) { m_simplifier_factory = sf; }
+    void init_input_rewriter();
     void set_check_sat_result(check_sat_result * r) { m_check_sat_result = r; }
     check_sat_result * get_check_sat_result() const { return m_check_sat_result.get(); }
     check_sat_state cs_state() const;
