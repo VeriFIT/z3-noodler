@@ -20,19 +20,10 @@ Abstract:
  * \brief Input rewriter: applies rewrite rules only to expressions loaded from input.
  *
  * This class is designed to be used at expression load time (in cmd_context::assert_expr)
- * to rewrite expressions exactly once when they are parsed from input. This prevents
- * rewriting overhead during the solving process since expressions created internally
- * during solving will not be rewritten.
- *
- * Usage:
- *   input_rewriter rewriter(manager);
- *   expr_ref input_expr = ...;  // expression from parsed input
- *   rewriter.rewrite_input(input_expr);
- *
- * To add custom input-only rewriting rules:
- *   1. Add a method to apply your custom rules
- *   2. Call it from rewrite_input() when appropriate parameter is set
- *   3. Extend this class for domain-specific rewriting
+ * to rewrite expressions exactly once when they are parsed from input. This allows to
+ * define rules that should not be used for rewriting internal formulas, such as a rule
+ * to replace (= (str.to_code x) 100) with (= x "d"), which would cause problems for
+ * noodler string solver if it was applied always.
  */
 class input_rewriter {
 protected:
