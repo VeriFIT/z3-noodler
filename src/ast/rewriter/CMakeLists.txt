@@ -25,6 +25,7 @@ z3_add_component(rewriter
     fpa_rewriter.cpp
     func_decl_replace.cpp
     inj_axiom.cpp
+    input_rewriter.cpp
     label_rewriter.cpp
     macro_replacer.cpp
     maximize_ac_sharing.cpp

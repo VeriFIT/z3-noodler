@@ -54,4 +54,7 @@ public:
      * \param e  The expression to rewrite
      */
     expr_ref rewrite_input(expr* e);
+
+private:
+    std::optional<expr_ref> rewrite_to_code(expr* e);
 };
