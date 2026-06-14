@@ -225,10 +225,6 @@ namespace smt::noodler {
          * @brief Add special axioms for conversions.
          */
         void add_conversion_num_axioms();
-        /**
-         * @brief Add special axioms for length (in)equations.
-         */
-        bool add_len_num_axioms(expr* ex);
 
         /**
          * @brief Get concatenation of e1 and e2

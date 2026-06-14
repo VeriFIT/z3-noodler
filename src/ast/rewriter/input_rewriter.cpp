@@ -1,21 +1,82 @@
-/*++
-Copyright (c) 2026 Microsoft Corporation
+#include <unordered_set>
 
-Module Name:
-
-    input_rewriter.cpp
-
-Abstract:
-
-    Rewriter for processing expressions only when they are loaded from input.
-
-Author:
-
-    Z3 Team 2026
-
---*/
 #include "ast/rewriter/input_rewriter.h"
 #include "smt/theory_str_noodler/expr_cases.h"
+
+/**
+ * @brief Add special axioms for length (in)equations. In particular
+ * - for (len s) == 10 create s \in \Sigma^10
+ * - for (len s) <= 10 create s \in re.loop(0, 10)
+ * - for 10 <= (len s) create s \in re.loop(10, \inf)
+ * (len s) can be potentially any LIA formula where the "variables" are length constraints and there is no minus
+ */
+std::optional<expr_ref> input_rewriter::rewrite_len(expr* e) {
+    // number bound for the conversion of length constraints into regex constraints.
+    // For higher values this conversion could not be beneficial as we would work with 
+    // big automata in the decision procedure.
+    const int MAX_NUM = 64; 
+    const unsigned MAX_VARS = 4;
+
+    expr_ref full_char(m_util_s.re.mk_full_char(m_util_s.re.mk_re(m_util_s.mk_string_sort())), m);
+    auto create_and_of_equals_to_empty_string = [this](expr_ref_vector& len_vars_with_repetition) {
+        std::unordered_set<expr*> used_len_vars;
+        expr_ref_vector eqs(m);
+        for (expr* var : len_vars_with_repetition) {
+            if (!used_len_vars.contains(var)) {
+                eqs.push_back(m.mk_eq(var, m_util_s.str.mk_string(zstring())));
+                used_len_vars.insert(var);
+            }
+        }
+        return expr_ref(m.mk_and(eqs), m);
+    };
+
+    rational val;
+    bool val_is_larger;
+    expr_ref_vector len_arg(m);
+    if (smt::noodler::expr_cases::is_len_num_eq(e, m, m_util_s, m_util_a, len_arg, val) && val < MAX_NUM) {
+        if (val < 0) {
+            // The sum of lengths should be equal to negative number, which is not possible.
+            return expr_ref(m.mk_false(), m);
+        } else if (val == 0) {
+            // we know that concatenation of vars in len_arg must be empty string,
+            // which means every variable in len_arg must be equal to empty string
+            create_and_of_equals_to_empty_string(len_arg);
+        } else if (len_arg.size() <= MAX_VARS) {
+            expr_ref re(full_char, m);
+            for(rational i{1}; i < val; i++) {
+                re = m_util_s.re.mk_concat(re, full_char);
+            }
+            return expr_ref(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
+        }
+    } else if (smt::noodler::expr_cases::is_len_num_leq_or_geq(e, m, m_util_s, m_util_a, len_arg, val, val_is_larger) && val < MAX_NUM) {
+        if (val < 0) {
+            if (val_is_larger) {
+                // The sum of lengths should be less than or equal than negative number, which is not possible.
+                return expr_ref(m.mk_false(), m);
+            } else {
+                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger than minus number -> it is useless
+                return expr_ref(m.mk_true(), m);
+            }
+        } else if (val == 0) {
+            if (val_is_larger) {
+                // the sum of lengths <= 0 --> every var must be equal to empty string
+                create_and_of_equals_to_empty_string(len_arg);
+            } else {
+                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger or equal than 0 -> it is useless
+                return expr_ref(m.mk_true(), m);
+            }
+        } else if (len_arg.size() <= MAX_VARS) {
+            expr_ref re(
+                val_is_larger ? 
+                    m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
+                    m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(val)),
+                m
+            );
+            return expr_ref(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
+        }
+    }
+    return std::nullopt;
+}
 
 std::optional<expr_ref> input_rewriter::rewrite_to_code(expr* e) {
     expr_ref full_char(m_util_s.re.mk_full_char(m_util_s.re.mk_re(m_util_s.mk_string_sort())), m);
@@ -96,6 +157,7 @@ std::optional<expr_ref> input_rewriter::rewrite_to_code(expr* e) {
 
 expr_ref input_rewriter::rewrite_input(expr* e) {
     if (auto res = rewrite_to_code(e); res) { return *res; }
+    else if (auto res = rewrite_len(e); res) { return *res; }
     else { return expr_ref(e, m); }
 }
 

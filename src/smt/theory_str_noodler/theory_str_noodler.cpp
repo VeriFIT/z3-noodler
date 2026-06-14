@@ -141,15 +141,16 @@ namespace smt::noodler {
             STRACE(str_init_formula, tout << "Initial asserted formula " << i << ": " << expr_ref(ctx.get_asserted_formula(i), m) << std::endl;);
             expr *ex = ctx.get_asserted_formula(i);
             this->input_has_quantifiers |= util::has_quantifiers(m, ex);
-            if (!add_len_num_axioms(ex)) {
-                obj_hashtable<app> lens;
-                util::get_len_exprs(ctx.get_asserted_formula(i), m_util_s, m, lens);
-                for (app* const a : lens) {
-                    expr* len_arg;
-                    VERIFY(m_util_s.str.is_length(a, len_arg));
-                    mark_expression_as_length(len_arg);
-                }
+
+            // find (str.len e) expressions and mark e as length-aware (for decision procedure)
+            obj_hashtable<app> lens;
+            util::get_len_exprs(ctx.get_asserted_formula(i), m_util_s, m, lens);
+            for (app* const a : lens) {
+                expr* len_arg;
+                VERIFY(m_util_s.str.is_length(a, len_arg));
+                mark_expression_as_length(len_arg);
             }
+
             ctx.mark_as_relevant(ex);
             string_theory_propagation(ex, true, false);  
         }
@@ -2231,75 +2232,6 @@ namespace smt::noodler {
             }
         }
     }
-
-    /**
-     * @brief Add special axioms for length (in)equations. In particular
-     * - for (len s) == 10 create (len s) == 10 -> s \in \Sigma^10
-     * - for (len s) <= 10 create (len s) <= 10 -> s \in re.loop(0, 10)
-     * - for 10 <= (len s) create 10 <= (len s) -> s \in re.loop(10, \inf)
-     * (len s) can be potentially any LIA formula where the "variables" are length constraints and there is no minus
-     */
-    bool theory_str_noodler::add_len_num_axioms(expr* ex) {
-        // number bound for the conversion of length constraints into regex constraints.
-        // For higher values this conversion could not be beneficial as we would work with 
-        // big automata in the decision procedure.
-        const int MAX_NUM = 64; 
-        const unsigned MAX_VARS = 4;
-        rational val;
-        bool val_is_larger;
-        expr_ref_vector len_arg(m);
-        if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val < MAX_NUM) {
-            if (val < 0) {
-                // The sum of lengths should be equal negative number, which is not possible.
-                // We cannot use the following line (that says this equation cannot hold), as it becomes inconsistent for Z3 (see https://github.com/VeriFIT/z3-noodler/issues/242),
-                // instead it will be handled by the axioms saying that lengths need to be nonnegative.
-                // add_axiom({~mk_literal(ex)});
-                return true;
-            } else if (val == 0) {
-                // we know that concatenation of vars in len_arg must be empty string,
-                // but it doesn't work for some reason, it resulted in some unknowns
-                // even though decision procedure finished, so we better give up
-                return false;
-            } else if (len_arg.size() <= MAX_VARS) {
-                expr_ref re(m_util_s.re.mk_full_char(nullptr), m);
-                for(rational i{1}; i < val; i++) {
-                    re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
-                }
-                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
-                add_axiom({~mk_literal(ex), mk_literal(in_re)});
-                return true;
-            }
-        } else if(expr_cases::is_len_num_leq_or_geq(ex, m, m_util_s, m_util_a, len_arg, val, val_is_larger) && val < MAX_NUM) {
-            if (val < 0) {
-                if (val_is_larger) {
-                    // The sum of lengths should be less than or equal than negative number, which is not possible.
-                    // We cannot use the following line (that says this inequation cannot hold), as it becomes inconsistent for Z3 (see https://github.com/VeriFIT/z3-noodler/issues/242),
-                    // instead it will be handled by the axioms saying that lengths need to be nonnegative.
-                    // add_axiom({~mk_literal(ex)});
-                }
-                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger than minus number -> it is useless
-                return true;
-            } else if (val == 0) {
-                if (val_is_larger) {
-                    return false;
-                }
-                // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger or equal than 0 -> it is useless
-                return true;
-            } else if (len_arg.size() <= MAX_VARS) {
-                expr_ref re(
-                    val_is_larger ? 
-                        m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
-                        m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(val)),
-                    m
-                );
-                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
-                add_axiom({~mk_literal(ex), mk_literal(in_re)});
-                return true;
-            }
-        }
-        return false;
-    }
-
 
     /**
      * @brief Handle to_code, from_code, to_int, from_int
