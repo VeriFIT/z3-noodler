@@ -12,8 +12,6 @@ Abstract:
 --*/
 #pragma once
 
-#include <optional>
-
 #include "ast/ast.h"
 #include "ast/seq_decl_plugin.h"
 #include "ast/arith_decl_plugin.h"
@@ -50,5 +48,4 @@ public:
 
 private:
     std::optional<expr_ref> rewrite_to_code(expr* e);
-    std::optional<expr_ref> rewrite_len(expr* e);
 };
