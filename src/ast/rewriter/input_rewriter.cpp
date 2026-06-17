@@ -17,6 +17,7 @@ Author:
 #include "ast/rewriter/input_rewriter.h"
 #include "smt/theory_str_noodler/expr_cases.h"
 
+/// Rewrites <, <=, >, >=, ==, !=, where one side is str.to_code and other a numeral to str.in_re predicate
 std::optional<expr_ref> input_rewriter::rewrite_to_code(expr* e) {
     expr_ref full_char(m_util_s.re.mk_full_char(m_util_s.re.mk_re(m_util_s.mk_string_sort())), m);
     expr_ref not_full_char(m_util_s.re.mk_complement(full_char), m);
@@ -94,8 +95,21 @@ std::optional<expr_ref> input_rewriter::rewrite_to_code(expr* e) {
     }
 }
 
+/// For n = to_int(x) generate n = to_int(x) -> x \in 0*to_string(n)).
+std::optional<expr_ref> input_rewriter::rewrite_to_int(expr *e) {
+    expr* to_int_arg;
+    rational val;
+    if(smt::noodler::expr_cases::is_to_int_num_eq(e, m, m_util_s, m_util_a, to_int_arg, val) && val.is_nonneg()) {
+        expr_ref re(m_util_s.re.mk_concat(m_util_s.re.mk_star(m_util_s.re.mk_to_re(m_util_s.str.mk_string("0"))), m_util_s.re.mk_to_re(m_util_s.str.mk_string(val.to_string()))), m);
+        return expr_ref(m_util_s.re.mk_in_re(to_int_arg, re), m);
+    }
+
+    return std::nullopt;
+}
+
 expr_ref input_rewriter::rewrite_input(expr* e) {
     if (auto res = rewrite_to_code(e); res) { return *res; }
+    if (auto res = rewrite_to_int(e); res) { return *res; }
     else { return expr_ref(e, m); }
 }
 

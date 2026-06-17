@@ -48,4 +48,5 @@ public:
 
 private:
     std::optional<expr_ref> rewrite_to_code(expr* e);
+    std::optional<expr_ref> rewrite_to_int(expr *e);
 };
