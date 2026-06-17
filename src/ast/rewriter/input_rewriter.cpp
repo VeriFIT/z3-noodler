@@ -114,7 +114,7 @@ std::optional<expr_ref> input_rewriter::rewrite_to_int(expr *e) {
     expr* to_int_arg;
     rational num;
     bool is_num_larger, is_eq;
-    if (smt::noodler::expr_cases::is_to_code_leq_or_geq(e, m, m_util_s, m_util_a, to_int_arg, num, is_num_larger)) {
+    if (smt::noodler::expr_cases::is_to_int_leq_or_geq(e, m, m_util_s, m_util_a, to_int_arg, num, is_num_larger)) {
         if (is_num_larger) {
             // (str.to_int to_int_arg) <= num
             if (num < -1) {
