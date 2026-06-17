@@ -104,10 +104,10 @@ std::optional<expr_ref> input_rewriter::rewrite_to_int(expr *e) {
     // .*[^0-9].*
     expr_ref non_valid_number_regex(
                 m_util_s.re.mk_concat(
-                    m_util_s.re.mk_full_seq(m_util_s.re.mk_re(m_util_s.re.mk_re(m_util_s.mk_string_sort()))),
+                    m_util_s.re.mk_full_seq(m_util_s.re.mk_re(m_util_s.mk_string_sort())),
                     m_util_s.re.mk_concat(
                         m_util_s.re.mk_complement(digits_regex),
-                        m_util_s.re.mk_full_seq(m_util_s.re.mk_re(m_util_s.re.mk_re(m_util_s.mk_string_sort())))
+                        m_util_s.re.mk_full_seq(m_util_s.re.mk_re(m_util_s.mk_string_sort()))
                     )
                 ), m);
 
