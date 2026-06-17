@@ -70,17 +70,18 @@ bool is_one_add_indexof_string(expr* e, expr* index_str, ast_manager& m, seq_uti
 bool is_indexof_at(expr * index_param, expr* index_str, ast_manager& m, seq_util& m_util_s);
 
 /**
- * @brief Check if the expression @p e is of the form to_int(x) = num (or num = to_int(x)) where num is a number.
+ * @brief Check if the expression @p e is of the form to_int(x) = num or to_code(x) != num (or swapped) where num is a number.
  * 
  * @param e Expression to be checked
  * @param m Ast manager
  * @param m_util_s string ast util
  * @param m_util_a arith ast util
- * @param[out] to_int_arg Argument of to_int (x)
+ * @param[out] to_int_arg Argument of to_int
  * @param[out] num Number on the opposite side
+ * @param[out] is_eq true if @p e is equation, false if it is disequation
  * @return true <-> if of the particular form.
  */
-bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_int_arg, rational& num);
+bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_int_arg, rational& num, bool& is_eq);
 
 /**
  * @brief Check if the expression @p e is of the form to_code(x) = num or to_code(x) != num (or swapped) where num is a number.
@@ -166,6 +167,22 @@ bool is_num_plus_len(expr* val, expr* s, ast_manager& m, seq_util& m_util_s, ari
  * @return true <-> if of the particular form.
  */
 bool is_to_code_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_code_arg, rational& num, bool& num_is_larger);
+
+/**
+ * @brief Check if the expression @p e is of the form (str.to_int arg) <= num with num a constant number.
+ * 
+ * Can check all directions <, <=, >, >=, with possible negation in front.
+ * 
+ * @param e Expression to be checked
+ * @param m Ast manager
+ * @param m_util_s string ast util
+ * @param m_util_a arith ast util
+ * @param[out] to_int_arg Argument of to_int
+ * @param[out] num Number on the opposite side of the comparison (for < and >, it is incremented/decremented so that it represents <= or >=)
+ * @param num_is_larger Whether num is on the side representing larger part (i.e. it is true if we have the form "... <= num")
+ * @return true <-> if of the particular form.
+ */
+bool is_to_int_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_int_arg, rational& num, bool& num_is_larger);
 
 /**
  * @brief Check if the formula @p e contains a quantifier.

@@ -95,16 +95,144 @@ std::optional<expr_ref> input_rewriter::rewrite_to_code(expr* e) {
     }
 }
 
-/// For n = to_int(x) generate n = to_int(x) -> x \in 0*to_string(n)).
+/// Rewrites <, <=, >, >=, ==, !=, where one side is str.to_int and other a numeral to str.in_re predicate
 std::optional<expr_ref> input_rewriter::rewrite_to_int(expr *e) {
-    expr* to_int_arg;
-    rational val;
-    if(smt::noodler::expr_cases::is_to_int_num_eq(e, m, m_util_s, m_util_a, to_int_arg, val) && val.is_nonneg()) {
-        expr_ref re(m_util_s.re.mk_concat(m_util_s.re.mk_star(m_util_s.re.mk_to_re(m_util_s.str.mk_string("0"))), m_util_s.re.mk_to_re(m_util_s.str.mk_string(val.to_string()))), m);
-        return expr_ref(m_util_s.re.mk_in_re(to_int_arg, re), m);
-    }
+    // [0-9]
+    expr_ref digits_regex(m_util_s.re.mk_range(m_util_s.str.mk_string("0"), m_util_s.str.mk_string("9")), m);
+    // 0*
+    expr_ref zero_star(m_util_s.re.mk_star(m_util_s.re.mk_to_re(m_util_s.str.mk_string("0"))), m);
+    // .*[^0-9].*
+    expr_ref non_valid_number_regex(
+                m_util_s.re.mk_concat(
+                    m_util_s.re.mk_full_seq(m_util_s.re.mk_re(m_util_s.re.mk_re(m_util_s.mk_string_sort()))),
+                    m_util_s.re.mk_concat(
+                        m_util_s.re.mk_complement(digits_regex),
+                        m_util_s.re.mk_full_seq(m_util_s.re.mk_re(m_util_s.re.mk_re(m_util_s.mk_string_sort())))
+                    )
+                ), m);
 
-    return std::nullopt;
+    expr* to_int_arg;
+    rational num;
+    bool is_num_larger, is_eq;
+    if (smt::noodler::expr_cases::is_to_code_leq_or_geq(e, m, m_util_s, m_util_a, to_int_arg, num, is_num_larger)) {
+        if (is_num_larger) {
+            // (str.to_int to_int_arg) <= num
+            if (num < -1) {
+                return expr_ref(m.mk_false(), m);
+            } else {
+                expr_ref final_re = non_valid_number_regex; // case when num is -1
+                if (num >= 0) {
+                    std::string string_representation_of_num = num.to_string();
+                    size_t length_of_num = string_representation_of_num.size();
+
+                    if (length_of_num > 1) {
+                        // all numbers whose lenght in decimal representation is shorter than num
+                        // 0*[0-9]{1,length_of_num-1}
+                        expr_ref re_shorter(m_util_s.re.mk_concat(zero_star, m_util_s.re.mk_loop(digits_regex, 1, length_of_num-1)), m);
+                        final_re = m_util_s.re.mk_union(final_re, re_shorter);
+                    }
+
+                    // we now encode all numbers of length of num <= num
+                    // for example, for num == 4601, we encode (by iterating for all positions):
+                    //        - 0*[1-3][0-9][0-9][0-9]
+                    //        - 0*4[0-5][0-9][0-9]
+                    //        - third position ('0') is skipped
+                    //        - 0*460[0-1]
+                    // or for num == 190:
+                    //        - first position ('1') is skipped
+                    //        - 0*1[0-8][0-9]
+                    //        - 0*19[0-0]
+                    for (size_t pos = 0; pos < length_of_num; ++pos) {
+                        char char_on_pos = string_representation_of_num[pos];
+                        if (pos == 0 && pos != length_of_num-1 && char_on_pos == '1') { continue; }
+                        if (pos != length_of_num-1 && char_on_pos == '0') { continue; }
+
+                        std::string prefix = string_representation_of_num.substr(0, pos); // take the substring before the position pos
+                        // 0*<prefix>
+                        expr_ref re_case(m_util_s.re.mk_concat(zero_star, m_util_s.re.mk_to_re(m_util_s.str.mk_string(prefix))), m);
+                        if (pos == length_of_num-1) {
+                            // last position (can be also first): we add [0-<char_on_pos>]
+                            re_case = m_util_s.re.mk_concat(re_case, m_util_s.re.mk_range(m_util_s.str.mk_string("0"), m_util_s.str.mk_string(char_on_pos)));
+                        } else {
+                            if (pos == 0) {
+                                // first (but not last) position: we add [1-<char_on_pos-1>]
+                                re_case = m_util_s.re.mk_concat(re_case, m_util_s.re.mk_range(m_util_s.str.mk_string("1"), m_util_s.str.mk_string(char_on_pos-1)));
+                            } else {
+                                // middle position: we add [0-<char_on_pos-1>]
+                                re_case = m_util_s.re.mk_concat(re_case, m_util_s.re.mk_range(m_util_s.str.mk_string("0"), m_util_s.str.mk_string(char_on_pos-1)));
+                            }
+                            // we also add [0-9]^(length of string after pos)
+                            re_case = m_util_s.re.mk_concat(re_case, m_util_s.re.mk_loop_proper(digits_regex, length_of_num-1-pos, length_of_num-1-pos));
+                        }
+                        final_re = m_util_s.re.mk_union(final_re, re_case);
+                    }
+                }
+
+                return expr_ref(m_util_s.re.mk_in_re(to_int_arg, final_re), m);
+            }
+        } else {
+            // (str.to_int to_int_arg) >= num
+            if (num <= -1) {
+                return expr_ref(m.mk_true(), m);
+            } else {
+                std::string string_representation_of_num = num.to_string();
+                size_t length_of_num = string_representation_of_num.size();
+
+                // all numbers whose lenght in decimal representation is longer than num
+                // 0*[1-9][0-9]{length_of_num,}
+                expr_ref re_longer(m_util_s.re.mk_concat(zero_star, m_util_s.re.mk_concat(m_util_s.re.mk_range(m_util_s.str.mk_string("1"), m_util_s.str.mk_string("9")), m_util_s.re.mk_loop(digits_regex, length_of_num+1))), m);
+
+                expr_ref final_re = re_longer;
+                // we now encode all numbers of length of num >= num
+                // for example, for num == 4901, we encode (by iterating for all positions):
+                //        - 0*[5-9][0-9][0-9][0-9]
+                //        - second position ('9') is skipped
+                //        - 0*49[1-9][0-9]
+                //        - 0*490[1-9]
+                // or for num == 995:
+                //        - first position ('9') is skipped
+                //        - second position ('9') is skipped
+                //        - 0*99[5-9]
+                for (size_t pos = 0; pos < length_of_num; ++pos) {
+                    char char_on_pos = string_representation_of_num[pos];
+                    if (pos != length_of_num-1 && char_on_pos == '9') { continue; }
+
+                    std::string prefix = string_representation_of_num.substr(0, pos); // take the substring before the position pos
+                    // 0*<prefix>
+                    expr_ref re_case(m_util_s.re.mk_concat(zero_star, m_util_s.re.mk_to_re(m_util_s.str.mk_string(prefix))), m);
+                    if (pos == length_of_num-1) {
+                        // last position: we add [<char_on_pos>-9]
+                        re_case = m_util_s.re.mk_concat(re_case, m_util_s.re.mk_range(m_util_s.str.mk_string(char_on_pos), m_util_s.str.mk_string("9")));
+                    } else {
+                        // before last position: we add [<char_on_pos+1>-9][0-9]^(length of string after pos)
+                        re_case = m_util_s.re.mk_concat(re_case, m_util_s.re.mk_range(m_util_s.str.mk_string(char_on_pos+1), m_util_s.str.mk_string("9")));
+                        re_case = m_util_s.re.mk_concat(re_case, m_util_s.re.mk_loop_proper(digits_regex, length_of_num-1-pos, length_of_num-1-pos));
+                    }
+                    final_re = m_util_s.re.mk_union(final_re, re_case);
+                }
+
+                return expr_ref(m_util_s.re.mk_in_re(to_int_arg, final_re), m);
+            }
+        }
+    } else if(smt::noodler::expr_cases::is_to_int_num_eq(e, m, m_util_s, m_util_a, to_int_arg, num, is_eq)) {
+        expr_ref re(m);
+        if (num < -1) {
+            // values smaller than -1 cannot be results of str.to_int
+            if (is_eq) { return expr_ref(m.mk_false(), m); }
+            else { return expr_ref(m.mk_true(), m); }
+        } else if (num == -1) {
+            // create .*[^0-9].*
+            re = non_valid_number_regex;
+        } else {
+            // 0*<num>
+            re = m_util_s.re.mk_concat(zero_star, m_util_s.re.mk_to_re(m_util_s.str.mk_string(num.to_string())));
+        }
+        expr_ref in_re(m_util_s.re.mk_in_re(to_int_arg, re), m);
+        if (!is_eq) { in_re = m.mk_not(in_re); }
+        return in_re;
+    } else {
+        return std::nullopt;
+    }
 }
 
 expr_ref input_rewriter::rewrite_input(expr* e) {

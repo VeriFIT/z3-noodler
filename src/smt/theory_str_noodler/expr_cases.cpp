@@ -59,17 +59,23 @@ bool is_one_add_indexof_string(expr* e, expr* index_str, ast_manager& m, seq_uti
     return (is_indexof_add(e, index_str, m, m_util_s, m_util_a, val, ind_find_expr) && m_util_a.is_one(val) && m_util_s.str.is_string(ind_find_expr, ind_find));
 }
 
-bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_int_arg, rational& num) {
-    expr* left = nullptr, *right = nullptr;
+bool is_to_int_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_int_arg, rational& num, bool& is_eq) {
+    expr* left = nullptr, *right = nullptr, *not_argument = nullptr;
     if(m.is_eq(e, left, right)) {
-        if(m_util_a.is_numeral(left, num) && num.is_int() && m_util_s.str.is_stoi(right, to_int_arg)) {
-            return true;
-        }
-        if(m_util_a.is_numeral(right, num) && num.is_int() && m_util_s.str.is_stoi(left, to_int_arg)) {
-            return true;
-        }
+        is_eq = true;
+    } else if (m.is_distinct(e, left, right) || (m.is_not(e, not_argument) && m.is_eq(not_argument, left, right))) {
+        is_eq = false;
+    } else {
+        return false;
     }
-    return false;
+
+    if(m_util_a.is_numeral(left, num) && num.is_int() && m_util_s.str.is_stoi(right, to_int_arg)) {
+        return true;
+    } else if(m_util_a.is_numeral(right, num) && num.is_int() && m_util_s.str.is_stoi(left, to_int_arg)) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 bool is_to_code_num_eq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_code_arg, rational& num, bool& is_eq) {
@@ -213,6 +219,36 @@ bool is_to_code_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_ut
         num_is_larger = true;
         return true;
     } else if (m_util_a.is_numeral(less, num) && num.is_int() && m_util_s.str.is_to_code(more, to_code_arg)) {
+        if (strictly_less) {
+            ++num;
+        }
+        num_is_larger = false;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool is_to_int_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_util& m_util_a, expr*& to_int_arg, rational& num, bool& num_is_larger) {
+    expr* less = nullptr, *more = nullptr, *e_not = nullptr;
+    bool strictly_less;
+    if (m_util_a.is_lt(e, less, more) || (m.is_not(e, e_not) && m_util_a.is_ge(e_not, less, more)) ||
+        m_util_a.is_gt(e, more, less) || (m.is_not(e, e_not) && m_util_a.is_le(e_not, more, less))) {
+        strictly_less = true;
+    } else if (m_util_a.is_le(e, less, more) || (m.is_not(e, e_not) && m_util_a.is_gt(e_not, less, more)) ||
+               m_util_a.is_ge(e, more, less) || (m.is_not(e, e_not) && m_util_a.is_lt(e_not, more, less))) {
+        strictly_less = false;
+    } else {
+        return false;
+    }
+
+    if (m_util_a.is_numeral(more, num) && num.is_int() && m_util_s.str.is_stoi(less, to_int_arg)) {
+        if (strictly_less) {
+            --num;
+        }
+        num_is_larger = true;
+        return true;
+    } else if (m_util_a.is_numeral(less, num) && num.is_int() && m_util_s.str.is_stoi(more, to_int_arg)) {
         if (strictly_less) {
             ++num;
         }
