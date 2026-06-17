@@ -1620,39 +1620,31 @@ namespace smt::noodler {
         for(const auto& pr : this->formula.get_predicates()) {
             if(!pr.second.is_inequation())
                 continue;
+            
+            const Concat& left_side = pr.second.get_left_side();
+            const Concat& right_side = pr.second.get_right_side();
 
-            mata::nfa::Nfa aut_left = this->aut_ass.get_automaton_concat(pr.second.get_left_side());
-            mata::nfa::Nfa aut_right = this->aut_ass.get_automaton_concat(pr.second.get_right_side());
+            mata::nfa::Nfa aut_left = this->aut_ass.get_automaton_concat(left_side);
+            mata::nfa::Nfa aut_right = this->aut_ass.get_automaton_concat(right_side);
             if(mata::nfa::intersection(aut_left, aut_right).is_lang_empty()) { // L(left) \cap L(right) == empty
+                // disequation trivially holds, we can remove it
                 rem_ids.insert(pr.first);
                 continue;
             }
-            
-            if(pr.second.get_left_side().size() == 1 && pr.second.get_left_side()[0].is_variable()) {
-                BasicTerm var = pr.second.get_left_side()[0];
-                mata::nfa::Nfa other = this->aut_ass.get_automaton_concat(pr.second.get_right_side());
-                if(mata::nfa::intersection(*this->aut_ass.at(var), other).is_lang_empty()) {
-                    rem_ids.insert(pr.first);
-                    continue;
-                }
-                if(pr.second.get_right_side().size() < 1 || (pr.second.get_right_side().size() == 1 && pr.second.get_right_side()[0].is_literal())) {
-                    this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*this->aut_ass.at(var), this->aut_ass.complement_aut(other)));
-                    rem_ids.insert(pr.first);
-                    continue;
-                }
+
+            // we have x != literal -> remove literal from the language of x and remove the disequality
+            if (left_side.size() == 1 && left_side[0].is_variable() && (right_side.size() < 1 || (right_side.size() == 1 && right_side[0].is_literal()))) {
+                BasicTerm var = left_side[0];
+                this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*this->aut_ass.at(var), this->aut_ass.complement_aut(aut_right)));
+                rem_ids.insert(pr.first);
+                continue;
             }
-            if(pr.second.get_right_side().size() == 1 && pr.second.get_right_side()[0].is_variable()) {
-                BasicTerm var = pr.second.get_right_side()[0];
-                mata::nfa::Nfa other = this->aut_ass.get_automaton_concat(pr.second.get_left_side());
-                if(mata::nfa::intersection(*this->aut_ass.at(var), other).is_lang_empty()) {
-                    rem_ids.insert(pr.first);
-                    continue;
-                }
-                if(pr.second.get_left_side().size() < 1 || (pr.second.get_left_side().size() == 1 && pr.second.get_left_side()[0].is_literal())) {
-                    this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*this->aut_ass.at(var), this->aut_ass.complement_aut(other)));
-                    rem_ids.insert(pr.first);
-                    continue;
-                }
+            // we have literal != x -> remove literal from the language of x and remove the disequality
+            if (right_side.size() == 1 && right_side[0].is_variable() && (left_side.size() < 1 || (left_side.size() == 1 && left_side[0].is_literal()))) {
+                BasicTerm var = right_side[0];
+                this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*this->aut_ass.at(var), this->aut_ass.complement_aut(aut_left)));
+                rem_ids.insert(pr.first);
+                continue;
             }
         }
 

@@ -992,6 +992,10 @@ namespace smt::noodler {
             return l_false;
         }
 
+        if (prep_handler.contains_unsat_eqs_or_diseqs()) {
+            return l_false;
+        }
+
         // So-far just lightweight preprocessing
         prep_handler.remove_trivial();
         prep_handler.reduce_diseqalities();
@@ -1023,6 +1027,11 @@ namespace smt::noodler {
         }
         prep_handler.generate_identities();
         prep_handler.propagate_variables();
+
+        if (prep_handler.contains_unsat_eqs_or_diseqs()) {
+            return l_false;
+        }
+
         prep_handler.refine_languages();
         prep_handler.reduce_diseqalities();
         prep_handler.remove_trivial();

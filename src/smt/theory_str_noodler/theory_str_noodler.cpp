@@ -185,6 +185,16 @@ namespace smt::noodler {
         if(init && m.is_eq(ex) && neg) {
             ctx.mark_as_relevant(m.mk_not(ex));
         }
+        if (init && m.is_eq(ex) && m.is_bool(to_app(ex)->get_arg(0))) {
+            // if we have boolean equality, we need to mark as relevant also negations
+            expr* lhs = to_app(ex)->get_arg(0);
+            expr* rhs = to_app(ex)->get_arg(1);
+            ctx.mark_as_relevant(lhs); // just to be safe, we mark also non negated sides as relevant
+            ctx.mark_as_relevant(rhs); // just to be safe, we mark also non negated sides as relevant
+            ctx.mark_as_relevant(m.mk_not(lhs));
+            ctx.mark_as_relevant(m.mk_not(rhs));
+        }
+
         // we need to propagate all string predicates (including their negated forms) before the actual solve (in init_search), because we need to ensure these axioms are 
         // generated only once on the decision level 0 (if they are generated on a higher level, they can cause looping for some reason)
         if(init && (
