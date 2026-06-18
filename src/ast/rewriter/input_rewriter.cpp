@@ -180,7 +180,7 @@ std::optional<expr_ref> input_rewriter::rewrite_to_int(expr *e) {
 
                 // all numbers whose lenght in decimal representation is longer than num
                 // 0*[1-9][0-9]{length_of_num,}
-                expr_ref re_longer(m_util_s.re.mk_concat(zero_star, m_util_s.re.mk_concat(m_util_s.re.mk_range(m_util_s.str.mk_string("1"), m_util_s.str.mk_string("9")), m_util_s.re.mk_loop(digits_regex, length_of_num+1))), m);
+                expr_ref re_longer(m_util_s.re.mk_concat(zero_star, m_util_s.re.mk_concat(m_util_s.re.mk_range(m_util_s.str.mk_string("1"), m_util_s.str.mk_string("9")), m_util_s.re.mk_loop(digits_regex, length_of_num))), m);
 
                 expr_ref final_re = re_longer;
                 // we now encode all numbers of length of num >= num
