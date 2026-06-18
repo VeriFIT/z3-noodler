@@ -101,15 +101,8 @@ std::optional<expr_ref> input_rewriter::rewrite_to_int(expr *e) {
     expr_ref digits_regex(m_util_s.re.mk_range(m_util_s.str.mk_string("0"), m_util_s.str.mk_string("9")), m);
     // 0*
     expr_ref zero_star(m_util_s.re.mk_star(m_util_s.re.mk_to_re(m_util_s.str.mk_string("0"))), m);
-    // .*[^0-9].*
-    expr_ref non_valid_number_regex(
-                m_util_s.re.mk_concat(
-                    m_util_s.re.mk_full_seq(m_util_s.re.mk_re(m_util_s.mk_string_sort())),
-                    m_util_s.re.mk_concat(
-                        m_util_s.re.mk_complement(digits_regex),
-                        m_util_s.re.mk_full_seq(m_util_s.re.mk_re(m_util_s.mk_string_sort()))
-                    )
-                ), m);
+    // complement of [0-9]+
+    expr_ref non_valid_number_regex(m_util_s.re.mk_complement(m_util_s.re.mk_plus(digits_regex)), m);
 
     expr* to_int_arg;
     rational num;
@@ -221,7 +214,6 @@ std::optional<expr_ref> input_rewriter::rewrite_to_int(expr *e) {
             if (is_eq) { return expr_ref(m.mk_false(), m); }
             else { return expr_ref(m.mk_true(), m); }
         } else if (num == -1) {
-            // create .*[^0-9].*
             re = non_valid_number_regex;
         } else {
             // 0*<num>
