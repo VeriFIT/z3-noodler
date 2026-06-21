@@ -13,16 +13,15 @@ Eternal glory to Yu-Fang.
 #include "smt/theory_lra.h"
 #include "smt/theory_arith.h"
 #include "smt/smt_context.h"
+#include "ast/expr_abstract.h"
 #include "ast/seq_decl_plugin.h"
 #include "ast/reg_decl_plugins.h"
-
-#include "decision_procedure.h"
 #include "theory_str_noodler.h"
-#include "memb_heuristics_procedures.h"
+#include "ecma_regex.h"
 
 namespace smt::noodler {
 
-    theory_str_noodler::theory_str_noodler(context& ctx, ast_manager & m, theory_str_noodler_params const & params):
+      theory_str_noodler::theory_str_noodler(context& ctx, ast_manager & m, theory_str_noodler_params const & params):
         theory(ctx, ctx.get_manager().mk_family_id("seq")),
         m_params(params),
         m_rewrite(m),
@@ -151,7 +150,7 @@ namespace smt::noodler {
                 }
             }
             ctx.mark_as_relevant(ex);
-            string_theory_propagation(ex, true, false);  
+            string_theory_propagation(ex, true, false); 
         }
         // it seems that for quantified formulae, the model generation infrastructure is necessary for 
         // the solving (even though the model is not requested). Probably it has something to do with 
@@ -233,7 +232,7 @@ namespace smt::noodler {
         // Check if we already axiomatized the expr
         if (propagated_string_theory.contains(ex)) {
             return;
-        }     
+        }   
         propagated_string_theory.insert(ex);
 
         sort *expr_sort = ex->get_sort();
@@ -464,6 +463,8 @@ namespace smt::noodler {
             m_util_s.str.is_from_code(n) // str.from_code
         ) {
             handle_conversion(n);
+        } else if (m_util_s.str.is_from_ecma2020_re(n)) { // str.in_re with re.from_ecma2020
+            handle_ecma_re(n);
         } else if (util::is_str_variable(n, m_util_s)) {
             BasicTerm var_for_n = util::get_variable_basic_term(n);
             SASSERT(!var_name.contains(var_for_n) || var_name.at(var_for_n) == n);
@@ -674,7 +675,7 @@ namespace smt::noodler {
 
         theory::pop_scope_eh(num_scopes);
     }
-    
+
     void theory_str_noodler::restart_eh() {
         STRACE(str, tout << "restart\n");
     }
@@ -769,7 +770,7 @@ namespace smt::noodler {
     /**
      * @brief Handle str.at(s,i)
      *
-     * We set str.at(s,i) = v where v is fresh. 
+     * We set str.at(s,i) = v where v is fresh.
      * Translates to the following theory axioms in the general case:
      * 0 <= i < |s| -> s = xvy
      * 0 <= i < |s| -> v in re.allchar
@@ -777,7 +778,7 @@ namespace smt::noodler {
      * 0 <= i < |s| -> |x| = i
      * i < 0 -> v = eps
      * i >= |s| -> v = eps
-     * 
+     *
      * Special cases:
      *  - when s is a one letter string literal
      *  - when i is some small non-negative integer
@@ -816,7 +817,7 @@ namespace smt::noodler {
         }
 
         const int MAX_SMALL_INT = 20; // threshold for small integers used in the next two cases (experimentally chosen)
-        
+
         // the case where i is some small non-negative integer (the case where i is negative, i.e. the result is empty string, is handled by rewriter)
         //   i < |s| -> s = s[0].s[1]...s[i].at_right
         //   i < |s| -> v in allchar
@@ -1128,7 +1129,7 @@ namespace smt::noodler {
             if(rational l_val; m_util_a.is_numeral(l, l_val) && l_val.is_pos() && l_val <= MAX_LOOPING) {
                 unsigned l_val_unsigned = l_val.get_unsigned();
                 expr_ref substr_in(m_util_s.re.mk_in_re(v, m_util_s.re.mk_loop_proper(re_allchar, l_val_unsigned, l_val_unsigned)), m);
-    
+
                 // 0 <= i <= |s| && |s| < l + i  -> y = eps
                 add_axiom({~i_ge_0, ~i_le_ls, ls_ge_l_plus_i, mk_eq(y, eps, false)});
                 // 0 <= i <= |s| && 0 <= l <= |s| - i -> v in re.allchar^l
@@ -1228,9 +1229,9 @@ namespace smt::noodler {
             // add_axiom({~mk_eq(s, a, false), mk_eq(v, t,false)});
             // s != eps && s != a -> v = a
             add_axiom({mk_eq(s, a, false), s_emp, mk_eq(v, a,false)});
-            
 
-            // The following axioms are redundant in the sense of completeness, but in the nested replace calls 
+
+            // The following axioms are redundant in the sense of completeness, but in the nested replace calls
             // they can relate the contains predicate from the general replace (and thence the SAT solver can help a lot).
             literal cnt = mk_literal(m_util_s.str.mk_contains(s, a));
             // strenghten not contains axiom with s = a
@@ -1258,7 +1259,7 @@ namespace smt::noodler {
         if(m_util_s.str.is_string(s, str_a) && m_util_s.str.is_string(t, str_b) && str_a.length() >= str_b.length()) {
             add_axiom({~cnt, mk_literal(m.mk_eq(m_util_s.str.mk_length(v), m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(str_a.length() - str_b.length()) )))});
         }
-        
+
         // s = eps -> v = t.a
         add_axiom({~s_emp, mk_eq(v, mk_concat(t, a),false)});
         // contains(a,s) && a != eps && s != eps -> a = x.s.y
@@ -1438,7 +1439,7 @@ namespace smt::noodler {
     /**
      * @brief Handle replace_re. Just store the instance. It is solved using transducer 
      * constraints in the final_check.
-     * 
+     *
      * @param e replace_re term
      */
     void theory_str_noodler::handle_replace_re(expr *e) {
@@ -1454,7 +1455,7 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Handle replace_all. Just store the instance. It is solved using transducer 
+     * @brief Handle replace_all. Just store the instance. It is solved using transducer
      * constraints in the final_check.
      * 
      * @param e replace_all
@@ -1472,7 +1473,7 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Handle replace_re_all. Just store the instance. It is solved using transducer 
+     * @brief Handle replace_re_all. Just store the instance. It is solved using transducer
      * constraints in the final_check.
      * 
      * @param e replace_re_all
@@ -2044,7 +2045,7 @@ namespace smt::noodler {
             expr_ref re(m_util_s.re.mk_in_re(x, m_util_s.re.mk_concat(m_util_s.re.mk_star(m_util_s.re.mk_full_char(nullptr)),
                 m_util_s.re.mk_concat(m_util_s.re.mk_to_re(m_util_s.str.mk_string(s)),
                 m_util_s.re.mk_star(m_util_s.re.mk_full_char(nullptr)))) ), m);
-          
+
             add_axiom({mk_literal(e), ~mk_literal(re)});
             add_axiom({mk_literal(cont), mk_literal(re)});
         } else if(m_util_s.str.is_string(x, s) && s.length() <= 10) { // the number 10 is arbitrary, can be tuned (needs to be changed also in assign_not_contains)
@@ -2119,19 +2120,19 @@ namespace smt::noodler {
         literal lit_e = mk_literal(e);
         literal lit_x_px = mk_literal(x_px);
         literal lit_y_py = mk_literal(y_py);
-        
+
         expr_ref re_in_left(m_util_s.re.mk_in_re(lex_in_left, m_util_s.re.mk_full_char(nullptr)), m);
         expr_ref re_in_right(m_util_s.re.mk_in_re(lex_in_right, m_util_s.re.mk_full_char(nullptr)), m);
         expr_ref to_code_left(m_util_s.str.mk_to_code(lex_in_left), m);
         expr_ref to_code_right(m_util_s.str.mk_to_code(lex_in_right), m);
-  
+
         // This is a dirty hack. If I add axiom to_code(v1) < to_code(v2), the LIA solver starts 
         // to solve a nonlinear problem (?). If I use to_code(v1) + k = to_code(v2) where k > 0, it works well.
         expr_ref vark = mk_int_var_fresh("lex_add");
         expr_ref to_code_lt(m.mk_eq(m_util_a.mk_add(to_code_left, vark), to_code_right), m);
         // k >= 1
         add_axiom({mk_literal(m_util_a.mk_ge(vark, m_util_a.mk_int(1)))});
-        
+
         literal lit_x_eps = mk_literal(x_eps);
         literal lit_y_eps = mk_literal(y_eps);
         literal lit_e_switch = mk_literal(m_util_s.str.mk_lex_lt(y,x));
@@ -2157,11 +2158,102 @@ namespace smt::noodler {
         add_axiom({~lit_e, lit_x_eps,  mk_literal(to_code_lt)});
     }
 
+    void theory_str_noodler::handle_ecma_re(expr* e) {
+        expr* x = nullptr;
+        zstring pattern;
+        if (!m_util_s.str.is_from_ecma2020_re(e, &x, &pattern)) {
+            return;
+        }
+
+        expr* r = nullptr;
+        VERIFY(m_util_s.str.is_in_re(e, x, r));
+
+        ecma::RegexConstraintBuilder builder(m, pattern, m_params);
+        builder.build_rcg();
+
+        SASSERT(is_app(x));
+        expr_ref ecma_formula = builder.generate_constraints(to_app(x));
+
+        STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS ---" << std::endl;
+               tout << mk_pp(ecma_formula.get(), m) << std::endl;
+               tout << ";; ----------------------------------" << std::endl;);
+
+        // Two separate axioms encode the biconditional e ↔ ∃fresh.C(x,fresh) without ever
+        // passing a quantified formula to Noodler's string solver:
+        //
+        // (1) Positive axiom  e → C(x,sko1,...,skn)
+        //     Ground implication with Skolem constants.  When e is true, Noodler processes
+        //     the auxiliary string variables directly, exactly as it does for ordinary Skolem
+        //     witnesses.  No quantifier machinery is involved.
+        //
+        // (2) Negative axiom  (∃fresh.C(x,fresh)) → e
+        //     m_rewrite is applied to the ∃ form before adding the axiom:
+        //       - When x is concrete or constrained enough, the rewriter evaluates the
+        //         existential to true/false and the implication becomes a ground axiom.
+        //         E.g. "(a)\1" + x="aa"  →  true → e  (forces e=true, so ¬e is UNSAT).
+        //       - When the rewriter cannot eliminate the quantifier (e.g. "(a*)\1" with free x),
+        //         the implication  ∃y.C → e  is still trivially satisfied at the propositional
+        //         level whenever e is already assigned true, so no quantifier instantiation is
+        //         triggered for the positive case, preserving Noodler's performance.
+        //         For the negative case Z3's quantifier engine handles it.
+        //
+        // For purely regular patterns (no auxiliary variables) the exact ground biconditional
+        // is used directly.
+        const app_ref_vector& fresh_vars = builder.get_fresh_vars();
+        if (fresh_vars.empty()) {
+            m_rewrite(ecma_formula);
+            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified) ---" << std::endl;
+                   tout << mk_pp(ecma_formula.get(), m) << std::endl;
+                   tout << ";; ----------------------------------" << std::endl;);
+            add_axiom(expr_ref(m.mk_iff(e, ecma_formula), m));
+        } else {
+            // (1) Positive axiom: e → C_ground(x, sko1,...,skon)
+            expr_ref pos_formula = ecma_formula;
+            m_rewrite(pos_formula);
+            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified, positive) ---" << std::endl;
+                   tout << mk_pp(pos_formula.get(), m) << std::endl;
+                   tout << ";; ----------------------------------" << std::endl;);
+            add_axiom(expr_ref(m.mk_implies(e, pos_formula), m));
+
+            // (2) Negative axiom: e ∨ ∀fresh.¬C(x,fresh)  (equivalently (∃fresh.C)→e)
+            //
+            // Z3's add_axiom only supports mk_forall quantifiers (internalize_quantifier
+            // asserts gate_ctx and rejects existentials).  Strategy:
+            //   - First try mk_exists + m_rewrite.  When x is concrete enough the rewriter
+            //     evaluates the existential (e.g. "aa" matches (a)\1 → true), yielding a
+            //     ground formula whose negation gives a cheap ground axiom.
+            //   - If the existential survives rewriting, fall back to the forall form which
+            //     add_axiom can handle.  When e is already true at the propositional level
+            //     the clause "e ∨ forall" is trivially satisfied without quantifier evaluation,
+            //     so the positive case stays free of quantifier overhead.
+            expr_ref exists_formula = mk_exists(m, fresh_vars.size(), fresh_vars.data(), ecma_formula);
+            m_rewrite(exists_formula);
+            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified, negative) ---" << std::endl;
+                   tout << mk_pp(exists_formula.get(), m) << std::endl;
+                   tout << ";; ----------------------------------" << std::endl;);
+
+            if (!is_quantifier(exists_formula.get())) {
+                // Existential evaluated to a ground formula F; add  e ∨ ¬F.
+                add_axiom(expr_ref(m.mk_or(e, m.mk_not(exists_formula)), m));
+            } else {
+                // Existential survived: use the forall form  e ∨ ∀fresh.¬C.
+                expr_ref forall_neg = mk_forall(m, fresh_vars.size(), fresh_vars.data(),
+                                                expr_ref(m.mk_not(ecma_formula), m));
+                add_axiom(expr_ref(m.mk_or(e, forall_neg), m));
+            }
+        }
+    }
+
     void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
         STRACE(str, tout  << "handle in_re " << mk_pp(e, m) << " " << is_true << std::endl;);
 
         expr *s = nullptr, *re = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, s, re));
+
+        // Memberships over (re.from_ecma2020 ...) are handled via axioms that relate them
+        // to (str.to_re ...) and should not be sent to the decision procedure.
+        if (m_util_s.re.is_from_ecma2020(re))
+            return;
 
         app_ref re_constr(to_app(s), m);
         expr_ref re_atom(e, m);
@@ -2175,21 +2267,21 @@ namespace smt::noodler {
                 var = mk_str_var_fresh("revar");
                 this->predicate_replace.insert(re_constr.get(), var.get());
             }
-            
+
             // app_ref fv(this->m_util_s.mk_skolem(this->m.mk_fresh_var_name(), 0, nullptr, this->m_util_s.mk_string_sort()), m);
             expr_ref eq_fv(mk_eq_atom(var.get(), s), m);
             expr_ref n_re(this->m_util_s.re.mk_in_re(var, re), m);
             expr_ref re_orig(e, m);
 
             // propagate_basic_string_axioms(ctx.get_enode(eq_fv));
-            
+
             if(!is_true) {
                 n_re = m.mk_not(n_re);
                 re_orig = m.mk_not(re_orig);
             }
             add_axiom({mk_literal(eq_fv)});
             add_axiom({~mk_literal(re_orig), mk_literal(n_re)});
-            
+
             re_constr = to_app(var); 
             re_atom = n_re;
         }
@@ -2251,7 +2343,7 @@ namespace smt::noodler {
      */
     bool theory_str_noodler::add_len_num_axioms(expr* ex) {
         // number bound for the conversion of length constraints into regex constraints.
-        // For higher values this conversion could not be beneficial as we would work with 
+        // For higher values this conversion could not be beneficial as we would work with
         // big automata in the decision procedure.
         const int MAX_NUM = 64; 
         const unsigned MAX_VARS = 4;
@@ -2350,7 +2442,7 @@ namespace smt::noodler {
         // get the var for the argument
         BasicTerm var_for_arg(BasicTermType::Variable);
         if (tranforming_from) {
-            // we create new fresh noodler var for the integer/real argument 
+            // we create new fresh noodler var for the integer/real argument
             var_for_arg = util::mk_noodler_var_fresh(name_of_type + "_argument");
             if (type == ConversionType::FROM_REAL) {
                 // we make the var real for noodler (actually not needed, we add it to var_name anyway, so it will be replaced)
@@ -2562,7 +2654,7 @@ namespace smt::noodler {
             }
         }
     }
-    
+
     void theory_str_noodler::print_len_vars(std::ostream& os) {
         os << "Current length vars:";
         for (expr* e : len_vars) {

@@ -77,6 +77,11 @@ enum seq_op_kind {
     OP_RE_OF_PRED,
     OP_RE_REVERSE,
     OP_RE_DERIVATIVE, // Char -> RegEx -> RegEx
+    OP_RE_CAPTURE,     // Indexed operator: one integer parameter n; RegEx -> RegEx (captures group n)
+    OP_RE_REFERENCE,   // Indexed operator: one integer parameter n; backreference to capture group n
+    OP_RE_BEGIN_ANCHOR,// Anchor ^ (zero-width)
+    OP_RE_END_ANCHOR,  // Anchor $ (zero-width)
+    OP_RE_FROM_ECMA2020, // Parameterized regex literal: one zstring parameter -> RegEx(String)
 
 
     // string specific operators.
@@ -396,6 +401,17 @@ public:
         bool is_from_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_FROM_CODE); }
         bool is_to_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TO_CODE); }
 
+        // Convenience matcher for (str.in_re s (re.from_ecma2020 ...))
+        // Returns true and assigns s (membership first argument) and the extracted ECMAScript-2020 pattern.
+        // Supports both the parameterized-const form and the unary application form when the argument is a string literal.
+        bool from_ecma2020(expr const* n, expr*& s, zstring& pattern) const;
+
+        // Recognizer for membership constraints of the shape (str.in_re x (re.from_ecma2020 ...)).
+        // Optional out-parameters:
+        // - x: the left argument of str.in_re
+        // - pattern: extracted ECMAScript-2020 pattern (fails if the pattern cannot be recovered as a zstring)
+        bool is_from_ecma2020_re(expr const* n, expr** x = nullptr, zstring* pattern = nullptr) const;
+
         bool is_len_sub(expr const* n, expr*& l, expr*& u, rational& k) const;
         bool is_concat_of_units(expr* n) const;
 
@@ -541,6 +557,9 @@ public:
         sort* mk_re(sort* seq) { parameter param(seq); return m.mk_sort(m_fid, RE_SORT, 1, &param); }
         sort* to_seq(sort* re);
 
+        // Create a regex literal from an ECMAScript 2020 pattern (stored as a zstring parameter)
+        app* mk_from_ecma2020(zstring const& pattern);
+
         app* mk_to_re(expr* s) { return m.mk_app(m_fid, OP_SEQ_TO_RE, 1, &s); }
         app* mk_to_re(const zstring &s) { return mk_to_re(u.str.mk_string(s)); }
         app* mk_in_re(expr* s, expr* r) { return m.mk_app(m_fid, OP_SEQ_IN_RE, s, r); }
@@ -554,12 +573,17 @@ public:
         app* mk_plus(expr* r) { return m.mk_app(m_fid, OP_RE_PLUS, r); }
         app* mk_opt(expr* r) { return m.mk_app(m_fid, OP_RE_OPTION, r); }
         app* mk_power(expr* r, unsigned n);
+        app* mk_capture(expr* r, unsigned n);
+        app* mk_reference(unsigned n);
+        app* mk_begin_anchor() { return m.mk_app(m_fid, OP_RE_BEGIN_ANCHOR, 0, nullptr, 0, nullptr, mk_re(u.str.mk_string_sort())); }
+        app* mk_end_anchor()   { return m.mk_app(m_fid, OP_RE_END_ANCHOR,   0, nullptr, 0, nullptr, mk_re(u.str.mk_string_sort())); }
         app* mk_loop(expr* r, unsigned lo);
         app* mk_loop(expr* r, unsigned lo, unsigned hi);
         expr* mk_loop_proper(expr* r, unsigned lo, unsigned hi);
         app* mk_loop(expr* r, expr* lo);
         app* mk_loop(expr* r, expr* lo, expr* hi);
         app* mk_full_char(sort* s);
+        app* mk_word_char();
         app* mk_full_seq(sort* s);
         app* mk_empty(sort* s);
         app* mk_of_pred(expr* p);
@@ -580,6 +604,15 @@ public:
         bool is_range(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_RANGE); }
         bool is_range(expr const* n, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_LOOP); }
+        bool is_capture(expr const* n) const { return is_app_of(n, m_fid, OP_RE_CAPTURE); }
+        bool is_reference(expr const* n) const { return is_app_of(n, m_fid, OP_RE_REFERENCE); }
+        bool is_begin_anchor(expr const* n) const { return is_app_of(n, m_fid, OP_RE_BEGIN_ANCHOR); }
+        bool is_end_anchor(expr const* n) const { return is_app_of(n, m_fid, OP_RE_END_ANCHOR); }
+        bool is_from_ecma2020(expr const* n) const { return is_app_of(n, m_fid, OP_RE_FROM_ECMA2020); }
+
+        bool is_capture(expr const* n, expr*& body, unsigned& idx) const;
+        bool is_reference(expr const* n, unsigned& idx) const;
+        bool is_from_ecma2020(expr const* n, zstring& pattern) const;
         bool is_empty(expr const* n)  const { return is_app_of(n, m_fid, OP_RE_EMPTY_SET); }
         bool is_full_char(expr const* n)  const { return is_app_of(n, m_fid, OP_RE_FULL_CHAR_SET); }
         bool is_full_seq(expr const* n)  const {

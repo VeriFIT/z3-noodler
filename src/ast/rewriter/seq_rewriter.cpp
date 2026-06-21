@@ -4619,6 +4619,11 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
     STRACE(seq_verbose, tout << "mk_str_in_regexp: " << mk_pp(a, m())
                                << ", " << mk_pp(b, m()) << std::endl;);
 
+    // ECMA REGEX hack -- the ECMA regexes cannot be derived, just return fail and don't try to derive them
+    if (is_app(b) && to_app(b)->get_decl()->get_name() == symbol("re.from_ecma2020")) {
+        return BR_FAILED;
+    }
+
     if (re().is_empty(b)) {
         result = m().mk_false();
         return BR_DONE;
