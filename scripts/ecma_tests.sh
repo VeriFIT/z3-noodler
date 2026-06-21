@@ -224,32 +224,32 @@ make_test "142_anchor_lookahead_branch_sat" "sat" \
 
 # --- 16. Quantifier Unrolling & Capture Group Semantics ---
 
-# Základní přepisování capture group ve smyčce.
-# Zpětná reference \1 se musí odkazovat na hodnotu z poslední iterace.
-# "a" (iter 1) -> "b" (iter 2) -> "c" (iter 3). Výsledek \1 musí být "c".
+# Basic capture group rewriting inside a loop.
+# Backreference \1 must refer to the value from the last iteration.
+# "a" (iter 1) -> "b" (iter 2) -> "c" (iter 3). The result \1 must be "c".
 make_test "143_quant_cap_backref_sat" "sat" "([a-c]){3}\\1" "(assert (= w \"abcc\"))"
 make_test "144_quant_cap_backref_unsat" "unsat" "([a-c]){3}\\1" "(assert (= w \"abca\"))"
 
-# Vnořené capture groups uvnitř smyčky.
-# Iterace 1: vnější = "ac", vnitřní = "a". Iterace 2: vnější = "bc", vnitřní = "b".
-# Zpětná reference \2 se odkazuje na vnitřní skupinu z poslední iterace (tedy "b").
+# Nested capture groups inside a loop.
+# Iteration 1: outer = "ac", inner = "a". Iteration 2: outer = "bc", inner = "b".
+# Backreference \2 refers to the inner group from the last iteration (i.e. "b").
 make_test "145_nested_quant_cap_sat" "sat" "(([ab])c){2}\\2" "(assert (= w \"acbcb\"))"
 make_test "146_nested_quant_cap_unsat" "unsat" "(([ab])c){2}\\2" "(assert (= w \"acbca\"))"
 
-# Lokální zpětné reference přímo uvnitř smyčky (vyhodnocované v každém průchodu zvlášť).
-# V první iteraci zachytí "a" a vynutí "a" (dohromady "aa").
-# Ve druhé iteraci zachytí "b", vynutí "b" (dohromady "bb"). Výsledek "aabb".
+# Local backreferences directly inside a loop (evaluated independently on each pass).
+# In the first iteration, captures "a" and enforces "a" (together "aa").
+# In the second iteration, captures "b", enforces "b" (together "bb"). Result "aabb".
 make_test "147_backref_inside_loop_sat" "sat" "(?:([ab])\\1){2}" "(assert (= w \"aabb\"))"
 make_test "148_backref_inside_loop_unsat" "unsat" "(?:([ab])\\1){2}" "(assert (= w \"aaba\"))"
 
-# Variabilní fixní kvantifikátor (např. {1,3}) a následná zpětná reference.
-# Průchod 1: "1x", Průchod 2: "2x". Smyčka končí. Poslední hodnota skupiny je "2".
+# Variable bounded quantifier (e.g. {1,3}) followed by a backreference.
+# Pass 1: "1x", Pass 2: "2x". Loop ends. The last captured value of the group is "2".
 make_test "149_var_loop_backref_sat" "sat" "(?:([0-9])x){1,3}\\1" "(assert (= w \"1x2x2\"))"
 make_test "150_var_loop_backref_unsat" "unsat" "(?:([0-9])x){1,3}\\1" "(assert (= w \"1x2x1\"))"
 
-# Kombinace skupiny mimo smyčku a skupiny uvnitř smyčky.
-# Skupina 1: "a". Smyčka dvakrát zachytí do skupiny 2 (naposledy "c").
-# Reference \1 musí být stále "a", reference \2 musí být "c".
+# Combination of a group outside the loop and a group inside the loop.
+# Group 1: "a". The loop captures into group 2 twice (last value "c").
+# Reference \1 must still be "a", reference \2 must be "c".
 make_test "151_loop_overwrite_sat" "sat" "(a)(?:b(c)){2}\\1\\2" "(assert (= w \"abcbcac\"))"
 make_test "152_loop_overwrite_unsat" "unsat" "(a)(?:b(c)){2}\\1\\2" "(assert (= w \"abcbcaa\"))"
 
