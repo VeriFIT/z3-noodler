@@ -87,6 +87,7 @@ Other than the constraints defined in the [SMT-LIB theory of strings](https://sm
  - `str.update`
  - `str.trim`
  - `str.delete`
+ - `re.from_ecma2020` 
 
 ## Publications
 - Y. Chen, V. Havlena, M.Hečko, L.Holík, and O. Lengál. [A Uniform Framework for Handling Position Constraints in String Solving](https://dl.acm.org/doi/10.1145/3729273). In *Proc. of PLDI'25*, volume 9, pages 550-575, 2025. ACM.

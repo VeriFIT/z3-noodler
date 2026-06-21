@@ -66,6 +66,37 @@ Examples:
  - `(str.trim "\u{9}\u{A}\u{B}\u{C}\u{D}  aa  \u{9}\u{A}\u{B}\u{C}\u{D}")` → `"aa"`
  - `(str.trim "  a  a  ")` → `"a  a"`
 
+## `(str.in_re String (re.from_ecma2020 Pattern))`
+Tests whether a string belongs to the language described by an ECMAScript 2020 regular expression pattern.
+The pattern is given as a string literal (using single-quoted syntax in SMT-LIB) and is interpreted according to the [ECMAScript 2020 RegExp specification](https://262.ecma-international.org/11.0/#sec-patterns).
+
+Supported ECMAScript regex features:
+
+- Standard character classes: `.`, `\d`, `\D`, `\s`, `\S`, `\w`, `\W`
+- Character class expressions: `[...]`, `[^...]`, character ranges `[a-z]`
+- Anchors: `^` (start of string), `$` (end of string)
+- Quantifiers: `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}` (greedy and lazy variants)
+- Alternation: `|`
+- Non-capturing groups: `(?:...)`
+- Capturing groups: `(...)`, named groups `(?<name>...)`
+- Backreferences: `\1`, `\k<name>`
+- Lookahead assertions: `(?=...)` (positive), `(?!...)` (negative)
+- Lookbehind assertions: `(?<=...)` (positive), `(?<!...)` (negative)
+- Word boundary assertions: `\b`, `\B`
+- Unicode escape sequences: `\uXXXX`, `\u{XXXXX}`
+
+Limitations:
+
+- Non-regular constructs (backreferences, lookarounds) cannot appear under unbounded quantifiers (`*`, `+`).
+- Negative lookarounds whose inner pattern itself contains non-regular constructs (e.g. backreferences) are not supported.
+
+Examples:
+
+- `(str.in_re x (re.from_ecma2020 'a'))` — `x` equals `"a"`
+- `(str.in_re x (re.from_ecma2020 '(a)\1'))` — `x` equals `"aa"` (backreference: group 1 captures `"a"`, then repeats it)
+- `(str.in_re x (re.from_ecma2020 '(a*b)\1'))` — `x` is in `{ww | w in a*b}`, e.g. `"bb"`, `"abab"`
+- `(str.in_re x (re.from_ecma2020 '(ab)\1'))` — `x` equals `"abab"`
+
 ## `(str.delete String Int Int String)`
 Similar to `str.substr`, but it deletes the substring instead of returning it.
 The part to delete is given by an index and a length.
