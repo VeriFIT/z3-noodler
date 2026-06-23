@@ -2182,6 +2182,7 @@ public:
 
     MATCH_UNARY(is_not);
     MATCH_BINARY(is_eq);
+    MATCH_BINARY(is_distinct);
     MATCH_BINARY(is_implies);
     MATCH_BINARY(is_and);
     MATCH_BINARY(is_or);

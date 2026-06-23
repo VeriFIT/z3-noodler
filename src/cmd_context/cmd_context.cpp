@@ -40,6 +40,7 @@ Notes:
 #include "ast/well_sorted.h"
 #include "ast/for_each_expr.h"
 #include "ast/rewriter/th_rewriter.h"
+#include "ast/rewriter/input_rewriter.h"
 #include "ast/rewriter/recfun_replace.h"
 #include "ast/polymorphism_util.h"
 #include "model/model_evaluator.h"
@@ -898,6 +899,13 @@ void cmd_context::init_external_manager() {
     init_manager_core(false);
 }
 
+void cmd_context::init_input_rewriter() {
+    if (!m_input_rewriter) {
+        init_manager();
+        m_input_rewriter = alloc(input_rewriter, m());
+    }
+}
+
 bool cmd_context::set_logic(symbol const & s) {
     TRACE(cmd_context, tout << s << "\n";);
     if (has_logic())
@@ -1586,12 +1594,18 @@ void cmd_context::assert_expr(expr * t) {
     if (!m_check_logic(t))
         throw cmd_exception(m_check_logic.get_last_error());
     m_check_sat_result = nullptr;
-    m().inc_ref(t);
-    m_assertions.push_back(t);
+    
+    // Apply input-only rewriting to expressions as they are loaded
+    // TODO: proof generation might not work correctly (do rewriter rules even add proofs?)
+    init_input_rewriter();
+    expr_ref rewritten(m_input_rewriter->rewrite_input(t));
+    
+    m().inc_ref(rewritten);
+    m_assertions.push_back(rewritten);
     if (produce_unsat_cores())
         m_assertion_names.push_back(nullptr);
     if (m_solver)
-        m_solver->assert_expr(t);
+        m_solver->assert_expr(rewritten);
 }
 
 void cmd_context::assert_expr(symbol const & name, expr * t) {
@@ -1604,13 +1618,19 @@ void cmd_context::assert_expr(symbol const & name, expr * t) {
     scoped_rlimit no_limit(m().limit(), 0);
 
     m_check_sat_result = nullptr;
-    m().inc_ref(t);
-    m_assertions.push_back(t);
+    
+    // Apply input-only rewriting to expressions as they are loaded
+    // TODO: proof generation might not work correctly (do rewriter rules even add proofs?)
+    init_input_rewriter();
+    expr_ref rewritten(m_input_rewriter->rewrite_input(t));
+    
+    m().inc_ref(rewritten);
+    m_assertions.push_back(rewritten);
     app * ans  = m().mk_skolem_const(name, m().mk_bool_sort());
     m().inc_ref(ans);
     m_assertion_names.push_back(ans);
     if (m_solver)
-        m_solver->assert_expr(t, ans);
+        m_solver->assert_expr(rewritten, ans);
 }
 
 void cmd_context::push() {
