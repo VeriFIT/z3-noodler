@@ -344,7 +344,7 @@ namespace smt::noodler {
 
         while (true) {
             util::check_limit(m);
-            auto [result, some_skipped] = main_dec_proc->compute_next_solution_with_len_checks(check_lens);
+            result = main_dec_proc->compute_next_solution_with_len_checks(check_lens);
             if (result == l_true) {
                 auto [is_lengths_sat, precision] = check_lens_with_precision();
 
@@ -380,7 +380,9 @@ namespace smt::noodler {
                     block_curr_len(expr_ref(m.mk_false(), m));
                 } else {
                     // If some solving states were skipped, an overapproximation was added to block_len
-                    block_curr_len(block_len, true, some_skipped);
+                    const bool overapprox = main_dec_proc->get_skipped_some_with_len_checks();
+
+                    block_curr_len(block_len, true, overapprox);
                 }
                 this->statistics.at("stabilization").num_finish++;
                 return FC_CONTINUE;
@@ -773,7 +775,7 @@ namespace smt::noodler {
             return check_len_sat(lengths, check_with_context);
         };
 
-        while(main_dec_proc->compute_next_solution_with_len_checks(check_lens).first == l_true) {
+        while(main_dec_proc->compute_next_solution_with_len_checks(check_lens) == l_true) {
             expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
             if(check_len_sat(lengths, check_with_context) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
                 sat_handling(lengths);

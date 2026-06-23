@@ -135,6 +135,9 @@ namespace smt::noodler {
         // remembers whether the input formula passed to init_computation() contained any disequation
         bool input_contains_disequations = false;
 
+        // Becomes true if some solving states get skipped because their premature length checks are unsat
+        bool skipped_some_with_len_checks = false;
+
         std::set<BasicTerm> code_subst_vars_handled_by_parikh;
 
         const theory_str_noodler_params& m_params;
@@ -475,16 +478,21 @@ namespace smt::noodler {
          * Same as compute_next_solution, but checks length constraints while running
          * to potentionally skip processing some noodles which are found unsat.
          *
+         * NOTE: If some noodles get skipped, will set skipped_some_with_len_checks
+         *
          * @param check_lens length check function; the boolean argument indicates whether
          *                   the formula should be added to the blocking formula (true) or
          *                   only satisfiability should be checked without blocking (false).
          *
-         * @return first: True if there is a satisfiable element in the worklist.
-         *         second: if any solving states were skipped (the length check was unsat)
+         * @return True if there is a satisfiable element in the worklist.
          */
-        std::pair<lbool, bool> compute_next_solution_with_len_checks(
+        lbool compute_next_solution_with_len_checks(
             std::function<lbool(bool)> check_lens
         );
+
+        inline bool get_skipped_some_with_len_checks() const {
+            return this->skipped_some_with_len_checks;
+        }
 
         LenNode get_initial_lengths(bool all_vars = false) override;
 

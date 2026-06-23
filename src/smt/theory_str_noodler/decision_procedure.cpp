@@ -15,10 +15,10 @@
 namespace smt::noodler {
     lbool DecisionProcedure::compute_next_solution() {
         // We call the one with length checks but don't check them
-        return compute_next_solution_with_len_checks(nullptr).first;
+        return compute_next_solution_with_len_checks(nullptr);
     }
 
-    std::pair<lbool, bool> DecisionProcedure::compute_next_solution_with_len_checks(
+    lbool DecisionProcedure::compute_next_solution_with_len_checks(
         std::function<lbool(bool)> check_lens
     ) {
         // iteratively select next state of solving that can lead to solution and
@@ -32,8 +32,6 @@ namespace smt::noodler {
                                   !conversion_handler.are_there_any_conversions() &&
                                   not_contains.get_predicates().empty() &&
                                   (!this->m_params.m_postpone_diseqs_stabilization || !this->input_contains_disequations);
-        bool some_skipped = false;
-
         while (!is_worklist_empty()) {
             util::check_limit(m);
             SolvingState element_to_process = pop_from_worklist();
@@ -53,7 +51,7 @@ namespace smt::noodler {
 
                 if (lens_sat == l_false) {
                     // Lengths were unsat, we don't have to process this solving state
-                    some_skipped = true;
+                    this->skipped_some_with_len_checks = true;
                     continue;
                 }
             }
@@ -72,7 +70,7 @@ namespace smt::noodler {
                         element_to_process.translate_postponed_disequations_to_equations();
                     } else if (underapprox_sat == l_true) {
                         solution = std::move(element_to_process);
-                        return { l_true, false };
+                        return l_true;
                     } else {
                         // underapprox_sat == l_undef: length under-approximation is inconclusive.
                         // Do not assume satisfiability; instead, solve postponed disequations precisely.
@@ -106,7 +104,7 @@ namespace smt::noodler {
                     }
                 );
                 STRACE(str_noodle_dot, tout << solution.DOT_name << " [style=filled,fillcolor=\"aqua\"];\n";);
-                return { l_true, some_skipped };
+                return l_true;
             }
 
             // we will now process one inclusion from the inclusion graph which is at front
@@ -124,7 +122,7 @@ namespace smt::noodler {
 
         // there are no solving states left, which means nothing led to solution -> it must be unsatisfiable
         STRACE(str_noodle_dot, tout << "}\n";);
-        return { l_false, some_skipped };
+        return l_false;
     }
 
     void DecisionProcedure::process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state) {
