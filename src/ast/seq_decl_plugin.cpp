@@ -424,6 +424,7 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
     case OP_RE_REVERSE:
     case OP_RE_DERIVATIVE:
     case _OP_RE_ANTIMIROV_UNION:
+    case OP_RE_FROM_ECMA2020:
         m_has_re = true;
         Z3_fallthrough;   
     case OP_SEQ_UNIT:
@@ -514,25 +515,6 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
             return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, num_parameters, parameters));
         }
         m.raise_exception("Incorrect arguments used for re.^. Expected one non-negative integer parameter");
-    case OP_RE_FROM_ECMA2020:
-        m_has_re = true;
-        if (arity == 1) {
-            // Unary form: String -> RegEx(String)
-            match(*m_sigs[k], arity, domain, range, rng);
-            return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k));
-        }
-        else if (arity == 0) {
-            // Parameterized-const form: zero args, one zstring parameter
-            if (!(num_parameters == 1 && parameters[0].is_zstring())) {
-                m.raise_exception("invalid re.from_ecma2020 declaration: expected zero arguments and one string parameter");
-            }
-            return m.mk_const_decl(symbol("re.from_ecma2020"), mk_reglan(),
-                                   func_decl_info(m_family_id, OP_RE_FROM_ECMA2020, num_parameters, parameters));
-        }
-        else {
-            m.raise_exception("invalid re.from_ecma2020: expected one String argument or zero arguments with one string parameter");
-        }
-
     case OP_STRING_CONST:
         if (!(num_parameters == 1 && arity == 0 && parameters[0].is_zstring())) {
             m.raise_exception("invalid string declaration");

@@ -77,7 +77,7 @@ enum seq_op_kind {
     OP_RE_OF_PRED,
     OP_RE_REVERSE,
     OP_RE_DERIVATIVE, // Char -> RegEx -> RegEx
-    OP_RE_FROM_ECMA2020, // Parameterized regex literal: one zstring parameter -> RegEx(String)
+    OP_RE_FROM_ECMA2020,
 
 
     // string specific operators.
@@ -597,7 +597,6 @@ public:
         bool is_range(expr const* n, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_LOOP); }
         bool is_from_ecma2020(expr const* n) const { return is_app_of(n, m_fid, OP_RE_FROM_ECMA2020); }
-
         bool is_from_ecma2020(expr const* n, zstring& pattern) const;
         bool is_empty(expr const* n)  const { return is_app_of(n, m_fid, OP_RE_EMPTY_SET); }
         bool is_full_char(expr const* n)  const { return is_app_of(n, m_fid, OP_RE_FULL_CHAR_SET); }
