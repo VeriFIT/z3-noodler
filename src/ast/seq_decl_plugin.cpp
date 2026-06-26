@@ -686,7 +686,6 @@ void seq_decl_plugin::get_op_names(svector<builtin_name> & op_names, symbol cons
             op_names.push_back(builtin_name(m_sigs[i]->m_name.str(), i));
     }
     // Explicitly expose parameterized/alias ops without m_sigs entries
-    op_names.push_back(builtin_name("re.from_ecma2020", OP_RE_FROM_ECMA2020));
     op_names.push_back(builtin_name("seq.map",    OP_SEQ_MAP));
     op_names.push_back(builtin_name("seq.mapi",   OP_SEQ_MAPI));
     op_names.push_back(builtin_name("seq.foldl",  OP_SEQ_FOLDL));
