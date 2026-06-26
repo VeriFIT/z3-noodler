@@ -118,9 +118,6 @@ genaisrc/genblogpost.genai.mts
 .idea/
 # Bazel generated files
 bazel-*
-
-# test files
-ecma_automated_tests/
 # Local issue tracking
 .beads
 .claude
