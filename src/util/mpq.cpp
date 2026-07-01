@@ -137,7 +137,7 @@ std::string mpq_manager<SYNCH>::to_string_decimal(mpq const & a, mpz const & pre
     div(n1, d1, v1);
     display(res, v1);
     rem(n1, d1, n1);
-    if (!is_zero(n1)) { // number is not an integer
+    if (!is_zero(n1) && !eq(0, prec)) { // number is not an integer and we need to print something in decimal part
         res << ".";
         for (mpz i = 0; !eq(i, prec); add(i, 1, i)) {
             mul(n1, ten, n1);
