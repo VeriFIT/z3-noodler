@@ -1,0 +1,6 @@
+(set-logic ALL)
+(set-info :status sat)
+(declare-const x String)
+(assert (= x (str.from_real 4.58 0)))
+(check-sat)
+(get-model)
