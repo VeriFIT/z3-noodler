@@ -66,9 +66,13 @@ Examples:
  - `(str.trim "\u{9}\u{A}\u{B}\u{C}\u{D}  aa  \u{9}\u{A}\u{B}\u{C}\u{D}")` → `"aa"`
  - `(str.trim "  a  a  ")` → `"a  a"`
 
-## `(str.in_re String (re.from_ecma2020 Pattern))`
+## `(str.in_re String (re.from_ecma2020 String) Bool)`
 Tests whether a string belongs to the language described by an ECMAScript 2020 regular expression pattern.
-The pattern is given as a string literal (using single-quoted syntax in SMT-LIB) and is interpreted according to the [ECMAScript 2020 RegExp specification](https://262.ecma-international.org/11.0/#sec-patterns).
+The pattern is given as a string literal and is interpreted according to the [ECMAScript 2020 RegExp specification](https://262.ecma-international.org/11.0/#sec-patterns).
+You can use (nonstandard) single-quote string notation (`''`) to represent the pattern.
+In this notation, every character (even Unicode) is represented as is, so you write a string such as `'[0-9\ы═ы║ы╒ыёыєы╔ыіыїы╗ы╘]'`.
+Furthermore, you can use the option/parameter `str.ecma_engine_semantics=true` to mimic ecma regex engine semantics by implicitly wrapping regex in Σ*, by default this is turned off.
+The default behaviour is equivalent to [Ostrich's `re.from_ecma2020`](https://github.com/uuverifiers/ostrich/#additional-regular-expression-constructors).
 
 Supported ECMAScript regex features:
 

@@ -462,7 +462,7 @@ namespace smt::noodler {
             m_util_s.str.is_from_code(n) // str.from_code
         ) {
             handle_conversion(n);
-        } else if (m_util_s.str.is_from_ecma2020_re(n)) { // str.in_re with re.from_ecma2020
+        } else if (m_util_s.str.is_in_re_from_ecma2020(n)) { // str.in_re with re.from_ecma2020
             handle_ecma_re(n);
         } else if (util::is_str_variable(n, m_util_s)) {
             BasicTerm var_for_n = util::get_variable_basic_term(n);
@@ -2160,12 +2160,10 @@ namespace smt::noodler {
     void theory_str_noodler::handle_ecma_re(expr* e) {
         expr* x = nullptr;
         zstring pattern;
-        if (!m_util_s.str.is_from_ecma2020_re(e, &x, &pattern)) {
+        if (!m_util_s.str.is_in_re_from_ecma2020(e, x, pattern)) {
+            util::throw_error("We can only handle (str.in_re ... (re.from_ecma2020 pattern)) with a constant pattern");
             return;
         }
-
-        expr* r = nullptr;
-        VERIFY(m_util_s.str.is_in_re(e, x, r));
 
         ecma::RegexConstraintBuilder builder(m, pattern, m_params);
         builder.build_rcg();
