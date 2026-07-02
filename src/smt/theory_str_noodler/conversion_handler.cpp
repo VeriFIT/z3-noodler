@@ -1,8 +1,154 @@
-#include <numeric> 
+#include <numeric>
+#include <functional>
 
 #include "conversion_handler.h"
 
 namespace smt::noodler {
+
+namespace {
+    /**
+     * @brief Compute the (min,max) numeric value achievable by words accepted by @p aut, where @p aut is a
+     * (trimmed) automaton accepting a finite, non-empty language of digit-only words that all have the same length
+     * (e.g. obtained by intersecting some digit-only language with AutAssignment::digit_automaton_of_length(l)).
+     *
+     * Because all accepted words have the same length, @p aut is guaranteed to be acyclic and "layered" (every
+     * state has a well-defined number of remaining digit positions until acceptance), so we can compute the
+     * min/max value bottom-up with a simple memoized recursion.
+     */
+    std::pair<rational,rational> digit_value_bounds_fixed_length(const mata::nfa::Nfa& aut) {
+        std::unordered_map<mata::nfa::State, std::tuple<rational,rational,unsigned>> memo;
+
+        std::function<std::tuple<rational,rational,unsigned>(mata::nfa::State)> dfs =
+            [&](mata::nfa::State st) -> std::tuple<rational,rational,unsigned> {
+            auto memo_it = memo.find(st);
+            if (memo_it != memo.end()) {
+                return memo_it->second;
+            }
+
+            std::tuple<rational,rational,unsigned> result;
+            if (aut.delta[st].empty()) {
+                // no further digits, must be an accepting state (aut is trimmed)
+                result = { rational(0), rational(0), 0u };
+            } else {
+                rational mn, mx;
+                unsigned remaining_len = 0;
+                bool first = true;
+                for (const auto& symbol_post : aut.delta[st]) {
+                    rational digit(symbol_post.symbol - AutAssignment::DIGIT_SYMBOL_START);
+                    for (const mata::nfa::State& target : symbol_post.targets) {
+                        auto [target_min, target_max, target_remaining_len] = dfs(target);
+                        rational place_value(1);
+                        for (unsigned i = 0; i < target_remaining_len; ++i) { place_value *= 10; }
+                        rational cand_min = digit*place_value + target_min;
+                        rational cand_max = digit*place_value + target_max;
+                        if (first) {
+                            mn = cand_min;
+                            mx = cand_max;
+                            remaining_len = target_remaining_len + 1;
+                            first = false;
+                        } else {
+                            mn = std::min(mn, cand_min);
+                            mx = std::max(mx, cand_max);
+                        }
+                    }
+                }
+                result = { mn, mx, remaining_len };
+            }
+            memo[st] = result;
+            return result;
+        };
+
+        rational overall_min, overall_max;
+        bool first = true;
+        for (const mata::nfa::State& init_state : aut.initial) {
+            auto [mn, mx, _len] = dfs(init_state);
+            if (first) {
+                overall_min = mn;
+                overall_max = mx;
+                first = false;
+            } else {
+                overall_min = std::min(overall_min, mn);
+                overall_max = std::max(overall_max, mx);
+            }
+        }
+        return { overall_min, overall_max };
+    }
+
+    /// Returns automaton accepting words of the form "0" followed by at least one more digit, i.e. digit words
+    /// that have a (semantically meaningless) leading zero. Used to detect whether shorter accepted words are
+    /// guaranteed to have smaller numeric value than longer ones.
+    mata::nfa::Nfa leading_zero_followed_by_digit_automaton() {
+        mata::nfa::Nfa aut(3, {0}, {2});
+        aut.delta.add(0, AutAssignment::DIGIT_SYMBOL_START, 1);
+        for (mata::Symbol digit = AutAssignment::DIGIT_SYMBOL_START; digit <= AutAssignment::DIGIT_SYMBOL_END; ++digit) {
+            aut.delta.add(1, digit, 2);
+            aut.delta.add(2, digit, 2);
+        }
+        return aut;
+    }
+}
+
+std::pair<rational, std::optional<rational>> ConversionHandler::get_to_int_value_bounds(const AutAssignment& aut_ass, const BasicTerm& x) {
+    const mata::nfa::Nfa& full_aut = *aut_ass.at(x);
+    const mata::nfa::Nfa only_digits_with_eps = AutAssignment::digit_automaton_with_epsilon();
+
+    mata::nfa::Nfa digit_part = mata::nfa::reduce(mata::nfa::intersection(full_aut, only_digits_with_eps).trim());
+    mata::nfa::Nfa non_digit_part = mata::nfa::reduce(mata::nfa::intersection(full_aut, aut_ass.complement_aut(only_digits_with_eps)).trim());
+
+    // to_int(x) == -1 is possible either if x can contain a non-digit symbol, or if x can be the empty string
+    bool minus_one_possible = !non_digit_part.is_lang_empty() || aut_ass.contains_epsilon(x);
+
+    if (digit_part.is_lang_empty()) {
+        // every word of x either is empty or contains a non-digit => to_int(x) is always -1
+        SASSERT(minus_one_possible);
+        return { rational(-1), rational(-1) };
+    }
+
+    // trivial (but always sound) baseline bounds
+    rational lower = minus_one_possible ? rational(-1) : rational(0);
+    std::optional<rational> upper = std::nullopt;
+
+    if (mata::nfa::intersection(digit_part, leading_zero_followed_by_digit_automaton()).is_lang_empty()) {
+        // digit_part never contains a word with a semantically meaningless leading zero (i.e. no accepted word of
+        // length >= 2 starts with '0'). This means that, numerically, shorter words are always strictly smaller
+        // than longer ones, so the global minimum value is attained at the shortest length (which is well-defined
+        // even if digit_part is an infinite/cyclic language).
+        // We cannot say anything sound about a finite upper bound this way (the language may contain arbitrarily
+        // long, and hence arbitrarily large, words), so upper is left as unknown.
+        auto lengths = mata::applications::strings::get_word_lengths(digit_part);
+        unsigned min_len = lengths.begin()->first;
+        for (const auto& [c1, c2] : lengths) { min_len = std::min(min_len, static_cast<unsigned>(c1)); }
+
+        mata::nfa::Nfa aut_of_min_length = mata::nfa::minimize(mata::nfa::intersection(digit_part, AutAssignment::digit_automaton_of_length(min_len)).trim());
+        if (!aut_of_min_length.is_lang_empty()) {
+            auto [mn, _mx] = digit_value_bounds_fixed_length(aut_of_min_length);
+            lower = minus_one_possible ? rational(-1) : mn;
+        }
+    }
+    // else: digit_part may contain meaningless leading zeros, we cannot soundly tighten the bounds beyond the
+    // trivial baseline computed above
+
+    return { lower, upper };
+}
+
+LenNode ConversionHandler::get_to_int_bounds_formula(const AutAssignment& aut_ass, const std::vector<TermConversion>& conversions) {
+    std::vector<LenNode> to_int_bounds;
+    for (const TermConversion& conv : conversions) {
+        if (conv.type != ConversionType::TO_INT) {
+            continue;
+        }
+        auto [lower, upper] = get_to_int_value_bounds(aut_ass, conv.string_var);
+        to_int_bounds.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{ LenNode(lower), conv.number_var });
+        if (upper.has_value()) {
+            to_int_bounds.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{ conv.number_var, LenNode(upper.value()) });
+        }
+    }
+
+    if (to_int_bounds.empty()) {
+        return LenNode(LenFormulaType::TRUE);
+    }
+    return LenNode(LenFormulaType::AND, to_int_bounds);
+}
 
 void ConversionHandler::initialize_solution(SolvingState solution) {
     conversions = solution.conversions;

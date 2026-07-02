@@ -185,6 +185,12 @@ namespace smt::noodler {
 
         std::vector<TermConversion> conversions = get_conversions_as_basicterms(aut_assignment);
 
+        // Cheap pre-check: derive sound (but possibly loose) bounds on str.to_int(x) directly from the language of
+        // x (before any noodlification/splitting of x happens), so obviously infeasible combinations of
+        // length/regex constraints on x and arithmetic constraints on the to_int result can be pruned early,
+        // without running the (potentially much more expensive) main decision procedure and conversion encoding.
+        LenNode to_int_bounds_formula = ConversionHandler::get_to_int_bounds_formula(aut_assignment, conversions);
+
         for (const auto& [var, nfa] : aut_assignment) {
             relevant_vars.insert(var);
         }
@@ -248,7 +254,7 @@ namespace smt::noodler {
         // we want to include all variables from the formula --> e.g.
         // s.t = u where u \in ab, |s| > 100. The only length variable is s, but we need
         // to include also length of |u| to propagate the value to |s|
-        expr_ref lengths = len_node_to_z3_formula(main_dec_proc->get_initial_lengths(true));
+        expr_ref lengths = len_node_to_z3_formula(LenNode(LenFormulaType::AND, {main_dec_proc->get_initial_lengths(true), to_int_bounds_formula}));
         if(check_len_sat(lengths, check_len_sat_with_context) == l_false) {
             STRACE(str, tout << "Unsat from initial lengths (1)" << std::endl);
 

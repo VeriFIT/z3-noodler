@@ -1,6 +1,8 @@
 #ifndef _NOODLER_CONVERSION_HANDLER_H_
 #define _NOODLER_CONVERSION_HANDLER_H_
 
+#include <optional>
+
 #include "solving_state.h"
 
 namespace smt::noodler {
@@ -197,6 +199,34 @@ namespace smt::noodler {
         std::vector<BasicTerm> get_arith_vars_needed_for_model();
 
         /// TODO: add function to handle model generation for substituting vars
+
+        /**
+         * @brief Get sound (but possibly not tight) bounds on the value of str.to_int(x) derivable just from the
+         * language of @p x, without running the full decision procedure.
+         *
+         * This is meant to be used as a cheap pre-check (added as an extra conjunct to a length formula) that can
+         * prune branches where the length/regex constraints on x already make the to_int(x) result impossible to
+         * satisfy some arithmetic constraint, without needing to noodlify/split x or enumerate its language.
+         *
+         * The returned lower bound is always a sound lower bound on to_int(x) (i.e., -1 if x's language may be
+         * empty or contain a non-digit symbol, 0 otherwise, possibly tightened further). The returned upper bound
+         * (if present) is a sound upper bound; if we cannot establish a finite upper bound (e.g. the digit language
+         * is infinite and might represent arbitrarily large numbers), std::nullopt is returned instead, meaning "no
+         * known finite upper bound".
+         *
+         * @param aut_ass Automata assignment giving the language of @p x (and the alphabet used for complementing)
+         * @param x The (unflattened, top-level) string variable occurring in "i = str.to_int(x)"
+         */
+        static std::pair<rational, std::optional<rational>> get_to_int_value_bounds(const AutAssignment& aut_ass, const BasicTerm& x);
+
+        /**
+         * @brief Get a LenNode formula conjoining sound bounds (see get_to_int_value_bounds) on the result of
+         * every TO_INT conversion in @p conversions, using the languages of the string variables in @p aut_ass.
+         *
+         * Meant to be conjoined to a length formula as a cheap pre-check, before running the full decision
+         * procedure. Returns LenNode(LenFormulaType::TRUE) if there are no TO_INT conversions.
+         */
+        static LenNode get_to_int_bounds_formula(const AutAssignment& aut_ass, const std::vector<TermConversion>& conversions);
     };
 };
 
