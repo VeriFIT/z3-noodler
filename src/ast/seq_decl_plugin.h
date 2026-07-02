@@ -566,7 +566,7 @@ public:
         app* mk_loop(expr* r, expr* lo);
         app* mk_loop(expr* r, expr* lo, expr* hi);
         app* mk_from_ecma2020(expr* s) { return m.mk_app(m_fid, OP_RE_FROM_ECMA2020, s); }
-        app* mk_from_ecma2020(const zstring &s) { return mk_to_re(u.str.mk_string(s)); }
+        app* mk_from_ecma2020(const zstring &s) { return mk_from_ecma2020(u.str.mk_string(s)); }
         app* mk_full_char(sort* s);
         app* mk_word_char(); // regex representing [0-9a-zA-Z_]
         app* mk_full_seq(sort* s);
