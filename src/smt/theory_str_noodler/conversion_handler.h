@@ -221,12 +221,13 @@ namespace smt::noodler {
 
         /**
          * @brief Get a LenNode formula conjoining sound bounds (see get_to_int_value_bounds) on the result of
-         * every TO_INT conversion in @p conversions, using the languages of the string variables in @p aut_ass.
+         * every TO_INT conversion handled by this ConversionHandler, using the languages of the string variables
+         * in @p aut_ass.
          *
          * Meant to be conjoined to a length formula as a cheap pre-check, before running the full decision
          * procedure. Returns LenNode(LenFormulaType::TRUE) if there are no TO_INT conversions.
          */
-        static LenNode get_to_int_bounds_formula(const AutAssignment& aut_ass, const std::vector<TermConversion>& conversions);
+        LenNode get_to_int_bounds_formula(const AutAssignment& aut_ass) const;
     };
 };
 

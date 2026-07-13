@@ -106,6 +106,8 @@ std::pair<rational, std::optional<rational>> ConversionHandler::get_to_int_value
 
     // trivial (but always sound) baseline bounds
     rational lower = minus_one_possible ? rational(-1) : rational(0);
+    // TODO: no attempt is currently made to derive a finite upper bound (a bit more complicated than the 
+    // lower bound---need a method for getting the longest strings from a finite language)
     std::optional<rational> upper = std::nullopt;
 
     if (mata::nfa::intersection(digit_part, leading_zero_followed_by_digit_automaton()).is_lang_empty()) {
@@ -115,15 +117,14 @@ std::pair<rational, std::optional<rational>> ConversionHandler::get_to_int_value
         // even if digit_part is an infinite/cyclic language).
         // We cannot say anything sound about a finite upper bound this way (the language may contain arbitrarily
         // long, and hence arbitrarily large, words), so upper is left as unknown.
-        auto lengths = mata::applications::strings::get_word_lengths(digit_part);
-        unsigned min_len = lengths.begin()->first;
-        for (const auto& [c1, c2] : lengths) { min_len = std::min(min_len, static_cast<unsigned>(c1)); }
+        unsigned min_len = static_cast<unsigned>(digit_part.get_shortest_word()->size());
 
+        // digit_part is non-empty (checked above) and min_len is the length of one of its shortest accepted words,
+        // so intersecting with digit_automaton_of_length(min_len) is guaranteed to be non-empty.
         mata::nfa::Nfa aut_of_min_length = mata::nfa::minimize(mata::nfa::intersection(digit_part, AutAssignment::digit_automaton_of_length(min_len)).trim());
-        if (!aut_of_min_length.is_lang_empty()) {
-            auto [mn, _mx] = digit_value_bounds_fixed_length(aut_of_min_length);
-            lower = minus_one_possible ? rational(-1) : mn;
-        }
+        SASSERT(!aut_of_min_length.is_lang_empty());
+        auto [mn, _mx] = digit_value_bounds_fixed_length(aut_of_min_length);
+        lower = minus_one_possible ? rational(-1) : mn;
     }
     // else: digit_part may contain meaningless leading zeros, we cannot soundly tighten the bounds beyond the
     // trivial baseline computed above
@@ -131,7 +132,7 @@ std::pair<rational, std::optional<rational>> ConversionHandler::get_to_int_value
     return { lower, upper };
 }
 
-LenNode ConversionHandler::get_to_int_bounds_formula(const AutAssignment& aut_ass, const std::vector<TermConversion>& conversions) {
+LenNode ConversionHandler::get_to_int_bounds_formula(const AutAssignment& aut_ass) const {
     std::vector<LenNode> to_int_bounds;
     for (const TermConversion& conv : conversions) {
         if (conv.type != ConversionType::TO_INT) {

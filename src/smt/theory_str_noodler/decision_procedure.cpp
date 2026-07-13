@@ -526,13 +526,18 @@ namespace smt::noodler {
     }
 
     LenNode DecisionProcedure::get_initial_lengths(bool all_vars) {
+        // cheap pre-check: derive sound (but possibly loose) bounds on str.to_int(x) directly from the language of
+        // x (before any noodlification/splitting of x happens), so obviously infeasible combinations of
+        // length/regex constraints on x and arithmetic constraints on the to_int result can be pruned early
+        LenNode to_int_bounds_formula = conversion_handler.get_to_int_bounds_formula(init_aut_ass);
+
         if (init_length_sensitive_vars.empty()) {
-            // there are no length sensitive vars, so we can immediately say true
-            return LenNode(LenFormulaType::TRUE);
+            // there are no length sensitive vars, so we can immediately say true (except for possible to_int bounds)
+            return to_int_bounds_formula;
         }
 
         // start from length formula from preprocessing
-        std::vector<LenNode> conjuncts = {preprocessing_len_formula};
+        std::vector<LenNode> conjuncts = {preprocessing_len_formula, to_int_bounds_formula};
 
         SolvingState temp_state; // temporary solving state to get lengths
         temp_state.aut_ass = init_aut_ass;
