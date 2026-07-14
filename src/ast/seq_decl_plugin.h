@@ -253,6 +253,10 @@ public:
     bool is_seq(sort* s, sort*& seq) const { return is_seq(s) && (seq = to_sort(s->get_parameter(0).get_ast()), true); }
     bool is_re(expr* e) const { return is_re(e->get_sort()); }
     bool is_re(expr* e, sort*& seq) const { return is_re(e->get_sort(), seq); }
+    bool is_ratrel(sort* s) const { return is_sort_of(s, m_fid, _RATREL_SORT); }
+    bool is_ratrel(sort* s, sort*& seq) const { return is_sort_of(s, m_fid, _RATREL_SORT)  && (seq = to_sort(s->get_parameter(0).get_ast()), true); }
+    bool is_ratrel(expr* e) const { return is_ratrel(e->get_sort()); }
+    bool is_ratrel(expr* e, sort*& seq) const { return is_ratrel(e->get_sort(), seq); }
     bool is_const_char(expr* e, unsigned& c) const;
     bool is_const_char(expr* e) const { unsigned c; return is_const_char(e, c); }
     bool is_char_le(expr const* e) const;
@@ -669,8 +673,26 @@ public:
             std::ostream& display(std::ostream&) const;
         };
     };
+
+    class rat {
+    private:
+        seq_util&    u;
+        ast_manager& m;
+        family_id    m_fid;
+
+    public:
+        rat(seq_util& u): u(u), m(u.m), m_fid(u.m_fid) {}
+
+        sort* mk_ratrel(sort* seq) { parameter param(seq); return m.mk_sort(m_fid, _RATREL_SORT, 1, &param); }
+        sort* to_seq(sort* ratrel);
+
+        // Placeholder methods for future rational relation operations
+        // To be extended with predicates and operations as they are defined
+    };
+
     str str;
     rex  re;
+    rat  rat_rel;
 
     seq_util(ast_manager& m):
         m(m),
@@ -678,7 +700,8 @@ public:
         ch(seq.get_char_plugin()),
         m_fid(seq.get_family_id()),
         str(*this),
-        re(*this) {
+        re(*this),
+        rat_rel(*this) {
     }
 
     family_id get_family_id() const { return m_fid; }
