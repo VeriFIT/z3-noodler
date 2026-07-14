@@ -828,6 +828,7 @@ expr* seq_decl_plugin::get_some_value(sort* s) {
     if (util.is_re(s, seq)) {
         return util.re.mk_to_re(util.str.mk_empty(seq));
     }
+    // TODO add some valye for rational relations
     UNREACHABLE();
     return nullptr;
 }
