@@ -29,6 +29,7 @@ seq_decl_plugin::seq_decl_plugin(): m_init(false),
                                     m_string(nullptr),
                                     m_char(nullptr),
                                     m_reglan(nullptr),
+                                    m_ratrel(nullptr),
                                     m_has_re(false),
                                     m_has_seq(false) {
 }
@@ -39,6 +40,7 @@ void seq_decl_plugin::finalize() {
     m_manager->dec_ref(m_string);
     m_manager->dec_ref(m_char);
     m_manager->dec_ref(m_reglan);
+    m_manager->dec_ref(m_ratrel);
 }
 
 bool seq_decl_plugin::is_sort_param(sort* s, unsigned& idx) {
@@ -292,6 +294,16 @@ sort* seq_decl_plugin::mk_reglan() {
     return m_reglan;
 }
 
+sort* seq_decl_plugin::mk_ratrel() {
+    if (!m_ratrel) {
+        ast_manager& m = *m_manager;
+        parameter paramS(m_string);
+        m_ratrel = m.mk_sort(symbol("RatRel"), sort_info(m_family_id, _RATREL_SORT, 1, &paramS));
+        m.inc_ref(m_ratrel);
+    }
+    return m_ratrel;
+}
+
 void seq_decl_plugin::set_manager(ast_manager* m, family_id id) {
     decl_plugin::set_manager(m, id);
     m_char_plugin = static_cast<char_decl_plugin*>(m_manager->get_plugin(m_manager->mk_family_id("char")));
@@ -330,6 +342,8 @@ sort * seq_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, parameter 
         return m_string;
     case _REGLAN_SORT:
         return mk_reglan();
+    case _RATREL_SORT:
+        return mk_ratrel();
     default:
         UNREACHABLE();
         return nullptr;
@@ -714,6 +728,9 @@ void seq_decl_plugin::get_sort_names(svector<builtin_name> & sort_names, symbol 
     // SMTLIB 2.6 RegLan, String
     sort_names.push_back(builtin_name("RegLan", _REGLAN_SORT));
     sort_names.push_back(builtin_name("String", _STRING_SORT));
+
+    // Rational relations
+    sort_names.push_back(builtin_name("RatRel", _RATREL_SORT));
 
     // SMTLIB 2.5 compatibility
     sort_names.push_back(builtin_name("StringSequence", _STRING_SORT));

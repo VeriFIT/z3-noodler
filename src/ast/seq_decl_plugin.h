@@ -31,7 +31,8 @@ enum seq_sort_kind {
     SEQ_SORT,
     RE_SORT,
     _STRING_SORT,  
-    _REGLAN_SORT
+    _REGLAN_SORT,
+    _RATREL_SORT
 };
 
 enum seq_op_kind {
@@ -144,6 +145,7 @@ class seq_decl_plugin : public decl_plugin {
     sort*            m_string;
     sort*            m_char;
     sort*            m_reglan;
+    sort*            m_ratrel;
     bool             m_has_re;
     bool             m_has_seq;
     char_decl_plugin* m_char_plugin { nullptr };
@@ -175,6 +177,7 @@ class seq_decl_plugin : public decl_plugin {
     void set_manager(ast_manager * m, family_id id) override;
 
     sort* mk_reglan();
+    sort* mk_ratrel();
 
 public:
     seq_decl_plugin();
