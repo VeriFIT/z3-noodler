@@ -427,13 +427,14 @@ namespace smt::noodler::regex {
     [[nodiscard]] std::shared_ptr<mata::nft::Nft> conv_to_nft(app *expression, const seq_util& m_util_s, ast_manager& m, const Alphabet& alphabet) {
         SASSERT(m_util_s.is_ratrel(expression));
         expr *arg1, *arg2;
+        mata::nft::Nft res;
         if (m_util_s.rat_rel.is_to_rat(expression, arg1, arg2)) {
             zstring arg1_zstring, arg2_zstring;
             if (!m_util_s.str.is_string(arg1, arg1_zstring) || !m_util_s.str.is_string(arg2, arg2_zstring)) {
                 util::throw_error("We can only handle str.to_rat with string literals");
             }
             unsigned longer_length(std::max(arg1_zstring.length(), arg2_zstring.length()));
-            mata::nft::Nft res {mata::nft::Nft::with_levels(2, longer_length*2+1, {0}, {longer_length*2})};
+            res = mata::nft::Nft::with_levels(2, longer_length*2+1, {0}, {longer_length*2});
             for (unsigned i = 0; i < longer_length; ++i) {
                 res.levels[2*i] = 0;
                 res.levels[2*i+1] = 1;
@@ -449,10 +450,10 @@ namespace smt::noodler::regex {
                 }
             }
             res.levels[longer_length*2] = 0;
-            return std::make_shared<mata::nft::Nft>(res);
         } else {
             util::throw_error("unsupported operation in rational language");
         }
+        return std::make_shared<mata::nft::Nft>(res);
     }
 
     [[nodiscard]] RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s) {
