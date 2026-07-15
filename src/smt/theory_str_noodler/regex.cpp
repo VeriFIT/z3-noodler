@@ -426,34 +426,87 @@ namespace smt::noodler::regex {
 
     [[nodiscard]] std::shared_ptr<mata::nft::Nft> conv_to_nft(app *expression, const seq_util& m_util_s, ast_manager& m, const Alphabet& alphabet) {
         SASSERT(m_util_s.is_ratrel(expression));
-        expr *arg1, *arg2;
-        mata::nft::Nft res;
-        if (m_util_s.rat_rel.is_to_rat(expression, arg1, arg2)) {
-            zstring arg1_zstring, arg2_zstring;
-            if (!m_util_s.str.is_string(arg1, arg1_zstring) || !m_util_s.str.is_string(arg2, arg2_zstring)) {
-                util::throw_error("We can only handle str.to_rat with string literals");
-            }
-            unsigned longer_length(std::max(arg1_zstring.length(), arg2_zstring.length()));
-            res = mata::nft::Nft::with_levels(2, longer_length*2+1, {0}, {longer_length*2});
-            for (unsigned i = 0; i < longer_length; ++i) {
-                res.levels[2*i] = 0;
-                res.levels[2*i+1] = 1;
-                if (i < arg1_zstring.length()) {
-                    res.delta.add(2*i, arg1_zstring[i], 2*i+1);
-                } else {
-                    res.delta.add(2*i, mata::nft::EPSILON, 2*i+1);
+
+        // to simulate recursive calls of conv_to_nfa on arguments of expression, we use postorder
+        // traversal of the ast for expression
+        std::stack<std::pair<app*, bool>> postorder_stack;
+        postorder_stack.push({expression, false});
+        std::stack<mata::nft::Nft> results_stack;
+        std::map<app*, unsigned> num_of_rational_arguments;
+        while (!postorder_stack.empty()) {
+            auto [cur_expr, visited] = postorder_stack.top();
+            postorder_stack.pop();
+
+            if (!visited) { // we have not visited cur_expr -> we need to process children first
+                postorder_stack.push({cur_expr, true});
+                ptr_vector<expr> rational_args;
+                if (!m_util_s.re.is_concat(cur_expr, rational_args)) {
+                    for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
+                        expr* arg = cur_expr->get_arg(arg_idx);
+                        if (m_util_s.is_re(arg)) { // we only process childrens representing regexes
+                            rational_args.push_back(arg);
+                        }
+                    }
+                } // else branch handled concatenation, so rational_args should contain arguments for concatenation too
+                num_of_rational_arguments[cur_expr] = rational_args.size();
+                for (expr* arg : rational_args) {
+                    SASSERT(is_app(arg));
+                    postorder_stack.push({to_app(arg), false});
                 }
-                if (i < arg2_zstring.length()) {
-                    res.delta.add(2*i+1, arg2_zstring[i], 2*i+2);
-                } else {
-                    res.delta.add(2*i+1, mata::nft::EPSILON, 2*i+2);
+            } else { // we already visited cur_expr -> the NFTs for its children should be on results_stack
+                // we collect the NFTs for the children
+                std::vector<mata::nft::Nft> arg_nfts;
+                unsigned num_of_rational_arguments_of_cur_expr = num_of_rational_arguments.at(cur_expr);
+                for (unsigned arg_idx = 0; arg_idx < num_of_rational_arguments_of_cur_expr; ++arg_idx) {
+                    SASSERT(!results_stack.empty());
+                    arg_nfts.push_back(std::move(results_stack.top()));
+                    results_stack.pop();
                 }
+
+                STRACE(str_create_nfa,
+                    tout << "--------------" << "Creating NFT for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "\n";
+                );
+
+                mata::nft::Nft result;
+                if (expr *arg1, *arg2; m_util_s.rat_rel.is_to_rat(expression, arg1, arg2)) {
+                    zstring arg1_zstring, arg2_zstring;
+                    if (!m_util_s.str.is_string(arg1, arg1_zstring) || !m_util_s.str.is_string(arg2, arg2_zstring)) {
+                        util::throw_error("We can only handle str.to_rat with string literals");
+                    }
+                    unsigned longer_length(std::max(arg1_zstring.length(), arg2_zstring.length()));
+                    result = mata::nft::Nft::with_levels(2, longer_length*2+1, {0}, {longer_length*2});
+                    for (unsigned i = 0; i < longer_length; ++i) {
+                        result.levels[2*i] = 0;
+                        result.levels[2*i+1] = 1;
+                        if (i < arg1_zstring.length()) {
+                            result.delta.add(2*i, arg1_zstring[i], 2*i+1);
+                        } else {
+                            result.delta.add(2*i, mata::nft::EPSILON, 2*i+1);
+                        }
+                        if (i < arg2_zstring.length()) {
+                            result.delta.add(2*i+1, arg2_zstring[i], 2*i+2);
+                        } else {
+                            result.delta.add(2*i+1, mata::nft::EPSILON, 2*i+2);
+                        }
+                    }
+                    result.levels[longer_length*2] = 0;
+                } else {
+                    util::throw_error("unsupported operation in rational language");
+                }
+
+                // TODO: call reduction?
+
+                STRACE(str_create_nfa,
+                    tout << "--------------" << "NFT for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "---------------" << std::endl;
+                    tout << result;
+                );
+
+                results_stack.push(std::move(result));
             }
-            res.levels[longer_length*2] = 0;
-        } else {
-            util::throw_error("unsupported operation in rational language");
         }
-        return std::make_shared<mata::nft::Nft>(res);
+
+        SASSERT(results_stack.size() == 1);
+        return std::make_shared<mata::nft::Nft>(std::move(results_stack.top()));
     }
 
     [[nodiscard]] RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s) {
