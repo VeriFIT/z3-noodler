@@ -530,7 +530,16 @@ namespace smt::noodler::regex {
                         result.final.insert(new_state);
                     }
                 } else if (m_util_s.rat_rel.is_plus(cur_expr)) { // Handle positive iteration.
-                    util::throw_error("we cannot handle plus for now"); // TODO: handle
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfts.at(0));
+                    for (const auto& final : result.final) {
+                        for (const auto& initial : result.initial) {
+                            if (initial != final) {
+                                result.add_transition(final, {mata::nfa::EPSILON, mata::nfa::EPSILON}, initial);
+                            }
+                        }
+                    }
+                    result.remove_epsilon();
                 } else {
                     std::stringstream ss;
                     ss << "unsupported operation in rational language:\n" << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m));
