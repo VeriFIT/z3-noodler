@@ -2313,43 +2313,10 @@ namespace smt::noodler {
         expr *s = nullptr, *t = nullptr, *rat = nullptr;
         VERIFY(m_util_s.str.is_in_rat(e, s, t, rat));
 
-        bool is_s_var = to_app(s)->get_num_args() == 0;
-        bool is_t_var = to_app(t)->get_num_args() == 0;
-        expr_ref s_var(s,m); // s_var should be the variable representing s
-        expr_ref t_var(t,m); // t_var should be the variable representing t
-        if (!is_s_var || !is_t_var) {
-            if (!is_s_var) {
-                if (this->predicate_replace.contains(s)) {
-                    s_var = expr_ref(this->predicate_replace[s], m);
-                } else {
-                    s_var = mk_str_var_fresh("ratvar");
-                    this->predicate_replace.insert(s, s_var.get());
-                }
-                expr_ref eq_s(mk_eq_atom(s_var.get(), s), m);
-                add_axiom({mk_literal(eq_s)});
-            }
-            if (!is_t_var) {
-                if (this->predicate_replace.contains(t)) {
-                    t_var = expr_ref(this->predicate_replace[t], m);
-                } else {
-                    t_var = mk_str_var_fresh("ratvar");
-                    this->predicate_replace.insert(t, t_var.get());
-                }
-                expr_ref eq_t(mk_eq_atom(t_var.get(), t), m);
-                add_axiom({mk_literal(eq_t)});
-            }
-
-            expr_ref new_in_rat(this->m_util_s.rat_rel.mk_in_rat(s_var, t_var, rat), m);
-            expr_ref rat_orig(e, m);
-
-            if(!is_true) {
-                new_in_rat = m.mk_not(new_in_rat);
-                rat_orig = m.mk_not(rat_orig);
-            }
-            add_axiom({~mk_literal(rat_orig), mk_literal(new_in_rat)});
-        }
+        expr_ref s_ref(s,m);
+        expr_ref t_ref(t,m);
         expr_ref rat_ref(rat, m);
-        this->m_rat_membership_todo.push_back(std::make_tuple(s_var, t_var, rat_ref, is_true));
+        this->m_rat_membership_todo.push_back(std::make_tuple(s_ref, t_ref, rat_ref, is_true));
     }
 
     /**
