@@ -472,6 +472,36 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
         SASSERT(num_args == 3);
         st = mk_str_in_rat(args[0], args[1], args[2], result);
         break;
+    case OP_RAT_CONCAT:
+        SASSERT(num_args == 2);
+        st = mk_rat_concat(args[0], args[1], result);
+        break;
+    case OP_RAT_UNION:
+        SASSERT(num_args == 2);
+        st = mk_rat_union(args[0], args[1], result);
+        break;
+    case OP_RAT_LOOP:
+        st = mk_rat_loop(f, num_args, args, result);
+        break;
+    case OP_RAT_POWER:
+        SASSERT(num_args == 1);
+        st = mk_rat_power(f, args[0], result);
+        break;
+    case OP_RAT_EMPTY_SET:
+        st = mk_rat_empty_set(f, result);
+        break;
+    case OP_RAT_STAR:
+        SASSERT(num_args == 1);
+        st = mk_rat_star(args[0], result);
+        break;
+    case OP_RAT_PLUS:
+        SASSERT(num_args == 1);
+        st = mk_rat_plus(args[0], result);
+        break;
+    case OP_RAT_OPTION:
+        SASSERT(num_args == 1);
+        st = mk_rat_option(args[0], result);
+        break;
     case _OP_STRING_CONCAT:
     case _OP_STRING_PREFIX:
     case _OP_STRING_SUFFIX:
@@ -5199,6 +5229,46 @@ br_status seq_rewriter::mk_re_power(func_decl* f, expr* a, expr_ref& result) {
     unsigned p = f->get_parameter(0).get_int();
     result = re().mk_loop_proper(a, p, p);
     return BR_REWRITE1;
+}
+
+br_status seq_rewriter::mk_rat_concat(expr* a, expr* b, expr_ref& result) {
+    (void)a; (void)b; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_union(expr* a, expr* b, expr_ref& result) {
+    (void)a; (void)b; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_loop(func_decl* f, unsigned num_args, expr* const* args, expr_ref& result) {
+    (void)f; (void)num_args; (void)args; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_power(func_decl* f, expr* a, expr_ref& result) {
+    (void)f; (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_empty_set(func_decl* f, expr_ref& result) {
+    (void)f; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_star(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_plus(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_option(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
 }
 
 
