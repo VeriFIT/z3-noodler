@@ -252,6 +252,8 @@ class seq_rewriter {
     br_status mk_str_sbv2s(expr* a, expr_ref& result);
     br_status mk_str_in_regexp(expr* a, expr* b, expr_ref& result);
     br_status mk_str_to_regexp(expr* a, expr_ref& result);
+    br_status mk_str_to_rat(expr* a, expr* b, expr_ref& result);
+    br_status mk_str_in_rat(expr* a, expr* b, expr* r, expr_ref& result);
     br_status mk_str_le(expr* a, expr* b, expr_ref& result);
     br_status mk_str_lt(expr* a, expr* b, expr_ref& result);
     br_status mk_str_from_code(expr* a, expr_ref& result);

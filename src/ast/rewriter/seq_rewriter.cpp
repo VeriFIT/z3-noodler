@@ -464,6 +464,14 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
       SASSERT(num_args == 1);
       st = mk_str_sbv2s(args[0], result);
       break;
+    case OP_STRING_TO_RAT:
+        SASSERT(num_args == 2);
+        st = mk_str_to_rat(args[0], args[1], result);
+        break;
+    case OP_STRING_IN_RAT:
+        SASSERT(num_args == 3);
+        st = mk_str_in_rat(args[0], args[1], args[2], result);
+        break;
     case _OP_STRING_CONCAT:
     case _OP_STRING_PREFIX:
     case _OP_STRING_SUFFIX:
@@ -6547,3 +6555,11 @@ bool seq_rewriter::get_bounds(expr* e, unsigned& low, unsigned& high) {
     return low <= high;
 }
 
+
+br_status seq_rewriter::mk_str_to_rat(expr* a, expr* b, expr_ref& result) {
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_str_in_rat(expr* a, expr* b, expr* r, expr_ref& result) {
+    return BR_FAILED;
+}

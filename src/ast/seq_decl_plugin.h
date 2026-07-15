@@ -32,7 +32,8 @@ enum seq_sort_kind {
     RE_SORT,
     _STRING_SORT,  
     _REGLAN_SORT,
-    _RATREL_SORT
+    
+    RATREL_SORT // sort for rational relations (only for strings, not parametarized as RE_SORT)
 };
 
 enum seq_op_kind {
@@ -118,7 +119,11 @@ enum seq_op_kind {
     _OP_RE_IS_NULLABLE,
     _OP_RE_ANTIMIROV_UNION, // Lifted union for antimirov-style derivatives
     _OP_SEQ_SKOLEM,
-    LAST_SEQ_OP
+    LAST_SEQ_OP,
+
+    // rational relation stuff
+    OP_STRING_TO_RAT, // take two strings s and t and create rational relations {(s,t)}
+    OP_STRING_IN_RAT, // take two strings s and t, rational relation R, and checks if (s,t) is in R
 };
 
 
@@ -253,10 +258,8 @@ public:
     bool is_seq(sort* s, sort*& seq) const { return is_seq(s) && (seq = to_sort(s->get_parameter(0).get_ast()), true); }
     bool is_re(expr* e) const { return is_re(e->get_sort()); }
     bool is_re(expr* e, sort*& seq) const { return is_re(e->get_sort(), seq); }
-    bool is_ratrel(sort* s) const { return is_sort_of(s, m_fid, _RATREL_SORT); }
-    bool is_ratrel(sort* s, sort*& seq) const { return is_sort_of(s, m_fid, _RATREL_SORT)  && (seq = to_sort(s->get_parameter(0).get_ast()), true); }
+    bool is_ratrel(sort* s) const { return is_sort_of(s, m_fid, RATREL_SORT); }
     bool is_ratrel(expr* e) const { return is_ratrel(e->get_sort()); }
-    bool is_ratrel(expr* e, sort*& seq) const { return is_ratrel(e->get_sort(), seq); }
     bool is_const_char(expr* e, unsigned& c) const;
     bool is_const_char(expr* e) const { unsigned c; return is_const_char(e, c); }
     bool is_char_le(expr const* e) const;
@@ -403,6 +406,7 @@ public:
         bool is_is_digit(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_IS_DIGIT); }
         bool is_from_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_FROM_CODE); }
         bool is_to_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TO_CODE); }
+        bool is_in_rat(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_IN_RAT); }
 
         // Convenience matcher for (str.in_re ... (re.from_ecma2020 ...))
         bool is_in_re_from_ecma2020(expr const* n) const { expr *r = nullptr, *s = nullptr; return is_in_re(n, s, r) && u.re.is_from_ecma2020(r); }
@@ -464,6 +468,7 @@ public:
         MATCH_UNARY(is_to_code);
         MATCH_BINARY(is_in_re);
         MATCH_UNARY(is_unit);
+        MATCH_TERNARY(is_in_rat);
 
         void get_concat(expr* e, expr_ref_vector& es) const;
         void get_concat(expr* e, ptr_vector<expr>& es) const;
@@ -683,16 +688,21 @@ public:
     public:
         rat(seq_util& u): u(u), m(u.m), m_fid(u.m_fid) {}
 
-        sort* mk_ratrel(sort* seq) { parameter param(seq); return m.mk_sort(m_fid, _RATREL_SORT, 1, &param); }
+        sort* mk_ratrel() { parameter param(u.mk_string_sort()); return m.mk_sort(m_fid, RATREL_SORT, 1, &param); }
         sort* to_seq(sort* ratrel);
 
-        // Placeholder methods for future rational relation operations
-        // To be extended with predicates and operations as they are defined
+        app* mk_to_rat(expr* s, expr* t) { return m.mk_app(m_fid, OP_STRING_TO_RAT, s, t); }
+        app* mk_to_rat(const zstring &s, const zstring &t) { return mk_to_rat(u.str.mk_string(s), u.str.mk_string(t)); }
+        app* mk_in_rat(expr* s, expr* t, expr* r) { return m.mk_app(m_fid, OP_STRING_IN_RAT, s, t, r); }
+
+        bool is_to_rat(expr const* n)    const { return is_app_of(n, m_fid, OP_STRING_TO_RAT); }
+
+        MATCH_BINARY(is_to_rat);
     };
 
     str str;
-    rex  re;
-    rat  rat_rel;
+    rex re;
+    rat rat_rel;
 
     seq_util(ast_manager& m):
         m(m),

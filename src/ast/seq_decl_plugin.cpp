@@ -209,6 +209,8 @@ void seq_decl_plugin::init() {
     sort* seqAintT[2] = { seqA, intT };
     sort* seq3A[3] = { seqA, seqA, seqA };
     sort* realTintT[2] = { realT, intT };
+    sort* ratT  = m.mk_sort(m_family_id, RATREL_SORT, 1, &paramS);
+    sort* str2Trat[3] = { strT, strT, ratT };
 
     m_sigs.resize(LAST_SEQ_OP);
     // TBD: have (par ..) construct and load parameterized signature from premable.
@@ -281,6 +283,8 @@ void seq_decl_plugin::init() {
     m_sigs[_OP_REGEXP_EMPTY]      = alloc(psig, m, "re.none", 0, 0, nullptr, reT);
     m_sigs[_OP_REGEXP_FULL_CHAR]  = alloc(psig, m, "re.allchar", 0, 0, nullptr, reT);
     m_sigs[_OP_STRING_SUBSTR]     = alloc(psig, m, "str.substr", 0, 3, strTint2T, strT);
+    m_sigs[OP_STRING_TO_RAT]     = alloc(psig, m, "str.to_rat", 0, 2, str2T, ratT);
+    m_sigs[OP_STRING_IN_RAT]     = alloc(psig, m, "str.in_rat", 0, 3, str2Trat, boolT);
 }
 
 
@@ -298,7 +302,7 @@ sort* seq_decl_plugin::mk_ratrel() {
     if (!m_ratrel) {
         ast_manager& m = *m_manager;
         parameter paramS(m_string);
-        m_ratrel = m.mk_sort(symbol("RatRel"), sort_info(m_family_id, _RATREL_SORT, 1, &paramS));
+        m_ratrel = m.mk_sort(symbol("RatRel"), sort_info(m_family_id, RATREL_SORT, 1, &paramS));
         m.inc_ref(m_ratrel);
     }
     return m_ratrel;
@@ -342,7 +346,7 @@ sort * seq_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, parameter 
         return m_string;
     case _REGLAN_SORT:
         return mk_reglan();
-    case _RATREL_SORT:
+    case RATREL_SORT:
         return mk_ratrel();
     default:
         UNREACHABLE();
@@ -456,6 +460,8 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
     case OP_STRING_IS_DIGIT:
     case OP_STRING_TO_CODE:
     case OP_STRING_FROM_CODE:
+    case OP_STRING_TO_RAT:
+    case OP_STRING_IN_RAT:
         match(*m_sigs[k], arity, domain, range, rng);
         return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k));
 
@@ -730,7 +736,7 @@ void seq_decl_plugin::get_sort_names(svector<builtin_name> & sort_names, symbol 
     sort_names.push_back(builtin_name("String", _STRING_SORT));
 
     // Rational relations
-    sort_names.push_back(builtin_name("RatRel", _RATREL_SORT));
+    sort_names.push_back(builtin_name("RatRel", RATREL_SORT));
 
     // SMTLIB 2.5 compatibility
     sort_names.push_back(builtin_name("StringSequence", _STRING_SORT));
