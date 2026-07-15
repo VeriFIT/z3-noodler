@@ -260,7 +260,9 @@ public:
     bool is_re(expr* e) const { return is_re(e->get_sort()); }
     bool is_re(expr* e, sort*& seq) const { return is_re(e->get_sort(), seq); }
     bool is_ratrel(sort* s) const { return is_sort_of(s, m_fid, RATREL_SORT); }
+    bool is_ratrel(sort* s, sort*& seq) const { return is_sort_of(s, m_fid, RATREL_SORT)  && (seq = to_sort(s->get_parameter(0).get_ast()), true); }
     bool is_ratrel(expr* e) const { return is_ratrel(e->get_sort()); }
+    bool is_ratrel(expr* e, sort*& seq) const { return is_ratrel(e->get_sort(), seq); }
     bool is_const_char(expr* e, unsigned& c) const;
     bool is_const_char(expr* e) const { unsigned c; return is_const_char(e, c); }
     bool is_char_le(expr const* e) const;
