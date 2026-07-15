@@ -589,6 +589,7 @@ namespace smt::noodler {
             Predicate inst = Predicate::create_transducer(regex::conv_to_nft(to_app(std::get<2>(rat_memb)), m_util_s, m, alph), input, output);
             regex::gather_transducer_constraints(to_app(std::get<0>(rat_memb)), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
             regex::gather_transducer_constraints(to_app(std::get<1>(rat_memb)), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
+            instance.add_predicate(inst);
         }
 
         // construct not contains predicates
