@@ -81,7 +81,6 @@ enum seq_op_kind {
     OP_RE_DERIVATIVE, // Char -> RegEx -> RegEx
     OP_RE_FROM_ECMA2020,
 
-
     // string specific operators.
     OP_STRING_CONST,
     OP_STRING_ITOS,
@@ -123,6 +122,14 @@ enum seq_op_kind {
     // rational relation stuff
     OP_STRING_TO_RAT, // take two strings s and t and create rational relations {(s,t)}
     OP_STRING_IN_RAT, // take two strings s and t, rational relation R, and checks if (s,t) is in R
+    OP_RAT_CONCAT,
+    OP_RAT_UNION,
+    OP_RAT_LOOP,
+    OP_RAT_POWER,
+    OP_RAT_EMPTY_SET,
+    OP_RAT_STAR,
+    OP_RAT_PLUS,
+    OP_RAT_OPTION,
 
     LAST_SEQ_OP
 };
@@ -697,10 +704,42 @@ public:
         app* mk_to_rat(expr* s, expr* t) { return m.mk_app(m_fid, OP_STRING_TO_RAT, s, t); }
         app* mk_to_rat(const zstring &s, const zstring &t) { return mk_to_rat(u.str.mk_string(s), u.str.mk_string(t)); }
         app* mk_in_rat(expr* s, expr* t, expr* r) { return m.mk_app(m_fid, OP_STRING_IN_RAT, s, t, r); }
+        app* mk_concat(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RAT_CONCAT, r1, r2); }
+        app* mk_union(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RAT_UNION, r1, r2); }
+        app* mk_star(expr* r) { return m.mk_app(m_fid, OP_RAT_STAR, r); }
+        app* mk_plus(expr* r) { return m.mk_app(m_fid, OP_RAT_PLUS, r); }
+        app* mk_opt(expr* r) { return m.mk_app(m_fid, OP_RAT_OPTION, r); }
+        app* mk_power(expr* r, unsigned n);
+        app* mk_loop(expr* r, unsigned lo);
+        app* mk_loop(expr* r, unsigned lo, unsigned hi);
+        expr* mk_loop_proper(expr* r, unsigned lo, unsigned hi);
+        app* mk_loop(expr* r, expr* lo);
+        app* mk_loop(expr* r, expr* lo, expr* hi);
+        app* mk_empty() { return m.mk_app(m_fid, OP_RAT_EMPTY_SET, 0, nullptr, 0, nullptr, mk_ratrel()); };
 
         bool is_to_rat(expr const* n)    const { return is_app_of(n, m_fid, OP_STRING_TO_RAT); }
+        bool is_concat(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_CONCAT); }
+        bool is_concat(expr* e, ptr_vector<expr>& es) const;
+        bool is_union(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_UNION); }
+        bool is_star(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_STAR); }
+        bool is_plus(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_PLUS); }
+        bool is_opt(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_OPTION); }
+        bool is_range(expr const* n, unsigned& lo, unsigned& hi) const;
+        bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LOOP); }
+        bool is_empty(expr const* n)  const { return is_app_of(n, m_fid, OP_RAT_EMPTY_SET); }
+        bool is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const;
+        bool is_loop(expr const* n, expr*& body, unsigned& lo) const;
+        bool is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const;
+        bool is_loop(expr const* n, expr*& body, expr*& lo) const;
 
         MATCH_BINARY(is_to_rat);
+        MATCH_BINARY(is_concat);
+        MATCH_BINARY(is_union);
+        MATCH_UNARY(is_star);
+        MATCH_UNARY(is_plus);
+        MATCH_UNARY(is_opt);
+
+        app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); };
     };
 
     str str;
