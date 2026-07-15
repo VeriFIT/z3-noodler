@@ -218,7 +218,7 @@ namespace smt::noodler::regex {
                                                  const Alphabet& alphabet, bool determinize = false, bool make_complement = false);
     };
 
-    [[nodiscard]] std::shared_ptr<const mata::nft::Nft> conv_to_nft(app *expression, const seq_util& m_util_s, ast_manager& m, const Alphabet& alphabet);
+    [[nodiscard]] std::shared_ptr<mata::nft::Nft> conv_to_nft(app *expression, const seq_util& m_util_s, ast_manager& m, const Alphabet& alphabet);
 
     /**
      * @brief Get basic information about the regular expression in the form of RegexInfo (see the description above). 
