@@ -289,9 +289,17 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_opt(cur_expr)) { // Handle optional.
                     SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
-                    result.unify_initial();
+                    bool contains_epsilon = false;
                     for (const auto& initial : result.initial) {
-                        result.final.insert(initial);
+                        if (result.final.contains(initial)) {
+                            contains_epsilon = true;
+                            break;
+                        }
+                    }
+                    if (!contains_epsilon) {
+                        mata::nfa::State new_state = result.add_state();
+                        result.initial.insert(new_state);
+                        result.final.insert(new_state);
                     }
                 } else if (m_util_s.re.is_range(cur_expr)) { // Handle range.
                     SASSERT(cur_expr->get_num_args() == 2);
@@ -503,7 +511,20 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.rat_rel.is_loop(cur_expr)) { // Handle loop.
                     util::throw_error("we cannot handle loop for now"); // TODO: handle
                 } else if (m_util_s.rat_rel.is_opt(cur_expr)) { // Handle optional.
-                    util::throw_error("we cannot handle optional for now"); // TODO: handle
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfts.at(0));
+                    bool contains_epsilon = false;
+                    for (const auto& initial : result.initial) {
+                        if (result.final.contains(initial)) {
+                            contains_epsilon = true;
+                            break;
+                        }
+                    }
+                    if (!contains_epsilon) {
+                        mata::nfa::State new_state = result.add_state();
+                        result.initial.insert(new_state);
+                        result.final.insert(new_state);
+                    }
                 } else if (m_util_s.rat_rel.is_union(cur_expr)) { // Handle union (= or; A|B).
                     SASSERT(num_of_rational_arguments_of_cur_expr == 2);
                     result = std::move(arg_nfts.at(0));
