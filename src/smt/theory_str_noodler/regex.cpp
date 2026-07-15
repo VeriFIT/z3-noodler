@@ -10,6 +10,24 @@
 #include "aut_assignment.h"
 
 namespace {
+    mata::nft::Nft extend_nfa_to_nft(const mata::nfa::Nfa &nfa, bool identity, mata::Symbol s, bool left) {
+        mata::nft::Nft result(nfa.num_of_states(), nfa.initial, nfa.final, mata::nft::Levels(2, nfa.num_of_states(), 0));
+        for (const mata::nfa::Transition& tr : nfa.delta.transitions()) {
+            mata::Word transducer_symbol;
+            if (identity) {
+                transducer_symbol = {tr.symbol, tr.symbol};
+            } else if (left) {
+                transducer_symbol = {tr.symbol, s};
+            } else {
+                transducer_symbol = {s, tr.symbol};
+            }
+            result.add_transition(tr.source, transducer_symbol, tr.target);
+        }
+        return result;
+    }
+}
+
+namespace {
     using mata::nfa::Nfa;
 }
 
@@ -571,11 +589,14 @@ namespace smt::noodler::regex {
                     result = mata::nft::invert_levels(arg_nfts.at(0));
                     arg_nfts[0].clear();
                 } else if (expr* reg_expr; m_util_s.rat_rel.is_identity(cur_expr, reg_expr)) {
-                    util::throw_error("we cannot handle identity for now"); // TODO: handle
+                    mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
+                    result = extend_nfa_to_nft(body_nfa, true, 0, true);
                 } else if (expr* reg_expr; m_util_s.rat_rel.is_left(cur_expr, reg_expr)) {
-                    util::throw_error("we cannot handle left for now"); // TODO: handle
+                    mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
+                    result = extend_nfa_to_nft(body_nfa, false, mata::nft::EPSILON, true);
                 } else if (expr* reg_expr; m_util_s.rat_rel.is_right(cur_expr, reg_expr)) {
-                    util::throw_error("we cannot handle right for now"); // TODO: handle
+                    mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
+                    result = extend_nfa_to_nft(body_nfa, false, mata::nft::EPSILON, false);
                 } else {
                     std::stringstream ss;
                     ss << "unsupported operation in rational language:\n" << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m));
