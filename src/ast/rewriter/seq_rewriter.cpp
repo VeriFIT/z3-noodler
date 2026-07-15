@@ -502,6 +502,26 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
         SASSERT(num_args == 1);
         st = mk_rat_option(args[0], result);
         break;
+    case OP_RAT_COMPOSE:
+        SASSERT(num_args == 1);
+        st = mk_rat_compose(args[0], result);
+        break;
+    case OP_RAT_INVERT:
+        SASSERT(num_args == 1);
+        st = mk_rat_invert(args[0], result);
+        break;
+    case OP_RAT_IDENTITY:
+        SASSERT(num_args == 1);
+        st = mk_rat_identity(args[0], result);
+        break;
+    case OP_RAT_LEFT:
+        SASSERT(num_args == 1);
+        st = mk_rat_left(args[0], result);
+        break;
+    case OP_RAT_RIGHT:
+        SASSERT(num_args == 1);
+        st = mk_rat_right(args[0], result);
+        break;
     case _OP_STRING_CONCAT:
     case _OP_STRING_PREFIX:
     case _OP_STRING_SUFFIX:
@@ -5267,6 +5287,31 @@ br_status seq_rewriter::mk_rat_plus(expr* a, expr_ref& result) {
 }
 
 br_status seq_rewriter::mk_rat_option(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_compose(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_invert(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_identity(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_left(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_right(expr* a, expr_ref& result) {
     (void)a; (void)result;
     return BR_FAILED;
 }

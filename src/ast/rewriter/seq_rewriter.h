@@ -288,6 +288,11 @@ class seq_rewriter {
     br_status mk_rat_star(expr* a, expr_ref& result);
     br_status mk_rat_plus(expr* a, expr_ref& result);
     br_status mk_rat_option(expr* a, expr_ref& result);
+    br_status mk_rat_compose(expr* a, expr_ref& result);
+    br_status mk_rat_invert(expr* a, expr_ref& result);
+    br_status mk_rat_identity(expr* a, expr_ref& result);
+    br_status mk_rat_left(expr* a, expr_ref& result);
+    br_status mk_rat_right(expr* a, expr_ref& result);
 
     br_status lift_ites_throttled(func_decl* f, unsigned n, expr* const* args, expr_ref& result);
     bool lift_ites_filter(func_decl* f, expr* ite);
