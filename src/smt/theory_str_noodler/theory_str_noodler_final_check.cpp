@@ -83,6 +83,10 @@ namespace smt::noodler {
             for (const auto &memb: this->m_membership_todo_rel) {
                 tout << "    " << mk_pp(std::get<0>(memb), m) << (std::get<2>(memb) ? "" : " not") << " in " << mk_pp(std::get<1>(memb), m) << std::endl;
             }
+            tout << "  rat membs(" << this->m_rat_membership_todo_rel.size() << "):" << std::endl;
+            for (const auto &memb: this->m_rat_membership_todo_rel) {
+                tout << "    (" << mk_pp(std::get<0>(memb), m) << ", " << mk_pp(std::get<1>(memb), m) << ")" << (std::get<2>(memb) ? "" : " not") << " in " << mk_pp(std::get<2>(memb), m) << std::endl;
+            }
             tout << "  lang (dis)eqs(" << this->m_lang_eq_or_diseq_todo_rel.size() << "):" << std::endl;
             for (const auto &led: this->m_lang_eq_or_diseq_todo_rel) {
                 tout << "    " << mk_pp(std::get<0>(led), m) << (std::get<2>(led) ? " == " : " != ") << mk_pp(std::get<1>(led), m) << std::endl;
@@ -91,13 +95,9 @@ namespace smt::noodler {
             for (const auto &notc: this->m_not_contains_todo_rel) {
                 tout << "    " << mk_pp(notc.first, m) << "; " << mk_pp(notc.second, m) << std::endl;
             }
-            tout << " conversions(" << this->m_conversion_todo.size() << "):" << std::endl;
+            tout << "  conversions(" << this->m_conversion_todo.size() << "):" << std::endl;
             for (const auto &conv: this->m_conversion_todo) {
                 tout << "    " << get_conversion_name(conv.type) << " with string var " << conv.string_var << " and number var " << conv.number_var << std::endl;
-            }
-            tout << " rat membs(" << this->m_rat_membership_todo_rel.size() << "):" << std::endl;
-            for (const auto &memb: this->m_rat_membership_todo_rel) {
-                tout << "    (" << mk_pp(std::get<0>(memb), m) << ", " << mk_pp(std::get<1>(memb), m) << ")" << (std::get<2>(memb) ? "" : " not") << " in " << mk_pp(std::get<2>(memb), m) << std::endl;
             }
         );
 
