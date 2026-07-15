@@ -513,7 +513,9 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.rat_rel.is_plus(cur_expr)) { // Handle positive iteration.
                     util::throw_error("we cannot handle plus for now"); // TODO: handle
                 } else {
-                    util::throw_error("unsupported operation in rational language");
+                    std::stringstream ss;
+                    ss << "unsupported operation in rational language:\n" << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m));
+                    util::throw_error(ss.str());
                 }
 
                 // TODO: call reduction?
