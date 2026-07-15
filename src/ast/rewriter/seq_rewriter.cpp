@@ -503,8 +503,8 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
         st = mk_rat_option(args[0], result);
         break;
     case OP_RAT_COMPOSE:
-        SASSERT(num_args == 1);
-        st = mk_rat_compose(args[0], result);
+        SASSERT(num_args == 2);
+        st = mk_rat_compose(args[0], args[1], result);
         break;
     case OP_RAT_INVERT:
         SASSERT(num_args == 1);
@@ -5291,8 +5291,8 @@ br_status seq_rewriter::mk_rat_option(expr* a, expr_ref& result) {
     return BR_FAILED;
 }
 
-br_status seq_rewriter::mk_rat_compose(expr* a, expr_ref& result) {
-    (void)a; (void)result;
+br_status seq_rewriter::mk_rat_compose(expr* a, expr* b, expr_ref& result) {
+    (void)a; (void)b; (void)result;
     return BR_FAILED;
 }
 

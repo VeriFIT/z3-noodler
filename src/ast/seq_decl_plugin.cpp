@@ -211,7 +211,7 @@ void seq_decl_plugin::init() {
     sort* realTintT[2] = { realT, intT };
     sort* ratT  = m.mk_sort(m_family_id, RATREL_SORT, 1, &paramS);
     sort* str2Trat[3] = { strT, strT, ratT };
-    sort* ratRat[2] = { ratT, ratT };
+    sort* rat2T[2] = { ratT, ratT };
 
     m_sigs.resize(LAST_SEQ_OP);
     // TBD: have (par ..) construct and load parameterized signature from premable.
@@ -284,15 +284,15 @@ void seq_decl_plugin::init() {
     m_sigs[_OP_REGEXP_EMPTY]      = alloc(psig, m, "re.none", 0, 0, nullptr, reT);
     m_sigs[_OP_REGEXP_FULL_CHAR]  = alloc(psig, m, "re.allchar", 0, 0, nullptr, reT);
     m_sigs[_OP_STRING_SUBSTR]     = alloc(psig, m, "str.substr", 0, 3, strTint2T, strT);
-    m_sigs[OP_RAT_CONCAT]         = alloc(psig, m, "rat.++", 1, 2, ratRat, ratT);
-    m_sigs[OP_RAT_UNION]          = alloc(psig, m, "rat.union", 1, 2, ratRat, ratT);
+    m_sigs[OP_RAT_CONCAT]         = alloc(psig, m, "rat.++", 1, 2, rat2T, ratT);
+    m_sigs[OP_RAT_UNION]          = alloc(psig, m, "rat.union", 1, 2, rat2T, ratT);
     m_sigs[OP_RAT_LOOP]           = alloc(psig, m, "rat.loop", 1, 1, &ratT, ratT);
     m_sigs[OP_RAT_POWER]          = alloc(psig, m, "rat.^", 1, 1, &ratT, ratT);
     m_sigs[OP_RAT_EMPTY_SET]      = alloc(psig, m, "rat.none", 1, 0, nullptr, ratT);
     m_sigs[OP_RAT_STAR]           = alloc(psig, m, "rat.*", 1, 1, &ratT, ratT);
     m_sigs[OP_RAT_PLUS]           = alloc(psig, m, "rat.+", 1, 1, &ratT, ratT);
     m_sigs[OP_RAT_OPTION]         = alloc(psig, m, "rat.opt", 1, 1, &ratT, ratT);
-    m_sigs[OP_RAT_COMPOSE]        = alloc(psig, m, "rat.compose", 1, 1, &ratT, ratT);
+    m_sigs[OP_RAT_COMPOSE]        = alloc(psig, m, "rat.compose", 1, 2, rat2T, ratT);
     m_sigs[OP_RAT_INVERT]         = alloc(psig, m, "rat.invert", 1, 1, &ratT, ratT);
     m_sigs[OP_RAT_IDENTITY]       = alloc(psig, m, "rat.identity", 1, 1, &reT, ratT);
     m_sigs[OP_RAT_LEFT]           = alloc(psig, m, "rat.left", 1, 1, &reT, ratT);

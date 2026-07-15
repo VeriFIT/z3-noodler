@@ -561,6 +561,8 @@ namespace smt::noodler::regex {
                         }
                     }
                     result.remove_epsilon();
+                } else if (m_util_s.rat_rel.is_compose(cur_expr)) {
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 2);
                 } else {
                     std::stringstream ss;
                     ss << "unsupported operation in rational language:\n" << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m));

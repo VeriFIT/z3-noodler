@@ -721,7 +721,7 @@ public:
         app* mk_loop(expr* r, expr* lo);
         app* mk_loop(expr* r, expr* lo, expr* hi);
         app* mk_empty() { return m.mk_app(m_fid, OP_RAT_EMPTY_SET, 0, nullptr, 0, nullptr, mk_ratrel()); };
-        app* mk_compose(expr* r) { return m.mk_app(m_fid, OP_RAT_COMPOSE, r); }
+        app* mk_compose(expr* r, expr* s) { return m.mk_app(m_fid, OP_RAT_COMPOSE, r, s); }
         app* mk_invert(expr* r) { return m.mk_app(m_fid, OP_RAT_INVERT, r); }
         app* mk_identity(expr* r) { return m.mk_app(m_fid, OP_RAT_IDENTITY, r); }
         app* mk_left(expr* r) { return m.mk_app(m_fid, OP_RAT_LEFT, r); }
@@ -752,7 +752,7 @@ public:
         MATCH_UNARY(is_star);
         MATCH_UNARY(is_plus);
         MATCH_UNARY(is_opt);
-        MATCH_UNARY(is_compose);
+        MATCH_BINARY(is_compose);
         MATCH_UNARY(is_invert);
         MATCH_UNARY(is_identity);
         MATCH_UNARY(is_left);
