@@ -877,7 +877,9 @@ expr* seq_decl_plugin::get_some_value(sort* s) {
     if (util.is_re(s, seq)) {
         return util.re.mk_to_re(util.str.mk_empty(seq));
     }
-    // TODO add some valye for rational relations
+    if (util.is_ratrel(s, seq)) {
+        return util.rat_rel.mk_to_rat(util.str.mk_empty(seq), util.str.mk_empty(seq));
+    }
     UNREACHABLE();
     return nullptr;
 }
