@@ -130,6 +130,11 @@ enum seq_op_kind {
     OP_RAT_STAR,
     OP_RAT_PLUS,
     OP_RAT_OPTION,
+    OP_RAT_COMPOSE,
+    OP_RAT_INVERT,
+    OP_RAT_IDENTITY,
+    OP_RAT_LEFT,
+    OP_RAT_RIGHT,
 
     LAST_SEQ_OP
 };
@@ -716,6 +721,11 @@ public:
         app* mk_loop(expr* r, expr* lo);
         app* mk_loop(expr* r, expr* lo, expr* hi);
         app* mk_empty() { return m.mk_app(m_fid, OP_RAT_EMPTY_SET, 0, nullptr, 0, nullptr, mk_ratrel()); };
+        app* mk_compose(expr* r) { return m.mk_app(m_fid, OP_RAT_COMPOSE, r); }
+        app* mk_invert(expr* r) { return m.mk_app(m_fid, OP_RAT_INVERT, r); }
+        app* mk_identity(expr* r) { return m.mk_app(m_fid, OP_RAT_IDENTITY, r); }
+        app* mk_left(expr* r) { return m.mk_app(m_fid, OP_RAT_LEFT, r); }
+        app* mk_right(expr* r) { return m.mk_app(m_fid, OP_RAT_RIGHT, r); }
 
         bool is_to_rat(expr const* n)    const { return is_app_of(n, m_fid, OP_STRING_TO_RAT); }
         bool is_concat(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_CONCAT); }
@@ -724,13 +734,17 @@ public:
         bool is_star(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_STAR); }
         bool is_plus(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_PLUS); }
         bool is_opt(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_OPTION); }
-        bool is_range(expr const* n, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LOOP); }
         bool is_empty(expr const* n)  const { return is_app_of(n, m_fid, OP_RAT_EMPTY_SET); }
         bool is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n, expr*& body, unsigned& lo) const;
         bool is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const;
         bool is_loop(expr const* n, expr*& body, expr*& lo) const;
+        bool is_compose(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_COMPOSE); }
+        bool is_invert(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_INVERT); }
+        bool is_identity(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_IDENTITY); }
+        bool is_left(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LEFT); }
+        bool is_right(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_RIGHT); }
 
         MATCH_BINARY(is_to_rat);
         MATCH_BINARY(is_concat);
@@ -738,6 +752,11 @@ public:
         MATCH_UNARY(is_star);
         MATCH_UNARY(is_plus);
         MATCH_UNARY(is_opt);
+        MATCH_UNARY(is_compose);
+        MATCH_UNARY(is_invert);
+        MATCH_UNARY(is_identity);
+        MATCH_UNARY(is_left);
+        MATCH_UNARY(is_right);
 
         app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); };
     };
