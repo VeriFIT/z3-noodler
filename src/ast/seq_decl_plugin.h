@@ -119,11 +119,12 @@ enum seq_op_kind {
     _OP_RE_IS_NULLABLE,
     _OP_RE_ANTIMIROV_UNION, // Lifted union for antimirov-style derivatives
     _OP_SEQ_SKOLEM,
-    LAST_SEQ_OP,
 
     // rational relation stuff
     OP_STRING_TO_RAT, // take two strings s and t and create rational relations {(s,t)}
     OP_STRING_IN_RAT, // take two strings s and t, rational relation R, and checks if (s,t) is in R
+
+    LAST_SEQ_OP
 };
 
 
