@@ -440,10 +440,10 @@ namespace smt::noodler::regex {
             if (!visited) { // we have not visited cur_expr -> we need to process children first
                 postorder_stack.push({cur_expr, true});
                 ptr_vector<expr> rational_args;
-                if (!m_util_s.re.is_concat(cur_expr, rational_args)) {
+                if (!m_util_s.rat_rel.is_concat(cur_expr, rational_args)) {
                     for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
                         expr* arg = cur_expr->get_arg(arg_idx);
-                        if (m_util_s.is_re(arg)) { // we only process childrens representing regexes
+                        if (m_util_s.is_ratrel(arg)) { // we only process childrens representing regexes
                             rational_args.push_back(arg);
                         }
                     }
