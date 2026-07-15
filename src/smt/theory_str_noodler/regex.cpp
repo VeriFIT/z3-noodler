@@ -71,62 +71,7 @@ namespace smt::noodler::regex {
 
         SASSERT(is_app(ex));
         app* ex_app = to_app(ex);
-
-        if (m_util_s.re.is_to_re(ex_app)) { // Handle conversion to regex function call.
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto arg{ ex_app->get_arg(0) };
-            // Assume that expression inside re.to_re() function is a string of characters.
-            if (!m_util_s.str.is_string(arg)) { // if to_re has something other than string literal
-                util::throw_error("we support only string literals in str.to_re");
-            }
-            extract_symbols(to_app(arg), m_util_s, alphabet);
-            return;
-        } else if (m_util_s.re.is_concat(ex_app) // Handle regex concatenation.
-                || m_util_s.str.is_concat(ex_app) // Handle string concatenation.
-                || m_util_s.re.is_intersection(ex_app) // Handle intersection.
-            ) {
-            for (unsigned int i = 0; i < ex_app->get_num_args(); ++i) {
-                extract_symbols(to_app(ex_app->get_arg(i)), m_util_s, alphabet);
-            }
-            return;
-        } else if (m_util_s.re.is_antimirov_union(ex_app)) { // Handle Antimirov union.
-            util::throw_error("antimirov union is unsupported");
-        } else if (m_util_s.re.is_complement(ex_app)) { // Handle complement.
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto child{ ex_app->get_arg(0) };
-            SASSERT(is_app(child));
-            extract_symbols(to_app(child), m_util_s, alphabet);
-            return;
-        } else if (m_util_s.re.is_derivative(ex_app)) { // Handle derivative.
-            util::throw_error("derivative is unsupported");
-        } else if (m_util_s.re.is_diff(ex_app)) { // Handle diff.
-            util::throw_error("regex difference is unsupported");
-        } else if (m_util_s.re.is_dot_plus(ex_app)) { // Handle dot plus.
-            // Handle repeated full char ('.+') (SMT2: (re.+ re.allchar)).
-            return;
-        } else if (m_util_s.re.is_empty(ex_app)) { // Handle empty language.
-            return;
-        } else if (m_util_s.re.is_epsilon(ex_app)) { // Handle epsilon.
-            return;
-        } else if (m_util_s.re.is_full_char(ex_app)) {
-            // Handle full char (single occurrence of any string symbol, '.') (SMT2: re.allchar).
-            return;
-        } else if (m_util_s.re.is_full_seq(ex_app)) {
-            // Handle full sequence of characters (any sequence of characters, '.*') (SMT2: re.all).
-            return;
-        } else if (m_util_s.re.is_of_pred(ex_app)) { // Handle of predicate.
-            util::throw_error("of predicate is unsupported");
-        } else if (m_util_s.re.is_opt(ex_app) // Handle optional.
-                || m_util_s.re.is_plus(ex_app) // Handle positive iteration.
-                || m_util_s.re.is_star(ex_app) // Handle star iteration.
-                || m_util_s.re.is_loop(ex_app) // Handle loop.
-            ) {
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto child{ ex_app->get_arg(0) };
-            SASSERT(is_app(child));
-            extract_symbols(to_app(child), m_util_s, alphabet);
-            return;
-        } else if (m_util_s.re.is_range(ex_app)) { // Handle range.
+        if (m_util_s.re.is_range(ex_app)) { // Handle range.
             SASSERT(ex_app->get_num_args() == 2);
             const auto range_begin{ ex_app->get_arg(0) };
             const auto range_end{ ex_app->get_arg(1) };
@@ -145,22 +90,8 @@ namespace smt::noodler::regex {
                 alphabet.insert(current_value);
                 ++current_value;
             }
-        } else if (m_util_s.re.is_reverse(ex_app)) { // Handle reverse.
-            util::throw_error("reverse is unsupported");
-        } else if (m_util_s.re.is_union(ex_app)) { // Handle union (= or; A|B).
-            SASSERT(ex_app->get_num_args() == 2);
-            const auto left{ ex_app->get_arg(0) };
-            const auto right{ ex_app->get_arg(1) };
-            SASSERT(is_app(left));
-            SASSERT(is_app(right));
-            extract_symbols(to_app(left), m_util_s, alphabet);
-            extract_symbols(to_app(right), m_util_s, alphabet);
-            return;
-        } else if(util::is_variable(ex_app)) { // Handle variable.
-            util::throw_error("variable should not occur here");
         } else {
-            // When ex is not string literal, variable, nor regex, recursively traverse the AST to find symbols.
-            // TODO: maybe we can just leave is_range, is_variable and is_string in this function and otherwise do this:
+            // For all other options recursively traverse the AST to find symbols.
             for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
                 SASSERT(is_app(ex_app->get_arg(i)));
                 app *arg = to_app(ex_app->get_arg(i));
@@ -491,6 +422,37 @@ namespace smt::noodler::regex {
         final_auts_cache[expression] = final_result;
         STRACE(str_create_nfa, tout << final_result;);
         return final_result;
+    }
+
+    [[nodiscard]] std::shared_ptr<mata::nft::Nft> conv_to_nft(app *expression, const seq_util& m_util_s, ast_manager& m, const Alphabet& alphabet) {
+        SASSERT(m_util_s.is_ratrel(expression));
+        expr *arg1, *arg2;
+        if (m_util_s.rat_rel.is_to_rat(expression, arg1, arg2)) {
+            zstring arg1_zstring, arg2_zstring;
+            if (!m_util_s.str.is_string(arg1, arg1_zstring) || !m_util_s.str.is_string(arg2, arg2_zstring)) {
+                util::throw_error("We can only handle str.to_rat with string literals");
+            }
+            unsigned longer_length(std::max(arg1_zstring.length(), arg2_zstring.length()));
+            mata::nft::Nft res {mata::nft::Nft::with_levels(2, longer_length*2+1, {0}, {longer_length*2})};
+            for (unsigned i = 0; i < longer_length; ++i) {
+                res.levels[2*i] = 0;
+                res.levels[2*i+1] = 1;
+                if (i < arg1_zstring.length()) {
+                    res.delta.add(2*i, arg1_zstring[i], 2*i+1);
+                } else {
+                    res.delta.add(2*i, mata::nft::EPSILON, 2*i+1);
+                }
+                if (i < arg2_zstring.length()) {
+                    res.delta.add(2*i+1, arg2_zstring[i], 2*i+2);
+                } else {
+                    res.delta.add(2*i+1, mata::nft::EPSILON, 2*i+2);
+                }
+            }
+            res.levels[longer_length*2] = 0;
+            return std::make_shared<mata::nft::Nft>(res);
+        } else {
+            util::throw_error("unsupported operation in rational language");
+        }
     }
 
     [[nodiscard]] RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s) {
