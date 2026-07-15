@@ -563,6 +563,19 @@ namespace smt::noodler::regex {
                     result.remove_epsilon();
                 } else if (m_util_s.rat_rel.is_compose(cur_expr)) {
                     SASSERT(num_of_rational_arguments_of_cur_expr == 2);
+                    result = mata::nft::compose(arg_nfts.at(0), arg_nfts.at(1)); // TODO should we swap?
+                    arg_nfts[0].clear();
+                    arg_nfts[1].clear();
+                } else if (m_util_s.rat_rel.is_invert(cur_expr)) {
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 1);
+                    result = mata::nft::invert_levels(arg_nfts.at(0));
+                    arg_nfts[0].clear();
+                } else if (expr* reg_expr; m_util_s.rat_rel.is_identity(cur_expr, reg_expr)) {
+                    util::throw_error("we cannot handle identity for now"); // TODO: handle
+                } else if (expr* reg_expr; m_util_s.rat_rel.is_left(cur_expr, reg_expr)) {
+                    util::throw_error("we cannot handle left for now"); // TODO: handle
+                } else if (expr* reg_expr; m_util_s.rat_rel.is_right(cur_expr, reg_expr)) {
+                    util::throw_error("we cannot handle right for now"); // TODO: handle
                 } else {
                     std::stringstream ss;
                     ss << "unsupported operation in rational language:\n" << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m));
