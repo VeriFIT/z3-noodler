@@ -490,6 +490,28 @@ namespace smt::noodler::regex {
                         }
                     }
                     result.levels[longer_length*2] = 0;
+                } else if (m_util_s.re.is_concat(cur_expr)) {
+                    SASSERT(num_of_rational_arguments_of_cur_expr > 0);
+                    result = std::move(arg_nfts.at(0));
+                    for (unsigned int i = 1; i < num_of_rational_arguments_of_cur_expr; ++i) {
+                        result.concatenate(arg_nfts.at(i));
+                        arg_nfts[i].clear();
+                    }
+                    result.trim();
+                } else if (m_util_s.rat_rel.is_empty(cur_expr)) { // Handle empty language.
+                    // Do nothing, as nft is initialized empty
+                } else if (m_util_s.rat_rel.is_loop(cur_expr)) { // Handle loop.
+                    util::throw_error("we cannot handle loop for now"); // TODO: handle
+                } else if (m_util_s.re.is_opt(cur_expr)) { // Handle optional.
+                    util::throw_error("we cannot handle optional for now"); // TODO: handle
+                } else if (m_util_s.re.is_union(cur_expr)) { // Handle union (= or; A|B).
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 2);
+                    result = std::move(arg_nfts.at(0));
+                    result.unite_nondet_with(arg_nfts.at(1));
+                } else if (m_util_s.re.is_star(cur_expr)) { // Handle star iteration.
+                    util::throw_error("we cannot handle star for now"); // TODO: handle
+                } else if (m_util_s.re.is_plus(cur_expr)) { // Handle positive iteration.
+                    util::throw_error("we cannot handle plus for now"); // TODO: handle
                 } else {
                     util::throw_error("unsupported operation in rational language");
                 }
