@@ -509,7 +509,26 @@ namespace smt::noodler::regex {
                     result = std::move(arg_nfts.at(0));
                     result.unite_nondet_with(arg_nfts.at(1));
                 } else if (m_util_s.rat_rel.is_star(cur_expr)) { // Handle star iteration.
-                    util::throw_error("we cannot handle star for now"); // TODO: handle
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfts.at(0));
+                    bool contains_epsilon = false;
+                    for (const auto& final : result.final) {
+                        for (const auto& initial : result.initial) {
+                            if (final == initial) {
+                                contains_epsilon = true;
+                            } else {
+                                result.add_transition(final, {mata::nfa::EPSILON, mata::nfa::EPSILON}, initial);
+                            }
+                        }
+                    }
+                    result.remove_epsilon();
+
+                    if (!contains_epsilon) {
+                        // Make new initial final in order to accept empty string as is required by kleene-star.
+                        mata::nfa::State new_state = result.add_state();
+                        result.initial.insert(new_state);
+                        result.final.insert(new_state);
+                    }
                 } else if (m_util_s.rat_rel.is_plus(cur_expr)) { // Handle positive iteration.
                     util::throw_error("we cannot handle plus for now"); // TODO: handle
                 } else {
