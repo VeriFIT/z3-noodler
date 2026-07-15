@@ -468,7 +468,7 @@ namespace smt::noodler::regex {
                 );
 
                 mata::nft::Nft result;
-                if (expr *arg1, *arg2; m_util_s.rat_rel.is_to_rat(expression, arg1, arg2)) {
+                if (expr *arg1, *arg2; m_util_s.rat_rel.is_to_rat(cur_expr, arg1, arg2)) {
                     zstring arg1_zstring, arg2_zstring;
                     if (!m_util_s.str.is_string(arg1, arg1_zstring) || !m_util_s.str.is_string(arg2, arg2_zstring)) {
                         util::throw_error("We can only handle str.to_rat with string literals");
