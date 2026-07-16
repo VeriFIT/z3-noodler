@@ -19,7 +19,9 @@ namespace {
     /// gets an expensive mata::nfa::reduce() at every intermediate node instead of once
     /// for the whole union -- mirrors what seq_util::rex::is_concat(expr*, ptr_vector<expr>&)
     /// already does for re.++.
-    bool flatten_union(expr* e, const seq_util& m_util_s, ptr_vector<expr>& es) {
+    /// Returns false (and leaves union_args untouched) if e is not a re.union.
+    /// @param union_args Out parameter collecting the flattened non-union leaf arguments.
+    bool flatten_union(expr* e, const seq_util& m_util_s, ptr_vector<expr>& union_args) {
         if (!m_util_s.re.is_union(e)) {
             return false;
         }
@@ -33,7 +35,7 @@ namespace {
                 todo.push_back(e2);
                 todo.push_back(e1);
             } else {
-                es.push_back(e);
+                union_args.push_back(e);
             }
         }
         return true;
@@ -221,17 +223,17 @@ namespace smt::noodler::regex {
 
             if (!visited) { // we have not visited cur_expr -> we need to process children first
                 postorder_stack.push({cur_expr, true});
-                ptr_vector<expr> concatenation_args;
-                if (!m_util_s.re.is_concat(cur_expr, concatenation_args) && !flatten_union(cur_expr, m_util_s, concatenation_args)) {
+                ptr_vector<expr> regex_args;
+                if (!m_util_s.re.is_concat(cur_expr, regex_args) && !flatten_union(cur_expr, m_util_s, regex_args)) {
                     for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
                         expr* arg = cur_expr->get_arg(arg_idx);
                         if (m_util_s.is_re(arg)) { // we only process childrens representing regexes
-                            concatenation_args.push_back(arg);
+                            regex_args.push_back(arg);
                         }
                     }
                 }
-                num_of_regex_arguments[cur_expr] = concatenation_args.size();
-                for (expr* arg : concatenation_args) {
+                num_of_regex_arguments[cur_expr] = regex_args.size();
+                for (expr* arg : regex_args) {
                     SASSERT(is_app(arg));
                     postorder_stack.push({to_app(arg), false});
                 }
