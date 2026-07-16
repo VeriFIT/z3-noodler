@@ -118,3 +118,60 @@ Examples:
  - `(str.delete "aaaa" 2 0)` → `"aaaa"`
  - `(str.delete "aaaa" 2 -1)` → `"aaaa"`
  - `(str.delete "aaaa" 10 2)` → `"aaaa"`
+
+## 4. Rational relations (transducers)
+We define a new sort `RatRel` of *rational relations*, i.e. binary relations over strings accepted by some finite transducer. We use `UC*` as the set of all words (same as in the definition of [Strings theory](https://smt-lib.org/theories-UnicodeStrings.shtml)). A rational relation is then a subset of `UC* × UC*`.
+
+### `(str.to_rat String String RatRel)`
+Semantics: `⟦str.to_rat⟧(u, v) = {(u,v)}`
+
+### `(str.in_rat String String RatRel Bool)`
+Semantics: `⟦str.in_rat⟧(u, v, R) = true iff (u,v) ∈ R`
+
+### `(rat.none RatRel RatRel)`
+Semantics: `⟦rat.none⟧ = ∅`
+
+### `(rat.++ RatRel RatRel RatRel)`
+Semantics: `⟦rat.++⟧(R1, R2) = {(u1u2,v1v2) | (u1,v1) ∈ R1 and (u2,v2) ∈ R2}`
+
+### `(rat.union RatRel RatRel RatRel)`
+Semantics: `⟦rat.union⟧(R1, R2) = {(u,v) | (u,v) ∈ R1 or (u,v) ∈ R2}`
+
+### `(rat.* RatRel RatRel)`
+Semantics: `⟦rat.*⟧(R)` is the smallest subset `K` of `UC* × UC*` such that
+- `(ε,ε) ∈ K`
+- `⟦rat.++⟧(R,K) ⊆ K`
+
+
+### `(rat.+ RatRel RatRel)`
+Abbreviates `(rat.++ e (rat.* e))`.
+
+### `(rat.opt RatRel RatRel)`
+Abbreviates `(rat.union e (str.to_rat "" ""))`.
+
+### `((_ rat.^ n) RatRel RatRel)` ⚠️ TODO: NOT IMPLEMENTED YET
+Assumes that `n` is a numeral.  
+Semantics: `⟦(_ re.^ n)⟧(R) = Rⁿ` where `Rⁿ` is defined inductively on `n` as follows:
+- `R⁰ = {(ε,ε)}`
+- `Rⁿ⁺¹ = ⟦rat.++⟧(R, Rⁿ)`
+
+### `((_ rat.loop n1 n2) RatRel RatRel)` ⚠️ TODO: NOT IMPLEMENTED YET
+Assumes that `n` is a numeral.  
+Semantics:  
+&nbsp;&nbsp;&nbsp;&nbsp;For `i <= n`: `⟦(_ rat.loop i n)⟧(R) = Rⁱ ∪ ... ∪ Rⁿ`   
+&nbsp;&nbsp;&nbsp;&nbsp;Otherwise: `⟦(_ rat.loop i n)⟧(R) = ∅`
+
+### `(rat.compose RatRel RatRel RatRel)` ⚠️ TODO: DECIDE DIRECTION
+Semantics: `⟦rat.compose(R1, R2) = {(u,v) | (u,x) ∈ R1 and (x,v) ∈ R2 for some x ∈ UC*}`
+
+### `(rat.invert RatRel RatRel)`
+Semantics: `⟦rat.invert(R) = {(u,v) | (v,u) ∈ R}`
+
+### `(rat.identity RegLan RatRel)`
+Semantics: `⟦rat.invert(L) = {(u,u) | u ∈ L}`
+
+### `(rat.left RegLan RatRel)`
+Semantics: `⟦rat.left(L) = {(u,ε) | u ∈ L}`
+
+### `(rat.right RegLan RatRel)`
+Semantics: `⟦rat.right(L) = {(ε,u) | u ∈ L}`
