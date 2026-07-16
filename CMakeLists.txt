@@ -314,7 +314,7 @@ else()
 	FetchContent_Declare(
     mata
     GIT_REPOSITORY https://github.com/VeriFIT/mata
-    GIT_TAG        1.32.9 # needs to be updated manually when new mata version is needed
+    GIT_TAG        v1.32.33 # needs to be updated manually when new mata version is needed
   )
 
   FetchContent_MakeAvailable(mata)
