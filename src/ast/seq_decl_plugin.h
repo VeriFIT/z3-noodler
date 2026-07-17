@@ -758,6 +758,7 @@ public:
         MATCH_UNARY(is_left);
         MATCH_UNARY(is_right);
 
+        bool is_epsilon(expr const* r) { expr *s, *t; return is_to_rat(r, s, t) && u.str.is_empty(s) && u.str.is_empty(t); }
         app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); };
     };
 

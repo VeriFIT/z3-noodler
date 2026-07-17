@@ -4849,6 +4849,17 @@ bool seq_rewriter::lift_str_from_to_re(expr* r, expr_ref& result)
     return lift_str_from_to_re_ite(r, result);
 }
 
+bool seq_rewriter::lift_str_from_to_rat(expr* r, expr_ref& result1, expr_ref& result2)
+{
+    expr *s = nullptr, *t = nullptr;
+    if (rat().is_to_rat(r, s, t)) {
+        result1 = s;
+        result2 = s;
+        return true;
+    }
+    return false;
+}
+
 br_status seq_rewriter::mk_str_to_regexp(expr* a, expr_ref& result) {
     return BR_FAILED;
 }
@@ -5252,7 +5263,76 @@ br_status seq_rewriter::mk_re_power(func_decl* f, expr* a, expr_ref& result) {
 }
 
 br_status seq_rewriter::mk_rat_concat(expr* a, expr* b, expr_ref& result) {
-    (void)a; (void)b; (void)result;
+    if (rat().is_empty(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_empty(b)) {
+        result = b;
+        return BR_DONE;
+    }
+    if (rat().is_epsilon(a)) {
+        result = b;
+        return BR_DONE;
+    }
+    if (rat().is_epsilon(b)) {
+        result = a;
+        return BR_DONE;
+    }
+    expr_ref a_str1(m());
+    expr_ref a_str2(m());
+    expr_ref b_str1(m());
+    expr_ref b_str2(m());
+    if (lift_str_from_to_rat(a, a_str1, a_str2) && lift_str_from_to_rat(b, b_str1, b_str2)) {
+        result = rat().mk_to_rat(str().mk_concat(a_str1, b_str1), str().mk_concat(a_str2, b_str2));
+        return BR_REWRITE2;
+    }
+    expr* a1 = nullptr, *b1 = nullptr, *a2 = nullptr, *b2 = nullptr;
+    if (rat().is_to_rat(a, a1, a2) && rat().is_to_rat(b, b1, b2)) {
+        result = rat().mk_to_rat(str().mk_concat(a1, b1), str().mk_concat(a2, b2));
+        return BR_DONE;
+    }
+    if (rat().is_star(a, a1) && rat().is_star(b, b1) && a1 == b1) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_star(a, a1) && a1 == b) {
+        result = rat().mk_concat(b, a);
+        return BR_DONE;
+    }
+    unsigned lo1, hi1, lo2, hi2;
+
+    if (rat().is_loop(a, a1, lo1, hi1) && lo1 <= hi1 && rat().is_loop(b, b1, lo2, hi2) && lo2 <= hi2 && a1 == b1) {
+        result = rat().mk_loop_proper(a1, lo1 + lo2, hi1 + hi2);
+        return BR_DONE;
+    }
+    if (rat().is_loop(a, a1, lo1) && rat().is_loop(b, b1, lo2) && a1 == b1) {
+        result = rat().mk_loop(a1, lo1 + lo2);
+        return BR_DONE;
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        // (loop a lo1) + (loop a lo2 hi2) = (loop a lo1 + lo2) 
+        if (rat().is_loop(a, a1, lo1) && rat().is_loop(b, b1, lo2, hi2) && lo2 <= hi2 && a1 == b1) {
+            result = rat().mk_loop(a1, lo1 + lo2);
+            return BR_DONE;
+        }
+        // (loop a lo1 hi1) + a* = (loop a lo1)
+        if (rat().is_loop(a, a1, lo1, hi1) && rat().is_star(b, b1) && a1 == b1) {
+            result = rat().mk_loop(a1, lo1);
+            return BR_DONE;
+        }
+        // (loop a lo1) + a* = (loop a lo1)
+        if (rat().is_loop(a, a1, lo1) && rat().is_star(b, b1) && a1 == b1) {
+            result = a;
+            return BR_DONE;
+        }
+        // (loop a lo1 hi1) + a = (loop a lo1+1 hi1+1)
+        if (rat().is_loop(a, a1, lo1, hi1) && lo1 <= hi1 && a1 == b) {
+            result = rat().mk_loop(a1, lo1+1, hi1+1);
+            return BR_DONE;
+        }
+        std::swap(a, b);
+    }
     return BR_FAILED;
 }
 

@@ -308,6 +308,8 @@ class seq_rewriter {
     bool lift_str_from_to_re_ite(expr * r, expr_ref & result);
     /* same as lift_to_re_from_ite and also: r = to_re(u) ==> returns true, result = u */
     bool lift_str_from_to_re(expr * r, expr_ref & result);
+    /* r = to_rat(s,t) ==> return true, result1 = s, result2 = t*/
+    bool lift_str_from_to_rat(expr * r, expr_ref & result1, expr_ref & result2);
 
     br_status mk_bool_app_helper(bool is_and, unsigned n, expr* const* args, expr_ref& result);
     br_status mk_eq_helper(expr* a, expr* b, expr_ref& result);
