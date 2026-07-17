@@ -5342,7 +5342,71 @@ br_status seq_rewriter::mk_rat_union(expr* a, expr* b, expr_ref& result) {
 }
 
 br_status seq_rewriter::mk_rat_loop(func_decl* f, unsigned num_args, expr* const* args, expr_ref& result) {
-    (void)f; (void)num_args; (void)args; (void)result;
+    rational n1, n2;
+    unsigned lo, hi, lo2, hi2, np;
+    expr* a = nullptr;
+    expr* comp = nullptr, *tore = nullptr;
+    zstring zstr;
+
+    switch (num_args) {
+    case 1: 
+        np = f->get_num_parameters();
+        lo2 = np > 0 ? f->get_parameter(0).get_int() : 0;
+        hi2 = np > 1 ? f->get_parameter(1).get_int() : lo2;
+        if  (np == 2 && (lo2 > hi2 || hi2 < 0)) {
+            result = rat().mk_empty();
+            return BR_DONE;
+        }
+        if (np == 1 && lo2 < 0) {
+            result = rat().mk_empty();
+            return BR_DONE;
+        }
+        // (loop a 0 0) = ""
+        if (np == 2 && lo2 == 0 && hi2 == 0) {
+            result = rat().mk_epsilon();
+            return BR_DONE;
+        }
+        // (loop (loop a lo) lo2) = (loop lo*lo2)
+        if (rat().is_loop(args[0], a, lo) && np == 1) {
+            result = rat().mk_loop(a, lo2 * lo);
+            return BR_REWRITE1;
+        }
+        // (loop (loop a l l) h h) = (loop a l*h l*h)
+        if (rat().is_loop(args[0], a, lo, hi) && np == 2 && lo == hi && lo2 == hi2) {
+            result = rat().mk_loop_proper(a, lo2 * lo, hi2 * hi);
+            return BR_REWRITE1;
+        }
+        // (loop a 1 1) = a
+        if (np == 2 && lo2 == 1 && hi2 == 1) {
+            result = args[0];
+            return BR_DONE;
+        }
+        // (loop a 0) = a*
+        if (np == 1 && lo2 == 0) {
+            result = rat().mk_star(args[0]);
+            return BR_DONE;
+        }
+        break;
+    case 2:
+        if (m_autil.is_numeral(args[1], n1) && n1.is_unsigned()) {
+            result = rat().mk_loop(args[0], n1.get_unsigned());
+            return BR_REWRITE1;
+        }
+        if (m_autil.is_numeral(args[1], n1) && n1 < 0) {
+            result = rat().mk_empty();
+            return BR_DONE;
+        }
+        break;
+    case 3:
+        if (m_autil.is_numeral(args[1], n1) && n1.is_unsigned() &&
+            m_autil.is_numeral(args[2], n2) && n2.is_unsigned()) {
+            result = rat().mk_loop_proper(args[0], n1.get_unsigned(), n2.get_unsigned());
+            return BR_REWRITE1;
+        }
+        break;
+    default:
+        break;
+    }
     return BR_FAILED;
 }
 
