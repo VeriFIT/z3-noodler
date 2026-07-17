@@ -488,8 +488,7 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
         st = mk_rat_power(f, args[0], result);
         break;
     case OP_RAT_EMPTY_SET:
-        st = mk_rat_empty_set(f, result);
-        break;
+        return BR_FAILED;
     case OP_RAT_STAR:
         SASSERT(num_args == 1);
         st = mk_rat_star(args[0], result);
@@ -5416,13 +5415,43 @@ br_status seq_rewriter::mk_rat_power(func_decl* f, expr* a, expr_ref& result) {
     return BR_REWRITE1;
 }
 
-br_status seq_rewriter::mk_rat_empty_set(func_decl* f, expr_ref& result) {
-    (void)f; (void)result;
-    return BR_FAILED;
-}
-
 br_status seq_rewriter::mk_rat_star(expr* a, expr_ref& result) {
-    (void)a; (void)result;
+    expr* b, *c, *b1, *c1;
+    if (rat().is_empty(a)) {
+        result = rat().mk_epsilon();
+        return BR_DONE;
+    }
+    if (rat().is_epsilon(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_plus(a, b)) {
+        result = rat().mk_star(b);
+        return BR_DONE;
+    }
+    if (rat().is_union(a, b, c)) {
+        if (rat().is_star(b, b1)) {
+            result = rat().mk_star(rat().mk_union(b1, c));
+            return BR_REWRITE2;
+        }
+        if (rat().is_star(c, c1)) {
+            result = rat().mk_star(rat().mk_union(b, c1));
+            return BR_REWRITE2;
+        }
+        if (rat().is_epsilon(b)) {
+            result = rat().mk_star(c);
+            return BR_REWRITE2;
+        }
+        if (rat().is_epsilon(c)) {
+            result = rat().mk_star(b);
+            return BR_REWRITE2;
+        }
+    }
+    if (rat().is_concat(a, b, c) &&
+        rat().is_star(b, b1) && rat().is_star(c, c1)) {
+        result = rat().mk_star(rat().mk_union(b1, c1));
+        return BR_REWRITE2;
+    }
     return BR_FAILED;
 }
 
