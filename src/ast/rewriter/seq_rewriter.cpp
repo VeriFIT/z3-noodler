@@ -5267,8 +5267,9 @@ br_status seq_rewriter::mk_rat_loop(func_decl* f, unsigned num_args, expr* const
 }
 
 br_status seq_rewriter::mk_rat_power(func_decl* f, expr* a, expr_ref& result) {
-    (void)f; (void)a; (void)result;
-    return BR_FAILED;
+    unsigned p = f->get_parameter(0).get_int();
+    result = rat().mk_loop_proper(a, p, p);
+    return BR_REWRITE1;
 }
 
 br_status seq_rewriter::mk_rat_empty_set(func_decl* f, expr_ref& result) {

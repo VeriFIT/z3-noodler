@@ -149,13 +149,13 @@ Abbreviates `(rat.++ e (rat.* e))`.
 ### `(rat.opt RatRel RatRel)`
 Abbreviates `(rat.union e (str.to_rat "" ""))`.
 
-### `((_ rat.^ n) RatRel RatRel)` ⚠️ TODO: NOT IMPLEMENTED YET
+### `((_ rat.^ n) RatRel RatRel)`
 Assumes that `n` is a numeral.  
 Semantics: `⟦(_ re.^ n)⟧(R) = Rⁿ` where `Rⁿ` is defined inductively on `n` as follows:
 - `R⁰ = {(ε,ε)}`
 - `Rⁿ⁺¹ = ⟦rat.++⟧(R, Rⁿ)`
 
-### `((_ rat.loop n1 n2) RatRel RatRel)` ⚠️ TODO: NOT IMPLEMENTED YET
+### `((_ rat.loop n1 n2) RatRel RatRel)`
 Assumes that `n` is a numeral.  
 Semantics:  
 &nbsp;&nbsp;&nbsp;&nbsp;For `i <= n`: `⟦(_ rat.loop i n)⟧(R) = Rⁱ ∪ ... ∪ Rⁿ`   

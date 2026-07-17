@@ -355,6 +355,8 @@ class seq_rewriter {
     void remove_empty_and_concats(expr_ref_vector& es);
     void remove_leading(unsigned n, expr_ref_vector& es);
 
+    class seq_util::rat& rat() { return u().rat_rel; }
+    class seq_util::rat const& rat() const { return u().rat_rel; }
     class seq_util::rex& re() { return u().re; }
     class seq_util::rex const& re() const { return u().re; }
     class seq_util::str& str() { return u().str; }

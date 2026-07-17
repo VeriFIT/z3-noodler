@@ -2,6 +2,8 @@
 #include <memory>
 #include <unordered_map>
 
+#include <mata/nft/builder.hh>
+
 #include "util/z3_exception.h"
 
 #include "regex.h"
@@ -527,7 +529,64 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.rat_rel.is_empty(cur_expr)) { // Handle empty language.
                     // Do nothing, as nft is initialized empty
                 } else if (m_util_s.rat_rel.is_loop(cur_expr)) { // Handle loop.
-                    util::throw_error("we cannot handle loop for now"); // TODO: handle
+                    unsigned low, high;
+                    expr *body;
+                    bool is_high_set = false;
+                    if (m_util_s.re.is_loop(cur_expr, body, low, high)) {
+                        is_high_set = true;
+                    } else if (m_util_s.re.is_loop(cur_expr, body, low)) {
+                        is_high_set = false;
+                    } else {
+                        util::throw_error("loop should contain at least lower bound");
+                    }
+
+                    mata::nft::Nft body_nft = std::move(arg_nfts.at(0));
+
+                    if (body_nft.is_lang_empty()) {
+                        // for the case that body of the loop represents empty language...
+                        if (low == 0) {
+                            // ...we either return empty string if we have \emptyset{0,h}
+                            result = mata::nft::builder::create_empty_string_nft(2);
+                        } else {
+                            // ... or empty language (we do nothing as result is initialized empty)
+                        }
+                    } else {
+                        body_nft.unify_final();
+                        body_nft.unify_initial();
+
+                        body_nft = mata::nft::reduce(body_nft);
+                        result = mata::nft::concatenate_nth_power(body_nft, low);
+                        result.trim();
+
+                        // we will now either repeat body_nft high-low times (if is_high_set) or
+                        // unlimited times (if it is not set), but we have to accept after each loop,
+                        // so we add an empty word into body_nfa
+                        mata::nfa::State new_state = body_nft.add_state();
+                        body_nft.initial.insert(new_state);
+                        body_nft.final.insert(new_state);
+
+                        body_nft.unify_initial();
+                        body_nft = mata::nfa::reduce(body_nft);
+                        body_nft.trim();
+
+                        if (is_high_set) {
+                            // if high is set, we repeat body_nfa another high-low times
+                            result.concatenate(mata::nft::concatenate_nth_power(std::move(body_nft), high - low));
+                            result.trim();
+                        } else {
+                            // if high is not set, we can repeat body_nft unlimited more times
+                            // so we do star operation on body_nfa and add it to end of nfa
+                            for (const auto& final : body_nft.final) {
+                                for (const auto& initial : body_nft.initial) {
+                                    if (final != initial) {
+                                        body_nft.delta.add(final, mata::nfa::EPSILON, initial);
+                                    }
+                                }
+                            }
+                            result = mata::nfa::concatenate(result, body_nft, true);
+                            result = mata::nfa::remove_epsilon(result);
+                        }
+                    }
                 } else if (m_util_s.rat_rel.is_opt(cur_expr)) { // Handle optional.
                     SASSERT(num_of_rational_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfts.at(0));
