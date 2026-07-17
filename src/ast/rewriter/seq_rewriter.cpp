@@ -5456,13 +5456,30 @@ br_status seq_rewriter::mk_rat_star(expr* a, expr_ref& result) {
 }
 
 br_status seq_rewriter::mk_rat_plus(expr* a, expr_ref& result) {
-    (void)a; (void)result;
-    return BR_FAILED;
+    if (rat().is_empty(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_epsilon(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_plus(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_star(a)) {
+        result = a;
+        return BR_DONE;
+    }
+
+    result = rat().mk_concat(a, rat().mk_star(a));
+    return BR_REWRITE2;
 }
 
 br_status seq_rewriter::mk_rat_option(expr* a, expr_ref& result) {
-    (void)a; (void)result;
-    return BR_FAILED;
+    result = rat().mk_union(rat().mk_epsilon(), a);
+    return BR_REWRITE1;
 }
 
 br_status seq_rewriter::mk_rat_compose(expr* a, expr* b, expr_ref& result) {
