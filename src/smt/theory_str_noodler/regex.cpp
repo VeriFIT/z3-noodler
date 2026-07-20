@@ -11,6 +11,35 @@
 
 namespace {
     using mata::nfa::Nfa;
+
+    /// Flattens a chain of (possibly deeply nested) binary re.union AST nodes into the
+    /// list of its non-union leaf arguments. Z3 always represents re.union as a binary
+    /// operator (n-ary calls get left-associated into a binary chain during parsing), so
+    /// without this, a union of many regexes is processed one binary node at a time and
+    /// gets an expensive mata::nfa::reduce() at every intermediate node instead of once
+    /// for the whole union -- mirrors what seq_util::rex::is_concat(expr*, ptr_vector<expr>&)
+    /// already does for re.++.
+    /// Returns false (and leaves union_args untouched) if e is not a re.union.
+    /// @param union_args Out parameter collecting the flattened non-union leaf arguments.
+    bool flatten_union(expr* e, const seq_util& m_util_s, ptr_vector<expr>& union_args) {
+        if (!m_util_s.re.is_union(e)) {
+            return false;
+        }
+        expr *e1, *e2;
+        ptr_vector<expr> todo;
+        todo.push_back(e);
+        while (!todo.empty()) {
+            e = todo.back();
+            todo.pop_back();
+            if (m_util_s.re.is_union(e, e1, e2)) {
+                todo.push_back(e2);
+                todo.push_back(e1);
+            } else {
+                union_args.push_back(e);
+            }
+        }
+        return true;
+    }
 }
 
 namespace smt::noodler::regex {
@@ -194,17 +223,17 @@ namespace smt::noodler::regex {
 
             if (!visited) { // we have not visited cur_expr -> we need to process children first
                 postorder_stack.push({cur_expr, true});
-                ptr_vector<expr> concatenation_args;
-                if (!m_util_s.re.is_concat(cur_expr, concatenation_args)) {
+                ptr_vector<expr> regex_args;
+                if (!m_util_s.re.is_concat(cur_expr, regex_args) && !flatten_union(cur_expr, m_util_s, regex_args)) {
                     for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
                         expr* arg = cur_expr->get_arg(arg_idx);
                         if (m_util_s.is_re(arg)) { // we only process childrens representing regexes
-                            concatenation_args.push_back(arg);
+                            regex_args.push_back(arg);
                         }
                     }
                 }
-                num_of_regex_arguments[cur_expr] = concatenation_args.size();
-                for (expr* arg : concatenation_args) {
+                num_of_regex_arguments[cur_expr] = regex_args.size();
+                for (expr* arg : regex_args) {
                     SASSERT(is_app(arg));
                     postorder_stack.push({to_app(arg), false});
                 }
@@ -386,9 +415,12 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_reverse(cur_expr)) { // Handle reverse.
                     util::throw_error("reverse is unsupported");
                 } else if (m_util_s.re.is_union(cur_expr)) { // Handle union (= or; A|B).
-                    SASSERT(num_of_regex_arguments_of_cur_expr == 2);
+                    SASSERT(num_of_regex_arguments_of_cur_expr > 0);
                     result = std::move(arg_nfas.at(0));
-                    result.unite_nondet_with(arg_nfas.at(1));
+                    for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
+                        result.unite_nondet_with(arg_nfas.at(i));
+                        arg_nfas[i].clear();
+                    }
                 } else if (m_util_s.re.is_star(cur_expr)) { // Handle star iteration.
                     SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
