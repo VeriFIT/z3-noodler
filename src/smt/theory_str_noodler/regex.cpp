@@ -564,9 +564,9 @@ namespace smt::noodler::regex {
                     unsigned low, high;
                     expr *body;
                     bool is_high_set = false;
-                    if (m_util_s.re.is_loop(cur_expr, body, low, high)) {
+                    if (m_util_s.rat_rel.is_loop(cur_expr, body, low, high)) {
                         is_high_set = true;
-                    } else if (m_util_s.re.is_loop(cur_expr, body, low)) {
+                    } else if (m_util_s.rat_rel.is_loop(cur_expr, body, low)) {
                         is_high_set = false;
                     } else {
                         util::throw_error("loop should contain at least lower bound");
@@ -592,31 +592,31 @@ namespace smt::noodler::regex {
 
                         // we will now either repeat body_nft high-low times (if is_high_set) or
                         // unlimited times (if it is not set), but we have to accept after each loop,
-                        // so we add an empty word into body_nfa
-                        mata::nfa::State new_state = body_nft.add_state();
+                        // so we add an empty word into body_nft
+                        mata::nft::State new_state = body_nft.add_state();
                         body_nft.initial.insert(new_state);
                         body_nft.final.insert(new_state);
 
                         body_nft.unify_initial();
-                        body_nft = mata::nfa::reduce(body_nft);
+                        body_nft = mata::nft::reduce(body_nft);
                         body_nft.trim();
 
                         if (is_high_set) {
-                            // if high is set, we repeat body_nfa another high-low times
+                            // if high is set, we repeat body_nft another high-low times
                             result.concatenate(mata::nft::concatenate_nth_power(std::move(body_nft), high - low));
                             result.trim();
                         } else {
                             // if high is not set, we can repeat body_nft unlimited more times
-                            // so we do star operation on body_nfa and add it to end of nfa
+                            // so we do star operation on body_nft and add it to end of nft
                             for (const auto& final : body_nft.final) {
                                 for (const auto& initial : body_nft.initial) {
                                     if (final != initial) {
-                                        body_nft.delta.add(final, mata::nfa::EPSILON, initial);
+                                        body_nft.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
                                     }
                                 }
                             }
-                            result = mata::nfa::concatenate(result, body_nft, true);
-                            result = mata::nfa::remove_epsilon(result);
+                            result = mata::nft::concatenate(result, body_nft, true);
+                            result = mata::nft::remove_epsilon(result);
                         }
                     }
                 } else if (m_util_s.rat_rel.is_opt(cur_expr)) { // Handle optional.
@@ -630,7 +630,7 @@ namespace smt::noodler::regex {
                         }
                     }
                     if (!contains_epsilon) {
-                        mata::nfa::State new_state = result.add_state();
+                        mata::nft::State new_state = result.add_state();
                         result.initial.insert(new_state);
                         result.final.insert(new_state);
                     }
@@ -647,7 +647,7 @@ namespace smt::noodler::regex {
                             if (final == initial) {
                                 contains_epsilon = true;
                             } else {
-                                result.add_transition(final, {mata::nfa::EPSILON, mata::nfa::EPSILON}, initial);
+                                result.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
                             }
                         }
                     }
@@ -655,7 +655,7 @@ namespace smt::noodler::regex {
 
                     if (!contains_epsilon) {
                         // Make new initial final in order to accept empty string as is required by kleene-star.
-                        mata::nfa::State new_state = result.add_state();
+                        mata::nft::State new_state = result.add_state();
                         result.initial.insert(new_state);
                         result.final.insert(new_state);
                     }
@@ -665,7 +665,7 @@ namespace smt::noodler::regex {
                     for (const auto& final : result.final) {
                         for (const auto& initial : result.initial) {
                             if (initial != final) {
-                                result.add_transition(final, {mata::nfa::EPSILON, mata::nfa::EPSILON}, initial);
+                                result.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
                             }
                         }
                     }
