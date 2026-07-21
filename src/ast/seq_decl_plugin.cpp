@@ -569,12 +569,12 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
             }
             return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, num_parameters, parameters));
         case 2:
-            if (mk_reglan() != domain[0] || !arith_util(m).is_int(domain[1])) {
+            if (mk_ratrel() != domain[0] || !arith_util(m).is_int(domain[1])) {
                 m.raise_exception("Incorrect type of arguments passed to rat.loop. Expecting rational relation and two integer parameters");
             }
             return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, domain[0], func_decl_info(m_family_id, k, num_parameters, parameters));
         case 3:
-            if (mk_reglan() != domain[0] || !arith_util(m).is_int(domain[1]) || !arith_util(m).is_int(domain[2])) {
+            if (mk_ratrel() != domain[0] || !arith_util(m).is_int(domain[1]) || !arith_util(m).is_int(domain[2])) {
                 m.raise_exception("Incorrect type of arguments passed to rat.loop. Expecting rational relation and two integer parameters");
             }
             return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, domain[0], func_decl_info(m_family_id, k, num_parameters, parameters));
