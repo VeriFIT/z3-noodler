@@ -4853,7 +4853,7 @@ bool seq_rewriter::lift_str_from_to_rat(expr* r, expr_ref& result1, expr_ref& re
     expr *s = nullptr, *t = nullptr;
     if (rat().is_to_rat(r, s, t)) {
         result1 = s;
-        result2 = s;
+        result2 = t;
         return true;
     }
     return false;
