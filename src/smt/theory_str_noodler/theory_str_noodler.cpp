@@ -53,7 +53,8 @@ namespace smt::noodler {
 
     theory_var theory_str_noodler::mk_var(enode *const n) {
         if (!m_util_s.is_seq(n->get_expr()) &&
-            !m_util_s.is_re(n->get_expr())) {
+            !m_util_s.is_re(n->get_expr()) &&
+            !m_util_s.is_ratrel(n->get_expr())) {
             return null_theory_var;
         }
         if (is_attached_to_var(n)) {
@@ -579,6 +580,8 @@ namespace smt::noodler {
 
         if(m_util_s.is_re(l) && m_util_s.is_re(r)) { // language equation
             m_lang_eq_todo.push_back({l, r});
+        } else if (m_util_s.is_ratrel(l) && m_util_s.is_ratrel(r)) { // rational relation equation
+            util::throw_error("We cannot handle rational relation equations (for now)");
         } else { // word equation
             // mk_eq_atom can check if equation trivially holds (by having the
             // same thing on both sides) or not (by having two distintict
@@ -624,6 +627,8 @@ namespace smt::noodler {
 
         if(m_util_s.is_re(l) && m_util_s.is_re(r)) { // language disequation
             m_lang_diseq_todo.push_back({l, r});
+        } else if (m_util_s.is_ratrel(l) && m_util_s.is_ratrel(r)) { // rational relation disequation
+            util::throw_error("We cannot handle rational relation inequations (for now)");
         } else { // word disequation
             // mk_eq_atom can check if equation trivially holds (by having the
             // same thing on both sides) or not (by having two distintict
