@@ -1436,7 +1436,7 @@ expr* seq_util::rat::mk_loop_proper(expr* r, unsigned lo, unsigned hi) {
         return r;
     }
     parameter params[2] = { parameter(lo), parameter(hi) };
-    return m.mk_app(m_fid, OP_RE_LOOP, 2, params, 1, &r);
+    return m.mk_app(m_fid, OP_RAT_LOOP, 2, params, 1, &r);
 }
 
 app* seq_util::rat::mk_loop(expr* r, expr* lo) {
