@@ -168,10 +168,65 @@ Semantics: `⟦rat.compose(R1, R2) = {(u,v) | (u,x) ∈ R1 and (x,v) ∈ R2 for 
 Semantics: `⟦rat.invert(R) = {(u,v) | (v,u) ∈ R}`
 
 ### `(rat.identity RegLan RatRel)`
-Semantics: `⟦rat.invert(L) = {(u,u) | u ∈ L}`
+Semantics: `⟦rat.identity(L) = {(u,u) | u ∈ L}`
 
 ### `(rat.left RegLan RatRel)`
 Semantics: `⟦rat.left(L) = {(u,ε) | u ∈ L}`
 
 ### `(rat.right RegLan RatRel)`
 Semantics: `⟦rat.right(L) = {(ε,u) | u ∈ L}`
+
+### Examples
+Transform every "a" to "b":
+```
+(set-option :produce-models true)
+(declare-const a_to_b RatRel)
+(assert (= a_to_b (rat.* (rat.union (str.to_rat "a" "b") (rat.identity (re.diff re.allchar (str.to_re "a")))))))
+
+(declare-const s1 String)
+(assert (str.in_rat "asbabaa" s1 a_to_b)) ; s1 = "bsbbbbb"
+(declare-const s2 String)
+(assert (str.in_rat "dsfgb" s2 a_to_b)) ; s1 = "dsfgb"
+
+(check-sat)
+(get-model)
+```
+
+Proper identity (every string is mapped to the same string):
+```
+(declare-const identity RatRel)
+(assert (= identity (rat.identity re.all)))
+
+(assert (str.in_rat "asdf" "asdf" identity)) ; sat
+(assert (str.in_rat "asdf" "asd" identity)) ; unsat
+```
+
+Take every second symbol from the input string:
+```
+(declare-const project_even RatRel) ; take the symbols on even positions
+(declare-const project_odd RatRel) ; take the symbols on odd positions
+
+(assert (= project_even
+    (rat.union
+        (rat.* (rat.++ (rat.left re.allchar) (rat.identity re.allchar)))
+        (rat.++
+            (rat.left re.allchar)
+            (rat.* (rat.++ (rat.identity re.allchar) (rat.left re.allchar)))
+        )
+    )
+))
+(assert (= project_odd
+    (rat.union
+        (rat.* (rat.++ (rat.identity re.allchar) (rat.left re.allchar)))
+        (rat.++
+            (rat.identity re.allchar)
+            (rat.* (rat.++ (rat.left re.allchar) (rat.identity re.allchar)))
+        )
+    )
+))
+
+(declare-const s_even String)
+(declare-const s_odd String)
+(assert (str.in_rat "abcde" s_even project_even)) ; s_even = "bd"
+(assert (str.in_rat "abcde" s_odd project_odd)) ; s_odd = "ace"
+```
