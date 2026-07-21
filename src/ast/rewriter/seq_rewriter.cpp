@@ -6887,6 +6887,7 @@ br_status seq_rewriter::mk_str_in_rat(expr* a, expr* b, expr* r, expr_ref& resul
         } else {
             result = m().mk_false();
         }
+        return BR_DONE;
     }
 
     expr_ref s1(m()), s2(m());
