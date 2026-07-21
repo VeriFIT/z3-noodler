@@ -734,8 +734,8 @@ public:
         bool is_star(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_STAR); }
         bool is_plus(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_PLUS); }
         bool is_opt(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_OPTION); }
-        bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LOOP); }
         bool is_empty(expr const* n)  const { return is_app_of(n, m_fid, OP_RAT_EMPTY_SET); }
+        bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LOOP); }
         bool is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n, expr*& body, unsigned& lo) const;
         bool is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const;
@@ -760,6 +760,8 @@ public:
 
         bool is_epsilon(expr const* r) { expr *s, *t; return is_to_rat(r, s, t) && u.str.is_empty(s) && u.str.is_empty(t); }
         app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); };
+
+        bool is_ground(expr const* r) const;
     };
 
     str str;

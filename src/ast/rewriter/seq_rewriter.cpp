@@ -6867,5 +6867,33 @@ br_status seq_rewriter::mk_str_to_rat(expr* a, expr* b, expr_ref& result) {
 }
 
 br_status seq_rewriter::mk_str_in_rat(expr* a, expr* b, expr* r, expr_ref& result) {
+    STRACE(seq_verbose, tout << "mk_str_in_rat: " << mk_pp(a, m())
+                               << ", " << mk_pp(b, m()) << ", " << mk_pp(r, m()) << std::endl;);
+
+    if (rat().is_empty(r)) {
+        result = m().mk_false();
+        return BR_DONE;
+    }
+
+    zstring sa, sb;
+    if (str().is_string(a, sa) && str().is_string(b, sb) && rat().is_ground(r)) {
+        smt::noodler::regex::Alphabet alph;
+        smt::noodler::regex::extract_symbols(a, m_util, alph);
+        smt::noodler::regex::extract_symbols(b, m_util, alph);
+        smt::noodler::regex::extract_symbols(r, m_util, alph);
+        mata::nft::Nft nft = *smt::noodler::regex::conv_to_nft(to_app(r), m_util, m(), alph);
+        if (nft.is_in_lang_by_levels({std::vector<unsigned>(sa.begin(), sa.end()), std::vector<unsigned>(sb.begin(), sb.end())})) {
+            result = m().mk_true();
+        } else {
+            result = m().mk_false();
+        }
+    }
+
+    expr_ref s1(m()), s2(m());
+    if (lift_str_from_to_rat(r, s1, s2)) {
+        result = m().mk_and(m_br.mk_eq_rw(a, s1), m_br.mk_eq_rw(b, s2));
+        return BR_REWRITE_FULL;
+    }
+
     return BR_FAILED;
 }

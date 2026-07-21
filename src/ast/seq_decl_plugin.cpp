@@ -1520,6 +1520,18 @@ bool seq_util::rat::is_loop(expr const* n, expr*& body, expr*& lo) const {
     return false;
 }
 
+bool seq_util::rat::is_ground(expr const* r) const {
+    expr *a, *b;
+    return (
+        (is_to_rat(r, a, b) && m.is_value(a) && m.is_value(b)) ||
+        ((is_concat(r, a, b) || is_union(r, a, b) || is_compose(r, a, b)) && is_ground(a) && is_ground(b)) ||
+        ((is_star(r, a) || is_plus(r, a) || is_opt(r, a) || is_invert(r, a)) && is_ground(a)) ||
+        is_empty(r) ||
+        ((is_identity(r, a) || is_left(r, a) || is_right(r, a)) && u.re.is_ground(a)) ||
+        (is_loop(r) && is_ground(to_app(r)->get_arg(0)))
+    );
+}
+
 /*
   Produces compact view of concrete concatenations such as (abcd).
 */
