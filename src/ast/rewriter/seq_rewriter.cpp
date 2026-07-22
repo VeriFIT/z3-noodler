@@ -6735,7 +6735,6 @@ br_status seq_rewriter::mk_rat_loop(func_decl* f, unsigned num_args, expr* const
     rational n1, n2;
     unsigned lo, hi, lo2, hi2, np;
     expr* a = nullptr;
-    expr* comp = nullptr, *tore = nullptr;
     zstring zstr;
 
     switch (num_args) {
