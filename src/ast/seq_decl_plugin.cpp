@@ -1398,140 +1398,6 @@ app* seq_util::rex::mk_epsilon(sort* seq_sort) {
     return mk_to_re(u.str.mk_empty(seq_sort));
 }
 
-
-sort* seq_util::rat::to_seq(sort* ratrel) {
-    (void)u;
-    SASSERT(u.is_ratrel(ratrel));
-    return to_sort(ratrel->get_parameter(0).get_ast());
-}
-
-app* seq_util::rat::mk_power(expr* r, unsigned n) {
-    parameter param(n);
-    return m.mk_app(m_fid, OP_RAT_POWER, 1, &param, 1, &r);
-}
-
-
-app* seq_util::rat::mk_loop(expr* r, unsigned lo) {
-    parameter param(lo);
-    return m.mk_app(m_fid, OP_RAT_LOOP, 1, &param, 1, &r);
-}
-
-app* seq_util::rat::mk_loop(expr* r, unsigned lo, unsigned hi) {
-    parameter params[2] = { parameter(lo), parameter(hi) };
-    return m.mk_app(m_fid, OP_RAT_LOOP, 2, params, 1, &r);
-}
-
-expr* seq_util::rat::mk_loop_proper(expr* r, unsigned lo, unsigned hi) {
-    if (lo == 0 && hi == 0) {
-        sort* seq_sort = nullptr;
-        VERIFY(u.is_re(r, seq_sort));
-        // avoid creating a loop with both bounds 0
-        // such an expression is invalid as a loop
-        // it is BY DEFINITION = epsilon
-        r = mk_epsilon();
-        return r;
-    }
-    if (lo == 1 && hi == 1) {
-        // do not create a loop unless it actually is a loop
-        return r;
-    }
-    parameter params[2] = { parameter(lo), parameter(hi) };
-    return m.mk_app(m_fid, OP_RAT_LOOP, 2, params, 1, &r);
-}
-
-app* seq_util::rat::mk_loop(expr* r, expr* lo) {
-    expr* rs[2] = { r, lo };
-    return m.mk_app(m_fid, OP_RAT_LOOP, 0, nullptr, 2, rs);
-}
-
-app* seq_util::rat::mk_loop(expr* r, expr* lo, expr* hi) {
-    expr* rs[3] = { r, lo, hi };
-    return m.mk_app(m_fid, OP_RAT_LOOP, 0, nullptr, 3, rs);
-}
-
-bool seq_util::rat::is_concat(expr* e, ptr_vector<expr>& es) const {
-    if (!is_concat(e)) { return false; }
-
-    expr *e1, *e2;
-    ptr_vector<expr> todo;
-    todo.push_back(e);
-
-    while (!todo.empty()) {
-        e = todo.back();
-        todo.pop_back();
-        if (is_concat(e, e1, e2)) {
-            todo.push_back(e2);
-            todo.push_back(e1);
-        } else {
-            es.push_back(e);
-        }
-    }
-
-    return true;
-}
-
-bool seq_util::rat::is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const {
-    if (is_loop(n)) {
-        app const* a = to_app(n);
-        if (a->get_num_args() == 1 && a->get_decl()->get_num_parameters() == 2) {
-            body = a->get_arg(0);
-            lo = a->get_decl()->get_parameter(0).get_int();
-            hi = a->get_decl()->get_parameter(1).get_int();
-            return true;
-        }
-    }
-    return false;
-}
-
-bool seq_util::rat::is_loop(expr const* n, expr*& body, unsigned& lo) const {
-    if (is_loop(n)) {
-        app const* a = to_app(n);
-        if (a->get_num_args() == 1 && a->get_decl()->get_num_parameters() == 1) {
-            body = a->get_arg(0);
-            lo = a->get_decl()->get_parameter(0).get_int();
-            return true;
-        }
-    }
-    return false;
-}
-
-bool seq_util::rat::is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const {
-    if (is_loop(n)) {
-        app const* a = to_app(n);
-        if (a->get_num_args() == 3) {
-            body = a->get_arg(0);
-            lo = a->get_arg(1);
-            hi = a->get_arg(2);
-            return true;
-        }
-    }
-    return false;
-}
-
-bool seq_util::rat::is_loop(expr const* n, expr*& body, expr*& lo) const {
-    if (is_loop(n)) {
-        app const* a = to_app(n);
-        if (a->get_num_args() == 2) {
-            body = a->get_arg(0);
-            lo = a->get_arg(1);
-            return true;
-        }
-    }
-    return false;
-}
-
-bool seq_util::rat::is_ground(expr const* r) const {
-    expr *a, *b;
-    return (
-        (is_to_rat(r, a, b) && m.is_value(a) && m.is_value(b)) ||
-        ((is_concat(r, a, b) || is_union(r, a, b) || is_compose(r, a, b)) && is_ground(a) && is_ground(b)) ||
-        ((is_star(r, a) || is_plus(r, a) || is_opt(r, a) || is_invert(r, a)) && is_ground(a)) ||
-        is_empty(r) ||
-        ((is_identity(r, a) || is_left(r, a) || is_right(r, a)) && u.re.is_ground(a)) ||
-        (is_loop(r) && is_ground(to_app(r)->get_arg(0)))
-    );
-}
-
 /*
   Produces compact view of concrete concatenations such as (abcd).
 */
@@ -2126,4 +1992,137 @@ seq_util::rex::info& seq_util::rex::info::operator=(info const& other) {
     nullable = other.nullable;
     min_length = other.min_length;
     return *this;
+}
+
+sort* seq_util::rat::to_seq(sort* ratrel) {
+    (void)u;
+    SASSERT(u.is_ratrel(ratrel));
+    return to_sort(ratrel->get_parameter(0).get_ast());
+}
+
+app* seq_util::rat::mk_power(expr* r, unsigned n) {
+    parameter param(n);
+    return m.mk_app(m_fid, OP_RAT_POWER, 1, &param, 1, &r);
+}
+
+
+app* seq_util::rat::mk_loop(expr* r, unsigned lo) {
+    parameter param(lo);
+    return m.mk_app(m_fid, OP_RAT_LOOP, 1, &param, 1, &r);
+}
+
+app* seq_util::rat::mk_loop(expr* r, unsigned lo, unsigned hi) {
+    parameter params[2] = { parameter(lo), parameter(hi) };
+    return m.mk_app(m_fid, OP_RAT_LOOP, 2, params, 1, &r);
+}
+
+expr* seq_util::rat::mk_loop_proper(expr* r, unsigned lo, unsigned hi) {
+    if (lo == 0 && hi == 0) {
+        sort* seq_sort = nullptr;
+        VERIFY(u.is_re(r, seq_sort));
+        // avoid creating a loop with both bounds 0
+        // such an expression is invalid as a loop
+        // it is BY DEFINITION = epsilon
+        r = mk_epsilon();
+        return r;
+    }
+    if (lo == 1 && hi == 1) {
+        // do not create a loop unless it actually is a loop
+        return r;
+    }
+    parameter params[2] = { parameter(lo), parameter(hi) };
+    return m.mk_app(m_fid, OP_RAT_LOOP, 2, params, 1, &r);
+}
+
+app* seq_util::rat::mk_loop(expr* r, expr* lo) {
+    expr* rs[2] = { r, lo };
+    return m.mk_app(m_fid, OP_RAT_LOOP, 0, nullptr, 2, rs);
+}
+
+app* seq_util::rat::mk_loop(expr* r, expr* lo, expr* hi) {
+    expr* rs[3] = { r, lo, hi };
+    return m.mk_app(m_fid, OP_RAT_LOOP, 0, nullptr, 3, rs);
+}
+
+bool seq_util::rat::is_concat(expr* e, ptr_vector<expr>& es) const {
+    if (!is_concat(e)) { return false; }
+
+    expr *e1, *e2;
+    ptr_vector<expr> todo;
+    todo.push_back(e);
+
+    while (!todo.empty()) {
+        e = todo.back();
+        todo.pop_back();
+        if (is_concat(e, e1, e2)) {
+            todo.push_back(e2);
+            todo.push_back(e1);
+        } else {
+            es.push_back(e);
+        }
+    }
+
+    return true;
+}
+
+bool seq_util::rat::is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 1 && a->get_decl()->get_num_parameters() == 2) {
+            body = a->get_arg(0);
+            lo = a->get_decl()->get_parameter(0).get_int();
+            hi = a->get_decl()->get_parameter(1).get_int();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::rat::is_loop(expr const* n, expr*& body, unsigned& lo) const {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 1 && a->get_decl()->get_num_parameters() == 1) {
+            body = a->get_arg(0);
+            lo = a->get_decl()->get_parameter(0).get_int();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::rat::is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 3) {
+            body = a->get_arg(0);
+            lo = a->get_arg(1);
+            hi = a->get_arg(2);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::rat::is_loop(expr const* n, expr*& body, expr*& lo) const {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 2) {
+            body = a->get_arg(0);
+            lo = a->get_arg(1);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::rat::is_ground(expr const* r) const {
+    expr *a, *b;
+    return (
+        (is_to_rat(r, a, b) && m.is_value(a) && m.is_value(b)) ||
+        ((is_concat(r, a, b) || is_union(r, a, b) || is_compose(r, a, b)) && is_ground(a) && is_ground(b)) ||
+        ((is_star(r, a) || is_plus(r, a) || is_opt(r, a) || is_invert(r, a)) && is_ground(a)) ||
+        is_empty(r) ||
+        ((is_identity(r, a) || is_left(r, a) || is_right(r, a)) && u.re.is_ground(a)) ||
+        (is_loop(r) && is_ground(to_app(r)->get_arg(0)))
+    );
 }

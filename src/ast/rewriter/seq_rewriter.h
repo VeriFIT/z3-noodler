@@ -252,8 +252,6 @@ class seq_rewriter {
     br_status mk_str_sbv2s(expr* a, expr_ref& result);
     br_status mk_str_in_regexp(expr* a, expr* b, expr_ref& result);
     br_status mk_str_to_regexp(expr* a, expr_ref& result);
-    br_status mk_str_to_rat(expr* a, expr* b, expr_ref& result);
-    br_status mk_str_in_rat(expr* a, expr* b, expr* r, expr_ref& result);
     br_status mk_str_le(expr* a, expr* b, expr_ref& result);
     br_status mk_str_lt(expr* a, expr* b, expr_ref& result);
     br_status mk_str_from_code(expr* a, expr_ref& result);
@@ -280,6 +278,8 @@ class seq_rewriter {
     br_status mk_re_reverse(expr* r, expr_ref& result);
     br_status mk_re_derivative(expr* ele, expr* r, expr_ref& result);
 
+    br_status mk_str_to_rat(expr* a, expr* b, expr_ref& result);
+    br_status mk_str_in_rat(expr* a, expr* b, expr* r, expr_ref& result);
     br_status mk_rat_concat(expr* a, expr* b, expr_ref& result);
     br_status mk_rat_union(expr* a, expr* b, expr_ref& result);
     br_status mk_rat_loop(func_decl* f, unsigned num_args, expr* const* args, expr_ref& result);
@@ -292,6 +292,8 @@ class seq_rewriter {
     br_status mk_rat_identity(expr* a, expr_ref& result);
     br_status mk_rat_left(expr* a, expr_ref& result);
     br_status mk_rat_right(expr* a, expr_ref& result);
+    /* r = to_rat(s,t) ==> return true, result1 = s, result2 = t*/
+    bool lift_str_from_to_rat(expr * r, expr_ref & result1, expr_ref & result2);
 
     br_status lift_ites_throttled(func_decl* f, unsigned n, expr* const* args, expr_ref& result);
     bool lift_ites_filter(func_decl* f, expr* ite);
@@ -307,8 +309,6 @@ class seq_rewriter {
     bool lift_str_from_to_re_ite(expr * r, expr_ref & result);
     /* same as lift_to_re_from_ite and also: r = to_re(u) ==> returns true, result = u */
     bool lift_str_from_to_re(expr * r, expr_ref & result);
-    /* r = to_rat(s,t) ==> return true, result1 = s, result2 = t*/
-    bool lift_str_from_to_rat(expr * r, expr_ref & result1, expr_ref & result2);
 
     br_status mk_bool_app_helper(bool is_and, unsigned n, expr* const* args, expr_ref& result);
     br_status mk_eq_helper(expr* a, expr* b, expr_ref& result);
