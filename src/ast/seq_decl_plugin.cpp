@@ -295,8 +295,8 @@ void seq_decl_plugin::init() {
     m_sigs[OP_RAT_COMPOSE]        = alloc(psig, m, "rat.compose", 1, 2, rat2T, ratT);
     m_sigs[OP_RAT_INVERT]         = alloc(psig, m, "rat.invert", 1, 1, &ratT, ratT);
     m_sigs[OP_RAT_IDENTITY]       = alloc(psig, m, "rat.identity", 1, 1, &reT, ratT);
-    m_sigs[OP_RAT_LEFT_EXTEND]           = alloc(psig, m, "rat.left", 1, 1, &reT, ratT);
-    m_sigs[OP_RAT_RIGHT_EXTEND]          = alloc(psig, m, "rat.right", 1, 1, &reT, ratT);
+    m_sigs[OP_RAT_LEFT_EXTEND]    = alloc(psig, m, "rat.left_extend", 1, 1, &reT, ratT);
+    m_sigs[OP_RAT_RIGHT_EXTEND]   = alloc(psig, m, "rat.right_extend", 1, 1, &reT, ratT);
     m_sigs[OP_STRING_TO_RAT]      = alloc(psig, m, "str.to_rat", 0, 2, str2T, ratT);
     m_sigs[OP_STRING_IN_RAT]      = alloc(psig, m, "str.in_rat", 0, 3, str2Trat, boolT);
 }
