@@ -478,7 +478,6 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
     case OP_STRING_IN_RAT:
     case OP_RAT_CONCAT:
     case OP_RAT_UNION:
-    case OP_RAT_EMPTY_SET:
     case OP_RAT_STAR:
     case OP_RAT_PLUS:
     case OP_RAT_OPTION:
@@ -530,6 +529,11 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
             return m.mk_func_decl(symbol("re.none"), arity, domain, rng, func_decl_info(m_family_id, k));
         }
         return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, range, func_decl_info(m_family_id, k));
+
+    case OP_RAT_EMPTY_SET:
+        if (!range) range = mk_ratrel();
+        match(*m_sigs[k], arity, domain, range, rng);
+        return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k));
 
     case OP_RE_LOOP:
         m_has_re = true;
