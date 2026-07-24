@@ -295,8 +295,8 @@ void seq_decl_plugin::init() {
     m_sigs[OP_RAT_COMPOSE]        = alloc(psig, m, "rat.compose", 1, 2, rat2T, ratT);
     m_sigs[OP_RAT_INVERT]         = alloc(psig, m, "rat.invert", 1, 1, &ratT, ratT);
     m_sigs[OP_RAT_IDENTITY]       = alloc(psig, m, "rat.identity", 1, 1, &reT, ratT);
-    m_sigs[OP_RAT_LEFT]           = alloc(psig, m, "rat.left", 1, 1, &reT, ratT);
-    m_sigs[OP_RAT_RIGHT]          = alloc(psig, m, "rat.right", 1, 1, &reT, ratT);
+    m_sigs[OP_RAT_LEFT_EXTEND]           = alloc(psig, m, "rat.left", 1, 1, &reT, ratT);
+    m_sigs[OP_RAT_RIGHT_EXTEND]          = alloc(psig, m, "rat.right", 1, 1, &reT, ratT);
     m_sigs[OP_STRING_TO_RAT]      = alloc(psig, m, "str.to_rat", 0, 2, str2T, ratT);
     m_sigs[OP_STRING_IN_RAT]      = alloc(psig, m, "str.in_rat", 0, 3, str2Trat, boolT);
 }
@@ -485,8 +485,8 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
     case OP_RAT_COMPOSE:
     case OP_RAT_INVERT:
     case OP_RAT_IDENTITY:
-    case OP_RAT_LEFT:
-    case OP_RAT_RIGHT:
+    case OP_RAT_LEFT_EXTEND:
+    case OP_RAT_RIGHT_EXTEND:
         match(*m_sigs[k], arity, domain, range, rng);
         return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k));
 
@@ -2122,7 +2122,7 @@ bool seq_util::rat::is_ground(expr const* r) const {
         ((is_concat(r, a, b) || is_union(r, a, b) || is_compose(r, a, b)) && is_ground(a) && is_ground(b)) ||
         ((is_star(r, a) || is_plus(r, a) || is_opt(r, a) || is_invert(r, a)) && is_ground(a)) ||
         is_empty(r) ||
-        ((is_identity(r, a) || is_left(r, a) || is_right(r, a)) && u.re.is_ground(a)) ||
+        ((is_identity(r, a) || is_left_extend(r, a) || is_right_extend(r, a)) && u.re.is_ground(a)) ||
         (is_loop(r) && is_ground(to_app(r)->get_arg(0)))
     );
 }

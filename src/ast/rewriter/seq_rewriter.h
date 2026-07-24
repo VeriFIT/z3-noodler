@@ -290,8 +290,8 @@ class seq_rewriter {
     br_status mk_rat_compose(expr* a, expr* b, expr_ref& result);
     br_status mk_rat_invert(expr* a, expr_ref& result);
     br_status mk_rat_identity(expr* a, expr_ref& result);
-    br_status mk_rat_left(expr* a, expr_ref& result);
-    br_status mk_rat_right(expr* a, expr_ref& result);
+    br_status mk_rat_left_extend(expr* a, expr_ref& result);
+    br_status mk_rat_right_extend(expr* a, expr_ref& result);
     /* r = to_rat(s,t) ==> return true, result1 = s, result2 = t*/
     bool lift_str_from_to_rat(expr * r, expr_ref & result1, expr_ref & result2);
 

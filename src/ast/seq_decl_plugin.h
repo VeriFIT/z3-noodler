@@ -133,8 +133,8 @@ enum seq_op_kind {
     OP_RAT_COMPOSE,
     OP_RAT_INVERT,
     OP_RAT_IDENTITY,
-    OP_RAT_LEFT,
-    OP_RAT_RIGHT,
+    OP_RAT_LEFT_EXTEND,
+    OP_RAT_RIGHT_EXTEND,
 
     LAST_SEQ_OP
 };
@@ -724,8 +724,8 @@ public:
         app* mk_compose(expr* r, expr* s) { return m.mk_app(m_fid, OP_RAT_COMPOSE, r, s); }
         app* mk_invert(expr* r) { return m.mk_app(m_fid, OP_RAT_INVERT, r); }
         app* mk_identity(expr* r) { return m.mk_app(m_fid, OP_RAT_IDENTITY, r); }
-        app* mk_left(expr* r) { return m.mk_app(m_fid, OP_RAT_LEFT, r); }
-        app* mk_right(expr* r) { return m.mk_app(m_fid, OP_RAT_RIGHT, r); }
+        app* mk_left_extend(expr* r) { return m.mk_app(m_fid, OP_RAT_LEFT_EXTEND, r); }
+        app* mk_right_extend(expr* r) { return m.mk_app(m_fid, OP_RAT_RIGHT_EXTEND, r); }
 
         bool is_to_rat(expr const* n)    const { return is_app_of(n, m_fid, OP_STRING_TO_RAT); }
         bool is_concat(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_CONCAT); }
@@ -743,8 +743,8 @@ public:
         bool is_compose(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_COMPOSE); }
         bool is_invert(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_INVERT); }
         bool is_identity(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_IDENTITY); }
-        bool is_left(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LEFT); }
-        bool is_right(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_RIGHT); }
+        bool is_left_extend(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LEFT_EXTEND); }
+        bool is_right_extend(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_RIGHT_EXTEND); }
 
         MATCH_BINARY(is_to_rat);
         MATCH_BINARY(is_concat);
@@ -755,8 +755,8 @@ public:
         MATCH_BINARY(is_compose);
         MATCH_UNARY(is_invert);
         MATCH_UNARY(is_identity);
-        MATCH_UNARY(is_left);
-        MATCH_UNARY(is_right);
+        MATCH_UNARY(is_left_extend);
+        MATCH_UNARY(is_right_extend);
 
         bool is_epsilon(expr const* r) { expr *s, *t; return is_to_rat(r, s, t) && u.str.is_empty(s) && u.str.is_empty(t); }
         app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); };

@@ -2,7 +2,7 @@
 (set-info :status unsat)
 (declare-const s String)
 (declare-const t String)
-(assert (str.in_rat t s (rat.right re.all)))
+(assert (str.in_rat t s (rat.right_extend re.all)))
 (assert (distinct t ""))
 
 (check-sat)

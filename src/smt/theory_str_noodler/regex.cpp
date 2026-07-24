@@ -682,10 +682,10 @@ namespace smt::noodler::regex {
                 } else if (expr* reg_expr; m_util_s.rat_rel.is_identity(cur_expr, reg_expr)) {
                     mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
                     result = extend_nfa_to_nft(body_nfa, true, 0, true);
-                } else if (expr* reg_expr; m_util_s.rat_rel.is_left(cur_expr, reg_expr)) {
+                } else if (expr* reg_expr; m_util_s.rat_rel.is_left_extend(cur_expr, reg_expr)) {
                     mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
                     result = extend_nfa_to_nft(body_nfa, false, mata::nft::EPSILON, true);
-                } else if (expr* reg_expr; m_util_s.rat_rel.is_right(cur_expr, reg_expr)) {
+                } else if (expr* reg_expr; m_util_s.rat_rel.is_right_extend(cur_expr, reg_expr)) {
                     mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
                     result = extend_nfa_to_nft(body_nfa, false, mata::nft::EPSILON, false);
                 } else {

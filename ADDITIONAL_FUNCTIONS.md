@@ -170,11 +170,11 @@ Semantics: `⟦rat.invert(R) = {(u,v) | (v,u) ∈ R}`
 ### `(rat.identity RegLan RatRel)`
 Semantics: `⟦rat.identity(L) = {(u,u) | u ∈ L}`
 
-### `(rat.left RegLan RatRel)`
-Semantics: `⟦rat.left(L) = {(u,ε) | u ∈ L}`
+### `(rat.left_extend RegLan RatRel)`
+Semantics: `⟦rat.left_extend(L) = {(u,ε) | u ∈ L}`
 
-### `(rat.right RegLan RatRel)`
-Semantics: `⟦rat.right(L) = {(ε,u) | u ∈ L}`
+### `(rat.right_extend RegLan RatRel)`
+Semantics: `⟦rat.right_extend(L) = {(ε,u) | u ∈ L}`
 
 ### Examples
 Transform every "a" to "b":
@@ -208,19 +208,19 @@ Take every second symbol from the input string:
 
 (assert (= project_even
     (rat.union
-        (rat.* (rat.++ (rat.left re.allchar) (rat.identity re.allchar)))
+        (rat.* (rat.++ (rat.left_extend re.allchar) (rat.identity re.allchar)))
         (rat.++
-            (rat.left re.allchar)
-            (rat.* (rat.++ (rat.identity re.allchar) (rat.left re.allchar)))
+            (rat.left_extend re.allchar)
+            (rat.* (rat.++ (rat.identity re.allchar) (rat_extend re.allchar)))
         )
     )
 ))
 (assert (= project_odd
     (rat.union
-        (rat.* (rat.++ (rat.identity re.allchar) (rat.left re.allchar)))
+        (rat.* (rat.++ (rat.identity re.allchar) (rat.left_extend re.allchar)))
         (rat.++
             (rat.identity re.allchar)
-            (rat.* (rat.++ (rat.left re.allchar) (rat.identity re.allchar)))
+            (rat.* (rat.++ (rat.left_extend re.allchar) (rat.identity re.allchar)))
         )
     )
 ))
