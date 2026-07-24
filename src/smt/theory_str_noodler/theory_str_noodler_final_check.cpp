@@ -85,7 +85,7 @@ namespace smt::noodler {
             }
             tout << "  rat membs(" << this->m_rat_membership_todo_rel.size() << "):" << std::endl;
             for (const auto &memb: this->m_rat_membership_todo_rel) {
-                tout << "    (" << mk_pp(std::get<0>(memb), m) << ", " << mk_pp(std::get<1>(memb), m) << ")" << (std::get<2>(memb) ? "" : " not") << " in " << mk_pp(std::get<2>(memb), m) << std::endl;
+                tout << "    (" << mk_pp(std::get<0>(memb), m) << ", " << mk_pp(std::get<1>(memb), m) << ")" << (std::get<3>(memb) ? "" : " not") << " in " << mk_pp(std::get<2>(memb), m) << std::endl;
             }
             tout << "  lang (dis)eqs(" << this->m_lang_eq_or_diseq_todo_rel.size() << "):" << std::endl;
             for (const auto &led: this->m_lang_eq_or_diseq_todo_rel) {

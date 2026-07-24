@@ -2313,7 +2313,7 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::handle_in_rat(expr *const e, const bool is_true) {
-        STRACE(str, tout  << "handle in_re " << mk_pp(e, m) << " " << is_true << std::endl;);
+        STRACE(str, tout  << "handle in_rat " << mk_pp(e, m) << " " << is_true << std::endl;);
 
         expr *s = nullptr, *t = nullptr, *rat = nullptr;
         VERIFY(m_util_s.str.is_in_rat(e, s, t, rat));
