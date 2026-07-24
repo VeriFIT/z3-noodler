@@ -2019,7 +2019,7 @@ app* seq_util::rat::mk_loop(expr* r, unsigned lo, unsigned hi) {
 expr* seq_util::rat::mk_loop_proper(expr* r, unsigned lo, unsigned hi) {
     if (lo == 0 && hi == 0) {
         sort* seq_sort = nullptr;
-        VERIFY(u.is_re(r, seq_sort));
+        VERIFY(u.is_ratrel(r, seq_sort));
         // avoid creating a loop with both bounds 0
         // such an expression is invalid as a loop
         // it is BY DEFINITION = epsilon

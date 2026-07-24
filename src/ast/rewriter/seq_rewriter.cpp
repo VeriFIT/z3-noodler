@@ -6744,7 +6744,7 @@ br_status seq_rewriter::mk_rat_loop(func_decl* f, unsigned num_args, expr* const
         np = f->get_num_parameters();
         lo2 = np > 0 ? f->get_parameter(0).get_int() : 0;
         hi2 = np > 1 ? f->get_parameter(1).get_int() : lo2;
-        if  (np == 2 && (lo2 > hi2 || hi2 < 0)) {
+        if  (np == 2 && lo2 > hi2) {
             result = rat().mk_empty();
             return BR_DONE;
         }
