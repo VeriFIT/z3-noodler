@@ -411,7 +411,7 @@ namespace smt::noodler {
         this->axiomatized_len_axioms.push_back(ln);
     }
 
-    void theory_str_noodler::relevant_eh(app *const n) {
+    void theory_str_noodler::relevant_eh(expr *const n) {
         STRACE(str, tout << "relevant: " << mk_pp(n, get_manager()) << " with family id " << n->get_family_id() << ", sort " << n->get_sort()->get_name() << " and decl kind " << n->get_decl_kind() << std::endl;);
 
         if (m_util_s.str.is_length(n)) { // str.len
