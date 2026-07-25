@@ -274,7 +274,7 @@ namespace smt::noodler {
     void theory_str_noodler::propagate_concat_axiom(enode *cat) {
         STRACE(str, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
 
-        app *a_cat = cat->get_expr();
+        app *a_cat = cat->get_app();
         SASSERT(m_util_s.str.is_concat(a_cat));
         ast_manager &m = get_manager();
 
@@ -336,7 +336,7 @@ namespace smt::noodler {
         }
 
         // generate a stronger axiom for constant strings
-        app_ref a_str(str->get_expr(), m);
+        app_ref a_str(str->get_app(), m);
 
         // len(str) = |str| for explicit string str
         if (m_util_s.str.is_string(a_str)) {
