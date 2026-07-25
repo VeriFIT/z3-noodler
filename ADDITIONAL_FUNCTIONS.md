@@ -161,7 +161,7 @@ Semantics:
 &nbsp;&nbsp;&nbsp;&nbsp;For `i <= n`: `⟦(_ rat.loop i n)⟧(R) = Rⁱ ∪ ... ∪ Rⁿ`   
 &nbsp;&nbsp;&nbsp;&nbsp;Otherwise: `⟦(_ rat.loop i n)⟧(R) = ∅`
 
-### `(rat.compose RatRel RatRel RatRel)` ⚠️ TODO: DECIDE DIRECTION
+### `(rat.compose RatRel RatRel RatRel)`
 Semantics: `⟦rat.compose(R1, R2) = {(u,v) | (u,x) ∈ R1 and (x,v) ∈ R2 for some x ∈ UC*}`
 
 ### `(rat.invert RatRel RatRel)`
