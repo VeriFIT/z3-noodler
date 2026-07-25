@@ -466,9 +466,10 @@ namespace smt::noodler {
 
         /**
          * Solves relevant language (dis)equations from m_lang_eq_or_diseq_todo_rel. If some of them
-         * does not hold, returns false and also blocks it in the SAT assignment.
+         * does not hold, returns false and also blocks it in the SAT assignment. If one of the regexes
+         * on one of the sides is not ground, we return unknown.
          */
-        bool solve_lang_eqs_diseqs();
+        lbool solve_lang_eqs_diseqs();
         /**
          * Solve the problem using underapproximating decision procedure, if it returns l_true,
          * the original formula is SAT, otherwise we need to run normal decision procedure.

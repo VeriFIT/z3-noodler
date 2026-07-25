@@ -102,10 +102,13 @@ namespace smt::noodler {
         );
 
         // Solve Language (dis)equations
-        if (!solve_lang_eqs_diseqs()) {
+        lbool lang_eqs_diseqs_res = solve_lang_eqs_diseqs();
+        if (lang_eqs_diseqs_res == l_false) {
             // one of the (dis)equations is unsat
             return FC_CONTINUE;
-        }
+        } else if (lang_eqs_diseqs_res == l_undef) {
+            return FC_GIVEUP;
+        } // for true case it means we need to solve string constraints to get final solution
 
         /***************************** SOLVE WORD (DIS)EQUATIONS + REGULAR MEMBERSHIPS ******************************/
 
@@ -748,7 +751,7 @@ namespace smt::noodler {
         return conversions;
     }
 
-    bool theory_str_noodler::solve_lang_eqs_diseqs() {
+    lbool theory_str_noodler::solve_lang_eqs_diseqs() {
         for(const auto& item : this->m_lang_eq_or_diseq_todo_rel) {
             expr_ref left_side = std::get<0>(item);
             expr_ref right_side = std::get<1>(item);
@@ -772,9 +775,15 @@ namespace smt::noodler {
             regex::extract_symbols(left_side, m_util_s, alph);
             regex::extract_symbols(right_side, m_util_s, alph);
 
-            // construct NFAs for both sides
-            std::shared_ptr<const mata::nfa::Nfa> nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
-            std::shared_ptr<const mata::nfa::Nfa> nfa2 = nfa_constructor.conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
+            std::shared_ptr<const mata::nfa::Nfa> nfa1, nfa2;
+
+            try {
+                // construct NFAs for both sides
+                nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
+                nfa2 = nfa_constructor.conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
+            } catch(...) {
+                return l_undef;
+            }
 
             // check if NFAs are equivalent (if we have equation) or not (if we have disequation)
             bool are_equiv;
@@ -796,12 +805,12 @@ namespace smt::noodler {
                     STRACE(str, tout << mk_pp(m.mk_not(lang_eq), m) << " is unsat" << std::endl);
                     add_axiom({mk_literal(lang_eq)});
                 }
-                return false;
+                return l_false;
             }
         }
 
         // if we are here, all (dis)equations hold
-        return true;
+        return l_true;
     }
 
     lbool theory_str_noodler::solve_underapprox(const Formula& instance, const AutAssignment& aut_assignment,
