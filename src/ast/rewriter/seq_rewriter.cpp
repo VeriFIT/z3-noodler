@@ -464,6 +464,63 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
       SASSERT(num_args == 1);
       st = mk_str_sbv2s(args[0], result);
       break;
+    case OP_STRING_TO_RAT:
+        SASSERT(num_args == 2);
+        st = mk_str_to_rat(args[0], args[1], result);
+        break;
+    case OP_STRING_IN_RAT:
+        SASSERT(num_args == 3);
+        st = mk_str_in_rat(args[0], args[1], args[2], result);
+        break;
+    case OP_RAT_CONCAT:
+        SASSERT(num_args == 2);
+        st = mk_rat_concat(args[0], args[1], result);
+        break;
+    case OP_RAT_UNION:
+        SASSERT(num_args == 2);
+        st = mk_rat_union(args[0], args[1], result);
+        break;
+    case OP_RAT_LOOP:
+        st = mk_rat_loop(f, num_args, args, result);
+        break;
+    case OP_RAT_POWER:
+        SASSERT(num_args == 1);
+        st = mk_rat_power(f, args[0], result);
+        break;
+    case OP_RAT_EMPTY_SET:
+        return BR_FAILED;
+    case OP_RAT_STAR:
+        SASSERT(num_args == 1);
+        st = mk_rat_star(args[0], result);
+        break;
+    case OP_RAT_PLUS:
+        SASSERT(num_args == 1);
+        st = mk_rat_plus(args[0], result);
+        break;
+    case OP_RAT_OPTION:
+        SASSERT(num_args == 1);
+        st = mk_rat_option(args[0], result);
+        break;
+    case OP_RAT_COMPOSE:
+        SASSERT(num_args == 2);
+        st = mk_rat_compose(args[0], args[1], result);
+        break;
+    case OP_RAT_INVERT:
+        SASSERT(num_args == 1);
+        st = mk_rat_invert(args[0], result);
+        break;
+    case OP_RAT_IDENTITY:
+        SASSERT(num_args == 1);
+        st = mk_rat_identity(args[0], result);
+        break;
+    case OP_RAT_LEFT_EXTEND:
+        SASSERT(num_args == 1);
+        st = mk_rat_left_extend(args[0], result);
+        break;
+    case OP_RAT_RIGHT_EXTEND:
+        SASSERT(num_args == 1);
+        st = mk_rat_right_extend(args[0], result);
+        break;
     case _OP_STRING_CONCAT:
     case _OP_STRING_PREFIX:
     case _OP_STRING_SUFFIX:
@@ -4695,6 +4752,7 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
     }
 
     expr_ref hd(m()), tl(m());
+#if 0 // NOODLER - disable creating derivatives
     if (get_head_tail(a, hd, tl)) {
         //result = re().mk_in_re(tl, re().mk_derivative(hd, b));
         //result = re().mk_in_re(tl, mk_derivative(hd, b));
@@ -4707,6 +4765,7 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
         result = re().mk_in_re(hd, result);
         return BR_REWRITE_FULL;
     }
+#endif
 
     if (false && get_re_head_tail(b, hd, tl)) { // FIXME: NOODLER replacing regexes to substr is not beneficial for noodler
         SASSERT(re().min_length(hd) == re().max_length(hd));
@@ -6547,3 +6606,295 @@ bool seq_rewriter::get_bounds(expr* e, unsigned& low, unsigned& high) {
     return low <= high;
 }
 
+bool seq_rewriter::lift_str_from_to_rat(expr* r, expr_ref& result1, expr_ref& result2)
+{
+    expr *s = nullptr, *t = nullptr;
+    if (rat().is_to_rat(r, s, t)) {
+        result1 = s;
+        result2 = t;
+        return true;
+    }
+    return false;
+}
+
+br_status seq_rewriter::mk_str_to_rat(expr* a, expr* b, expr_ref& result) {
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_str_in_rat(expr* a, expr* b, expr* r, expr_ref& result) {
+    STRACE(seq_verbose, tout << "mk_str_in_rat: " << mk_pp(a, m())
+                               << ", " << mk_pp(b, m()) << ", " << mk_pp(r, m()) << std::endl;);
+
+    if (rat().is_empty(r)) {
+        result = m().mk_false();
+        return BR_DONE;
+    }
+
+    zstring sa, sb;
+    if (str().is_string(a, sa) && str().is_string(b, sb) && rat().is_ground(r)) {
+        smt::noodler::regex::Alphabet alph;
+        smt::noodler::regex::extract_symbols(a, m_util, alph);
+        smt::noodler::regex::extract_symbols(b, m_util, alph);
+        smt::noodler::regex::extract_symbols(r, m_util, alph);
+        mata::nft::Nft nft = *smt::noodler::regex::conv_to_nft(to_app(r), m_util, m(), alph);
+        if (nft.is_in_lang_by_levels({std::vector<unsigned>(sa.begin(), sa.end()), std::vector<unsigned>(sb.begin(), sb.end())})) {
+            result = m().mk_true();
+        } else {
+            result = m().mk_false();
+        }
+        return BR_DONE;
+    }
+
+    expr_ref s1(m()), s2(m());
+    if (lift_str_from_to_rat(r, s1, s2)) {
+        result = m().mk_and(m_br.mk_eq_rw(a, s1), m_br.mk_eq_rw(b, s2));
+        return BR_REWRITE_FULL;
+    }
+
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_concat(expr* a, expr* b, expr_ref& result) {
+    if (rat().is_empty(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_empty(b)) {
+        result = b;
+        return BR_DONE;
+    }
+    if (rat().is_epsilon(a)) {
+        result = b;
+        return BR_DONE;
+    }
+    if (rat().is_epsilon(b)) {
+        result = a;
+        return BR_DONE;
+    }
+    expr_ref a_str1(m());
+    expr_ref a_str2(m());
+    expr_ref b_str1(m());
+    expr_ref b_str2(m());
+    if (lift_str_from_to_rat(a, a_str1, a_str2) && lift_str_from_to_rat(b, b_str1, b_str2)) {
+        result = rat().mk_to_rat(str().mk_concat(a_str1, b_str1), str().mk_concat(a_str2, b_str2));
+        return BR_REWRITE2;
+    }
+    expr* a1 = nullptr, *b1 = nullptr, *a2 = nullptr, *b2 = nullptr;
+    if (rat().is_to_rat(a, a1, a2) && rat().is_to_rat(b, b1, b2)) {
+        result = rat().mk_to_rat(str().mk_concat(a1, b1), str().mk_concat(a2, b2));
+        return BR_DONE;
+    }
+    if (rat().is_star(a, a1) && rat().is_star(b, b1) && a1 == b1) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_star(a, a1) && a1 == b) {
+        result = rat().mk_concat(b, a);
+        return BR_DONE;
+    }
+    unsigned lo1, hi1, lo2, hi2;
+
+    if (rat().is_loop(a, a1, lo1, hi1) && lo1 <= hi1 && rat().is_loop(b, b1, lo2, hi2) && lo2 <= hi2 && a1 == b1) {
+        result = rat().mk_loop_proper(a1, lo1 + lo2, hi1 + hi2);
+        return BR_DONE;
+    }
+    if (rat().is_loop(a, a1, lo1) && rat().is_loop(b, b1, lo2) && a1 == b1) {
+        result = rat().mk_loop(a1, lo1 + lo2);
+        return BR_DONE;
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        // (loop a lo1) + (loop a lo2 hi2) = (loop a lo1 + lo2) 
+        if (rat().is_loop(a, a1, lo1) && rat().is_loop(b, b1, lo2, hi2) && lo2 <= hi2 && a1 == b1) {
+            result = rat().mk_loop(a1, lo1 + lo2);
+            return BR_DONE;
+        }
+        // (loop a lo1 hi1) + a* = (loop a lo1)
+        if (rat().is_loop(a, a1, lo1, hi1) && rat().is_star(b, b1) && a1 == b1) {
+            result = rat().mk_loop(a1, lo1);
+            return BR_DONE;
+        }
+        // (loop a lo1) + a* = (loop a lo1)
+        if (rat().is_loop(a, a1, lo1) && rat().is_star(b, b1) && a1 == b1) {
+            result = a;
+            return BR_DONE;
+        }
+        // (loop a lo1 hi1) + a = (loop a lo1+1 hi1+1)
+        if (rat().is_loop(a, a1, lo1, hi1) && lo1 <= hi1 && a1 == b) {
+            result = rat().mk_loop(a1, lo1+1, hi1+1);
+            return BR_DONE;
+        }
+        std::swap(a, b);
+    }
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_union(expr* a, expr* b, expr_ref& result) {
+    (void)a; (void)b; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_loop(func_decl* f, unsigned num_args, expr* const* args, expr_ref& result) {
+    rational n1, n2;
+    unsigned lo, hi, lo2, hi2, np;
+    expr* a = nullptr;
+    zstring zstr;
+
+    switch (num_args) {
+    case 1: 
+        np = f->get_num_parameters();
+        lo2 = np > 0 ? f->get_parameter(0).get_int() : 0;
+        hi2 = np > 1 ? f->get_parameter(1).get_int() : lo2;
+        if  (np == 2 && lo2 > hi2) {
+            result = rat().mk_empty();
+            return BR_DONE;
+        }
+        if (np == 1 && lo2 < 0) {
+            result = rat().mk_empty();
+            return BR_DONE;
+        }
+        // (loop a 0 0) = ""
+        if (np == 2 && lo2 == 0 && hi2 == 0) {
+            result = rat().mk_epsilon();
+            return BR_DONE;
+        }
+        // (loop (loop a lo) lo2) = (loop lo*lo2)
+        if (rat().is_loop(args[0], a, lo) && np == 1) {
+            result = rat().mk_loop(a, lo2 * lo);
+            return BR_REWRITE1;
+        }
+        // (loop (loop a l l) h h) = (loop a l*h l*h)
+        if (rat().is_loop(args[0], a, lo, hi) && np == 2 && lo == hi && lo2 == hi2) {
+            result = rat().mk_loop_proper(a, lo2 * lo, hi2 * hi);
+            return BR_REWRITE1;
+        }
+        // (loop a 1 1) = a
+        if (np == 2 && lo2 == 1 && hi2 == 1) {
+            result = args[0];
+            return BR_DONE;
+        }
+        // (loop a 0) = a*
+        if (np == 1 && lo2 == 0) {
+            result = rat().mk_star(args[0]);
+            return BR_DONE;
+        }
+        break;
+    case 2:
+        if (m_autil.is_numeral(args[1], n1) && n1.is_unsigned()) {
+            result = rat().mk_loop(args[0], n1.get_unsigned());
+            return BR_REWRITE1;
+        }
+        if (m_autil.is_numeral(args[1], n1) && n1 < 0) {
+            result = rat().mk_empty();
+            return BR_DONE;
+        }
+        break;
+    case 3:
+        if (m_autil.is_numeral(args[1], n1) && n1.is_unsigned() &&
+            m_autil.is_numeral(args[2], n2) && n2.is_unsigned()) {
+            result = rat().mk_loop_proper(args[0], n1.get_unsigned(), n2.get_unsigned());
+            return BR_REWRITE1;
+        }
+        break;
+    default:
+        break;
+    }
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_power(func_decl* f, expr* a, expr_ref& result) {
+    unsigned p = f->get_parameter(0).get_int();
+    result = rat().mk_loop_proper(a, p, p);
+    return BR_REWRITE1;
+}
+
+br_status seq_rewriter::mk_rat_star(expr* a, expr_ref& result) {
+    expr* b, *c, *b1, *c1;
+    if (rat().is_empty(a)) {
+        result = rat().mk_epsilon();
+        return BR_DONE;
+    }
+    if (rat().is_epsilon(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_plus(a, b)) {
+        result = rat().mk_star(b);
+        return BR_DONE;
+    }
+    if (rat().is_union(a, b, c)) {
+        if (rat().is_star(b, b1)) {
+            result = rat().mk_star(rat().mk_union(b1, c));
+            return BR_REWRITE2;
+        }
+        if (rat().is_star(c, c1)) {
+            result = rat().mk_star(rat().mk_union(b, c1));
+            return BR_REWRITE2;
+        }
+        if (rat().is_epsilon(b)) {
+            result = rat().mk_star(c);
+            return BR_REWRITE2;
+        }
+        if (rat().is_epsilon(c)) {
+            result = rat().mk_star(b);
+            return BR_REWRITE2;
+        }
+    }
+    if (rat().is_concat(a, b, c) &&
+        rat().is_star(b, b1) && rat().is_star(c, c1)) {
+        result = rat().mk_star(rat().mk_union(b1, c1));
+        return BR_REWRITE2;
+    }
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_plus(expr* a, expr_ref& result) {
+    if (rat().is_empty(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_epsilon(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_plus(a)) {
+        result = a;
+        return BR_DONE;
+    }
+    if (rat().is_star(a)) {
+        result = a;
+        return BR_DONE;
+    }
+
+    result = rat().mk_concat(a, rat().mk_star(a));
+    return BR_REWRITE2;
+}
+
+br_status seq_rewriter::mk_rat_option(expr* a, expr_ref& result) {
+    result = rat().mk_union(rat().mk_epsilon(), a);
+    return BR_REWRITE1;
+}
+
+br_status seq_rewriter::mk_rat_compose(expr* a, expr* b, expr_ref& result) {
+    (void)a; (void)b; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_invert(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_identity(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_left_extend(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}
+
+br_status seq_rewriter::mk_rat_right_extend(expr* a, expr_ref& result) {
+    (void)a; (void)result;
+    return BR_FAILED;
+}

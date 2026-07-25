@@ -2,12 +2,32 @@
 #include <memory>
 #include <unordered_map>
 
+#include <mata/nft/builder.hh>
+
 #include "util/z3_exception.h"
 
 #include "regex.h"
 #include "theory_str_noodler.h"
 #include "inclusion_graph.h"
 #include "aut_assignment.h"
+
+namespace {
+    mata::nft::Nft extend_nfa_to_nft(const mata::nfa::Nfa &nfa, bool identity, mata::Symbol s, bool left) {
+        mata::nft::Nft result(nfa.num_of_states(), nfa.initial, nfa.final, mata::nft::Levels(2, nfa.num_of_states(), 0));
+        for (const mata::nfa::Transition& tr : nfa.delta.transitions()) {
+            mata::Word transducer_symbol;
+            if (identity) {
+                transducer_symbol = {tr.symbol, tr.symbol};
+            } else if (left) {
+                transducer_symbol = {tr.symbol, s};
+            } else {
+                transducer_symbol = {s, tr.symbol};
+            }
+            result.add_transition(tr.source, transducer_symbol, tr.target);
+        }
+        return result;
+    }
+}
 
 namespace {
     using mata::nfa::Nfa;
@@ -100,62 +120,7 @@ namespace smt::noodler::regex {
 
         SASSERT(is_app(ex));
         app* ex_app = to_app(ex);
-
-        if (m_util_s.re.is_to_re(ex_app)) { // Handle conversion to regex function call.
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto arg{ ex_app->get_arg(0) };
-            // Assume that expression inside re.to_re() function is a string of characters.
-            if (!m_util_s.str.is_string(arg)) { // if to_re has something other than string literal
-                util::throw_error("we support only string literals in str.to_re");
-            }
-            extract_symbols(to_app(arg), m_util_s, alphabet);
-            return;
-        } else if (m_util_s.re.is_concat(ex_app) // Handle regex concatenation.
-                || m_util_s.str.is_concat(ex_app) // Handle string concatenation.
-                || m_util_s.re.is_intersection(ex_app) // Handle intersection.
-            ) {
-            for (unsigned int i = 0; i < ex_app->get_num_args(); ++i) {
-                extract_symbols(to_app(ex_app->get_arg(i)), m_util_s, alphabet);
-            }
-            return;
-        } else if (m_util_s.re.is_antimirov_union(ex_app)) { // Handle Antimirov union.
-            util::throw_error("antimirov union is unsupported");
-        } else if (m_util_s.re.is_complement(ex_app)) { // Handle complement.
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto child{ ex_app->get_arg(0) };
-            SASSERT(is_app(child));
-            extract_symbols(to_app(child), m_util_s, alphabet);
-            return;
-        } else if (m_util_s.re.is_derivative(ex_app)) { // Handle derivative.
-            util::throw_error("derivative is unsupported");
-        } else if (m_util_s.re.is_diff(ex_app)) { // Handle diff.
-            util::throw_error("regex difference is unsupported");
-        } else if (m_util_s.re.is_dot_plus(ex_app)) { // Handle dot plus.
-            // Handle repeated full char ('.+') (SMT2: (re.+ re.allchar)).
-            return;
-        } else if (m_util_s.re.is_empty(ex_app)) { // Handle empty language.
-            return;
-        } else if (m_util_s.re.is_epsilon(ex_app)) { // Handle epsilon.
-            return;
-        } else if (m_util_s.re.is_full_char(ex_app)) {
-            // Handle full char (single occurrence of any string symbol, '.') (SMT2: re.allchar).
-            return;
-        } else if (m_util_s.re.is_full_seq(ex_app)) {
-            // Handle full sequence of characters (any sequence of characters, '.*') (SMT2: re.all).
-            return;
-        } else if (m_util_s.re.is_of_pred(ex_app)) { // Handle of predicate.
-            util::throw_error("of predicate is unsupported");
-        } else if (m_util_s.re.is_opt(ex_app) // Handle optional.
-                || m_util_s.re.is_plus(ex_app) // Handle positive iteration.
-                || m_util_s.re.is_star(ex_app) // Handle star iteration.
-                || m_util_s.re.is_loop(ex_app) // Handle loop.
-            ) {
-            SASSERT(ex_app->get_num_args() == 1);
-            const auto child{ ex_app->get_arg(0) };
-            SASSERT(is_app(child));
-            extract_symbols(to_app(child), m_util_s, alphabet);
-            return;
-        } else if (m_util_s.re.is_range(ex_app)) { // Handle range.
+        if (m_util_s.re.is_range(ex_app)) { // Handle range.
             SASSERT(ex_app->get_num_args() == 2);
             const auto range_begin{ ex_app->get_arg(0) };
             const auto range_end{ ex_app->get_arg(1) };
@@ -174,22 +139,8 @@ namespace smt::noodler::regex {
                 alphabet.insert(current_value);
                 ++current_value;
             }
-        } else if (m_util_s.re.is_reverse(ex_app)) { // Handle reverse.
-            util::throw_error("reverse is unsupported");
-        } else if (m_util_s.re.is_union(ex_app)) { // Handle union (= or; A|B).
-            SASSERT(ex_app->get_num_args() == 2);
-            const auto left{ ex_app->get_arg(0) };
-            const auto right{ ex_app->get_arg(1) };
-            SASSERT(is_app(left));
-            SASSERT(is_app(right));
-            extract_symbols(to_app(left), m_util_s, alphabet);
-            extract_symbols(to_app(right), m_util_s, alphabet);
-            return;
-        } else if(util::is_variable(ex_app)) { // Handle variable.
-            util::throw_error("variable should not occur here");
         } else {
-            // When ex is not string literal, variable, nor regex, recursively traverse the AST to find symbols.
-            // TODO: maybe we can just leave is_range, is_variable and is_string in this function and otherwise do this:
+            // For all other options recursively traverse the AST to find symbols.
             for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
                 SASSERT(is_app(ex_app->get_arg(i)));
                 app *arg = to_app(ex_app->get_arg(i));
@@ -387,9 +338,17 @@ namespace smt::noodler::regex {
                 } else if (m_util_s.re.is_opt(cur_expr)) { // Handle optional.
                     SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
-                    result.unify_initial();
+                    bool contains_epsilon = false;
                     for (const auto& initial : result.initial) {
-                        result.final.insert(initial);
+                        if (result.final.contains(initial)) {
+                            contains_epsilon = true;
+                            break;
+                        }
+                    }
+                    if (!contains_epsilon) {
+                        mata::nfa::State new_state = result.add_state();
+                        result.initial.insert(new_state);
+                        result.final.insert(new_state);
                     }
                 } else if (m_util_s.re.is_range(cur_expr)) { // Handle range.
                     SASSERT(cur_expr->get_num_args() == 2);
@@ -523,6 +482,231 @@ namespace smt::noodler::regex {
         final_auts_cache[expression] = final_result;
         STRACE(str_create_nfa, tout << final_result;);
         return final_result;
+    }
+
+    [[nodiscard]] std::shared_ptr<mata::nft::Nft> conv_to_nft(app *expression, const seq_util& m_util_s, ast_manager& m, const Alphabet& alphabet) {
+        SASSERT(m_util_s.is_ratrel(expression));
+
+        // to simulate recursive calls of conv_to_nfa on arguments of expression, we use postorder
+        // traversal of the ast for expression
+        std::stack<std::pair<app*, bool>> postorder_stack;
+        postorder_stack.push({expression, false});
+        std::stack<mata::nft::Nft> results_stack;
+        std::map<app*, unsigned> num_of_rational_arguments;
+        while (!postorder_stack.empty()) {
+            auto [cur_expr, visited] = postorder_stack.top();
+            postorder_stack.pop();
+
+            if (!visited) { // we have not visited cur_expr -> we need to process children first
+                postorder_stack.push({cur_expr, true});
+                ptr_vector<expr> rational_args;
+                if (!m_util_s.rat_rel.is_concat(cur_expr, rational_args)) {
+                    for (size_t arg_idx = 0; arg_idx < cur_expr->get_num_args(); ++arg_idx) {
+                        expr* arg = cur_expr->get_arg(arg_idx);
+                        if (m_util_s.is_ratrel(arg)) { // we only process childrens representing regexes
+                            rational_args.push_back(arg);
+                        }
+                    }
+                } // else branch handled concatenation, so rational_args should contain arguments for concatenation too
+                num_of_rational_arguments[cur_expr] = rational_args.size();
+                for (expr* arg : rational_args) {
+                    SASSERT(is_app(arg));
+                    postorder_stack.push({to_app(arg), false});
+                }
+            } else { // we already visited cur_expr -> the NFTs for its children should be on results_stack
+                // we collect the NFTs for the children
+                std::vector<mata::nft::Nft> arg_nfts;
+                unsigned num_of_rational_arguments_of_cur_expr = num_of_rational_arguments.at(cur_expr);
+                for (unsigned arg_idx = 0; arg_idx < num_of_rational_arguments_of_cur_expr; ++arg_idx) {
+                    SASSERT(!results_stack.empty());
+                    arg_nfts.push_back(std::move(results_stack.top()));
+                    results_stack.pop();
+                }
+
+                STRACE(str_create_nfa,
+                    tout << "--------------" << "Creating NFT for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "\n";
+                );
+
+                mata::nft::Nft result;
+                if (expr *arg1, *arg2; m_util_s.rat_rel.is_to_rat(cur_expr, arg1, arg2)) {
+                    zstring arg1_zstring, arg2_zstring;
+                    if (!m_util_s.str.is_string(arg1, arg1_zstring) || !m_util_s.str.is_string(arg2, arg2_zstring)) {
+                        util::throw_error("We can only handle str.to_rat with string literals");
+                    }
+                    unsigned longer_length(std::max(arg1_zstring.length(), arg2_zstring.length()));
+                    result = mata::nft::Nft::with_levels(2, longer_length*2+1, {0}, {longer_length*2});
+                    for (unsigned i = 0; i < longer_length; ++i) {
+                        result.levels[2*i] = 0;
+                        result.levels[2*i+1] = 1;
+                        if (i < arg1_zstring.length()) {
+                            result.delta.add(2*i, arg1_zstring[i], 2*i+1);
+                        } else {
+                            result.delta.add(2*i, mata::nft::EPSILON, 2*i+1);
+                        }
+                        if (i < arg2_zstring.length()) {
+                            result.delta.add(2*i+1, arg2_zstring[i], 2*i+2);
+                        } else {
+                            result.delta.add(2*i+1, mata::nft::EPSILON, 2*i+2);
+                        }
+                    }
+                    result.levels[longer_length*2] = 0;
+                } else if (m_util_s.rat_rel.is_concat(cur_expr)) {
+                    SASSERT(num_of_rational_arguments_of_cur_expr > 0);
+                    result = std::move(arg_nfts.at(0));
+                    for (unsigned int i = 1; i < num_of_rational_arguments_of_cur_expr; ++i) {
+                        result.concatenate(arg_nfts.at(i));
+                        arg_nfts[i].clear();
+                    }
+                    result.trim();
+                } else if (m_util_s.rat_rel.is_empty(cur_expr)) { // Handle empty language.
+                    // Do nothing, as nft is initialized empty
+                } else if (m_util_s.rat_rel.is_loop(cur_expr)) { // Handle loop.
+                    unsigned low, high;
+                    expr *body;
+                    bool is_high_set = false;
+                    if (m_util_s.rat_rel.is_loop(cur_expr, body, low, high)) {
+                        is_high_set = true;
+                    } else if (m_util_s.rat_rel.is_loop(cur_expr, body, low)) {
+                        is_high_set = false;
+                    } else {
+                        util::throw_error("loop should contain at least lower bound");
+                    }
+
+                    mata::nft::Nft body_nft = std::move(arg_nfts.at(0));
+
+                    if (body_nft.is_lang_empty()) {
+                        // for the case that body of the loop represents empty language...
+                        if (low == 0) {
+                            // ...we either return empty string if we have \emptyset{0,h}
+                            result = mata::nft::builder::create_empty_string_nft(2);
+                        } else {
+                            // ... or empty language (we do nothing as result is initialized empty)
+                        }
+                    } else {
+                        body_nft.unify_final();
+                        body_nft.unify_initial();
+
+                        body_nft = mata::nft::reduce(body_nft);
+                        result = mata::nft::concatenate_nth_power(body_nft, low);
+                        result.trim();
+
+                        // we will now either repeat body_nft high-low times (if is_high_set) or
+                        // unlimited times (if it is not set), but we have to accept after each loop,
+                        // so we add an empty word into body_nft
+                        mata::nft::State new_state = body_nft.add_state();
+                        body_nft.initial.insert(new_state);
+                        body_nft.final.insert(new_state);
+
+                        body_nft.unify_initial();
+                        body_nft = mata::nft::reduce(body_nft);
+                        body_nft.trim();
+
+                        if (is_high_set) {
+                            // if high is set, we repeat body_nft another high-low times
+                            result.concatenate(mata::nft::concatenate_nth_power(std::move(body_nft), high - low));
+                            result.trim();
+                        } else {
+                            // if high is not set, we can repeat body_nft unlimited more times
+                            // so we do star operation on body_nft and add it to end of nft
+                            for (const auto& final : body_nft.final) {
+                                for (const auto& initial : body_nft.initial) {
+                                    if (final != initial) {
+                                        body_nft.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
+                                    }
+                                }
+                            }
+                            result = mata::nft::concatenate(result, body_nft, true);
+                            result = mata::nft::remove_epsilon(result);
+                        }
+                    }
+                } else if (m_util_s.rat_rel.is_opt(cur_expr)) { // Handle optional.
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfts.at(0));
+                    bool contains_epsilon = false;
+                    for (const auto& initial : result.initial) {
+                        if (result.final.contains(initial)) {
+                            contains_epsilon = true;
+                            break;
+                        }
+                    }
+                    if (!contains_epsilon) {
+                        mata::nft::State new_state = result.add_state();
+                        result.initial.insert(new_state);
+                        result.final.insert(new_state);
+                    }
+                } else if (m_util_s.rat_rel.is_union(cur_expr)) { // Handle union (= or; A|B).
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 2);
+                    result = std::move(arg_nfts.at(0));
+                    result.unite_nondet_with(arg_nfts.at(1));
+                } else if (m_util_s.rat_rel.is_star(cur_expr)) { // Handle star iteration.
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfts.at(0));
+                    bool contains_epsilon = false;
+                    for (const auto& final : result.final) {
+                        for (const auto& initial : result.initial) {
+                            if (final == initial) {
+                                contains_epsilon = true;
+                            } else {
+                                result.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
+                            }
+                        }
+                    }
+                    result.remove_epsilon();
+
+                    if (!contains_epsilon) {
+                        // Make new initial final in order to accept empty string as is required by kleene-star.
+                        mata::nft::State new_state = result.add_state();
+                        result.initial.insert(new_state);
+                        result.final.insert(new_state);
+                    }
+                } else if (m_util_s.rat_rel.is_plus(cur_expr)) { // Handle positive iteration.
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 1);
+                    result = std::move(arg_nfts.at(0));
+                    for (const auto& final : result.final) {
+                        for (const auto& initial : result.initial) {
+                            if (initial != final) {
+                                result.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
+                            }
+                        }
+                    }
+                    result.remove_epsilon();
+                } else if (m_util_s.rat_rel.is_compose(cur_expr)) {
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 2);
+                    result = mata::nft::compose(arg_nfts.at(0), arg_nfts.at(1)); // TODO should we swap?
+                    arg_nfts[0].clear();
+                    arg_nfts[1].clear();
+                } else if (m_util_s.rat_rel.is_invert(cur_expr)) {
+                    SASSERT(num_of_rational_arguments_of_cur_expr == 1);
+                    result = mata::nft::invert_levels(arg_nfts.at(0));
+                    arg_nfts[0].clear();
+                } else if (expr* reg_expr; m_util_s.rat_rel.is_identity(cur_expr, reg_expr)) {
+                    mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
+                    result = extend_nfa_to_nft(body_nfa, true, 0, true);
+                } else if (expr* reg_expr; m_util_s.rat_rel.is_left_extend(cur_expr, reg_expr)) {
+                    mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
+                    result = extend_nfa_to_nft(body_nfa, false, mata::nft::EPSILON, true);
+                } else if (expr* reg_expr; m_util_s.rat_rel.is_right_extend(cur_expr, reg_expr)) {
+                    mata::nfa::Nfa body_nfa = *NfaConstructor().conv_to_nfa(to_app(reg_expr), m_util_s, m, alphabet);
+                    result = extend_nfa_to_nft(body_nfa, false, mata::nft::EPSILON, false);
+                } else {
+                    std::stringstream ss;
+                    ss << "unsupported operation in rational language:\n" << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m));
+                    util::throw_error(ss.str());
+                }
+
+                // TODO: call reduction?
+
+                STRACE(str_create_nfa,
+                    tout << "--------------" << "NFT for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << "---------------" << std::endl;
+                    tout << result;
+                );
+
+                results_stack.push(std::move(result));
+            }
+        }
+
+        SASSERT(results_stack.size() == 1);
+        return std::make_shared<mata::nft::Nft>(std::move(results_stack.top()));
     }
 
     [[nodiscard]] RegexInfo get_regex_info(const app *expression, const seq_util& m_util_s) {

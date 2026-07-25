@@ -1,7 +1,8 @@
 # Additional string functions
 Other than the constraints defined in the [SMT-LIB theory of strings](https://smt-lib.org/theories-UnicodeStrings.shtml), Z3-Noodler can handle the following functions:
 
-## `(str.to_real String Real)`
+## 1. Real-string conversions
+### `(str.to_real String Real)`
 Converts a string representation of a (positive) real number to the corresponding number. The string representation can either be a positive integer with leading zeros (similarly as in `str.to_int`) or it can contain one decimal separator `.`. It evaluates to `-1.0` otherwise.  
 Examples:
  - `(str.to_real "4562")` → `4562.0`
@@ -15,7 +16,7 @@ Examples:
  - `(str.to_real "4564a")` → `-1.0`
  - `(str.to_real "4564e3")` → `-1.0`
 
-## `(str.from_real Real Int String)`
+### `(str.from_real Real Int String)`
 Transforms a positive real number `r` to a string `s` with a corresponding number of decimal places `n`. If either `n` or `r` is negative, it evaluates to the empty string.  
 Examples:
  - `(str.from_real 4.56 5)` → `"4.56000"`
@@ -25,48 +26,8 @@ Examples:
  - `(str.from_real -4.56 5)` → `""`
  - `(str.from_real 4.56 -5)` → `""`
 
-## `(str.to_lower String String)`
-Converts all uppercase ASCII characters (`0x41` - `0x5A`) to lowercase.
-This function is equivalent to [cvc5's `str.to_lower`](https://cvc5.github.io/docs-ci/docs-main/theories/strings.html).  
-Examples:
- - `(str.to_lower "abcd")` → `"abcd"`
- - `(str.to_lower "aBcD")` → `"abcd"`
- - `(str.to_lower "AČĎ")` → `"aČĎ"`
-
-## `(str.to_upper String String)`
-Converts all lowercase ASCII characters (`0x61` - `0x7A`) to uppercase.
-This function is equivalent to [cvc5's `str.to_upper`](https://cvc5.github.io/docs-ci/docs-main/theories/strings.html).  
-Examples:
- - `(str.to_upper "ABCD")` → `"ABCD"`
- - `(str.to_upper "aBcD")` → `"ABCD"`
- - `(str.to_upper "ačď")` → `"Ačď"`
-
-## `(str.update String Int String String)`
-Starts replacing characters in the first string by characters in the second string at the given index.
-The length of the resulting string will be the same as the first string.
-If the index is outside the first string, the first string gets returned.
-This function is equivalent to [cvc5's `str.update`](https://cvc5.github.io/docs-ci/docs-main/theories/strings.html).  
-Examples:
- - `(str.update "123456" 2 "ab")` → `"12ab56"`
- - `(str.update "1234" 2 "ab")` → `"12ab"`
- - `(str.update "1234" 2 "abcd")` → `"12ab"`
- - `(str.update "1234" -1 "ab")` → `"1234"`
- - `(str.update "1234" 4 "ab")` → `"1234"`
- - `(str.update "1234" 0 "abcd")` → `"abcd"`
- - `(str.update "1234" 0 "abcdef")` → `"abcd"`
-
-## `(str.trim String String)`
-Trims the whitespace at the beginning and end of the given string.
-We consider the following characters as whitespace: space, form feed, line feed, carriage return, horizontal tab, vertical tab (ASCII `0x09` - `0x0D` and `0x20`).  
-Examples:
- - `(str.trim "aa")` → `"aa"`
- - `(str.trim "   aa")` → `"aa"`
- - `(str.trim "aa   ")` → `"aa"`
- - `(str.trim "     ")` → `""`
- - `(str.trim "\u{9}\u{A}\u{B}\u{C}\u{D}  aa  \u{9}\u{A}\u{B}\u{C}\u{D}")` → `"aa"`
- - `(str.trim "  a  a  ")` → `"a  a"`
-
-## `(str.in_re String (re.from_ecma2020 String) Bool)`
+## 2. ECMAScript regular expressions
+### `(str.in_re String (re.from_ecma2020 String) Bool)`
 Tests whether a string belongs to the language described by an ECMAScript 2020 regular expression pattern.
 The pattern is given as a string literal and is interpreted according to the [ECMAScript 2020 RegExp specification](https://262.ecma-international.org/11.0/#sec-patterns).
 You can use (nonstandard) single-quote string notation (`''`) to represent the pattern.
@@ -101,7 +62,49 @@ Examples:
 - `(str.in_re x (re.from_ecma2020 '(a*b)\1'))` — `x` is in `{ww | w in a*b}`, e.g. `"bb"`, `"abab"`
 - `(str.in_re x (re.from_ecma2020 '(ab)\1'))` — `x` equals `"abab"`
 
-## `(str.delete String Int Int String)`
+## 3. Special string functions
+### `(str.to_lower String String)`
+Converts all uppercase ASCII characters (`0x41` - `0x5A`) to lowercase.
+This function is equivalent to [cvc5's `str.to_lower`](https://cvc5.github.io/docs-ci/docs-main/theories/strings.html).  
+Examples:
+ - `(str.to_lower "abcd")` → `"abcd"`
+ - `(str.to_lower "aBcD")` → `"abcd"`
+ - `(str.to_lower "AČĎ")` → `"aČĎ"`
+
+### `(str.to_upper String String)`
+Converts all lowercase ASCII characters (`0x61` - `0x7A`) to uppercase.
+This function is equivalent to [cvc5's `str.to_upper`](https://cvc5.github.io/docs-ci/docs-main/theories/strings.html).  
+Examples:
+ - `(str.to_upper "ABCD")` → `"ABCD"`
+ - `(str.to_upper "aBcD")` → `"ABCD"`
+ - `(str.to_upper "ačď")` → `"Ačď"`
+
+### `(str.update String Int String String)`
+Starts replacing characters in the first string by characters in the second string at the given index.
+The length of the resulting string will be the same as the first string.
+If the index is outside the first string, the first string gets returned.
+This function is equivalent to [cvc5's `str.update`](https://cvc5.github.io/docs-ci/docs-main/theories/strings.html).  
+Examples:
+ - `(str.update "123456" 2 "ab")` → `"12ab56"`
+ - `(str.update "1234" 2 "ab")` → `"12ab"`
+ - `(str.update "1234" 2 "abcd")` → `"12ab"`
+ - `(str.update "1234" -1 "ab")` → `"1234"`
+ - `(str.update "1234" 4 "ab")` → `"1234"`
+ - `(str.update "1234" 0 "abcd")` → `"abcd"`
+ - `(str.update "1234" 0 "abcdef")` → `"abcd"`
+
+### `(str.trim String String)`
+Trims the whitespace at the beginning and end of the given string.
+We consider the following characters as whitespace: space, form feed, line feed, carriage return, horizontal tab, vertical tab (ASCII `0x09` - `0x0D` and `0x20`).  
+Examples:
+ - `(str.trim "aa")` → `"aa"`
+ - `(str.trim "   aa")` → `"aa"`
+ - `(str.trim "aa   ")` → `"aa"`
+ - `(str.trim "     ")` → `""`
+ - `(str.trim "\u{9}\u{A}\u{B}\u{C}\u{D}  aa  \u{9}\u{A}\u{B}\u{C}\u{D}")` → `"aa"`
+ - `(str.trim "  a  a  ")` → `"a  a"`
+
+### `(str.delete String Int Int String)`
 Similar to `str.substr`, but it deletes the substring instead of returning it.
 The part to delete is given by an index and a length.
 If the index is outside the string or the length is non-positive, the original string gets returned.  
@@ -115,3 +118,115 @@ Examples:
  - `(str.delete "aaaa" 2 0)` → `"aaaa"`
  - `(str.delete "aaaa" 2 -1)` → `"aaaa"`
  - `(str.delete "aaaa" 10 2)` → `"aaaa"`
+
+## 4. Rational relations (transducers)
+We define a new sort `RatRel` of *rational relations*, i.e. binary relations over strings accepted by some finite transducer. We use `UC*` as the set of all words (same as in the definition of [Strings theory](https://smt-lib.org/theories-UnicodeStrings.shtml)). A rational relation is then a subset of `UC* × UC*`.
+
+### `(str.to_rat String String RatRel)`
+Semantics: `⟦str.to_rat⟧(u, v) = {(u,v)}`
+
+### `(str.in_rat String String RatRel Bool)`
+Semantics: `⟦str.in_rat⟧(u, v, R) = true iff (u,v) ∈ R`
+
+### `(rat.none RatRel RatRel)`
+Semantics: `⟦rat.none⟧ = ∅`
+
+### `(rat.++ RatRel RatRel RatRel)`
+Semantics: `⟦rat.++⟧(R1, R2) = {(u1u2,v1v2) | (u1,v1) ∈ R1 and (u2,v2) ∈ R2}`
+
+### `(rat.union RatRel RatRel RatRel)`
+Semantics: `⟦rat.union⟧(R1, R2) = {(u,v) | (u,v) ∈ R1 or (u,v) ∈ R2}`
+
+### `(rat.* RatRel RatRel)`
+Semantics: `⟦rat.*⟧(R)` is the smallest subset `K` of `UC* × UC*` such that
+- `(ε,ε) ∈ K`
+- `⟦rat.++⟧(R,K) ⊆ K`
+
+
+### `(rat.+ RatRel RatRel)`
+Abbreviates `(rat.++ e (rat.* e))`.
+
+### `(rat.opt RatRel RatRel)`
+Abbreviates `(rat.union e (str.to_rat "" ""))`.
+
+### `((_ rat.^ n) RatRel RatRel)`
+Assumes that `n` is a numeral.  
+Semantics: `⟦(_ re.^ n)⟧(R) = Rⁿ` where `Rⁿ` is defined inductively on `n` as follows:
+- `R⁰ = {(ε,ε)}`
+- `Rⁿ⁺¹ = ⟦rat.++⟧(R, Rⁿ)`
+
+### `((_ rat.loop n1 n2) RatRel RatRel)`
+Assumes that `n` is a numeral.  
+Semantics:  
+&nbsp;&nbsp;&nbsp;&nbsp;For `i <= n`: `⟦(_ rat.loop i n)⟧(R) = Rⁱ ∪ ... ∪ Rⁿ`   
+&nbsp;&nbsp;&nbsp;&nbsp;Otherwise: `⟦(_ rat.loop i n)⟧(R) = ∅`
+
+### `(rat.compose RatRel RatRel RatRel)`
+Semantics: `⟦rat.compose(R1, R2) = {(u,v) | (u,x) ∈ R1 and (x,v) ∈ R2 for some x ∈ UC*}`
+
+### `(rat.invert RatRel RatRel)`
+Semantics: `⟦rat.invert(R) = {(u,v) | (v,u) ∈ R}`
+
+### `(rat.identity RegLan RatRel)`
+Semantics: `⟦rat.identity(L) = {(u,u) | u ∈ L}`
+
+### `(rat.left_extend RegLan RatRel)`
+Semantics: `⟦rat.left_extend(L) = {(u,ε) | u ∈ L}`
+
+### `(rat.right_extend RegLan RatRel)`
+Semantics: `⟦rat.right_extend(L) = {(ε,u) | u ∈ L}`
+
+### Examples
+Transform every "a" to "b":
+```
+(set-option :produce-models true)
+(declare-const a_to_b RatRel)
+(assert (= a_to_b (rat.* (rat.union (str.to_rat "a" "b") (rat.identity (re.diff re.allchar (str.to_re "a")))))))
+
+(declare-const s1 String)
+(assert (str.in_rat "asbabaa" s1 a_to_b)) ; s1 = "bsbbbbb"
+(declare-const s2 String)
+(assert (str.in_rat "dsfgb" s2 a_to_b)) ; s1 = "dsfgb"
+
+(check-sat)
+(get-model)
+```
+
+Proper identity (every string is mapped to the same string):
+```
+(declare-const identity RatRel)
+(assert (= identity (rat.identity re.all)))
+
+(assert (str.in_rat "asdf" "asdf" identity)) ; sat
+(assert (str.in_rat "asdf" "asd" identity)) ; unsat
+```
+
+Take every second symbol from the input string:
+```
+(declare-const project_even RatRel) ; take the symbols on even positions
+(declare-const project_odd RatRel) ; take the symbols on odd positions
+
+(assert (= project_even
+    (rat.union
+        (rat.* (rat.++ (rat.left_extend re.allchar) (rat.identity re.allchar)))
+        (rat.++
+            (rat.left_extend re.allchar)
+            (rat.* (rat.++ (rat.identity re.allchar) (rat_extend re.allchar)))
+        )
+    )
+))
+(assert (= project_odd
+    (rat.union
+        (rat.* (rat.++ (rat.identity re.allchar) (rat.left_extend re.allchar)))
+        (rat.++
+            (rat.identity re.allchar)
+            (rat.* (rat.++ (rat.left_extend re.allchar) (rat.identity re.allchar)))
+        )
+    )
+))
+
+(declare-const s_even String)
+(declare-const s_odd String)
+(assert (str.in_rat "abcde" s_even project_even)) ; s_even = "bd"
+(assert (str.in_rat "abcde" s_odd project_odd)) ; s_odd = "ace"
+```

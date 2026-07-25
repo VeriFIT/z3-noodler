@@ -106,6 +106,11 @@ public:
             expr* v0 = get_fresh_value(seq);
             return u.re.mk_to_re(v0);
         }
+        if (u.is_ratrel(s, seq)) {
+            expr* v0 = get_fresh_value(seq);
+            expr* v1 = get_fresh_value(seq);
+            return u.rat_rel.mk_to_rat(v0, v1);
+        }
         if (u.is_char(s)) {
             return u.mk_char('a');
         }

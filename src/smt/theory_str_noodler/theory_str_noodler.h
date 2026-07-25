@@ -132,6 +132,7 @@ namespace smt::noodler {
         scoped_vector<expr_pair> m_lang_diseq_todo; // pair contains left and right side of the language disequality
         scoped_vector<expr_pair> m_not_contains_todo; // first element should not contain the second one
         scoped_vector<expr_pair_flag> m_membership_todo; // contains the variable and reg. lang. + flag telling us if it is negated (false -> negated)
+        scoped_vector<std::tuple<expr_ref, expr_ref, expr_ref, bool>> m_rat_membership_todo; // contains the 2 string variables and rat. relation. + flag telling us if it is negated (false -> negated)
         scoped_vector<TermConversion> m_conversion_todo; // code-point, string-integer and string-real conversions
 
         // during final_check_eh, we call remove_irrelevant_constr which chooses from previous sets of
@@ -142,6 +143,7 @@ namespace smt::noodler {
         vector<expr_pair_flag> m_lang_eq_or_diseq_todo_rel; // contains left and right side of the language (dis)equality and a flag - true -> equality, false -> diseq
         vector<expr_pair> m_not_contains_todo_rel; // first element should not contain the second one
         vector<expr_pair_flag> m_membership_todo_rel; // contains the variable and reg. lang. + flag telling us if it is negated (false -> negated)
+        vector<std::tuple<expr_ref, expr_ref, expr_ref, bool>> m_rat_membership_todo_rel; // contains the 2 string variables and rat. relation. + flag telling us if it is negated (false -> negated)
         // we cannot decide relevancy of to_code, from_code, to_int and from_int, so we assume everything in m_conversion_todo is relevant => no _todo_rel version
 
         // TODO: the following three things should probably be done differently
@@ -323,6 +325,7 @@ namespace smt::noodler {
         void handle_contains(expr *e);
         void handle_not_contains(expr *e);
         void handle_in_re(expr *e, bool is_true);
+        void handle_in_rat(expr *e, bool is_true);
         void handle_ecma_re(expr *e);
         void handle_is_digit(expr *e);
         void handle_conversion(expr *e);

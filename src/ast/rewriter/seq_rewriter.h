@@ -278,6 +278,23 @@ class seq_rewriter {
     br_status mk_re_reverse(expr* r, expr_ref& result);
     br_status mk_re_derivative(expr* ele, expr* r, expr_ref& result);
 
+    br_status mk_str_to_rat(expr* a, expr* b, expr_ref& result);
+    br_status mk_str_in_rat(expr* a, expr* b, expr* r, expr_ref& result);
+    br_status mk_rat_concat(expr* a, expr* b, expr_ref& result);
+    br_status mk_rat_union(expr* a, expr* b, expr_ref& result);
+    br_status mk_rat_loop(func_decl* f, unsigned num_args, expr* const* args, expr_ref& result);
+    br_status mk_rat_power(func_decl* f, expr* a, expr_ref& result);
+    br_status mk_rat_star(expr* a, expr_ref& result);
+    br_status mk_rat_plus(expr* a, expr_ref& result);
+    br_status mk_rat_option(expr* a, expr_ref& result);
+    br_status mk_rat_compose(expr* a, expr* b, expr_ref& result);
+    br_status mk_rat_invert(expr* a, expr_ref& result);
+    br_status mk_rat_identity(expr* a, expr_ref& result);
+    br_status mk_rat_left_extend(expr* a, expr_ref& result);
+    br_status mk_rat_right_extend(expr* a, expr_ref& result);
+    /* r = to_rat(s,t) ==> return true, result1 = s, result2 = t*/
+    bool lift_str_from_to_rat(expr * r, expr_ref & result1, expr_ref & result2);
+
     br_status lift_ites_throttled(func_decl* f, unsigned n, expr* const* args, expr_ref& result);
     bool lift_ites_filter(func_decl* f, expr* ite);
 
@@ -339,6 +356,8 @@ class seq_rewriter {
     void remove_empty_and_concats(expr_ref_vector& es);
     void remove_leading(unsigned n, expr_ref_vector& es);
 
+    class seq_util::rat& rat() { return u().rat_rel; }
+    class seq_util::rat const& rat() const { return u().rat_rel; }
     class seq_util::rex& re() { return u().re; }
     class seq_util::rex const& re() const { return u().re; }
     class seq_util::str& str() { return u().str; }

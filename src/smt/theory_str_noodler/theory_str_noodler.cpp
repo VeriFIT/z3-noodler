@@ -53,7 +53,8 @@ namespace smt::noodler {
 
     theory_var theory_str_noodler::mk_var(enode *const n) {
         if (!m_util_s.is_seq(n->get_expr()) &&
-            !m_util_s.is_re(n->get_expr())) {
+            !m_util_s.is_re(n->get_expr()) &&
+            !m_util_s.is_ratrel(n->get_expr())) {
             return null_theory_var;
         }
         if (is_attached_to_var(n)) {
@@ -86,6 +87,18 @@ namespace smt::noodler {
             if (!ctx.e_internalized(term->get_arg(0))) {
                 ctx.internalize(term->get_arg(0), false);
                 enode* enode = ctx.get_enode(term->get_arg(0));
+                mk_var(enode);
+            }
+        }
+        if (m_util_s.str.is_in_rat(term)) {
+            if (!ctx.e_internalized(term->get_arg(0))) {
+                ctx.internalize(term->get_arg(0), false);
+                enode* enode = ctx.get_enode(term->get_arg(0));
+                mk_var(enode);
+            }
+            if (!ctx.e_internalized(term->get_arg(1))) {
+                ctx.internalize(term->get_arg(1), false);
+                enode* enode = ctx.get_enode(term->get_arg(1));
                 mk_var(enode);
             }
         }
@@ -473,6 +486,9 @@ namespace smt::noodler {
             m_util_s.re.is_to_re(n) || // str.to_re
             m_util_s.str.is_in_re(n) || // str.in_re
             m_util_s.is_re(n) || // one of re. command (re.none, re.all, re.comp, ...), or possibly RegLan variable
+            m_util_s.rat_rel.is_to_rat(n) || // str.to_rat
+            m_util_s.str.is_in_rat(n) || // str.in_rat
+            m_util_s.is_ratrel(n) || // one of rat. command or possibly RatRel variable
             m_util_s.str.is_string(n) // string literal
         ) {
             // we do not need to handle these, concatenation is handled in the decision procedure (it is a basic term)
@@ -536,6 +552,9 @@ namespace smt::noodler {
         } else if (m_util_s.str.is_in_re(e)) {
             // regexes are not axiomatized. We store them to be solved later in final_check
             handle_in_re(e, is_true);
+        } else if (m_util_s.str.is_in_rat(e)) {
+            // rational relations are not axiomatized. We store them to be solved later in final_check
+            handle_in_rat(e, is_true);
         } else if(m.is_bool(e)) {
             ensure_enode(e);
             TRACE(str_assign, tout << "bool literal " << mk_pp(e, m) << " " << is_true << "\n" );
@@ -561,6 +580,8 @@ namespace smt::noodler {
 
         if(m_util_s.is_re(l) && m_util_s.is_re(r)) { // language equation
             m_lang_eq_todo.push_back({l, r});
+        } else if (m_util_s.is_ratrel(l) && m_util_s.is_ratrel(r)) { // rational relation equation
+            util::throw_error("We cannot handle rational relation equations (for now)");
         } else { // word equation
             // mk_eq_atom can check if equation trivially holds (by having the
             // same thing on both sides) or not (by having two distintict
@@ -606,6 +627,8 @@ namespace smt::noodler {
 
         if(m_util_s.is_re(l) && m_util_s.is_re(r)) { // language disequation
             m_lang_diseq_todo.push_back({l, r});
+        } else if (m_util_s.is_ratrel(l) && m_util_s.is_ratrel(r)) { // rational relation disequation
+            util::throw_error("We cannot handle rational relation inequations (for now)");
         } else { // word disequation
             // mk_eq_atom can check if equation trivially holds (by having the
             // same thing on both sides) or not (by having two distintict
@@ -644,6 +667,7 @@ namespace smt::noodler {
         m_lang_diseq_todo.push_scope();
         m_word_diseq_todo.push_scope();
         m_membership_todo.push_scope();
+        m_rat_membership_todo.push_scope();
         m_not_contains_todo.push_scope();
         m_conversion_todo.push_scope();
         var_eqs.push_scope();
@@ -660,6 +684,7 @@ namespace smt::noodler {
         m_lang_diseq_todo.pop_scope(num_scopes);
         m_word_diseq_todo.pop_scope(num_scopes);
         m_membership_todo.pop_scope(num_scopes);
+        m_rat_membership_todo.pop_scope(num_scopes);
         m_not_contains_todo.pop_scope(num_scopes);
         m_conversion_todo.pop_scope(num_scopes);
         var_eqs.pop_scope(num_scopes);
@@ -2285,6 +2310,18 @@ namespace smt::noodler {
 
         expr_ref r{re, m};
         this->m_membership_todo.push_back(std::make_tuple(expr_ref(re_constr, m), r, is_true));
+    }
+
+    void theory_str_noodler::handle_in_rat(expr *const e, const bool is_true) {
+        STRACE(str, tout  << "handle in_rat " << mk_pp(e, m) << " " << is_true << std::endl;);
+
+        expr *s = nullptr, *t = nullptr, *rat = nullptr;
+        VERIFY(m_util_s.str.is_in_rat(e, s, t, rat));
+
+        expr_ref s_ref(s,m);
+        expr_ref t_ref(t,m);
+        expr_ref rat_ref(rat, m);
+        this->m_rat_membership_todo.push_back(std::make_tuple(s_ref, t_ref, rat_ref, is_true));
     }
 
     /**

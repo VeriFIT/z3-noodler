@@ -223,6 +223,15 @@ namespace smt::noodler {
                 // for regex literal (regex stuff in z3 is either regex var or literal), we just return the regex
                 return alloc(expr_wrapper_proc, tgt);
             }
+        } else if (m_util_s.is_ratrel(tgt)) {
+            // if tgt is rational
+            if (util::is_variable(tgt)) {
+                util::throw_error("unrestricted rational relation vars unsupported"); // (should not be able to come here, as this should be handled by dec proc)
+                return alloc(expr_wrapper_proc, tgt); // we return something so that we do not get warning
+            } else {
+                // for literal we just return it
+                return alloc(expr_wrapper_proc, tgt);
+            }
         } else if (m_util_s.str.is_string(tgt)) {
             // TODO: use seq_factory to register string literal?
             // for string literal, we just return the string

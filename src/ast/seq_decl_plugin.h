@@ -31,7 +31,9 @@ enum seq_sort_kind {
     SEQ_SORT,
     RE_SORT,
     _STRING_SORT,  
-    _REGLAN_SORT
+    _REGLAN_SORT,
+    
+    RATREL_SORT // sort for rational relations (only for strings, not parametarized as RE_SORT)
 };
 
 enum seq_op_kind {
@@ -79,7 +81,6 @@ enum seq_op_kind {
     OP_RE_DERIVATIVE, // Char -> RegEx -> RegEx
     OP_RE_FROM_ECMA2020,
 
-
     // string specific operators.
     OP_STRING_CONST,
     OP_STRING_ITOS,
@@ -117,6 +118,24 @@ enum seq_op_kind {
     _OP_RE_IS_NULLABLE,
     _OP_RE_ANTIMIROV_UNION, // Lifted union for antimirov-style derivatives
     _OP_SEQ_SKOLEM,
+
+    // rational relation stuff
+    OP_STRING_TO_RAT, // take two strings s and t and create rational relations {(s,t)}
+    OP_STRING_IN_RAT, // take two strings s and t, rational relation R, and checks if (s,t) is in R
+    OP_RAT_CONCAT,
+    OP_RAT_UNION,
+    OP_RAT_LOOP,
+    OP_RAT_POWER,
+    OP_RAT_EMPTY_SET,
+    OP_RAT_STAR,
+    OP_RAT_PLUS,
+    OP_RAT_OPTION,
+    OP_RAT_COMPOSE,
+    OP_RAT_INVERT,
+    OP_RAT_IDENTITY,
+    OP_RAT_LEFT_EXTEND,
+    OP_RAT_RIGHT_EXTEND,
+
     LAST_SEQ_OP
 };
 
@@ -144,6 +163,7 @@ class seq_decl_plugin : public decl_plugin {
     sort*            m_string;
     sort*            m_char;
     sort*            m_reglan;
+    sort*            m_ratrel;
     bool             m_has_re;
     bool             m_has_seq;
     char_decl_plugin* m_char_plugin { nullptr };
@@ -175,6 +195,7 @@ class seq_decl_plugin : public decl_plugin {
     void set_manager(ast_manager * m, family_id id) override;
 
     sort* mk_reglan();
+    sort* mk_ratrel();
 
 public:
     seq_decl_plugin();
@@ -250,6 +271,10 @@ public:
     bool is_seq(sort* s, sort*& seq) const { return is_seq(s) && (seq = to_sort(s->get_parameter(0).get_ast()), true); }
     bool is_re(expr* e) const { return is_re(e->get_sort()); }
     bool is_re(expr* e, sort*& seq) const { return is_re(e->get_sort(), seq); }
+    bool is_ratrel(sort* s) const { return is_sort_of(s, m_fid, RATREL_SORT); }
+    bool is_ratrel(sort* s, sort*& seq) const { return is_sort_of(s, m_fid, RATREL_SORT)  && (seq = to_sort(s->get_parameter(0).get_ast()), true); }
+    bool is_ratrel(expr* e) const { return is_ratrel(e->get_sort()); }
+    bool is_ratrel(expr* e, sort*& seq) const { return is_ratrel(e->get_sort(), seq); }
     bool is_const_char(expr* e, unsigned& c) const;
     bool is_const_char(expr* e) const { unsigned c; return is_const_char(e, c); }
     bool is_char_le(expr const* e) const;
@@ -396,6 +421,7 @@ public:
         bool is_is_digit(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_IS_DIGIT); }
         bool is_from_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_FROM_CODE); }
         bool is_to_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TO_CODE); }
+        bool is_in_rat(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_IN_RAT); }
 
         // Convenience matcher for (str.in_re ... (re.from_ecma2020 ...))
         bool is_in_re_from_ecma2020(expr const* n) const { expr *r = nullptr, *s = nullptr; return is_in_re(n, s, r) && u.re.is_from_ecma2020(r); }
@@ -457,6 +483,7 @@ public:
         MATCH_UNARY(is_to_code);
         MATCH_BINARY(is_in_re);
         MATCH_UNARY(is_unit);
+        MATCH_TERNARY(is_in_rat);
 
         void get_concat(expr* e, expr_ref_vector& es) const;
         void get_concat(expr* e, ptr_vector<expr>& es) const;
@@ -666,8 +693,80 @@ public:
             std::ostream& display(std::ostream&) const;
         };
     };
+
+    class rat {
+    private:
+        seq_util&    u;
+        ast_manager& m;
+        family_id    m_fid;
+
+    public:
+        rat(seq_util& u): u(u), m(u.m), m_fid(u.m_fid) {}
+
+        sort* mk_ratrel() { parameter param(u.mk_string_sort()); return m.mk_sort(m_fid, RATREL_SORT, 1, &param); }
+        sort* to_seq(sort* ratrel);
+
+        app* mk_to_rat(expr* s, expr* t) { return m.mk_app(m_fid, OP_STRING_TO_RAT, s, t); }
+        app* mk_to_rat(const zstring &s, const zstring &t) { return mk_to_rat(u.str.mk_string(s), u.str.mk_string(t)); }
+        app* mk_in_rat(expr* s, expr* t, expr* r) { return m.mk_app(m_fid, OP_STRING_IN_RAT, s, t, r); }
+        app* mk_concat(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RAT_CONCAT, r1, r2); }
+        app* mk_union(expr* r1, expr* r2) { return m.mk_app(m_fid, OP_RAT_UNION, r1, r2); }
+        app* mk_star(expr* r) { return m.mk_app(m_fid, OP_RAT_STAR, r); }
+        app* mk_plus(expr* r) { return m.mk_app(m_fid, OP_RAT_PLUS, r); }
+        app* mk_opt(expr* r) { return m.mk_app(m_fid, OP_RAT_OPTION, r); }
+        app* mk_power(expr* r, unsigned n);
+        app* mk_loop(expr* r, unsigned lo);
+        app* mk_loop(expr* r, unsigned lo, unsigned hi);
+        expr* mk_loop_proper(expr* r, unsigned lo, unsigned hi);
+        app* mk_loop(expr* r, expr* lo);
+        app* mk_loop(expr* r, expr* lo, expr* hi);
+        app* mk_empty() { return m.mk_app(m_fid, OP_RAT_EMPTY_SET, 0, nullptr, 0, nullptr, mk_ratrel()); };
+        app* mk_compose(expr* r, expr* s) { return m.mk_app(m_fid, OP_RAT_COMPOSE, r, s); }
+        app* mk_invert(expr* r) { return m.mk_app(m_fid, OP_RAT_INVERT, r); }
+        app* mk_identity(expr* r) { return m.mk_app(m_fid, OP_RAT_IDENTITY, r); }
+        app* mk_left_extend(expr* r) { return m.mk_app(m_fid, OP_RAT_LEFT_EXTEND, r); }
+        app* mk_right_extend(expr* r) { return m.mk_app(m_fid, OP_RAT_RIGHT_EXTEND, r); }
+
+        bool is_to_rat(expr const* n)    const { return is_app_of(n, m_fid, OP_STRING_TO_RAT); }
+        bool is_concat(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_CONCAT); }
+        bool is_concat(expr* e, ptr_vector<expr>& es) const;
+        bool is_union(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_UNION); }
+        bool is_star(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_STAR); }
+        bool is_plus(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_PLUS); }
+        bool is_opt(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_OPTION); }
+        bool is_empty(expr const* n)  const { return is_app_of(n, m_fid, OP_RAT_EMPTY_SET); }
+        bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LOOP); }
+        bool is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const;
+        bool is_loop(expr const* n, expr*& body, unsigned& lo) const;
+        bool is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const;
+        bool is_loop(expr const* n, expr*& body, expr*& lo) const;
+        bool is_compose(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_COMPOSE); }
+        bool is_invert(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_INVERT); }
+        bool is_identity(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_IDENTITY); }
+        bool is_left_extend(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LEFT_EXTEND); }
+        bool is_right_extend(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_RIGHT_EXTEND); }
+
+        MATCH_BINARY(is_to_rat);
+        MATCH_BINARY(is_concat);
+        MATCH_BINARY(is_union);
+        MATCH_UNARY(is_star);
+        MATCH_UNARY(is_plus);
+        MATCH_UNARY(is_opt);
+        MATCH_BINARY(is_compose);
+        MATCH_UNARY(is_invert);
+        MATCH_UNARY(is_identity);
+        MATCH_UNARY(is_left_extend);
+        MATCH_UNARY(is_right_extend);
+
+        bool is_epsilon(expr const* r) { expr *s, *t; return is_to_rat(r, s, t) && u.str.is_empty(s) && u.str.is_empty(t); }
+        app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); };
+
+        bool is_ground(expr const* r) const;
+    };
+
     str str;
-    rex  re;
+    rex re;
+    rat rat_rel;
 
     seq_util(ast_manager& m):
         m(m),
@@ -675,7 +774,8 @@ public:
         ch(seq.get_char_plugin()),
         m_fid(seq.get_family_id()),
         str(*this),
-        re(*this) {
+        re(*this),
+        rat_rel(*this) {
     }
 
     family_id get_family_id() const { return m_fid; }

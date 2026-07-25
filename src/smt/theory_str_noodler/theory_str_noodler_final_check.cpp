@@ -83,6 +83,10 @@ namespace smt::noodler {
             for (const auto &memb: this->m_membership_todo_rel) {
                 tout << "    " << mk_pp(std::get<0>(memb), m) << (std::get<2>(memb) ? "" : " not") << " in " << mk_pp(std::get<1>(memb), m) << std::endl;
             }
+            tout << "  rat membs(" << this->m_rat_membership_todo_rel.size() << "):" << std::endl;
+            for (const auto &memb: this->m_rat_membership_todo_rel) {
+                tout << "    (" << mk_pp(std::get<0>(memb), m) << ", " << mk_pp(std::get<1>(memb), m) << ")" << (std::get<3>(memb) ? "" : " not") << " in " << mk_pp(std::get<2>(memb), m) << std::endl;
+            }
             tout << "  lang (dis)eqs(" << this->m_lang_eq_or_diseq_todo_rel.size() << "):" << std::endl;
             for (const auto &led: this->m_lang_eq_or_diseq_todo_rel) {
                 tout << "    " << mk_pp(std::get<0>(led), m) << (std::get<2>(led) ? " == " : " != ") << mk_pp(std::get<1>(led), m) << std::endl;
@@ -91,7 +95,7 @@ namespace smt::noodler {
             for (const auto &notc: this->m_not_contains_todo_rel) {
                 tout << "    " << mk_pp(notc.first, m) << "; " << mk_pp(notc.second, m) << std::endl;
             }
-            tout << " conversions(" << this->m_conversion_todo.size() << "):" << std::endl;
+            tout << "  conversions(" << this->m_conversion_todo.size() << "):" << std::endl;
             for (const auto &conv: this->m_conversion_todo) {
                 tout << "    " << get_conversion_name(conv.type) << " with string var " << conv.string_var << " and number var " << conv.number_var << std::endl;
             }
@@ -124,7 +128,7 @@ namespace smt::noodler {
         bool contains_word_equations = !this->m_word_eq_todo_rel.empty();
         bool contains_word_disequations = !this->m_word_diseq_todo_rel.empty();
         bool contains_conversions = !this->m_conversion_todo.empty();
-        bool contains_eqs_and_diseqs_only = this->m_not_contains_todo_rel.empty() && this->m_conversion_todo.empty();
+        bool contains_eqs_and_diseqs_only = this->m_not_contains_todo_rel.empty() && this->m_conversion_todo.empty() && this->m_rat_membership_todo_rel.empty();
 
         // nothing is trivially SAT
         if(contains_eqs_and_diseqs_only && this->m_word_eq_todo_rel.empty() && this->m_word_diseq_todo_rel.empty() && this->m_membership_todo_rel.empty() ) {
@@ -134,7 +138,7 @@ namespace smt::noodler {
         // As a heuristic, for the case we have exactly one constraint, which is of type 'x (not)in RE', we use universality/emptiness
         // checking of the regex (using some heuristics) instead of constructing the automaton of RE. The construction (especially complement)
         // can sometimes blow up, so the check should be faster.
-        if(m_params.m_try_memb_heur && this->m_membership_todo_rel.size() == 1 && !contains_word_equations && !contains_word_disequations && !contains_conversions && this->m_not_contains_todo_rel.size() == 0
+        if(m_params.m_try_memb_heur && this->m_membership_todo_rel.size() == 1 && !contains_word_equations && !contains_word_disequations && !contains_conversions && this->m_not_contains_todo_rel.empty() && this->m_rat_membership_todo_rel.empty()
                 && this->len_vars.empty() // TODO: handle length vars that are not x (i.e., there are no string constraints on them, other than length ones, we just need to compute arith model)
         ) {
             const auto& reg_data = this->m_membership_todo_rel[0];
@@ -215,7 +219,7 @@ namespace smt::noodler {
         }
 
         // try a heuristic based procedure for disequations only
-        if (contains_word_disequations && this->m_conversion_todo.empty() && this->m_not_contains_todo_rel.empty()
+        if (contains_word_disequations && this->m_conversion_todo.empty() && this->m_not_contains_todo_rel.empty() && this->m_rat_membership_todo_rel.empty()
             && DiseqLengthHeuristicProcedure::is_suitable(instance, aut_assignment)) {
             lbool result = run_diseq_length_heur(instance, aut_assignment, init_length_sensitive_vars);
             if (result == l_true) {
@@ -400,6 +404,7 @@ namespace smt::noodler {
         this->m_word_eq_todo_rel.clear();
         this->m_word_diseq_todo_rel.clear();
         this->m_membership_todo_rel.clear();
+        this->m_rat_membership_todo_rel.clear();
         this->m_lang_eq_or_diseq_todo_rel.clear();
         this->m_not_contains_todo_rel.clear();
 
@@ -464,6 +469,29 @@ namespace smt::noodler {
                !this->m_membership_todo_rel.contains(memb)
                ) {
                 this->m_membership_todo_rel.push_back(memb);
+            }
+        }
+
+        for (const auto& memb : this->m_rat_membership_todo) {
+            app_ref memb_app(m_util_s.rat_rel.mk_in_rat(std::get<0>(memb), std::get<1>(memb), std::get<2>(memb)), m);
+            app_ref memb_app_orig(memb_app);
+            if(!std::get<3>(memb)){
+                memb_app = m.mk_not(memb_app);
+            }
+
+            STRACE(str,
+                tout << "  " << mk_pp(memb_app.get(), m) << " is " << (ctx.is_relevant(memb_app.get()) ? "" : "not ") << "relevant"
+                     << " with assignment " << ctx.find_assignment(memb_app.get())
+                     << ", " << mk_pp(memb_app_orig.get(), m) << " is " << (ctx.is_relevant(memb_app_orig.get()) ? "" : "not ") << "relevant"
+                     << std::endl;
+            );
+
+            // check if membership (or if we have negation, its negated form) is relevant and...
+            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get())) &&
+               // this membership constraint is not added to relevant yet
+               !this->m_rat_membership_todo_rel.contains(memb)
+               ) {
+                this->m_rat_membership_todo_rel.push_back(memb);
             }
         }
 
@@ -551,6 +579,19 @@ namespace smt::noodler {
             instance.add_predicate(inst);
         }
 
+        for (const auto& rat_memb : this->m_rat_membership_todo_rel) {
+            if (!std::get<3>(rat_memb)) {
+                util::throw_error("We cannot handle negated membership in rational relations");
+            }
+            std::vector<BasicTerm> input, output;
+            util::collect_terms(to_app(std::get<0>(rat_memb)), m, this->m_util_s, this->predicate_replace, input);
+            util::collect_terms(to_app(std::get<1>(rat_memb)), m, this->m_util_s, this->predicate_replace, output);
+            Predicate inst = Predicate::create_transducer(regex::conv_to_nft(to_app(std::get<2>(rat_memb)), m_util_s, m, alph), input, output);
+            regex::gather_transducer_constraints(to_app(std::get<0>(rat_memb)), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
+            regex::gather_transducer_constraints(to_app(std::get<1>(rat_memb)), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
+            instance.add_predicate(inst);
+        }
+
         // construct not contains predicates
         for(const auto& not_contains : this->m_not_contains_todo_rel) {
             std::vector<BasicTerm> left, right;
@@ -591,6 +632,13 @@ namespace smt::noodler {
         for (const auto &membership: m_membership_todo_rel) {
             regex::extract_symbols(std::get<1>(membership), m_util_s, symbols_in_formula);
         }
+
+        for (const auto &rat_membership: m_rat_membership_todo_rel) {
+            regex::extract_symbols(std::get<0>(rat_membership), m_util_s, symbols_in_formula);
+            regex::extract_symbols(std::get<1>(rat_membership), m_util_s, symbols_in_formula);
+            regex::extract_symbols(std::get<2>(rat_membership), m_util_s, symbols_in_formula);
+        }
+
         // extract from not contains
         for(const auto& not_contains : m_not_contains_todo_rel) {
             regex::extract_symbols(not_contains.first, m_util_s, symbols_in_formula);
@@ -811,7 +859,7 @@ namespace smt::noodler {
             if (check_with_context) {
                 // do we solve only regular constraints? If yes, skip other temporary length constraints (they are not necessary)
                 bool include_ass = true;
-                if(this->m_word_diseq_todo_rel.size() == 0 && this->m_word_eq_todo_rel.size() == 0 && this->m_not_contains_todo.size() == 0 && this->m_conversion_todo.size() == 0) {
+                if(this->m_word_diseq_todo_rel.empty() && this->m_word_eq_todo_rel.empty() && this->m_not_contains_todo.empty() && this->m_conversion_todo.empty() && this->m_rat_membership_todo_rel.empty()) {
                     include_ass = false;
                 }
                 solver.initialize(get_context(), include_ass);
@@ -851,6 +899,16 @@ namespace smt::noodler {
         for (const auto& in : this->m_membership_todo_rel) {
             app_ref in_app(m_util_s.re.mk_in_re(std::get<0>(in), std::get<1>(in)), m);
             if(!std::get<2>(in)){
+                in_app = m.mk_not(in_app);
+                if(!ctx.e_internalized(in_app)) {
+                    ctx.internalize(in_app, false);
+                }
+            }
+            refinement = refinement == nullptr ? in_app : m.mk_and(refinement, in_app);
+        }
+        for (const auto& in : this->m_rat_membership_todo_rel) {
+            app_ref in_app(m_util_s.rat_rel.mk_in_rat(std::get<0>(in), std::get<1>(in),  std::get<2>(in)), m);
+            if(!std::get<3>(in)){
                 in_app = m.mk_not(in_app);
                 if(!ctx.e_internalized(in_app)) {
                     ctx.internalize(in_app, false);
@@ -1018,7 +1076,7 @@ namespace smt::noodler {
 
     bool theory_str_noodler::is_mult_membership_suitable() {
         // TODO handle length vars (also the ones without any constraints other than lenght ones, for those we just need to compute arith model)
-        if (!this->m_conversion_todo.empty() || !this->m_not_contains_todo_rel.empty() || !this->len_vars.empty()) {
+        if (!this->m_conversion_todo.empty() || !this->m_not_contains_todo_rel.empty() || !this->m_rat_membership_todo_rel.empty() || !this->len_vars.empty()) {
             return false;
         }
 

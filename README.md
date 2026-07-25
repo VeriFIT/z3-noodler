@@ -24,7 +24,7 @@ If Mata is not found on your system, it will be **automatically fetched and buil
 
 However, if you plan to **develop or frequently rebuild Z3-Noodler**, it is recommended to install Mata manually. This avoids repeatedly downloading and rebuilding Mata and significantly speeds up development workflows.
 
-The minimum required Mata version is `v1.32.33`.
+The minimum required Mata version is `v1.32.37`.
 
 To install mata, run:
 ```shell
@@ -88,6 +88,7 @@ Other than the constraints defined in the [SMT-LIB theory of strings](https://sm
  - `str.trim`
  - `str.delete`
  - `re.from_ecma2020` 
+ - functions for rational relations (finite transducers)
 
 ## Publications
 - Y. Chen, V. Havlena, M.Hečko, L.Holík, and O. Lengál. [A Uniform Framework for Handling Position Constraints in String Solving](https://dl.acm.org/doi/10.1145/3729273). In *Proc. of PLDI'25*, volume 9, pages 550-575, 2025. ACM.

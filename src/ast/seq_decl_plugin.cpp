@@ -29,6 +29,7 @@ seq_decl_plugin::seq_decl_plugin(): m_init(false),
                                     m_string(nullptr),
                                     m_char(nullptr),
                                     m_reglan(nullptr),
+                                    m_ratrel(nullptr),
                                     m_has_re(false),
                                     m_has_seq(false) {
 }
@@ -39,6 +40,7 @@ void seq_decl_plugin::finalize() {
     m_manager->dec_ref(m_string);
     m_manager->dec_ref(m_char);
     m_manager->dec_ref(m_reglan);
+    m_manager->dec_ref(m_ratrel);
 }
 
 bool seq_decl_plugin::is_sort_param(sort* s, unsigned& idx) {
@@ -207,6 +209,9 @@ void seq_decl_plugin::init() {
     sort* seqAintT[2] = { seqA, intT };
     sort* seq3A[3] = { seqA, seqA, seqA };
     sort* realTintT[2] = { realT, intT };
+    sort* ratT  = m.mk_sort(m_family_id, RATREL_SORT, 1, &paramS);
+    sort* str2Trat[3] = { strT, strT, ratT };
+    sort* rat2T[2] = { ratT, ratT };
 
     m_sigs.resize(LAST_SEQ_OP);
     // TBD: have (par ..) construct and load parameterized signature from premable.
@@ -279,6 +284,21 @@ void seq_decl_plugin::init() {
     m_sigs[_OP_REGEXP_EMPTY]      = alloc(psig, m, "re.none", 0, 0, nullptr, reT);
     m_sigs[_OP_REGEXP_FULL_CHAR]  = alloc(psig, m, "re.allchar", 0, 0, nullptr, reT);
     m_sigs[_OP_STRING_SUBSTR]     = alloc(psig, m, "str.substr", 0, 3, strTint2T, strT);
+    m_sigs[OP_RAT_CONCAT]         = alloc(psig, m, "rat.++", 1, 2, rat2T, ratT);
+    m_sigs[OP_RAT_UNION]          = alloc(psig, m, "rat.union", 1, 2, rat2T, ratT);
+    m_sigs[OP_RAT_LOOP]           = alloc(psig, m, "rat.loop", 1, 1, &ratT, ratT);
+    m_sigs[OP_RAT_POWER]          = alloc(psig, m, "rat.^", 1, 1, &ratT, ratT);
+    m_sigs[OP_RAT_EMPTY_SET]      = alloc(psig, m, "rat.none", 1, 0, nullptr, ratT);
+    m_sigs[OP_RAT_STAR]           = alloc(psig, m, "rat.*", 1, 1, &ratT, ratT);
+    m_sigs[OP_RAT_PLUS]           = alloc(psig, m, "rat.+", 1, 1, &ratT, ratT);
+    m_sigs[OP_RAT_OPTION]         = alloc(psig, m, "rat.opt", 1, 1, &ratT, ratT);
+    m_sigs[OP_RAT_COMPOSE]        = alloc(psig, m, "rat.compose", 1, 2, rat2T, ratT);
+    m_sigs[OP_RAT_INVERT]         = alloc(psig, m, "rat.invert", 1, 1, &ratT, ratT);
+    m_sigs[OP_RAT_IDENTITY]       = alloc(psig, m, "rat.identity", 1, 1, &reT, ratT);
+    m_sigs[OP_RAT_LEFT_EXTEND]    = alloc(psig, m, "rat.left_extend", 1, 1, &reT, ratT);
+    m_sigs[OP_RAT_RIGHT_EXTEND]   = alloc(psig, m, "rat.right_extend", 1, 1, &reT, ratT);
+    m_sigs[OP_STRING_TO_RAT]      = alloc(psig, m, "str.to_rat", 0, 2, str2T, ratT);
+    m_sigs[OP_STRING_IN_RAT]      = alloc(psig, m, "str.in_rat", 0, 3, str2Trat, boolT);
 }
 
 
@@ -290,6 +310,16 @@ sort* seq_decl_plugin::mk_reglan() {
         m.inc_ref(m_reglan);
     }
     return m_reglan;
+}
+
+sort* seq_decl_plugin::mk_ratrel() {
+    if (!m_ratrel) {
+        ast_manager& m = *m_manager;
+        parameter paramS(m_string);
+        m_ratrel = m.mk_sort(symbol("RatRel"), sort_info(m_family_id, RATREL_SORT, 1, &paramS));
+        m.inc_ref(m_ratrel);
+    }
+    return m_ratrel;
 }
 
 void seq_decl_plugin::set_manager(ast_manager* m, family_id id) {
@@ -330,6 +360,8 @@ sort * seq_decl_plugin::mk_sort(decl_kind k, unsigned num_parameters, parameter 
         return m_string;
     case _REGLAN_SORT:
         return mk_reglan();
+    case RATREL_SORT:
+        return mk_ratrel();
     default:
         UNREACHABLE();
         return nullptr;
@@ -442,6 +474,18 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
     case OP_STRING_IS_DIGIT:
     case OP_STRING_TO_CODE:
     case OP_STRING_FROM_CODE:
+    case OP_STRING_TO_RAT:
+    case OP_STRING_IN_RAT:
+    case OP_RAT_CONCAT:
+    case OP_RAT_UNION:
+    case OP_RAT_STAR:
+    case OP_RAT_PLUS:
+    case OP_RAT_OPTION:
+    case OP_RAT_COMPOSE:
+    case OP_RAT_INVERT:
+    case OP_RAT_IDENTITY:
+    case OP_RAT_LEFT_EXTEND:
+    case OP_RAT_RIGHT_EXTEND:
         match(*m_sigs[k], arity, domain, range, rng);
         return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k));
 
@@ -486,6 +530,11 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
         }
         return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, range, func_decl_info(m_family_id, k));
 
+    case OP_RAT_EMPTY_SET:
+        if (!range) range = mk_ratrel();
+        match(*m_sigs[k], arity, domain, range, rng);
+        return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k));
+
     case OP_RE_LOOP:
         m_has_re = true;
         switch (arity) {
@@ -515,6 +564,34 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
             return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, num_parameters, parameters));
         }
         m.raise_exception("Incorrect arguments used for re.^. Expected one non-negative integer parameter");
+    case OP_RAT_LOOP:
+        switch (arity) {
+        case 1:
+            match(*m_sigs[k], arity, domain, range, rng);
+            if (num_parameters == 0 || num_parameters > 2 || !parameters[0].is_int() || (num_parameters == 2 && !parameters[1].is_int())) {
+                m.raise_exception("Expecting two numeral parameters to function rat.loop");
+            }
+            return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, num_parameters, parameters));
+        case 2:
+            if (mk_ratrel() != domain[0] || !arith_util(m).is_int(domain[1])) {
+                m.raise_exception("Incorrect type of arguments passed to rat.loop. Expecting rational relation and two integer parameters");
+            }
+            return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, domain[0], func_decl_info(m_family_id, k, num_parameters, parameters));
+        case 3:
+            if (mk_ratrel() != domain[0] || !arith_util(m).is_int(domain[1]) || !arith_util(m).is_int(domain[2])) {
+                m.raise_exception("Incorrect type of arguments passed to rat.loop. Expecting rational relation and two integer parameters");
+            }
+            return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, domain[0], func_decl_info(m_family_id, k, num_parameters, parameters));
+        default:
+            m.raise_exception("Incorrect number of arguments passed to loop. Expected 1 rational relation and two integer parameters");
+        }
+    case OP_RAT_POWER:
+        if (num_parameters == 1 && parameters[0].is_int() && arity == 1 && parameters[0].get_int() >= 0) {
+            rng = domain[0];
+            return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, num_parameters, parameters));
+        }
+        m.raise_exception("Incorrect arguments used for rat.^. Expected one non-negative integer parameter");
+
     case OP_STRING_CONST:
         if (!(num_parameters == 1 && arity == 0 && parameters[0].is_zstring())) {
             m.raise_exception("invalid string declaration");
@@ -715,6 +792,9 @@ void seq_decl_plugin::get_sort_names(svector<builtin_name> & sort_names, symbol 
     sort_names.push_back(builtin_name("RegLan", _REGLAN_SORT));
     sort_names.push_back(builtin_name("String", _STRING_SORT));
 
+    // Rational relations
+    sort_names.push_back(builtin_name("RatRel", RATREL_SORT));
+
     // SMTLIB 2.5 compatibility
     sort_names.push_back(builtin_name("StringSequence", _STRING_SORT));
 }
@@ -810,6 +890,9 @@ expr* seq_decl_plugin::get_some_value(sort* s) {
     sort* seq;
     if (util.is_re(s, seq)) {
         return util.re.mk_to_re(util.str.mk_empty(seq));
+    }
+    if (util.is_ratrel(s, seq)) {
+        return util.rat_rel.mk_to_rat(util.str.mk_empty(seq), util.str.mk_empty(seq));
     }
     UNREACHABLE();
     return nullptr;
@@ -1913,4 +1996,137 @@ seq_util::rex::info& seq_util::rex::info::operator=(info const& other) {
     nullable = other.nullable;
     min_length = other.min_length;
     return *this;
+}
+
+sort* seq_util::rat::to_seq(sort* ratrel) {
+    (void)u;
+    SASSERT(u.is_ratrel(ratrel));
+    return to_sort(ratrel->get_parameter(0).get_ast());
+}
+
+app* seq_util::rat::mk_power(expr* r, unsigned n) {
+    parameter param(n);
+    return m.mk_app(m_fid, OP_RAT_POWER, 1, &param, 1, &r);
+}
+
+
+app* seq_util::rat::mk_loop(expr* r, unsigned lo) {
+    parameter param(lo);
+    return m.mk_app(m_fid, OP_RAT_LOOP, 1, &param, 1, &r);
+}
+
+app* seq_util::rat::mk_loop(expr* r, unsigned lo, unsigned hi) {
+    parameter params[2] = { parameter(lo), parameter(hi) };
+    return m.mk_app(m_fid, OP_RAT_LOOP, 2, params, 1, &r);
+}
+
+expr* seq_util::rat::mk_loop_proper(expr* r, unsigned lo, unsigned hi) {
+    if (lo == 0 && hi == 0) {
+        sort* seq_sort = nullptr;
+        VERIFY(u.is_ratrel(r, seq_sort));
+        // avoid creating a loop with both bounds 0
+        // such an expression is invalid as a loop
+        // it is BY DEFINITION = epsilon
+        r = mk_epsilon();
+        return r;
+    }
+    if (lo == 1 && hi == 1) {
+        // do not create a loop unless it actually is a loop
+        return r;
+    }
+    parameter params[2] = { parameter(lo), parameter(hi) };
+    return m.mk_app(m_fid, OP_RAT_LOOP, 2, params, 1, &r);
+}
+
+app* seq_util::rat::mk_loop(expr* r, expr* lo) {
+    expr* rs[2] = { r, lo };
+    return m.mk_app(m_fid, OP_RAT_LOOP, 0, nullptr, 2, rs);
+}
+
+app* seq_util::rat::mk_loop(expr* r, expr* lo, expr* hi) {
+    expr* rs[3] = { r, lo, hi };
+    return m.mk_app(m_fid, OP_RAT_LOOP, 0, nullptr, 3, rs);
+}
+
+bool seq_util::rat::is_concat(expr* e, ptr_vector<expr>& es) const {
+    if (!is_concat(e)) { return false; }
+
+    expr *e1, *e2;
+    ptr_vector<expr> todo;
+    todo.push_back(e);
+
+    while (!todo.empty()) {
+        e = todo.back();
+        todo.pop_back();
+        if (is_concat(e, e1, e2)) {
+            todo.push_back(e2);
+            todo.push_back(e1);
+        } else {
+            es.push_back(e);
+        }
+    }
+
+    return true;
+}
+
+bool seq_util::rat::is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 1 && a->get_decl()->get_num_parameters() == 2) {
+            body = a->get_arg(0);
+            lo = a->get_decl()->get_parameter(0).get_int();
+            hi = a->get_decl()->get_parameter(1).get_int();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::rat::is_loop(expr const* n, expr*& body, unsigned& lo) const {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 1 && a->get_decl()->get_num_parameters() == 1) {
+            body = a->get_arg(0);
+            lo = a->get_decl()->get_parameter(0).get_int();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::rat::is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 3) {
+            body = a->get_arg(0);
+            lo = a->get_arg(1);
+            hi = a->get_arg(2);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::rat::is_loop(expr const* n, expr*& body, expr*& lo) const {
+    if (is_loop(n)) {
+        app const* a = to_app(n);
+        if (a->get_num_args() == 2) {
+            body = a->get_arg(0);
+            lo = a->get_arg(1);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool seq_util::rat::is_ground(expr const* r) const {
+    expr *a, *b;
+    return (
+        (is_to_rat(r, a, b) && m.is_value(a) && m.is_value(b)) ||
+        ((is_concat(r, a, b) || is_union(r, a, b) || is_compose(r, a, b)) && is_ground(a) && is_ground(b)) ||
+        ((is_star(r, a) || is_plus(r, a) || is_opt(r, a) || is_invert(r, a)) && is_ground(a)) ||
+        is_empty(r) ||
+        ((is_identity(r, a) || is_left_extend(r, a) || is_right_extend(r, a)) && u.re.is_ground(a)) ||
+        (is_loop(r) && is_ground(to_app(r)->get_arg(0)))
+    );
 }
