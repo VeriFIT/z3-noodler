@@ -209,7 +209,7 @@ namespace smt::noodler {
 
     model_value_proc* theory_str_noodler::mk_value(enode *const n, model_generator &mg) {
         // it seems here we only get string literals/vars, concats (whose arguments can be something more complex, but should be replacable by a var), from_int/from_code and regex literals/vars (vars probably not, only if we fix disequations with unrestricted regex vars)
-        app *tgt = n->get_expr();
+        app *tgt = n->get_app();
         STRACE(str, tout << "mk_value: getting model for " << mk_pp(tgt, m) << " sort is " << mk_pp(tgt->get_sort(), m) << "\n";);
 
         tgt = get_ite_value(tgt);
