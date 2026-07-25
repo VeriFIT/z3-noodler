@@ -220,16 +220,10 @@ namespace smt::noodler::regex {
                         arg_nfas[i].clear();
                     }
                     result.trim();
-                } else if (m_util_s.re.is_antimirov_union(cur_expr)) { // Handle Antimirov union.
-                    util::throw_error("antimirov union is unsupported");
                 } else if (m_util_s.re.is_complement(cur_expr)) { // Handle complement.
                     SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
                     result = mata::nfa::complement(result, alphabet.get_mata_alphabet(), {{"algorithm", "classical"}});
-                } else if (m_util_s.re.is_derivative(cur_expr)) { // Handle derivative.
-                    util::throw_error("derivative is unsupported");
-                } else if (m_util_s.re.is_diff(cur_expr)) { // Handle diff.
-                    util::throw_error("regex difference is unsupported");
                 } else if (m_util_s.re.is_dot_plus(cur_expr)) { // Handle dot plus.
                     result.initial.insert(0);
                     result.final.insert(1);
@@ -332,9 +326,6 @@ namespace smt::noodler::regex {
                             result = mata::nfa::remove_epsilon(result);
                         }
                     }
-
-                } else if (m_util_s.re.is_of_pred(cur_expr)) { // Handle of predicate.
-                    util::throw_error("of predicate is unsupported");
                 } else if (m_util_s.re.is_opt(cur_expr)) { // Handle optional.
                     SASSERT(num_of_regex_arguments_of_cur_expr == 1);
                     result = std::move(arg_nfas.at(0));
@@ -740,8 +731,6 @@ namespace smt::noodler::regex {
                 res.universal = l_undef;
             }
             return res;
-        } else if (m_util_s.re.is_antimirov_union(expression)) { // Handle Antimirov union.
-            util::throw_error("antimirov union is unsupported");
         } else if (m_util_s.re.is_complement(expression)) { // Handle complement.
             SASSERT(expression->get_num_args() == 1);
             const auto child{ expression->get_arg(0) };
@@ -765,10 +754,6 @@ namespace smt::noodler::regex {
                 res.empty = l_undef;
             }
             return res;
-        } else if (m_util_s.re.is_derivative(expression)) { // Handle derivative.
-            util::throw_error("derivative is unsupported");
-        } else if (m_util_s.re.is_diff(expression)) { // Handle diff.
-            util::throw_error("regex difference is unsupported");
         } else if (m_util_s.re.is_dot_plus(expression)) { // Handle dot plus.
             return RegexInfo{.min_length = 1, .universal = l_false, .empty = l_false};
         } else if (m_util_s.re.is_empty(expression)) { // Handle empty language.
@@ -821,9 +806,6 @@ namespace smt::noodler::regex {
                 res.universal = l_false;
             }
             return res;
-
-        } else if (m_util_s.re.is_of_pred(expression)) { // Handle of predicate.
-            util::throw_error("of predicate is unsupported");
         } else if (m_util_s.re.is_opt(expression)) { // Handle optional.
             SASSERT(expression->get_num_args() == 1);
             const auto child{ expression->get_arg(0) };
