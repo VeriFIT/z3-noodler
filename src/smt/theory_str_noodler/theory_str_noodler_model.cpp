@@ -242,7 +242,7 @@ namespace smt::noodler {
             // check if tgt is not in a class of enodes that contain some string literal (see PR #174)
             enode* tgt_enode = ctx.get_enode(tgt);
             for (auto tgt_enode_it = tgt_enode->begin(); tgt_enode_it != tgt_enode->end(); ++tgt_enode_it) {
-                app* cur_app = (*tgt_enode_it)->get_expr();
+                app* cur_app = (*tgt_enode_it)->get_app();
                 if (m_util_s.str.is_string(cur_app)) {
                     // if the class contains string literal, return it directly
                     return alloc(expr_wrapper_proc, cur_app);
