@@ -4039,7 +4039,7 @@ br_status seq_rewriter::mk_re_concat(expr* a, expr* b, expr_ref& result) {
         // constructor, so re-simplify the result to recursively reassociate
         // any concat nested in a2 (and re-apply concat simplifications).
         result = re().mk_concat(a1, re().mk_concat(a2, b));
-        return BR_DONE;
+        return BR_REWRITE2;
     }
     return BR_FAILED;
 }

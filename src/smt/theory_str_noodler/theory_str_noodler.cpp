@@ -2366,6 +2366,8 @@ namespace smt::noodler {
         rational val;
         bool val_is_larger;
         expr_ref_vector len_arg(m);
+        expr_ref ex_rewritten(m);
+        m_rewrite(ex, ex_rewritten);
         if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val < MAX_NUM) {
             if (val < 0) {
                 // The sum of lengths should be equal negative number, which is not possible.
@@ -2384,7 +2386,8 @@ namespace smt::noodler {
                     re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
                 }
                 expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
-                add_axiom({~mk_literal(ex), mk_literal(in_re)});
+                m_rewrite(in_re);
+                add_axiom({~mk_literal(ex_rewritten), mk_literal(in_re)});
                 return true;
             }
         } else if(expr_cases::is_len_num_leq_or_geq(ex, m, m_util_s, m_util_a, len_arg, val, val_is_larger) && val < MAX_NUM) {
@@ -2411,7 +2414,8 @@ namespace smt::noodler {
                     m
                 );
                 expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
-                add_axiom({~mk_literal(ex), mk_literal(in_re)});
+                m_rewrite(in_re);
+                add_axiom({~mk_literal(ex_rewritten), mk_literal(in_re)});
                 return true;
             }
         }
