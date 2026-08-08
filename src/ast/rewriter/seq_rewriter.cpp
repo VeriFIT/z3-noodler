@@ -4902,6 +4902,7 @@ br_status seq_rewriter::reduce_re_eq(expr* l, expr* r, expr_ref& result) {
         result = m().mk_true();
         return BR_DONE;
     }
+#if 0 // NOODLER - turn of bisim because it causes looping for some reason
     /*
      * Try the union-find bisimulation procedure for ground regex equality.
      * Guarded against re-entry because the bisim may construct equalities
@@ -4922,6 +4923,7 @@ br_status seq_rewriter::reduce_re_eq(expr* l, expr* r, expr_ref& result) {
             break;
         }
     }
+#endif
     return BR_FAILED;
 }
 
