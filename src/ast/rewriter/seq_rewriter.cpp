@@ -4034,13 +4034,15 @@ br_status seq_rewriter::mk_re_concat(expr* a, expr* b, expr_ref& result) {
         result = m().mk_ite(c, re().mk_concat(a, a1), re().mk_concat(a, b1));
         return BR_REWRITE3;
     }
+#if 0 // NOODLER - right-associative form is not needed for noodler + if there is BR_DONE it does not construct correctly right-associative form (causing some weird issues, because if we rewrite already rewritten stuff, it results in two different regexes) and fixing it to BR_REWRITE2 takes looong time in some benchmarks (matching)
     if (re().is_concat(a, a1, a2)) {
         // Maintain right-associative normal form: re().mk_concat is a raw
         // constructor, so re-simplify the result to recursively reassociate
         // any concat nested in a2 (and re-apply concat simplifications).
         result = re().mk_concat(a1, re().mk_concat(a2, b));
-        return BR_REWRITE2;
+        return BR_DONE;
     }
+#endif
     return BR_FAILED;
 }
 
