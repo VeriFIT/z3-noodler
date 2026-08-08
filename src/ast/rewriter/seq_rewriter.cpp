@@ -3702,7 +3702,8 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
         }
     }
 
-    
+
+#if 0 // NOODLER - we do not use these, as we can probably handle it better inside our solver
     // replace_all(x, a, b) in R where R is ground, a and b are unit-length strings
     // ==> x in R[b -> {a, b}, a -> empty]
     expr *ra_x = nullptr, *ra_a = nullptr, *ra_b = nullptr;
@@ -3718,6 +3719,7 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
         result = re().mk_in_re(ra_x, new_re);
         return BR_REWRITE_FULL;
     }
+#endif
 
     expr_ref b_s(m());
     if (lift_str_from_to_re(b, b_s)) {
@@ -4963,6 +4965,7 @@ br_status seq_rewriter::mk_eq_core(expr * l, expr * r, expr_ref & result) {
     if (reduce_eq_empty(l, r, result)) 
         return BR_REWRITE_FULL;
 
+#if 0 // NOODLER - we do not use the replace_all(x, a, b) rewriting stuff in mk_str_in_regexp, so this is not needed
     // a, b are unit-length ground strings => replace_all(x, a, b) in re.to_re(s)
     {
         expr *ra_x = nullptr, *ra_a = nullptr, *ra_b = nullptr;
@@ -4981,6 +4984,7 @@ br_status seq_rewriter::mk_eq_core(expr * l, expr * r, expr_ref & result) {
             return BR_REWRITE_FULL;
         }
     }
+#endif
 
 #if 0
     if (reduce_arith_eq(l, r, res) || reduce_arith_eq(r, l, res)) {
