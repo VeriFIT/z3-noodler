@@ -1243,27 +1243,24 @@ namespace smt::noodler {
         zstring str_a, str_b;
         // str.replace "A" s t where a = "A"
         if(m_util_s.str.is_string(a, str_a) && str_a.length() == 1) {
-            literal s_a = mk_eq(s, a, false);
-            literal v_a = mk_eq(v, a, false);
-            literal v_t = mk_eq(v, t, false);
             // s = emp -> v = t.a
             // NOTE: we add it twice in different forms because Z3 for some reason ignores one of them sometimes, see https://github.com/VeriFIT/z3-noodler/pull/236
             add_axiom({~s_emp, mk_literal(m.mk_eq(v, mk_concat(t, a)))});
-            // add_axiom({mk_literal(m.mk_not(m.mk_eq(s, eps))), mk_literal(m.mk_eq( mk_concat(t, a), v))});
+            add_axiom({mk_literal(m.mk_not(m.mk_eq(s, eps))), mk_literal(m.mk_eq(v, mk_concat(t, a)))});
             // s = a -> v = t
             // NOTE: if we use ~mk_eq(s, a), this diseqation does not become relevant
-            add_axiom({~s_a, v_t});
+            add_axiom({mk_literal(m.mk_not(m.mk_eq(s, a))), mk_eq(v, t,false)});
             // add_axiom({~mk_eq(s, a, false), mk_eq(v, t,false)});
             // s != eps && s != a -> v = a
-            add_axiom({s_emp, s_a, v_a});
+            add_axiom({mk_eq(s, a, false), s_emp, mk_eq(v, a,false)});
 
 
             // The following axioms are redundant in the sense of completeness, but in the nested replace calls
             // they can relate the contains predicate from the general replace (and thence the SAT solver can help a lot).
             literal cnt = mk_literal(m_util_s.str.mk_contains(s, a));
             // strenghten not contains axiom with s = a
-            add_axiom({~cnt, ~s_a, v_t});
-            add_axiom({cnt, s_emp, v_a});
+            add_axiom({~cnt, mk_literal(m.mk_not(m.mk_eq(s, a))), mk_eq(v, t,false)});
+            add_axiom({cnt, s_emp, mk_eq(v, a,false)});
             ctx.force_phase(cnt);
 
             return;
