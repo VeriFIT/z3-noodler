@@ -832,11 +832,12 @@ namespace smt::noodler {
         // the case where s is one letter string literal, i.e. (str.at "A" i)
         //   i = 0 -> v = "A"
         //   i != 0 -> v = eps
-        if(zstring str; m_util_s.str.is_string(s, str) && str.length() == 1) { 
+        if(zstring str; m_util_s.str.is_string(s, str) && str.length() == 1) {
+            literal i_eq_0 = mk_eq(i, m_util_a.mk_int(0), false);
             // i = 0 -> v = "A"
-            add_axiom({~mk_literal(m.mk_eq(i, m_util_a.mk_int(0))), mk_eq(v, s, false)});
+            add_axiom({~i_eq_0, mk_eq(v, s, false)});
             // i != 0 -> v = eps
-            add_axiom({mk_literal(m.mk_eq(i, m_util_a.mk_int(0))), mk_eq(v, emp, false)});
+            add_axiom({i_eq_0, mk_eq(v, emp, false)});
             return;
         }
 
@@ -1209,7 +1210,7 @@ namespace smt::noodler {
         // if s = t -> the result is unchanged
         add_axiom({~mk_eq(s, t, false), mk_eq(v, a,false)});
         // s = eps -> |v| = |a| + |t|
-        add_axiom({~s_emp, mk_literal(m.mk_eq(m_util_s.str.mk_length(v), m_util_a.mk_add(m_util_s.str.mk_length(a), m_util_s.str.mk_length(t))))});
+        add_axiom({~s_emp, mk_eq(m_util_s.str.mk_length(v), m_util_a.mk_add(m_util_s.str.mk_length(a), m_util_s.str.mk_length(t)), false)});
 
         // axioms for the case str.replace x (y.x) z
         expr* t1 = nullptr, *t2 = nullptr;
@@ -1245,11 +1246,10 @@ namespace smt::noodler {
         if(m_util_s.str.is_string(a, str_a) && str_a.length() == 1) {
             // s = emp -> v = t.a
             // NOTE: we add it twice in different forms because Z3 for some reason ignores one of them sometimes, see https://github.com/VeriFIT/z3-noodler/pull/236
-            add_axiom({~s_emp, mk_literal(m.mk_eq(v, mk_concat(t, a)))});
-            add_axiom({mk_literal(m.mk_not(m.mk_eq(s, eps))), mk_literal(m.mk_eq(v, mk_concat(t, a)))});
+            add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
             // s = a -> v = t
             // NOTE: if we use ~mk_eq(s, a), this diseqation does not become relevant
-            add_axiom({mk_literal(m.mk_not(m.mk_eq(s, a))), mk_eq(v, t,false)});
+            add_axiom({~mk_eq(s, a, false), mk_eq(v, t,false)});
             // add_axiom({~mk_eq(s, a, false), mk_eq(v, t,false)});
             // s != eps && s != a -> v = a
             add_axiom({mk_eq(s, a, false), s_emp, mk_eq(v, a,false)});
@@ -1259,7 +1259,7 @@ namespace smt::noodler {
             // they can relate the contains predicate from the general replace (and thence the SAT solver can help a lot).
             literal cnt = mk_literal(m_util_s.str.mk_contains(s, a));
             // strenghten not contains axiom with s = a
-            add_axiom({~cnt, mk_literal(m.mk_not(m.mk_eq(s, a))), mk_eq(v, t,false)});
+            add_axiom({~cnt, ~mk_eq(s, a, false), mk_eq(v, t,false)});
             add_axiom({cnt, s_emp, mk_eq(v, a,false)});
             ctx.force_phase(cnt);
 
@@ -1267,7 +1267,7 @@ namespace smt::noodler {
         // str.replace "" s t where a = ""
         } else if(m_util_s.str.is_string(a, str_a) && str_a.length() == 0) {
             // s = emp -> v = t.a
-            add_axiom({mk_literal(m.mk_not(m.mk_eq(s, eps))), mk_eq(v,t,false)});
+            add_axiom({~mk_eq(s, eps, false), mk_eq(v,t,false)});
             // s = emp -> v = t.a
             add_axiom({s_emp, mk_eq_empty(v)});
             return;
@@ -1281,7 +1281,7 @@ namespace smt::noodler {
 
         // if both strings are explicit and cnt holds, extract exact lengths of the result.
         if(m_util_s.str.is_string(s, str_a) && m_util_s.str.is_string(t, str_b) && str_a.length() >= str_b.length()) {
-            add_axiom({~cnt, mk_literal(m.mk_eq(m_util_s.str.mk_length(v), m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(str_a.length() - str_b.length()) )))});
+            add_axiom({~cnt, mk_eq(m_util_s.str.mk_length(v), m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(str_a.length() - str_b.length()) ), false)});
         }
 
         // s = eps -> v = t.a
@@ -1440,7 +1440,7 @@ namespace smt::noodler {
             expr_ref s1 = mk_str_var_fresh("tightest_prefix_first");
             expr_ref s2 = mk_str_var_fresh("tightest_prefix_last");
             expr_ref s1s2 = mk_concat(s1, s2);
-            neg_assumptions.push_back(mk_literal(m.mk_eq(s, s1s2)));
+            neg_assumptions.push_back(mk_eq(s, s1s2, false));
             add_axiom(neg_assumptions);
 
             // not(s = eps) -> neg_assumptions || s2 in re.allchar (is a single character)
@@ -1827,7 +1827,7 @@ namespace smt::noodler {
             literal lit_e = mk_literal(e);
             for(size_t i = 0; i <= str.length(); i++) {
                 zstring substr = str.extract(0, i);
-                add_axiom({lit_e, mk_literal(m.mk_not(m.mk_eq(x, m_util_s.str.mk_string(substr))))});
+                add_axiom({lit_e, ~mk_eq(x, m_util_s.str.mk_string(substr), false)});
             }
             return;
         }
@@ -1836,8 +1836,8 @@ namespace smt::noodler {
         if(m_util_s.str.is_at(y)) {
             literal lit_e = mk_literal(e);
             expr_ref eps(m_util_s.str.mk_string(""), m);
-            add_axiom({ lit_e, mk_literal(m.mk_not(m.mk_eq(x,y))) });
-            add_axiom({ lit_e, mk_literal(m.mk_not(m.mk_eq(x,eps))) });
+            add_axiom({ lit_e, ~mk_eq(x,y, false) });
+            add_axiom({ lit_e, ~mk_eq(x,eps, false) });
             return;
         }
 
@@ -1953,7 +1953,7 @@ namespace smt::noodler {
             str = str.reverse();
             for(size_t i = 0; i <= str.length(); i++) {
                 zstring substr = str.extract(0, i);
-                add_axiom({lit_e, mk_literal(m.mk_not(m.mk_eq(x, m_util_s.str.mk_string(substr))))});
+                add_axiom({lit_e, ~mk_eq(x, m_util_s.str.mk_string(substr), false)});
             }
             return;
         }
@@ -2022,9 +2022,6 @@ namespace smt::noodler {
         expr * ind = nullptr;
         zstring str;
         if(expr_cases::is_contains_index(e, ind, m, m_util_s, m_util_a)) {
-            expr_ref ind_eq(m.mk_eq( ind, m_util_a.mk_int(-1) ), m);
-            expr_ref ind_leq(m_util_a.mk_le( ind, m_util_a.mk_int(-1) ), m);
-            literal not_e = mk_literal(mk_not({e, m}));
             add_axiom({~mk_eq(ind, m_util_a.mk_int(-1), false), ~mk_literal(e) });
             add_axiom({mk_eq(ind, m_util_a.mk_int(-1), false), mk_literal(e) });
             return;
@@ -2126,8 +2123,6 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_lt(e, x, y));
         expr_ref eps(m_util_s.str.mk_string(""), m);
-        expr_ref x_eps(m.mk_eq(x, eps), m);
-        expr_ref y_eps(m.mk_eq(y, eps), m);
 
         expr_ref lex_pre = mk_str_var_fresh("lex_pre");
         expr_ref lex_in_left = mk_str_var_fresh("lex_in_left");
@@ -2139,11 +2134,9 @@ namespace smt::noodler {
         string_theory_propagation(px);
         string_theory_propagation(py);
 
-        expr_ref x_px(m.mk_eq(x, px), m);
-        expr_ref y_py(m.mk_eq(y, py), m);
         literal lit_e = mk_literal(e);
-        literal lit_x_px = mk_literal(x_px);
-        literal lit_y_py = mk_literal(y_py);
+        literal lit_x_px = mk_eq(x, px, false);
+        literal lit_y_py = mk_eq(y, py, false);
 
         expr_ref re_in_left(m_util_s.re.mk_in_re(lex_in_left, m_util_s.re.mk_full_char(nullptr)), m);
         expr_ref re_in_right(m_util_s.re.mk_in_re(lex_in_right, m_util_s.re.mk_full_char(nullptr)), m);
@@ -2153,12 +2146,11 @@ namespace smt::noodler {
         // This is a dirty hack. If I add axiom to_code(v1) < to_code(v2), the LIA solver starts 
         // to solve a nonlinear problem (?). If I use to_code(v1) + k = to_code(v2) where k > 0, it works well.
         expr_ref vark = mk_int_var_fresh("lex_add");
-        expr_ref to_code_lt(m.mk_eq(m_util_a.mk_add(to_code_left, vark), to_code_right), m);
         // k >= 1
         add_axiom({mk_literal(m_util_a.mk_ge(vark, m_util_a.mk_int(1)))});
 
-        literal lit_x_eps = mk_literal(x_eps);
-        literal lit_y_eps = mk_literal(y_eps);
+        literal lit_x_eps = mk_eq(x, eps, false);
+        literal lit_y_eps = mk_eq(y, eps, false);
         literal lit_e_switch = mk_literal(m_util_s.str.mk_lex_lt(y,x));
 
         // not(x < y) -> x = y | y < x
@@ -2179,7 +2171,8 @@ namespace smt::noodler {
         // x < y & x != eps -> v2 in re.allchar
         add_axiom({~lit_e, lit_x_eps, mk_literal(re_in_right)});
         // x < y & x != eps -> to_code(v1) + k = to_code(v2) & k >= 1
-        add_axiom({~lit_e, lit_x_eps,  mk_literal(to_code_lt)});
+        literal to_code_lt = mk_eq(m_util_a.mk_add(to_code_left, vark), to_code_right, false);
+        add_axiom({~lit_e, lit_x_eps, to_code_lt});
     }
 
     void theory_str_noodler::handle_ecma_re(expr* e) {
@@ -2484,12 +2477,12 @@ namespace smt::noodler {
                 // However, conversions can be axiomatized on different level than 0 (other predicates are always on 0, see string_theory_propagation) and
                 // the next branch adds something to predicate_replace with the equation, which can be lost after popping from the level in which we axiomatized.
                 // This should be probably handled in a different way, see issue https://github.com/VeriFIT/z3-noodler/issues/175
-                add_axiom({mk_literal(m.mk_eq(arg, z3_var_for_arg))});
+                add_axiom({mk_eq(arg, z3_var_for_arg, false)});
             } else {
                 // argument does not have a replacing variable (probably concatenation)
                 // we need to create one
                 z3_var_for_arg = mk_str_var_fresh(name_of_type + "_argument");
-                add_axiom({mk_literal(m.mk_eq(arg, z3_var_for_arg))});
+                add_axiom({mk_eq(arg, z3_var_for_arg, false)});
                 this->predicate_replace.insert(arg, z3_var_for_arg);
             }
             var_for_arg = util::get_variable_basic_term(z3_var_for_arg);
@@ -2502,7 +2495,7 @@ namespace smt::noodler {
         BasicTerm var_for_conversion(BasicTermType::Variable);
         if (tranforming_from) {
             expr_ref z3_var_for_conversion = mk_str_var_fresh(name_of_type + "_result");
-            add_axiom({mk_literal(m.mk_eq(z3_var_for_conversion, conversion))});
+            add_axiom({mk_eq(z3_var_for_conversion, conversion, false)});
             this->predicate_replace.insert(conversion, z3_var_for_conversion);
             len_vars.insert(z3_var_for_conversion); // we need exact solution for the result, to compute the arithmetic formula
             var_for_conversion = util::get_variable_basic_term(z3_var_for_conversion);
@@ -2527,8 +2520,9 @@ namespace smt::noodler {
                 add_axiom({mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, m_util_s.re.mk_union(all_nums, epsilon)))});
 
                 // |from_int(x)| = 0 <-> x <= -1
-                add_axiom({ mk_literal(m.mk_eq( m_util_s.str.mk_length(conversion), m_util_a.mk_int(0))), ~mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(-1))) });
-                add_axiom({ ~mk_literal(m.mk_eq( m_util_s.str.mk_length(conversion), m_util_a.mk_int(0))), mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(-1))) });
+                literal fromint_eq_0 = mk_eq(m_util_s.str.mk_length(conversion), m_util_a.mk_int(0), false);
+                add_axiom({ fromint_eq_0, ~mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(-1))) });
+                add_axiom({ ~fromint_eq_0, mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(-1))) });
 
                 // As the result of from_int belongs to infinite language, it is very likely that we will have to underapproximate in the decision procedure.
                 // The underapproximation maximum length of words used from this infinite language is given by m_params.m_underapprox_length, we therefore add
@@ -2553,8 +2547,9 @@ namespace smt::noodler {
                 }
 
                 // |from_real(x)| = 0 <-> x < 0
-                add_axiom({ mk_literal(m.mk_eq( m_util_s.str.mk_length(conversion), m_util_a.mk_int(0))), mk_literal(m_util_a.mk_le(m_util_a.mk_real(0), arg)) });
-                add_axiom({ ~mk_literal(m.mk_eq( m_util_s.str.mk_length(conversion), m_util_a.mk_int(0))), ~mk_literal(m_util_a.mk_le(m_util_a.mk_real(0), arg)) });
+                literal fromreal_eq_0 = mk_eq(m_util_s.str.mk_length(conversion), m_util_a.mk_int(0), false);
+                add_axiom({  fromreal_eq_0,  mk_literal(m_util_a.mk_le(m_util_a.mk_real(0), arg)) });
+                add_axiom({ ~fromreal_eq_0, ~mk_literal(m_util_a.mk_le(m_util_a.mk_real(0), arg)) });
 
                 // As the result of from_real belongs to infinite language, it is very likely that we will have to underapproximate in the decision procedure.
                 // The underapproximation maximum length of words used from this infinite language is given by m_params.m_underapprox_length, we therefore add
@@ -2602,7 +2597,7 @@ namespace smt::noodler {
 
             if (type == ConversionType::TO_REAL) {
                 // the result of str.to_real cannot be any negative number other than -1
-                add_axiom({mk_literal(m_util_a.mk_le(m_util_a.mk_real(0), conversion)), mk_literal(m.mk_eq(m_util_a.mk_real(-1), conversion))});
+                add_axiom({mk_literal(m_util_a.mk_le(m_util_a.mk_real(0), conversion)), mk_eq(m_util_a.mk_real(-1), conversion, false)});
 
                 expr *e1 = nullptr, *e2 = nullptr, *e3 = nullptr;
                 rational r1;
