@@ -1054,7 +1054,7 @@ namespace smt::noodler {
             add_axiom({~s_is_empty, mk_eq(v, eps, false)});
             // update length variables
             mark_expression_as_length(s);
-            this->var_eqs.add(expr_ref(l, m), v);
+            this->var_eqs.add(expr_ref(l, m), v, false); // l = |v| holds nearly always, except when s=eps (then l=-1, |v|=0)
             return;
         }
 
