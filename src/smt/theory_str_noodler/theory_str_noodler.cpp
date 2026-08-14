@@ -603,7 +603,9 @@ namespace smt::noodler {
                 if (ctx.is_relevant(equation) || ctx.is_relevant(m.mk_eq(r, l))) {
                     literal l_eq_r = mk_literal(equation);    //mk_eq(l, r, false);
                     literal len_l_eq_len_r = mk_eq(m_util_s.str.mk_length(l), m_util_s.str.mk_length(r), false);
-                    add_axiom({~l_eq_r, len_l_eq_len_r});
+                    // l = r -> |l| = |r|
+                    // slight hack, we do not use ~mk_eq(l, r) as that would make the disequation relevant in add_axiom
+                    add_axiom({mk_literal(m.mk_not(equation)), len_l_eq_len_r});
                 }
             }
         }
