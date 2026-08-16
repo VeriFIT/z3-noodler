@@ -782,19 +782,6 @@ namespace smt::noodler {
         for (const auto &l : ls) {
             if (l != null_literal && l != false_literal) {
                 ctx.mark_as_relevant(l);
-                // ctx.mark_as_relevant(l) only marks the underlying (positive) atom as
-                // relevant, never a negated equation. new_diseq_eh only marks a disequation
-                // as relevant when its equation atom was not yet internalized; if we already
-                // internalized+relevant-marked the atom right here, that check silently fails
-                // later and the disequation can be dropped from the decision procedure.
-                // Force relevance on the negation ourselves to avoid relying on that.
-                if (l.sign() && m.is_eq(ctx.bool_var2expr(l.var()))) {
-                    expr_ref neg = ctx.literal2expr(l);
-                    if (!ctx.e_internalized(neg)) {
-                        ctx.internalize(neg, false);
-                    }
-                    ctx.mark_as_relevant(neg.get());
-                }
                 lv.push_back(l);
             }
         }
