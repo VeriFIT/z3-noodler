@@ -1790,6 +1790,19 @@ namespace smt::noodler {
         return ctx.get_literal(eq);
     }
 
+    literal theory_str_noodler::mk_eq_with_relevancy(expr* a, expr* b) {
+        if (a == b) {
+            return true_literal;
+        }
+        if (m.are_distinct(a, b))
+            return false_literal;
+        app_ref eq(ctx.mk_eq_atom(a, b), get_manager());
+        ctx.internalize(eq, false);
+        ctx.mark_as_relevant(eq.get());
+        ctx.mark_as_relevant(m.mk_not(eq));
+        return ctx.get_literal(eq);
+    }
+
 
     /**
      * @brief Handling of str.prefix(x, y) = e (x is a prefix of y)

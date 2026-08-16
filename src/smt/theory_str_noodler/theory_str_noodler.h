@@ -235,8 +235,21 @@ namespace smt::noodler {
 
         /**
          * @brief Creates literal representing that n is empty string
+         * 
+         * Can return true/false literals with some trivial checks.
+         * Otherwise returns literal for n = epsilon, where both 
+         * this equation and also negated equation are marked as relevant. 
          */
         literal mk_eq_empty(expr* n);
+
+        /**
+         * @brief Creates literal for a = b
+         * 
+         * Similar to mk_eq with simple checks for trivial true/false.
+         * Marks both the equation and its negation as relevant.
+         * 
+         */
+        literal mk_eq_with_relevancy(expr* a, expr* b);
 
         bool has_length(expr *e) const { return m_has_length.contains(e); }
         void enforce_length(expr* n);
