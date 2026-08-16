@@ -1782,9 +1782,12 @@ namespace smt::noodler {
             }
         }
 
-        literal lit = mk_eq(e, m_util_s.str.mk_empty(e->get_sort()), false);
-        ctx.mark_as_relevant(lit);
-        return lit;
+        expr_ref eq(mk_eq_atom(e, m_util_s.str.mk_empty(e->get_sort())), m);
+        ctx.internalize(eq, false);
+        ctx.mark_as_relevant(eq.get());
+        ctx.mark_as_relevant(m.mk_not(eq));
+        
+        return ctx.get_literal(eq);
     }
 
 
