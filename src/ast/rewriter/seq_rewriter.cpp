@@ -4692,6 +4692,17 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
 
     zstring s;
     if (str().is_string(a, s) && re().is_ground(b)) {
+        smt::noodler::regex::Alphabet alph;
+        smt::noodler::regex::extract_symbols(a, u(), alph);
+        smt::noodler::regex::extract_symbols(b, u(), alph);
+        mata::nfa::Nfa regex_nfa = *smt::noodler::regex::NfaConstructor().conv_to_nfa(to_app(b), u(), m(), alph);
+        if (regex_nfa.is_in_lang(smt::noodler::util::get_mata_word_zstring(s))) {
+            result = m().mk_true();
+        } else {
+            result = m().mk_false();
+        }
+        return BR_DONE;
+
         // Just check membership and replace by true/false
         expr_ref r(b, m());
         for (unsigned i = 0; i < s.length(); ++i) {
