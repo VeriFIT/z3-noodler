@@ -933,9 +933,7 @@ namespace smt::noodler {
             this->axiomatized_instances.push_back({refinement, stored_instance{ .lengths = len_formula, .is_overapprox = is_overapprox}});
         }
         if (refinement != nullptr) {
-            if (expr_cases::has_quantifier(len_formula, m) && !this->input_has_quantifiers) {
-                ctx.push_trail(value_trail<bool>(this->input_has_quantifiers, true));
-            }
+            this->input_has_quantifiers = expr_cases::has_quantifier(len_formula, m);
             add_axiom(m.mk_or(m.mk_not(refinement), len_formula));
         }
         STRACE(str_block, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
@@ -1221,9 +1219,7 @@ namespace smt::noodler {
                         expr_ref unsat_core(m.mk_true(), m);
                         if (check_len_sat(len_formula, true, &unsat_core) == l_false) {
                             unsat_core = m.mk_not(unsat_core);
-                            if (expr_cases::has_quantifier(unsat_core, m) && !this->input_has_quantifiers) {
-                                ctx.push_trail(value_trail<bool>(this->input_has_quantifiers, true));
-                            }
+                            this->input_has_quantifiers = expr_cases::has_quantifier(unsat_core, m);
                             ctx.internalize(unsat_core.get(), true);
                             add_axiom({mk_literal(unsat_core)});
                             block_curr_len(len_formula, false);
