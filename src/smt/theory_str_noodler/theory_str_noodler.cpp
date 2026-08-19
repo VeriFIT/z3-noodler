@@ -152,7 +152,9 @@ namespace smt::noodler {
         for (unsigned i = 0; i < nFormulas; ++i) {
             STRACE(str_init_formula, tout << "Initial asserted formula " << i << ": " << expr_ref(ctx.get_asserted_formula(i), m) << std::endl;);
             expr *ex = ctx.get_asserted_formula(i);
-            this->input_has_quantifiers |= util::has_quantifiers(m, ex);
+            if (util::has_quantifiers(m, ex) && !this->input_has_quantifiers) {
+                ctx.push_trail(value_trail<bool>(this->input_has_quantifiers, true));
+            }
             if (!add_len_num_axioms(ex)) {
                 obj_hashtable<app> lens;
                 util::get_len_exprs(ctx.get_asserted_formula(i), m_util_s, m, lens);
