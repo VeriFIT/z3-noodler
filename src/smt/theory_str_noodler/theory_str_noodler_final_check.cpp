@@ -857,12 +857,7 @@ namespace smt::noodler {
         } else {
             int_expr_solver solver(get_manager(), get_fparams());
             if (check_with_context) {
-                // do we solve only regular constraints? If yes, skip other temporary length constraints (they are not necessary)
-                bool include_ass = true;
-                if(this->m_word_diseq_todo_rel.empty() && this->m_word_eq_todo_rel.empty() && this->m_not_contains_todo.empty() && this->m_conversion_todo.empty() && this->m_rat_membership_todo_rel.empty()) {
-                    include_ass = false;
-                }
-                solver.initialize(get_context(), include_ass);
+                solver.initialize(get_context(), true);
             }
             lbool ret = solver.check_sat(len_formula);
             if (unsat_core != nullptr) {
