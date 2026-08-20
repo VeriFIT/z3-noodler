@@ -197,7 +197,7 @@ namespace smt::noodler {
         bool internalize_atom(app *atom, bool gate_ctx) override;
         bool internalize_term(app *term) override;
         void init_search_eh() override;
-        void relevant_eh(app *n) override;
+        void relevant_eh(expr *n) override;
         void assign_eh(bool_var v, bool is_true) override;
         void new_eq_eh(theory_var, theory_var) override;
         void new_diseq_eh(theory_var, theory_var) override;

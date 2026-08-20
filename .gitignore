@@ -1,9 +1,12 @@
 *~
 rebase.cmd
+reports/
+crashes/
 *.pyc
 *.pyo
 # Ignore callgrind files
 callgrind.out.*
+gmon.out
 # .hpp files are automatically generated
 *.hpp
 .env
@@ -121,3 +124,10 @@ bazel-*
 # Local issue tracking
 .beads
 .claude
+.z3-agent/
+.playwright*/
+.atomic/
+.deepscan/
+.deeptest/
+tptp_test/
+tptp_benchmarks/

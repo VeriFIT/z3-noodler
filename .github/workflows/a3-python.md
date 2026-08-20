@@ -9,12 +9,15 @@ permissions:
 network:
   allowed: [defaults, python]
 safe-outputs:
+  report-failure-as-issue: false
   create-issue:
     labels:
       - bug
       - automated-analysis
       - a3-python
     title-prefix: "[a3-python] "
+  noop:
+    report-as-issue: false
 description: Analyzes Python code using a3-python tool to identify bugs and issues
 name: A3 Python Code Analysis
 strict: true

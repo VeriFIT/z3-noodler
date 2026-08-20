@@ -13,6 +13,7 @@ foreach (component ${z3_test_expanded_deps})
 endforeach()
 add_executable(test-z3
   EXCLUDE_FROM_ALL
+  ackermannize.cpp
   algebraic.cpp
   algebraic_numbers.cpp
   api_ast_map.cpp
@@ -25,6 +26,7 @@ add_executable(test-z3
   api_datalog.cpp
   parametric_datatype.cpp
   arith_rewriter.cpp
+  seq_rewriter.cpp
   arith_simplifier_plugin.cpp
   ast.cpp
   bdd.cpp
@@ -38,6 +40,7 @@ add_executable(test-z3
   cube_clause.cpp
   datalog_parser.cpp
   ddnf.cpp
+  deep_api_bugs.cpp
   diff_logic.cpp
   distribution.cpp
   dl_context.cpp
@@ -57,6 +60,9 @@ add_executable(test-z3
   expr_substitution.cpp
   ext_numeral.cpp
   f2n.cpp
+  finite_set.cpp
+  finite_set_rewriter.cpp
+  fpa.cpp
   factor_rewriter.cpp
   finder.cpp
   fixed_bit_vector.cpp
@@ -76,6 +82,7 @@ add_executable(test-z3
   "${CMAKE_CURRENT_BINARY_DIR}/install_tactic.cpp"
   interval.cpp
   karr.cpp
+  lcube.cpp
   list.cpp
   main.cpp
   map.cpp
@@ -84,6 +91,7 @@ add_executable(test-z3
   memory.cpp
   model2expr.cpp
   model_based_opt.cpp
+  mod_factor.cpp
   model_evaluator.cpp
   model_retrieval.cpp
   monomial_bounds.cpp
@@ -109,14 +117,19 @@ add_executable(test-z3
   polynomial_factorization.cpp
   polynorm.cpp
   prime_generator.cpp
+  psmt.cpp
+  seq_regex_bisim.cpp
   proof_checker.cpp
   qe_arith.cpp
+  mbp_qel.cpp
   quant_elim.cpp
   quant_solve.cpp
   random.cpp
+  range_predicate.cpp
   rational.cpp
   rcf.cpp
   region.cpp
+  regex_range_collapse.cpp
   sat_local_search.cpp
   sat_lookahead.cpp
   sat_user_scope.cpp
@@ -127,6 +140,7 @@ add_executable(test-z3
   simplifier.cpp
   sls_test.cpp
   sls_seq_plugin.cpp
+  seq_split.cpp
   small_object_allocator.cpp
   smt2print_parse.cpp
   smt_context.cpp
@@ -138,9 +152,11 @@ add_executable(test-z3
   symbol.cpp
   symbol_table.cpp
   tbv.cpp
+  term_enumeration.cpp
   theory_dl.cpp
   theory_pb.cpp
   timeout.cpp
+  tptp.cpp
   total_order.cpp
   totalizer.cpp
   trigo.cpp
@@ -159,7 +175,9 @@ add_executable(test-z3
 z3_add_install_tactic_rule(${z3_test_deps})
 z3_add_memory_initializer_rule(${z3_test_deps})
 z3_add_gparams_register_modules_rule(${z3_test_deps})
-target_compile_definitions(test-z3 PRIVATE ${Z3_COMPONENT_CXX_DEFINES})
+target_compile_definitions(test-z3 PRIVATE
+  ${Z3_COMPONENT_CXX_DEFINES}
+)
 target_compile_options(test-z3 PRIVATE ${Z3_COMPONENT_CXX_FLAGS})
 target_link_libraries(test-z3 PRIVATE ${Z3_DEPENDENT_LIBS})
 target_include_directories(test-z3 PRIVATE ${Z3_COMPONENT_EXTRA_INCLUDE_DIRS})

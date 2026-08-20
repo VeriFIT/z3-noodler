@@ -140,7 +140,7 @@ namespace smt {
               tout << "new instance of " << q->get_qid() << ", weight " << q->get_weight()
               << ", generation: " << generation << ", scope_level: " << m_context.get_scope_level() << ", cost: " << cost << "\n";
               for (unsigned i = 0; i < f->get_num_args(); ++i) {
-                  tout << "#" << f->get_arg(i)->get_expr_id() << " d:" << f->get_arg(i)->get_expr()->get_depth() << " ";
+                  tout << "#" << f->get_arg(i)->get_expr_id() << " d:" << get_depth(f->get_arg(i)->get_expr()) << " ";
               }
               tout << "\n";);
         TRACE(new_entries_bug, tout << "[qi:insert]\n";);
@@ -197,6 +197,9 @@ namespace smt {
     }
 
     void qi_queue::instantiate(entry & ent) {
+        if (m_context.inconsistent()) 
+            return;
+        
         // set temporary flag to enable quantifier-specific tracing in within smt_internalizer.
         flet<bool> _coming_from_quant(m_context.m_coming_from_quant, true);
 
@@ -265,7 +268,7 @@ namespace smt {
         }
 
         if (m_on_binding && !m_on_binding(q, instance)) {
-            verbose_stream() << "qi_queue: on_binding returned false, skipping instance.\n";
+            IF_VERBOSE(3, verbose_stream() << "qi_queue: on_binding returned false, skipping instance.\n";);
             return;
         }
         expr_ref lemma(m);
@@ -331,9 +334,6 @@ namespace smt {
         unsigned gen = get_new_gen(q, generation, ent.m_cost);
         display_instance_profile(f, q, num_bindings, bindings, proof_id, gen);
         m_context.internalize_instance(lemma, pr1, gen);
-        if (f->get_def()) {
-            m_context.internalize(f->get_def(), true);
-        }
         TRACE_CODE({
             static unsigned num_useless = 0;
             if (m.is_or(lemma)) {
@@ -521,5 +521,5 @@ namespace smt {
 #endif
     }
 
-};
+}
 

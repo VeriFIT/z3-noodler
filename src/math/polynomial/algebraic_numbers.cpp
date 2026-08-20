@@ -22,6 +22,7 @@ Notes:
 #include "util/mpbqi.h"
 #include "util/timeit.h"
 #include "util/common_msgs.h"
+#include "util/index_sort_with_mutations.h"
 #include "math/polynomial/algebraic_numbers.h"
 #include "math/polynomial/upolynomial.h"
 #include "math/polynomial/sexpr2upolynomial.h"
@@ -593,10 +594,57 @@ namespace algebraic_numbers {
             }
         }
 
+        // Sort an index permutation with a bounds-safe, mutation-aware merge
+        // sort. The comparator (compare/lt) is NOT pure: it MUTATES the
+        // algebraic numbers it compares (refining their isolating intervals) and
+        // may throw on the resource limit, so std::sort would be undefined
+        // behavior here. See util/index_sort_with_mutations.h for the rationale.
+        void merge_sort_roots_perm(numeral_vector & r, unsigned_vector & perm) {
+            unsigned n = perm.size();
+            if (n < 2)
+                return;
+            unsigned_vector scratch;
+            scratch.resize(n, 0);
+            // Strict, total, stable index comparator: decided sign first, then index
+            // tiebreak (covers the equal/limit case so the order stays deterministic).
+            auto idx_lt = [&](unsigned x, unsigned y) {
+                ::sign s = compare(r[x], r[y]);
+                return s != sign_zero ? s == sign_neg : x < y;
+            };
+            stable_index_merge_sort(perm.data(), scratch.data(), n, idx_lt);
+        }
+
         void sort_roots(numeral_vector & r) {
-            if (m_limit.inc()) {
-                // DEBUG_CODE(check_transitivity(r););
-                std::sort(r.begin(), r.end(), lt_proc(m_wrapper));
+            if (!m_limit.inc())
+                return;
+            // DEBUG_CODE(check_transitivity(r););
+            unsigned n = r.size();
+            if (n < 2)
+                return;
+            unsigned_vector perm;
+            perm.resize(n, 0);
+            for (unsigned i = 0; i < n; ++i)
+                perm[i] = i;
+            merge_sort_roots_perm(r, perm);
+            // Apply the permutation in place via swap cycles. anum swap is a cheap
+            // pointer swap (move nulls the source), so this is O(n) cheap moves.
+            unsigned_vector pos;       // pos[v] = current position of element v
+            pos.resize(n, 0);
+            unsigned_vector at;        // at[p]  = element currently at position p
+            at.resize(n, 0);
+            for (unsigned i = 0; i < n; ++i) {
+                pos[i] = i;
+                at[i] = i;
+            }
+            for (unsigned target = 0; target < n; ++target) {
+                unsigned want = perm[target];   // element that should end up at target
+                unsigned cur = pos[want];        // where it currently is
+                if (cur == target)
+                    continue;
+                unsigned other = at[target];     // element currently at target
+                std::swap(r[target], r[cur]);
+                at[target] = want;  at[cur] = other;
+                pos[want] = target; pos[other] = cur;
             }
         }
 
@@ -783,9 +831,102 @@ namespace algebraic_numbers {
                 return;
             }
 
+            // At this point [a, b] is an *isolating* and *refinable* interval for p:
+            // it contains exactly one real root of the square-free polynomial p, and
+            // neither endpoint is itself that root. That root could still be a
+            // *rational* number: unlike the general isolate_roots(), this closest-root
+            // path does NOT factor p, so a reducible polynomial (e.g. a product of
+            // linear factors) is handled whole and keeps its rational roots instead of
+            // exposing them as degree-1 factors. If we blindly built an algebraic_cell
+            // here we would create a "root object" that is really just a rational, which
+            // is both wasteful and, downstream, error-prone (algebraic-number comparison
+            // must special-case such cells). So first try to recognize a rational root
+            // and, if found, return it as a plain rational (basic numeral).
+            if (rational_root_in_interval(sz, p, a, b, r))
+                return;
+
             del(r);
             r = mk_algebraic_cell(sz, p, a, b, false /* minimal */);
             SASSERT(acell_inv(*r.to_algebraic()));
+        }
+
+        // Decide whether the unique real root of the square-free integer polynomial p
+        // that lies in the isolating interval [l, u] is a rational number and, if so,
+        // store it in r as a basic (rational) numeral and return true. Otherwise return
+        // false (the root is irrational and must be represented as a root object).
+        //
+        // Notation: p(x) = a_n*x^n + ... + a_1*x + a_0 with a_i integers (mpz), a_n != 0.
+        //           mpbq = dyadic rational (denominator is a power of two);
+        //           mpq  = arbitrary rational; mpz = integer.
+        //
+        // Preconditions (guaranteed by the caller, isolate_kth_root):
+        //   * p is square-free, so all its roots are simple (no repeated roots).
+        //   * [l, u] is an isolating interval: it contains EXACTLY ONE real root of p.
+        //     This is why we may speak of "the root" in the interval.
+        //
+        // The mathematics used:
+        //
+        //   1. Rational Root Theorem. If a polynomial with integer coefficients has a
+        //      rational root num/den, where den > 0 does not divide num, 
+        //      then den divides the leading coefficient a_n. In
+        //      particular every rational root can be written with denominator |a_n|,
+        //      i.e. as m/|a_n| for some integer m. We can represent the root as that m/|a_n|
+        //      for some integer m.
+        //
+        //   2. Two distinct rationals m1/|a_n| and m2/|a_n| differ by at least 1/|a_n|. Hence if we
+        //      first shrink [l, u] to have width < 1/|a_n|, the interval can contain at
+        //      most one rational of the form m/|a_n| => if the
+        //      root is rational it must equal that single candidate.
+        bool rational_root_in_interval(unsigned sz, mpz const * p, mpbq & l, mpbq & u, numeral & r) {
+            // a_n is the leading coefficient; work with its absolute value |a_n|.
+            mpz const & a_n = p[sz - 1];
+            scoped_mpz abs_a_n(qm());
+            qm().set(abs_a_n, a_n);
+            qm().abs(abs_a_n);
+
+            // We need the interval width to be strictly less than 1/|a_n|
+            // refine() shrinks by halving, i.e. it reaches width <= 1/2^k. Choosing
+            //   k = floor(log2(|a_n|)) + 1
+            // gives 2^k > |a_n|, hence 1/2^k < 1/|a_n|, which is what we want.
+            unsigned k = qm().log2(abs_a_n);
+            k++;
+
+            // Refine [l, u] to precision k. refine() returns false in the lucky case
+            // where the bisection lands *exactly* on a dyadic rational that is a root
+            // of p; in that case the exact root has been stored in the lower endpoint l,
+            // so we can return it directly as a basic rational.
+            if (!upm().refine(sz, p, bqm(), l, u, k)) {
+                scoped_mpq q(qm());
+                to_mpq(qm(), l, q);
+                set(r, q);
+                return true;
+            }
+            // Otherwise refine() succeeded and [l, u] now has width < 1/|a_n|.
+
+            // Build the unique candidate rational m/|a_n| that could lie in [l, u].
+            // Scale the interval by |a_n|: [l*|a_n|, u*|a_n|] has width < 1, so it
+            // contains at most one integer. That integer, if any, is m = floor(u*|a_n|),
+            // and the candidate rational is m/|a_n|.
+            scoped_mpbq a_n_upper(bqm());
+            bqm().mul(u, abs_a_n, a_n_upper);        // a_n_upper = u * |a_n|
+            scoped_mpz zcandidate(qm());
+            bqm().floor(qm(), a_n_upper, zcandidate); // m = floor(u * |a_n|)
+            scoped_mpq candidate(qm());
+            qm().set(candidate, zcandidate, abs_a_n); // candidate = m / |a_n|
+
+            // By construction candidate <= u. We still must confirm two things:
+            //   (a) candidate is actually inside the interval, i.e. l < candidate
+            //       (if candidate <= l then there is no rational m/|a_n| inside [l,u]);
+            //   (b) candidate is genuinely a root, i.e. p(candidate) == 0.
+            // If both hold, then since the interval isolates exactly one root, that
+            // root equals candidate and is rational. If p(candidate) != 0, then by the
+            // Rational Root Theorem no rational (which would have to be m/|a_n|) is a
+            // root here, so the single root in the interval is irrational.
+            if (bqm().lt(l, candidate) && upm().eval_sign_at(sz, p, candidate) == sign_zero) {
+                set(r, candidate);
+                return true;
+            }
+            return false;
         }
 
         // Closest-root isolation for an (integer) univariate polynomial.
@@ -2018,8 +2159,15 @@ namespace algebraic_numbers {
             scoped_mpbq la(bqm()), ua(bqm());
             scoped_mpbq lb(bqm()), ub(bqm());
             unsigned precision = 10;
-            if (get_interval(a, la, ua, precision) && 
-                get_interval(b, lb, ub, precision)) { 
+            // Important: both intervals must be computed. Do not short-circuit with &&:
+            // the refined bounds la, ua, lb, ub are all used below (and beyond this
+            // if statement, in the interval-separation checks that compare against
+            // the bounds of a and b), so get_interval(b, ...) has to run even when
+            // get_interval(a, ...) returns false (which happens when a is rational
+            // and its exact root is found).
+            bool a_separated = get_interval(a, la, ua, precision);
+            bool b_separated = get_interval(b, lb, ub, precision);
+            if (a_separated && b_separated) {
                 IF_VERBOSE(9, verbose_stream() << "sturm 0\n");
                 if (la > ub) 
                     return sign_pos;
@@ -2027,6 +2175,20 @@ namespace algebraic_numbers {
                     return sign_neg;
             }
             IF_VERBOSE(9, verbose_stream() << "sturm 1\n");
+
+
+            // Check whether a can be separated from b's interval and vice versa
+            // this recognizes the case where the intervals overlap,
+            // but the anums do not lie in the intersection of the intervals.
+            scoped_mpq l_a(qm()), u_a(qm()), l_b(qm()), u_b(qm());
+            to_mpq(qm(), la, l_a);
+            to_mpq(qm(), ua, u_a);
+            to_mpq(qm(), lb, l_b);
+            to_mpq(qm(), ub, u_b);
+            if (compare(cell_a, l_b) == sign_neg) return sign_neg;
+            if (compare(cell_a, u_b) == sign_pos) return sign_pos;
+            if (compare(cell_b, l_a) == sign_neg) return sign_pos;
+            if (compare(cell_b, u_a) == sign_pos) return sign_neg;
 
             // 
             // EXPENSIVE CASE
@@ -2620,7 +2782,8 @@ namespace algebraic_numbers {
                 TRACE(isolate_roots, tout << "resultant loop i: " << i << ", y: x" << y << "\np_y: " << p_y << "\n";
                       tout << "q: " << q << "\n";);
                 if (ext_pm.is_zero(q)) {
-                    SASSERT(!nested_call);
+                    if (nested_call)
+                        throw algebraic_exception("resultant vanished during nested isolate_roots call");
                     break;
                 }
             }
@@ -2632,7 +2795,8 @@ namespace algebraic_numbers {
                 // until we find one that is not zero at x2v.
                 // In the process we will copy p_prime to the local polynomial manager, since we will need to create
                 // an auxiliary variable.
-                SASSERT(!nested_call);
+                if (nested_call)
+                    throw algebraic_exception("resultant vanished during nested isolate_roots call");
                 unsigned n = ext_pm.degree(p_prime, x);
                 SASSERT(n > 0);
                 if (n == 1) {
@@ -3447,4 +3611,4 @@ namespace algebraic_numbers {
     void manager::collect_statistics(statistics & st) const {
         m_imp->collect_statistics(st);
     }
-};
+}

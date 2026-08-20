@@ -209,7 +209,7 @@ namespace smt::noodler {
 
     model_value_proc* theory_str_noodler::mk_value(enode *const n, model_generator &mg) {
         // it seems here we only get string literals/vars, concats (whose arguments can be something more complex, but should be replacable by a var), from_int/from_code and regex literals/vars (vars probably not, only if we fix disequations with unrestricted regex vars)
-        app *tgt = n->get_expr();
+        app *tgt = n->get_app();
         STRACE(str, tout << "mk_value: getting model for " << mk_pp(tgt, m) << " sort is " << mk_pp(tgt->get_sort(), m) << "\n";);
 
         tgt = get_ite_value(tgt);
@@ -242,7 +242,7 @@ namespace smt::noodler {
             // check if tgt is not in a class of enodes that contain some string literal (see PR #174)
             enode* tgt_enode = ctx.get_enode(tgt);
             for (auto tgt_enode_it = tgt_enode->begin(); tgt_enode_it != tgt_enode->end(); ++tgt_enode_it) {
-                app* cur_app = (*tgt_enode_it)->get_expr();
+                app* cur_app = (*tgt_enode_it)->get_app();
                 if (m_util_s.str.is_string(cur_app)) {
                     // if the class contains string literal, return it directly
                     return alloc(expr_wrapper_proc, cur_app);
