@@ -839,35 +839,27 @@ namespace smt::noodler {
             return l_true;
         }
 
-        if (expr_cases::has_quantifier(len_formula, m) || (check_with_context && this->input_has_quantifiers)) {
-            m_rewrite(len_formula);
-            quant_lia_solver solver(get_manager());
-            if (check_with_context) {
-                solver.initialize(get_context());
-            }
-            lbool ret = solver.check_sat(len_formula);
-            STRACE(str, tout << "ret (quant): " << ret << std::endl;);
-            if (unsat_core != nullptr) {
-                expr_ref solver_core(m);
-                solver_core = m.mk_true();
-                solver.get_unsat_core(solver_core);
-                *unsat_core = m.mk_and(*unsat_core, solver_core);
-            }
-            return ret;
+        bool has_quantifier = expr_cases::has_quantifier(len_formula, m) || (check_with_context && this->input_has_quantifiers);
+        m_rewrite(len_formula);
+        std::unique_ptr<lia_solver> solver;
+        if (has_quantifier) {
+            solver = std::make_unique<quant_lia_solver>(get_manager());
         } else {
-            int_expr_solver solver(get_manager(), get_fparams());
-            if (check_with_context) {
-                solver.initialize(get_context(), true);
-            }
-            lbool ret = solver.check_sat(len_formula);
-            if (unsat_core != nullptr) {
-                expr_ref solver_core(m);
-                solver_core = m.mk_true();
-                solver.get_unsat_core(solver_core);
-                *unsat_core = m.mk_and(*unsat_core, solver_core);
-            }
-            return ret;
+            solver = std::make_unique<int_expr_solver>(get_manager(), get_fparams());
         }
+
+        if (check_with_context) {
+            solver->initialize(get_context(), true);
+        }
+        lbool ret = solver->check_sat(len_formula);
+        STRACE(str, tout << "ret" << (has_quantifier ? " (quant)" : "") << ": " << ret << std::endl;);
+        if (unsat_core != nullptr) {
+            expr_ref solver_core(m);
+            solver_core = m.mk_true();
+            solver->get_unsat_core(solver_core);
+            *unsat_core = m.mk_and(*unsat_core, solver_core);
+        }
+        return ret;
     }
 
     expr_ref theory_str_noodler::construct_refinement() {
