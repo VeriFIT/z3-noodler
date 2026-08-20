@@ -31,12 +31,10 @@ jobs:
           actions-cache-folder: 'emsdk-cache'
 
       - name: Clone Mata
-        uses: GuillaumeFalourd/clone-github-repo-action@v2.3
-        with:
-          owner: 'VeriFIT'
-          repository: 'mata'
-          branch: devel
-          depth: 1
+        run: |
+          MATA_VERSION=$(grep -A1 'GIT_REPOSITORY https://github.com/VeriFIT/mata' CMakeLists.txt | tail -1 | awk '{print $2}')
+          echo "Cloning mata $MATA_VERSION"
+          git clone --depth 1 --branch "$MATA_VERSION" https://github.com/VeriFIT/mata.git mata
 
       - name: Install Mata
         run: |
