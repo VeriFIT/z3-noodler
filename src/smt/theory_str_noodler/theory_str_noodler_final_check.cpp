@@ -1282,20 +1282,13 @@ namespace smt::noodler {
         sat_length_formula = length_formula;
 
         if (m_params.m_produce_models) {
-            if(!expr_cases::has_quantifier(length_formula, m)) {
-                if(this->input_has_quantifiers) {
-                    // for the quantified formulae, we must avoid add_axiom as 
-                    // adding axioms leads to unknown immediately (fails in the internalization). Probably add_axiom interferes with quantifier instantiation.
-                    ctx.assert_expr(sat_length_formula);
-                    ctx.internalize_assertions();
-                } else {
-                    add_axiom(sat_length_formula);
-                }
+            if(this->input_has_quantifiers || expr_cases::has_quantifier(length_formula, m)) {
+                // for the quantified formulae, we must avoid add_axiom as 
+                // adding axioms leads to unknown immediately (fails in the internalization). Probably add_axiom interferes with quantifier instantiation.
+                ctx.assert_expr(sat_length_formula);
+                ctx.internalize_assertions();
             } else {
-                // WARNING: the model generation is not supported for tag automata stuff (which lead to quantified length formulas).
-                // In order to add a support of model generation we need to handle adding axioms in the form of quantified formulae 
-                // (so-far the internal solver timeouts with quantified axioms)
-                util::throw_error("Impossible to generate model from quantified length formula");
+                add_axiom(sat_length_formula);
             }
         }
     }
