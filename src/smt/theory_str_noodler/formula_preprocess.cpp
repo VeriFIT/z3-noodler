@@ -1803,8 +1803,8 @@ namespace smt::noodler {
             Concat haystack = pred.get_haystack();
             Concat needle = pred.get_needle();
             if(haystack.size() == 1 && needle.size() == 1 && !this->aut_ass.at(haystack[0])->delta.get_used_symbols().contains(util::get_dummy_symbol())) {
-                if(this->aut_ass.is_singleton(haystack[0]) && this->aut_ass.is_singleton(needle[0])) {
-                    if(mata::nfa::are_equivalent(*this->aut_ass.at(haystack[0]), *this->aut_ass.at(needle[0]))) {
+                if(zstring haystack_literal, needle_literal; this->aut_ass.is_singleton(haystack[0], haystack_literal) && this->aut_ass.is_singleton(needle[0], needle_literal)) {
+                    if(haystack_literal == needle_literal) {
                         return false;
                     }
                 }

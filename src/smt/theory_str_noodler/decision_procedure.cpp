@@ -1597,9 +1597,8 @@ namespace smt::noodler {
             return update_model_and_aut_ass(var, result);
         } else if (solution.aut_ass.contains(var)) {
             // as a heuristic, we check if the automaton for var contains exactly one word, if yes, we immediately return this word instead of going trough inclusions (this can sometimes help if there is a cycle in inclusions)
-            if (solution.aut_ass.is_singleton(var)) {
-                mata::Word accepted_word = solution.aut_ass.at(var)->get_word().value();
-                return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
+            if (zstring accepted_word; solution.aut_ass.is_singleton(var, accepted_word)) {
+                return update_model_and_aut_ass(var, accepted_word);
             }
 
             Predicate predicate_with_var_on_right_side;

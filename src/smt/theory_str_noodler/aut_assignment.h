@@ -262,17 +262,29 @@ namespace smt::noodler {
         /**
          * @brief Check if the automaton for @p t accepts only a single word.
          * 
-         * It is only underapproximation, as is_singleton is false for the NFA p1 -a-> p2, q1 -a-> q2 where
-         * p1, q1 are initial and p2, q2 are final. To get precise information, you determinization+minimization
-         * might be necessary, which is often expensive.
+         * It is precise for reduced automata, otherwise it might be inclonclusive
+         * 
+         * @param t Variable
+         * @param found_literal If it encodes the literal it is saved here
+         * @return True -> is surely singleton, False -> inconclusive
+         */
+        bool is_singleton(const BasicTerm& t, zstring &found_literal) const {
+            mata::nfa::Nfa aut = *this->at(t);
+            aut.trim();
+            return aut_encodes_literal(aut, found_literal);
+        }
+
+        /**
+         * @brief Check if the automaton for @p t accepts only a single word.
+         * 
+         * It is precise for reduced automata, otherwise it might be inclonclusive
          * 
          * @param t Variable
          * @return True -> is surely singleton, False -> inconclusive
          */
         bool is_singleton(const BasicTerm& t) const {
-            mata::nfa::Nfa aut = *this->at(t);
-            aut.trim();
-            return aut.num_of_states() == aut.delta.num_of_transitions() + 1 && aut.initial.size() == 1 && aut.final.size() == 1;
+            zstring found_literal;
+            return is_singleton(t, found_literal);
         }
 
         /**
