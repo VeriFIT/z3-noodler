@@ -1043,6 +1043,7 @@ namespace smt::noodler {
             if (check_len_sat(lengths, check_len_sat_with_context) == l_true) {
                 sat_handling(lengths);
                 this->statistics.at("length").num_finish++;
+                STRACE(str, tout << "len: sat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
                 return l_true;
             } else {
                 STRACE(str, tout << "len: unsat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
