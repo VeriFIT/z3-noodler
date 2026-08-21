@@ -761,14 +761,14 @@ namespace smt::noodler {
                 tout << "Checking lang (dis)eq: " << mk_pp(left_side, m) << (is_equation ? " == " : " != ") << mk_pp(right_side, m) << std::endl;
             );
 
+            if (!m_util_s.re.is_ground(left_side) || !m_util_s.re.is_ground(right_side)) {
+                return l_undef;
+            }
+
             // get symbols from both sides
             regex::Alphabet alph;
             regex::extract_symbols(left_side, m_util_s, alph);
             regex::extract_symbols(right_side, m_util_s, alph);
-
-            if (!m_util_s.re.is_ground(left_side) || !m_util_s.re.is_ground(right_side)) {
-                return l_undef;
-            }
 
             // construct NFAs for both sides
             std::shared_ptr<const mata::nfa::Nfa> nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
