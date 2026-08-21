@@ -18,10 +18,11 @@ namespace smt::noodler {
         bool initialized;
         expr_ref_vector erv;
         expr_ref_vector unsat_core;
+        expr_ref model_formula;
 
     
     public:
-        quant_lia_solver(ast_manager& m) : m(m), erv(m), unsat_core(m) {
+        quant_lia_solver(ast_manager& m) : m(m), erv(m), unsat_core(m), model_formula(m) {
             initialized=false;
         }
 
@@ -52,6 +53,34 @@ namespace smt::noodler {
             auto res = sl->check_sat();
             sl->get_unsat_core(unsat_core);
             erv.pop_back();
+
+            model_formula = m.mk_true();
+            if (res == lbool::l_true) {
+                model_ref mdl;
+                sl->get_model(mdl);
+                
+                struct collect_vars {
+                    ast_manager &m;
+                    expr_ref_vector vars;
+                    arith_util m_util_a;
+                    seq_util m_util_s;
+
+                    collect_vars(ast_manager &m) : m(m), vars(m), m_util_a(m), m_util_s(m) {}
+                    void operator()(expr* e) {
+                        if (m_util_s.str.is_length(e) || (!m_util_s.is_string(e->get_sort()) && util::is_variable(e))) {
+                            vars.push_back(e);
+                        }
+                    }
+                };
+                collect_vars cv(m);
+                for_each_expr(cv, e);
+                for (expr* v : cv.vars) {
+                    expr_ref res(m);
+                    mdl->eval_expr(v, res);
+                    STRACE(str_lia, tout << "Model for " << mk_pp(v, m) << " is " << mk_pp(res, m) << std::endl;);
+                    model_formula = m.mk_and(model_formula, m.mk_eq(v, res));
+                }
+            }
 
             return res;
         }
@@ -89,6 +118,10 @@ namespace smt::noodler {
 
         void get_unsat_core(expr_ref& dst) override {
             dst = m.mk_and(unsat_core);
+        }
+        
+        expr_ref get_model() override {
+            return model_formula;
         }
     };
 }
