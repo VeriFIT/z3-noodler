@@ -51,9 +51,6 @@ namespace smt::noodler {
          *            with the current `ast_manager`.
          */
         virtual void get_unsat_core(expr_ref& dst) = 0;
-
-        /// @brief Get the formula encoding model of arith vars/length constraints
-        virtual expr_ref get_model() = 0;
     };
 
 }
