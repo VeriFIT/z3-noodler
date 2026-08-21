@@ -768,13 +768,13 @@ namespace smt::noodler {
 
             std::shared_ptr<const mata::nfa::Nfa> nfa1, nfa2;
 
-            try {
-                // construct NFAs for both sides
-                nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
-                nfa2 = nfa_constructor.conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
-            } catch(...) {
+            if (!m_util_s.re.is_ground(left_side) || !m_util_s.re.is_ground(right_side)) {
                 return l_undef;
             }
+
+            // construct NFAs for both sides
+            std::shared_ptr<const mata::nfa::Nfa> nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
+            std::shared_ptr<const mata::nfa::Nfa> nfa2 = nfa_constructor.conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
 
             // check if NFAs are equivalent (if we have equation) or not (if we have disequation)
             bool are_equiv;
