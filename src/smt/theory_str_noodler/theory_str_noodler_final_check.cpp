@@ -766,8 +766,6 @@ namespace smt::noodler {
             regex::extract_symbols(left_side, m_util_s, alph);
             regex::extract_symbols(right_side, m_util_s, alph);
 
-            std::shared_ptr<const mata::nfa::Nfa> nfa1, nfa2;
-
             if (!m_util_s.re.is_ground(left_side) || !m_util_s.re.is_ground(right_side)) {
                 return l_undef;
             }
