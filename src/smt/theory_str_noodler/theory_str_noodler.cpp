@@ -152,7 +152,7 @@ namespace smt::noodler {
         for (unsigned i = 0; i < nFormulas; ++i) {
             STRACE(str_init_formula, tout << "Initial asserted formula " << i << ": " << expr_ref(ctx.get_asserted_formula(i), m) << std::endl;);
             expr *ex = ctx.get_asserted_formula(i);
-            this->input_has_quantifiers |= util::has_quantifiers(m, ex);
+            set_input_has_quantifiers(util::has_quantifiers(m, ex));
             if (!add_len_num_axioms(ex)) {
                 obj_hashtable<app> lens;
                 util::get_len_exprs(ctx.get_asserted_formula(i), m_util_s, m, lens);
@@ -164,12 +164,6 @@ namespace smt::noodler {
             }
             ctx.mark_as_relevant(ex);
             string_theory_propagation(ex, true, false); 
-        }
-        // it seems that for quantified formulae, the model generation infrastructure is necessary for 
-        // the solving (even though the model is not requested). Probably it has something to do with 
-        // model-based quantifier instantiation.
-        if(this->input_has_quantifiers) {
-            const_cast<theory_str_noodler_params&>(m_params).m_produce_models = true;
         }
         STRACE(str, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
 
