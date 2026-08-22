@@ -1,5 +1,6 @@
 (set-logic QF_S)
 (set-option :produce-models true)
+; (set-info :status unknown)
 (set-info :status unsat)
 (declare-const x String)
 (declare-const s String)
