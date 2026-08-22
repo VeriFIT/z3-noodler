@@ -1236,7 +1236,7 @@ namespace smt::noodler {
             // (str.subtr a 0 |a|-1) which is basically a[0:-1]
             expr_ref substr(m_util_s.str.mk_substr(a, m_util_a.mk_int(0), len_a_m1), m);
             // s in allchar
-            literal s_in_allchar = mk_literal(m_util_s.re.mk_in_re(s, m_util_s.re.mk_full_char(s->get_sort())));
+            literal s_in_allchar = mk_literal(m_util_s.re.mk_in_re(s, m_util_s.re.mk_full_char(nullptr)));
 
             // s = eps -> v = t.a
             add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
