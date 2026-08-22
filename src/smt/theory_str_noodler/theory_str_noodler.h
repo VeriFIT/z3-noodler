@@ -86,7 +86,7 @@ namespace smt::noodler {
         seq_factory* m_seq_factory = nullptr;
         regex::NfaConstructor nfa_constructor{};
 
-        // has input formula quantifiers? we set it true even if we push into the internal solver something with quantifiers
+        // has input formula quantifiers? we set it to true even if we push into the internal solver something with quantifiers
         bool input_has_quantifiers = false;
 
         // equivalence of z3 terms based on their length (terms are equiv if their length is for sure the same)

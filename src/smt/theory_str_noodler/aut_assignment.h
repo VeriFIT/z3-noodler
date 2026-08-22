@@ -262,7 +262,7 @@ namespace smt::noodler {
         /**
          * @brief Check if the automaton for @p t accepts only a single word.
          * 
-         * It is precise for reduced automata, otherwise it might be inclonclusive
+         * It is precise for reduced automata, otherwise it might be inconclusive
          * 
          * @param t Variable
          * @param found_literal If it encodes the literal it is saved here
