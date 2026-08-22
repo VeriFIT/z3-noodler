@@ -1,4 +1,3 @@
-; (set-info :status unknown)
 (set-info :status sat)
 (declare-const r Real)
 (declare-const s String)
