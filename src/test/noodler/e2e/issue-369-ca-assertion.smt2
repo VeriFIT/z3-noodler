@@ -1,7 +1,5 @@
 (set-logic ALL)
-; leads to not contains for which we cannot construct models yet, so needs to be unknown
-(set-info :status unknown)
-; (set-info :status sat)
+(set-info :status sat)
 (declare-sort var237 0)
 (declare-sort var61 0)
 (declare-sort void 0)
