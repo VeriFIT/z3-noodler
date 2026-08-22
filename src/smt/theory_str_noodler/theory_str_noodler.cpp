@@ -1221,26 +1221,31 @@ namespace smt::noodler {
             return;
         }
 
-        // the case (str.replace (str.substr x 0 (1 + (str.indexof x s 0))) s t)
+        // the case (str.replace (str.substr x 0 (1 + (str.indexof x s 0))) s t) where a = (str.substr x 0 (1 + (str.indexof x s 0))) for some string term x
         //   s = eps -> v = t.a
-        //   (str.indexof x s 0) != -1 -> v = a[0:-1].t
         //   (str.indexof x s 0) = -1 -> v = eps
-        // TODO: only works if |s| == 1, needs to be fixed
+        //   s in allchar && (str.indexof x s 0) != -1 -> v = a[0:-1].t
+        //   s != eps && s not in allchar && (str.indexof x s 0) != -1 -> v = a
         if (expr* indexof = nullptr; expr_cases::is_replace_indexof(a, s, m, m_util_s, m_util_a, indexof)) {
             expr_ref minus_one(m_util_a.mk_int(-1), m);
             expr_ref eps(m_util_s.str.mk_string(""), m);
             // (str.indexof x s 0) = -1, i.e. whether x contains s
             literal ind_eq_m1 = mk_eq(indexof, minus_one, false);
+            // |a|-1
             expr_ref len_a_m1(m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(1)), m);
-            // a[0:-1]
+            // (str.subtr a 0 |a|-1) which is basically a[0:-1]
             expr_ref substr(m_util_s.str.mk_substr(a, m_util_a.mk_int(0), len_a_m1), m);
+            // s in allchar
+            literal s_in_allchar = mk_literal(m_util_s.re.mk_in_re(s, m_util_s.re.mk_full_char(s->get_sort())));
 
             // s = eps -> v = t.a
             add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
-            // (str.indexof x s 0) != -1 -> v = a[0:-1].t
-            add_axiom({ind_eq_m1, mk_eq(v, mk_concat(substr, t), false)});
             // (str.indexof x s 0) = -1 -> v = eps
             add_axiom({~ind_eq_m1, mk_eq(v, eps, false)});
+            // s in allchar && (str.indexof x s 0) != -1 -> v = a[0:-1].t
+            add_axiom({~s_in_allchar, ind_eq_m1, mk_eq(v, mk_concat(substr, t), false)});
+            // s != eps && s not in allchar && (str.indexof x s 0) != -1 -> v = a
+            add_axiom({s_emp, s_in_allchar, ind_eq_m1, mk_eq(v, a, false)});
             return;
         }
 
