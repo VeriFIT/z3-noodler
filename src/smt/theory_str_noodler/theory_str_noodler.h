@@ -273,7 +273,7 @@ namespace smt::noodler {
 
         /// If ihq is true, sets input_has_quantifiers and m_produce_models to true, otherwise do nothing
         void set_input_has_quantifiers(bool ihq) {
-            input_has_quantifiers != ihq;
+            input_has_quantifiers |= ihq;
             // it seems that for quantified formulae, the model generation infrastructure is necessary for 
             // the solving (even though the model is not requested). Probably it has something to do with 
             // model-based quantifier instantiation.
