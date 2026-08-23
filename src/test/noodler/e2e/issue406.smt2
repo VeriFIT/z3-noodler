@@ -1,0 +1,7 @@
+(declare-const R RegLan)  
+(assert (= R (re.* (str.to_re "a"))))
+(assert (str.in_re "aaaa" R))
+(check-sat)
+(assert (str.in_re "aab" R))
+(set-info :status unsat)
+(check-sat)

@@ -102,10 +102,13 @@ namespace smt::noodler {
         );
 
         // Solve Language (dis)equations
-        if (!solve_lang_eqs_diseqs()) {
+        lbool lang_eqs_diseqs_res = solve_lang_eqs_diseqs();
+        if (lang_eqs_diseqs_res == l_false) {
             // one of the (dis)equations is unsat
             return FC_CONTINUE;
-        }
+        } else if (lang_eqs_diseqs_res == l_undef) {
+            return FC_GIVEUP;
+        } // for true case it means we need to solve string constraints to get final solution
 
         /***************************** SOLVE WORD (DIS)EQUATIONS + REGULAR MEMBERSHIPS ******************************/
 
@@ -748,24 +751,19 @@ namespace smt::noodler {
         return conversions;
     }
 
-    bool theory_str_noodler::solve_lang_eqs_diseqs() {
+    lbool theory_str_noodler::solve_lang_eqs_diseqs() {
         for(const auto& item : this->m_lang_eq_or_diseq_todo_rel) {
             expr_ref left_side = std::get<0>(item);
             expr_ref right_side = std::get<1>(item);
             bool is_equation = std::get<2>(item);
 
-            if (util::is_variable(left_side) || util::is_variable(right_side)) {
-                // RegLan variables are replaced by rewriter if we have some equation "v = some regular lang",
-                // but if we get some completely unrestricted variables (for example just disequation "v != v'"),
-                // we throw error (TODO: we could possibly handle this, theoretically we could just ignore this
-                // sort of disequations, as we can always find a language that differs and equations should not
-                // have unrestricted RegLan anyway, as they are also replaced by rewriter)
-                util::throw_error("unrestricted RegLan variables in disequations are not supported");
-            }
-
             STRACE(str,
                 tout << "Checking lang (dis)eq: " << mk_pp(left_side, m) << (is_equation ? " == " : " != ") << mk_pp(right_side, m) << std::endl;
             );
+
+            if (!m_util_s.re.is_ground(left_side) || !m_util_s.re.is_ground(right_side)) {
+                return l_undef;
+            }
 
             // get symbols from both sides
             regex::Alphabet alph;
@@ -796,12 +794,12 @@ namespace smt::noodler {
                     STRACE(str, tout << mk_pp(m.mk_not(lang_eq), m) << " is unsat" << std::endl);
                     add_axiom({mk_literal(lang_eq)});
                 }
-                return false;
+                return l_false;
             }
         }
 
         // if we are here, all (dis)equations hold
-        return true;
+        return l_true;
     }
 
     lbool theory_str_noodler::solve_underapprox(const Formula& instance, const AutAssignment& aut_assignment,
