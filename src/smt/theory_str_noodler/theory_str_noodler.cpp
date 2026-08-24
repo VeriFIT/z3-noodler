@@ -1169,7 +1169,7 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Handle str.replace(a, s, t)
+     * @brief Handle str.replace(a, s, t), where a is string in which are replacing, s is what to find, and t is the replacement
      *
      * We set str.replace(a, s, t) = v where v is fresh.
      * Translates to the following theory axioms:
@@ -1184,9 +1184,9 @@ namespace smt::noodler {
      *  - the case (str.replace a (a.y) t) or (str.replace a (y.a) t)
      *  - the case (str.replace (str.substr x 0 (1 + (str.indexof x s 0))) s t)
      *  - the case (str.replace "" s t)
-     *  - the case (str.replace "A s t) where a = "A" is some string char
+     *  - the case (str.replace "A" s t) where a = "A" is some string char
      *
-     * @param e str.replace(a, s, t)
+     * @param r str.replace(a,s,t)
      */
     void theory_str_noodler::handle_replace(expr *r) {
         if (axiomatized_persist_terms.contains(r)) { return; }
