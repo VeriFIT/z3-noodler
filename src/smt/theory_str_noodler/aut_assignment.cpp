@@ -163,7 +163,8 @@ namespace smt::noodler {
     bool AutAssignment::aut_encodes_literal(const mata::nfa::Nfa& aut, zstring& found_literal) {
         // because aut is trimmed and reduced, the only way for it to accept exactly one word is if the automaton contains
         // only one path in it (on which the word is)
-        if (aut.initial.size() != 1 || aut.final.size() != 1 || aut.num_of_states() != aut.delta.num_of_transitions() + 1) {
+        auto num_of_transitions = aut.delta.num_of_transitions();
+        if (aut.initial.size() != 1 || aut.final.size() != 1 || aut.num_of_states() != num_of_transitions + 1) {
             return false;
         }
         mata::Word word = {};
@@ -180,6 +181,8 @@ namespace smt::noodler {
             word.push_back(symbol);
             next_state = *symbol_post.targets.begin();
         }
+        // this test should be false for trimmed and reduced automaton, it is here as extra check if it is called with untrimmed or not reduced automaton
+        if (word.size() != num_of_transitions) { return false; }
         found_literal = zstring(word.size(), word.data());
         return true;
     }

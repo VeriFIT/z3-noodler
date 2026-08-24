@@ -13,15 +13,14 @@ Eternal glory to Yu-Fang.
 
 namespace smt::noodler {
     class int_expr_solver : public lia_solver {
-        bool unsat_core=false;
         ast_manager& m;
         bool initialized;
         expr_ref_vector erv;
+        expr_ref unsat_core;
+        smt_params fp;
     public:
-        kernel m_kernel;
-    public:
-        int_expr_solver(ast_manager& m, smt_params fp): m(m),erv(m),m_kernel(m, fp){
-            fp.m_string_solver = symbol("none");
+        int_expr_solver(ast_manager& m, smt_params fp): m(m),erv(m),unsat_core(m),fp(fp){
+            this->fp.m_string_solver = symbol("none");
             initialized=false;
        }
 

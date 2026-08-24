@@ -42,17 +42,6 @@ namespace smt::noodler {
         if (last_run_was_sat) {
             // if we returned previously sat, then we should always return sat (final_check_eh should not be called again, but for some reason Z3 calls it)
             TRACE(str, tout << "Last run was sat on scope level " << scope_with_last_run_was_sat << "\n";);
-            if (m_params.m_produce_models) {
-                // we need to add previous axioms, so that z3 arith solver returns correct model
-                if(this->input_has_quantifiers) {
-                    // for the quantified formulae, we must avoid add_axiom as 
-                    // adding axioms leads to unknown immediately (fails in the internalization). Probably add_axiom interferes with quantifier instantiation.
-                    ctx.assert_expr(sat_length_formula);
-                    ctx.internalize_assertions();
-                } else {
-                    add_axiom(sat_length_formula);
-                }
-            }
             return FC_DONE;
         }
 
@@ -837,40 +826,27 @@ namespace smt::noodler {
             return l_true;
         }
 
-        if (expr_cases::has_quantifier(len_formula, m) || (check_with_context && this->input_has_quantifiers)) {
-            m_rewrite(len_formula);
-            quant_lia_solver solver(get_manager());
-            if (check_with_context) {
-                solver.initialize(get_context());
-            }
-            lbool ret = solver.check_sat(len_formula);
-            STRACE(str, tout << "ret (quant): " << ret << std::endl;);
-            if (unsat_core != nullptr) {
-                expr_ref solver_core(m);
-                solver_core = m.mk_true();
-                solver.get_unsat_core(solver_core);
-                *unsat_core = m.mk_and(*unsat_core, solver_core);
-            }
-            return ret;
+        bool has_quantifier = expr_cases::has_quantifier(len_formula, m) || (check_with_context && this->input_has_quantifiers);
+        m_rewrite(len_formula);
+        std::unique_ptr<lia_solver> solver;
+        if (has_quantifier) {
+            solver = std::make_unique<quant_lia_solver>(get_manager());
         } else {
-            int_expr_solver solver(get_manager(), get_fparams());
-            if (check_with_context) {
-                // do we solve only regular constraints? If yes, skip other temporary length constraints (they are not necessary)
-                bool include_ass = true;
-                if(this->m_word_diseq_todo_rel.empty() && this->m_word_eq_todo_rel.empty() && this->m_not_contains_todo.empty() && this->m_conversion_todo.empty() && this->m_rat_membership_todo_rel.empty()) {
-                    include_ass = false;
-                }
-                solver.initialize(get_context(), include_ass);
-            }
-            lbool ret = solver.check_sat(len_formula);
-            if (unsat_core != nullptr) {
-                expr_ref solver_core(m);
-                solver_core = m.mk_true();
-                solver.get_unsat_core(solver_core);
-                *unsat_core = m.mk_and(*unsat_core, solver_core);
-            }
-            return ret;
+            solver = std::make_unique<int_expr_solver>(get_manager(), get_fparams());
         }
+
+        if (check_with_context) {
+            solver->initialize(get_context(), true);
+        }
+        lbool ret = solver->check_sat(len_formula);
+        STRACE(str, tout << "ret" << (has_quantifier ? " (quant)" : "") << ": " << ret << std::endl;);
+        if (unsat_core != nullptr) {
+            expr_ref solver_core(m);
+            solver_core = m.mk_true();
+            solver->get_unsat_core(solver_core);
+            *unsat_core = m.mk_and(*unsat_core, solver_core);
+        }
+        return ret;
     }
 
     expr_ref theory_str_noodler::construct_refinement() {
@@ -931,6 +907,7 @@ namespace smt::noodler {
             this->axiomatized_instances.push_back({refinement, stored_instance{ .lengths = len_formula, .is_overapprox = is_overapprox}});
         }
         if (refinement != nullptr) {
+            set_input_has_quantifiers(expr_cases::has_quantifier(len_formula, m));
             add_axiom(m.mk_or(m.mk_not(refinement), len_formula));
         }
         STRACE(str_block, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
@@ -1045,6 +1022,7 @@ namespace smt::noodler {
             if (check_len_sat(lengths, check_len_sat_with_context) == l_true) {
                 sat_handling(lengths);
                 this->statistics.at("length").num_finish++;
+                STRACE(str, tout << "len: sat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
                 return l_true;
             } else {
                 STRACE(str, tout << "len: unsat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
@@ -1216,6 +1194,7 @@ namespace smt::noodler {
                         expr_ref unsat_core(m.mk_true(), m);
                         if (check_len_sat(len_formula, true, &unsat_core) == l_false) {
                             unsat_core = m.mk_not(unsat_core);
+                            set_input_has_quantifiers(expr_cases::has_quantifier(unsat_core, m));
                             ctx.internalize(unsat_core.get(), true);
                             add_axiom({mk_literal(unsat_core)});
                             block_curr_len(len_formula, false);
@@ -1289,12 +1268,8 @@ namespace smt::noodler {
         }
         sat_length_formula = length_formula;
 
-        // It seems there is problem if the length_formula has quantifiers. In that case we skip adding axioms.
-        if(!expr_cases::has_quantifier(length_formula, m)) {
-            // WARNING: the model generation is not supported for tag automata stuff. 
-            // In order to add a support of model generation we need to handle adding axioms in the form of quantified formulae 
-            // (so-far the internal solver timeouts with quantified axioms)
-            if(this->input_has_quantifiers) {
+        if (m_params.m_produce_models) {
+            if(this->input_has_quantifiers || expr_cases::has_quantifier(length_formula, m)) {
                 // for the quantified formulae, we must avoid add_axiom as 
                 // adding axioms leads to unknown immediately (fails in the internalization). Probably add_axiom interferes with quantifier instantiation.
                 ctx.assert_expr(sat_length_formula);

@@ -86,7 +86,7 @@ namespace smt::noodler {
         seq_factory* m_seq_factory = nullptr;
         regex::NfaConstructor nfa_constructor{};
 
-        // has input formula quantifiers?
+        // has input formula quantifiers? we set it to true even if we push into the internal solver something with quantifiers
         bool input_has_quantifiers = false;
 
         // equivalence of z3 terms based on their length (terms are equiv if their length is for sure the same)
@@ -269,6 +269,15 @@ namespace smt::noodler {
             // according to SMT-LIB standard, variable names starting with '@' are reserved for internal use
             app* fresh_var = m.mk_fresh_const("@" + name, m_util_s.mk_string_sort(), true); // need to be skolem, because it seems they are not printed for models
             return expr_ref(fresh_var, m);
+        }
+
+        /// If ihq is true, sets input_has_quantifiers and m_produce_models to true, otherwise do nothing
+        void set_input_has_quantifiers(bool ihq) {
+            input_has_quantifiers |= ihq;
+            // it seems that for quantified formulae, the model generation infrastructure is necessary for 
+            // the solving (even though the model is not requested). Probably it has something to do with 
+            // model-based quantifier instantiation.
+            const_cast<theory_str_noodler_params&>(m_params).m_produce_models |= ihq;
         }
 
         /**

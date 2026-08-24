@@ -93,39 +93,6 @@ inline std::map<BasicTerm, expr_ref> create_var_map(const std::unordered_set<Bas
 }
 
 /**
- * Verifies that a given Z3 formula is satisfiable and matches the expected assignments.
- * 
- * @param m The AST manager used for managing Z3 expressions.
- * @param formula The Z3 formula to be checked.
- * @param assgn A map of variable names to their expected values in the model.
- */
-inline void check_lia_model(ast_manager& m, expr* formula, const std::map<std::string, std::string>& assgn) {
-    smt_params str_params{};
-    int_expr_solver solver(m, str_params);
-
-    // Check if the formula is satisfiable
-    REQUIRE(solver.check_sat(formula) == l_true);
-
-    model_ref mdl;
-    solver.m_kernel.get_model(mdl);
-    unsigned num = mdl->get_num_constants();
-
-    // Iterate through the model's constants and verify assignments
-    for (unsigned i = 0; i < num; i++) {
-        func_decl * c = mdl->get_constant(i);
-        expr * c_i    = mdl->get_const_interp(c);
-
-        auto it = assgn.find(c->get_name().str());
-        if(it != assgn.end()) {
-            std::ostringstream buffer;
-            buffer << mk_pp(c_i, m);
-            // Ensure the model's value matches the expected assignment
-            REQUIRE(it->second == buffer.str());
-        }
-    }
-}
-
-/**
  * Converts a LenNode formula into a Z3 expression.
  * 
  * @param m The AST manager used for managing Z3 expressions.

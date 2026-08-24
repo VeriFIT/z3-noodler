@@ -1207,11 +1207,9 @@ namespace smt::noodler {
                     rem_ids.insert(pr.first);
                     this->add_to_len_formula(pr.second.get_formula_eq());
                     removed_inclusions_for_model.push_back(pr.second);
-                    // if we need to produce models and right side contains some length variable,
-                    // we need to make all variables on the left side length too, so that we
-                    // select the correct lengths during the model generation
-                    if (!set_disjoint(this->len_variables, pr.second.get_side_vars(Predicate::EquationSideType::Right))
-                        && m_params.m_produce_models) {
+                    // if right side contains some length variable,
+                    // we need to make all variables on the left side length too
+                    if (!set_disjoint(this->len_variables, pr.second.get_side_vars(Predicate::EquationSideType::Right))) {
                         for (BasicTerm left_var : pr.second.get_side_vars(Predicate::EquationSideType::Left)) {
                             len_variables.insert(left_var);
                         }
@@ -1805,8 +1803,8 @@ namespace smt::noodler {
             Concat haystack = pred.get_haystack();
             Concat needle = pred.get_needle();
             if(haystack.size() == 1 && needle.size() == 1 && !this->aut_ass.at(haystack[0])->delta.get_used_symbols().contains(util::get_dummy_symbol())) {
-                if(this->aut_ass.is_singleton(haystack[0]) && this->aut_ass.is_singleton(needle[0])) {
-                    if(mata::nfa::are_equivalent(*this->aut_ass.at(haystack[0]), *this->aut_ass.at(needle[0]))) {
+                if(zstring haystack_literal, needle_literal; this->aut_ass.is_singleton(haystack[0], haystack_literal) && this->aut_ass.is_singleton(needle[0], needle_literal)) {
+                    if(haystack_literal == needle_literal) {
                         return false;
                     }
                 }

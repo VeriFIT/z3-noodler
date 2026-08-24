@@ -11,17 +11,17 @@ namespace smt::noodler {
         TRACE(str_lia, tout << "check_sat start\n";);
 
         erv.push_back(e);
-        lbool r = m_kernel.check(erv);
+        kernel solver(m, fp);
+        lbool r = solver.check(erv);
         erv.pop_back();
 
-        STRACE(str_lia,
-            if(r==lbool::l_false){
-                tout << "UNSAT core:" << std::endl;
-                for(unsigned i=0; i < m_kernel.get_unsat_core_size(); i++) {
-                    tout << mk_pp(m_kernel.get_unsat_core_expr(i), m) << std::endl;
-                }
+        unsat_core = m.mk_true();
+        if(r==lbool::l_false){
+            for (unsigned i = 0; i < solver.get_unsat_core_size(); ++i) {
+                unsat_core = m.mk_and(unsat_core, solver.get_unsat_core_expr(i));
             }
-        );
+            STRACE(str_lia, tout << "UNSAT core:" << std::endl << mk_pp(unsat_core, m));
+        }
 
         TRACE(str_lia, tout << "check_sat end\n";);
         return r;
@@ -49,27 +49,10 @@ namespace smt::noodler {
     }
 
     void int_expr_solver::assert_expr(expr * e) {
-        if(!unsat_core){
-            erv.push_back(e);
-            // m_kernel.assert_expr(e);
-        } else {
-            erv.push_back(e);
-            lbool r = m_kernel.check(erv);
-            STRACE(str_lia,
-                if(r==lbool::l_false){
-                    tout << "UNSAT core:" << std::endl;
-                    for(unsigned i=0; i<m_kernel.get_unsat_core_size(); i++) {
-                        tout << mk_pp(m_kernel.get_unsat_core_expr(i), m) << std::endl;
-                    }
-                }
-            );
-        }
+        erv.push_back(e);
     }
 
     void int_expr_solver::get_unsat_core(expr_ref& dst) {
-        dst = m.mk_true();
-        for (unsigned i = 0; i < m_kernel.get_unsat_core_size(); ++i) {
-            dst = m.mk_and(dst, m_kernel.get_unsat_core_expr(i));
-        }
+        dst = unsat_core;
     }
 }
