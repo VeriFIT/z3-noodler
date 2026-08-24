@@ -90,6 +90,11 @@ namespace {
 
 std::pair<rational, std::optional<rational>> ConversionHandler::get_to_int_value_bounds(const AutAssignment& aut_ass, const BasicTerm& x) {
     const mata::nfa::Nfa& full_aut = *aut_ass.at(x);
+    // callers must handle a language-empty full_aut themselves (by asserting the whole formula false), since
+    // there is no sound finite bound to give here: x has no possible value at all, so the notion of "value of
+    // to_int(x)" is moot and the caller is unsatisfiable for reasons unrelated to str.to_int.
+    SASSERT(!full_aut.is_lang_empty());
+
     const mata::nfa::Nfa only_digits_with_eps = AutAssignment::digit_automaton_with_epsilon();
 
     mata::nfa::Nfa digit_part = mata::nfa::reduce(mata::nfa::intersection(full_aut, only_digits_with_eps).trim());
@@ -138,6 +143,16 @@ LenNode ConversionHandler::get_to_int_bounds_formula(const AutAssignment& aut_as
         if (conv.type != ConversionType::TO_INT) {
             continue;
         }
+
+        if (aut_ass.at(conv.string_var)->is_lang_empty()) {
+            // conv.string_var has no possible value at all in aut_ass (this can happen as aut_ass here might be
+            // a speculative, not-yet-preprocessed automaton assignment, see the caller in
+            // DecisionProcedure::get_initial_lengths). There is no sound finite bound on to_int(conv.string_var)
+            // to give in this case, but we do know that aut_ass (and hence the whole formula) is unsatisfiable,
+            // so we can just soundly report false instead.
+            return LenNode(LenFormulaType::FALSE);
+        }
+
         auto [lower, upper] = get_to_int_value_bounds(aut_ass, conv.string_var);
         to_int_bounds.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{ LenNode(lower), conv.number_var });
         if (upper.has_value()) {
