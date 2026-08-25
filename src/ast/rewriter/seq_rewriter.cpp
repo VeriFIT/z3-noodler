@@ -3845,6 +3845,7 @@ bool seq_rewriter::lift_str_from_to_re(expr* r, expr_ref& result)
 }
 
 br_status seq_rewriter::mk_str_to_regexp(expr* a, expr_ref& result) {
+#if 0 // NOODLER - creates unsupported operations
     expr* s = nullptr, *i = nullptr;
     if (str().is_at(a, s, i)) {
         expr_ref valid(m().mk_and(
@@ -3857,6 +3858,7 @@ br_status seq_rewriter::mk_str_to_regexp(expr* a, expr_ref& result) {
             re().mk_to_re(str().mk_empty(a->get_sort())));
         return BR_REWRITE_FULL;
     }
+#endif
     return BR_FAILED;
 }
 
