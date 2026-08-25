@@ -328,7 +328,7 @@ br_status array_rewriter::mk_select_core(unsigned num_args, expr * const * args,
         SASSERT(to_app(args[0])->get_num_args() == num_args+1);
         switch (compare_args(num_args - 1, args+1, to_app(args[0])->get_args()+1)) {
         case l_true:
-            UNREACHABLE();
+            Z3_unreachable_case();
         case l_false: {
             expr* arg0 = to_app(args[0])->get_arg(0);
             while (m_util.is_store(arg0) && compare_args(num_args-1, args + 1, to_app(arg0)->get_args() + 1) == l_false) {
@@ -392,7 +392,11 @@ br_status array_rewriter::mk_select_core(unsigned num_args, expr * const * args,
         args1.append(num_args-1, args + 1);
         args2.push_back(el);
         args2.append(num_args-1, args + 1);
-        result = m().mk_ite(c, m_util.mk_select(num_args, args1.data()), m_util.mk_select(num_args, args2.data()));
+        {
+            auto _seq395_0 = m_util.mk_select(num_args, args1.data());
+            auto _seq395_1 = m_util.mk_select(num_args, args2.data());
+            result = m().mk_ite(c, _seq395_0, _seq395_1);
+        }
         return BR_REWRITE2;
     }
     

@@ -65,7 +65,6 @@ bool core::compare_holds(const rational& ls, llc cmp, const rational& rs) const 
     case llc::GT: return ls > rs;
     case llc::EQ: return ls == rs;
     case llc::NE: return ls != rs;
-    default: SASSERT(false);
     };
         
     return false;
@@ -284,9 +283,6 @@ bool core::explain_ineq(lemma_builder& lemma, const lp::lar_term& t, llc cmp, co
         // TBD - NB: does this work for Reals?
         r = explain_lower_bound(t, rs + rational(1), exp) || explain_upper_bound(t, rs - rational(1), exp);           
         break;
-    default:
-        UNREACHABLE();
-        return false;
     }
     if (r) {
         lemma &= exp;
@@ -634,6 +630,16 @@ void core::erase_from_to_refine(lpvar j) {
 
 void core::init_to_refine() {
     TRACE(nla_solver_details, tout << "emons:" << pp_emons(*this, m_emons););
+    // check_monic() compares only the rational parts of the column values, so
+    // m_to_refine has to be calibrated against a model without infinitesimal
+    // (delta) components. Otherwise a monomial whose factors still carry
+    // non-zero delta parts looks consistent here, while the model handed to the
+    // theory solver - where delta is instantiated by a positive rational -
+    // violates it. optimize_nl_bounds() re-solves the LP and re-introduces
+    // delta components, so they are dropped here rather than only on entry to
+    // check().
+    if (lra.is_feasible())
+        lra.get_rid_of_inf_eps();
     m_to_refine.reset();
     unsigned r = random(), sz = m_emons.number_of_monics();
     for (unsigned k = 0; k < sz; ++k) {
@@ -1295,25 +1301,44 @@ lbool core::check(unsigned level) {
 
     init_to_refine();
     patch_monomials();
-    set_use_nra_model(false);    
-    if (m_to_refine.empty())
-        return l_true;    
+    set_use_nra_model(false);
+    if (m_to_refine.empty()) {
+        m_squeezes_without_progress /= 2;
+        return l_true;
+    }
     init_search();
+    m_nla_satisfied = false;
 
     lbool ret = l_undef;
     bool run_grobner = need_run_grobner();
     bool run_horner = need_run_horner();
     bool run_bounds = params().arith_nl_branching();
 
-    auto no_effect = [&]() { return ret == l_undef && !done() && m_lemmas.empty() && m_literals.empty() && !m_check_feasible; };
+    auto no_effect = [&]() { return ret == l_undef && !done() && !m_nla_satisfied && m_lemmas.empty() && m_literals.empty() && !m_check_feasible; };
     
     if (no_effect())
-        m_monomial_bounds.propagate();
+        m_monomial_bounds.generate_lemmas();
 
     if (no_effect() && refine_pseudo_linear())
         return l_false;
-       
-    
+
+    // Squeeze monomial bounds eagerly while it helps, otherwise on the horner
+    // cadence; disable after too many fruitless calls.
+    bool squeeze_enabled = m_squeezes_without_progress < 50;
+    bool eager_squeeze = m_squeeze_fail_streak < 3;
+    bool squeeze_cadence = lp_settings().stats().m_nla_calls % params().arith_nl_horner_frequency() == 0;
+    if (no_effect() && squeeze_enabled && (run_horner || run_grobner) && (eager_squeeze || squeeze_cadence)) {
+        ++m_squeezes_without_progress;
+        if (m_monomial_bounds.optimize_nl_bounds())
+            m_squeeze_fail_streak = 0;
+        else
+            ++m_squeeze_fail_streak;
+        if (m_to_refine.empty()) {
+            m_squeezes_without_progress /= 2;
+            return l_true;
+        }
+    }
+
     {
         std::function<void(void)> check1 = [&]() { if (no_effect() && run_horner) m_horner.horner_lemmas(); };
         std::function<void(void)> check2 = [&]() { if (no_effect() && run_grobner) m_grobner(); };
@@ -1329,6 +1354,9 @@ lbool core::check(unsigned level) {
             return l_undef;
         if (!m_lemmas.empty() || !m_literals.empty() || m_check_feasible)
             return l_false;
+        // bound optimization proved all monomials consistent: goal satisfied.
+        if (m_nla_satisfied)
+            return l_true;
     }
 
     if (no_effect() && params().arith_nl_nra_check_assignment() && m_check_assignment_fail_cnt < params().arith_nl_nra_check_assignment_max_fail()) {
@@ -1416,11 +1444,12 @@ lbool core::bounded_nlsat() {
     p.set_uint("max_conflicts", lp_settings().m_max_conflicts);            
     m_nra.updt_params(p);
     lp_settings().stats().m_nra_calls++;
-    if (ret == l_undef) 
-        ++m_nlsat_delay_bound;
-    else if (m_nlsat_delay_bound > 0)
-        m_nlsat_delay_bound /= 2;        
-    
+    // On a conflict re-engage, otherwise back off.
+    if (ret == l_false)
+        m_nlsat_delay_bound /= 2;
+    else if (m_nlsat_delay_bound < (1u << 20))
+        m_nlsat_delay_bound = std::max(2 * m_nlsat_delay_bound, 1u);
+
     m_nlsat_delay = m_nlsat_delay_bound;
 
     if (ret == l_true) 
@@ -1486,9 +1515,6 @@ unsigned core::get_var_weight(lpvar j) const {
     case lp::column_type::free_column:
         k = 9;
         break;
-    default:
-        UNREACHABLE();
-        break;
     }
     if (is_monic_var(j)) {
         k++;
@@ -1522,19 +1548,38 @@ void core::set_use_nra_model(bool m) {
         m_use_nra_model = m;        
     }
 }
+
     
-void core::propagate() {
-#if Z3DEBUG
-    flet f(lra.validate_blocker(), true);
-#endif
+bool core::propagate() {
     clear();
-    m_monomial_bounds.unit_propagate();
+	bool propagated = false;
+    if (m_monomial_bounds.propagate_fixed_rows())
+        propagated = true;
+    if (m_monomial_bounds.tighten_lp_bounds())
+		propagated = true;
+    if (m_monomial_bounds.propagate_changed_bounds())
+        propagated = true;
+    if (m_monomial_bounds.propagate_violated_linear_monomials())
+        propagated = true;
     m_monics_with_changed_bounds.reset();
+    if (propagated)
+        m_check_feasible = true;
+    return propagated;
+}
+
+bool core::incremental_propagate() {
+    bool propagated = false;
+    clear();
+    if (m_monomial_bounds.propagate_changed_bounds())
+        propagated = true;
+    m_monics_with_changed_bounds.reset();
+    if (propagated)
+        m_check_feasible = true;
+    return propagated;    
 }
 
 void core::simplify() {
     // in-processing simplifiation can go here, such as bounds improvements.
-
 }
 
 bool core::is_pseudo_linear(monic const& m) const {

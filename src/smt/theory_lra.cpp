@@ -164,6 +164,7 @@ class theory_lra::imp {
     unsigned_vector        m_unassigned_bounds;
     unsigned_vector        m_bounds_trail;
     unsigned               m_asserted_qhead;
+    unsigned_vector        m_active_inf_eps_constraints;
 
     svector<unsigned>       m_bv_to_propagate;      // Boolean variables that can be propagated
     
@@ -1037,8 +1038,6 @@ public:
         case lp_api::upper_t:
             k = lp::LE;
             break;
-        default:
-            break;
         }         
         auto vi = register_theory_var_in_lar_solver(b->get_var());
         if (vi == lp::null_lpvar) {
@@ -1349,7 +1348,6 @@ public:
             literal eqz = mk_literal(m.mk_eq(q, zero));
             literal mod_ge_0 = mk_literal(a.mk_ge(mod, zero));
 
-            
             // q = 0 or p = (p mod q) + q * (p div q)
             // q = 0 or (p mod q) >= 0
             // q >= 0 or (p mod q) + q <= -1
@@ -1670,8 +1668,6 @@ public:
             return FC_CONTINUE;
         case l_undef:
             return FC_GIVEUP;
-        default:
-            break;
         }
         return FC_GIVEUP;
     }
@@ -1746,6 +1742,7 @@ public:
         IF_VERBOSE(12, verbose_stream() << "final-check " << lp().get_status() << "\n");
         lbool is_sat = l_true;
         SASSERT(lp().ax_is_correct());
+        propagate_nla(); 
         if (!lp().is_feasible() || lp().has_changed_columns()) 
             is_sat = make_feasible();
         final_check_status st = FC_DONE;
@@ -1813,9 +1810,6 @@ public:
         case l_undef:
             TRACE(arith, tout << "check feasible is undef\n";);
             return m.inc() ? FC_CONTINUE : FC_GIVEUP;
-        default:
-            UNREACHABLE();
-            break;
         }
         TRACE(arith, tout << "default giveup\n";);
         return FC_GIVEUP;
@@ -2123,10 +2117,7 @@ public:
             is_eq = true;
             pos = true;
             break;
-        default:
-            UNREACHABLE();
         }
-        TRACE(arith, tout << "is_lower: " << is_lower << " pos " << pos << "\n";);
         expr_ref atom(m);
         // TBD utility: lp::lar_term term = mk_term(ineq.m_poly);
         // then term is used instead of ineq.m_term
@@ -2135,6 +2126,7 @@ public:
         else 
             // create term >= 0 (or term <= 0)
             atom = mk_bound(ineq.term(), ineq.rs(), is_lower);
+        TRACE(arith, tout << "is_lower: " << is_lower << " pos " << pos << " " << atom << "\n";);
         return literal(ctx().get_bool_var(atom), pos);
     }    
 
@@ -2265,7 +2257,6 @@ public:
     bool propagate_core() {
         m_model_is_initialized = false;
         flush_bound_axioms();
-        propagate_nla(); 
         if (ctx().inconsistent())
             return true;
         if (!can_propagate_core()) 
@@ -2320,6 +2311,7 @@ public:
             get_infeasibility_explanation_and_set_conflict();
             break;
         case l_true:
+            incremental_propagate_nla();         
             propagate_bounds_with_lp_solver();
             break;
         case l_undef:
@@ -2329,12 +2321,24 @@ public:
         return true;            
     }
 
-    void propagate_nla() {
+    bool propagate_nla() {
+        bool propagated = false;
         if (m_nla) {
-            m_nla->propagate();
+            propagated = m_nla->propagate();
             add_lemmas();
             lp().collect_more_rows_for_lp_propagation();
         }
+        return propagated;
+    }
+
+    bool incremental_propagate_nla() {
+        bool propagated = false;
+        if (m_nla) {
+            propagated = m_nla->incremental_propagate();
+            add_lemmas();
+            lp().collect_more_rows_for_lp_propagation();
+        }
+        return propagated;
     }
 
     void add_equality(lpvar j, rational const& k, lp::explanation const& exp) {
@@ -2464,6 +2468,17 @@ public:
 #endif
     
     unsigned propagate_lp_solver_bound(const lp::implied_bound& be) {
+        // implied_bound stores only a rational threshold and a strict bit.
+        // Do not project a consequence whose explanation uses a delta-rational
+        // API bound, because this can strengthen x >= r - eps into x > r.
+        if (!m_active_inf_eps_constraints.empty()) {
+            for (lp::constraint_index ci : lp().flatten(be.explain_implied())) {
+                for (lp::constraint_index eps_ci : m_active_inf_eps_constraints)
+                    if (ci == eps_ci)
+                        return 0;
+            }
+        }
+
         lpvar vi = be.m_j;
         theory_var v = lp().local_to_external(vi);
 
@@ -3301,6 +3316,10 @@ public:
         TRACE(arith, tout << b << "\n";);
         lp::constraint_index ci = b.get_constraint(is_true);
         lp().activate(ci);
+        if (is_true && b.has_infinitesimal()) {
+            ctx().push_trail(push_back_vector(m_active_inf_eps_constraints));
+            m_active_inf_eps_constraints.push_back(ci);
+        }
         if (is_infeasible()) 
             return false;
         lp::lconstraint_kind k = bound2constraint_kind(b.is_int(), b.get_bound_kind(), is_true);
@@ -4166,17 +4185,17 @@ public:
         return false;
     }
 
-    theory_lra::inf_eps max_result(theory_var v, lpvar vi, lp::lp_status st, expr_ref& blocker, bool& has_shared) {
+    theory_lra::inf_eps max_result(theory_var v, lpvar vi, lp::impq const& term_max, lp::lp_status st, expr_ref& blocker, bool& has_shared) {
         switch (st) {
         case lp::lp_status::OPTIMAL:
             init_variable_values();
             TRACE(arith, display(tout << st << " v" << v << " vi: " << vi << "\n"););
-            blocker = mk_gt(v);
-            return value(v);
+            blocker = mk_gt(v, term_max);
+            return inf_eps(rational(0), inf_rational(term_max.x, term_max.y));
         case lp::lp_status::FEASIBLE:
             TRACE(arith, display(tout << st << " v" << v << " vi: " << vi << "\n"););
-            blocker = mk_gt(v);
-            return value(v);
+            blocker = mk_gt(v, term_max);
+            return inf_eps(rational(0), inf_rational(term_max.x, term_max.y));
         default:
             SASSERT(st == lp::lp_status::UNBOUNDED);
             TRACE(arith, display(tout << st << " v" << v << " vi: " << vi << "\n"););
@@ -4207,7 +4226,7 @@ public:
             if (max_with_nl(v, st, level, blocker, nl_result))
                 return nl_result;
         }
-        return max_result(v, vi, st, blocker, has_shared);
+        return max_result(v, vi, term_max, st, blocker, has_shared);
     }
 
     expr_ref mk_gt(theory_var v) {
@@ -4275,7 +4294,12 @@ public:
     app_ref coeffs2app(u_map<rational> const& coeffs, rational const& offset, bool is_int) {
         expr_ref_vector args(m);
         for (auto const& [w, coeff] : coeffs) {
-            expr* o = get_expr(w);
+            expr_ref o(get_expr(w), m);
+            // When the overall expression is Real but 'o' is Int (e.g. due to
+            // to_real(Int) equality constraints in the LP), coerce 'o' to Real
+            // to avoid sort mismatches when int/real coercions are disabled.
+            if (!is_int && a.is_int(o))
+                o = a.mk_to_real(o);
             if (coeff.is_zero()) {
                 // continue
             }
@@ -4357,7 +4381,10 @@ public:
             // validation assert the over-strong v >= r.  The bound's real meaning
             // (including the -delta) is attached via the api_bound's eps below.
             std::ostringstream strm;
-            strm << r << " - eps <= " << mk_pp(get_expr(v), m) << " (opt)";
+            strm << r;
+            if (!val.get_infinitesimal().is_zero())
+                strm << " + " << val.get_infinitesimal() << "*eps";
+            strm << " <= " << mk_pp(get_expr(v), m) << " (opt)";
             b = m.mk_const(symbol(strm.str()), m.mk_bool_sort());
         }
         else if (is_strict) {
@@ -4374,7 +4401,7 @@ public:
             // ctx().set_enode_flag(bv, true);
             lp_api::bound_kind bkind = lp_api::bound_kind::lower_t;
             if (is_strict) bkind = lp_api::bound_kind::upper_t;
-            rational eps = is_lower_eps ? rational::minus_one() : rational::zero();
+            rational eps = is_lower_eps ? val.get_infinitesimal() : rational::zero();
             api_bound* a = mk_var_bound(bv, v, bkind, r, eps);
             mk_bound_axioms(*a);
             updt_unassigned_bounds(v, +1);
@@ -4443,9 +4470,6 @@ public:
             case null_source:                    
                 out << idx << " null";
                 break;
-            default:
-                UNREACHABLE();
-                break; 
             }
         }
         for (lp::explanation::cimpq ev : evidence) 
