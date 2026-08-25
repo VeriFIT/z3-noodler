@@ -3807,10 +3807,12 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
             return BR_REWRITE_FULL;
     }
 
+#if 0 // NOODLER - causes TOs for negated_predicates
     if (!u().can_be_member(a, b)) {
         result = m().mk_false();
         return BR_DONE;
     }
+#endif
 
     return BR_FAILED;
 }
