@@ -1228,7 +1228,6 @@ namespace smt::noodler {
         //   s != eps && s not in allchar && (str.indexof x s 0) != -1 -> v = a
         if (expr* indexof = nullptr; expr_cases::is_replace_indexof(a, s, m, m_util_s, m_util_a, indexof)) {
             expr_ref minus_one(m_util_a.mk_int(-1), m);
-            expr_ref eps(m_util_s.str.mk_string(""), m);
             // (str.indexof x s 0) = -1, i.e. whether x contains s
             literal ind_eq_m1 = mk_eq(indexof, minus_one, false);
             // |a|-1
