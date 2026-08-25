@@ -1169,9 +1169,10 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Handling of str.replace(a,s,t) = v ... a where to replace, s what to find, t replacement.
+     * @brief Handle str.replace(a, s, t), where a is string in which are replacing, s is what to find, and t is the replacement
+     *
+     * We set str.replace(a, s, t) = v where v is fresh.
      * Translates to the following theory axioms:
-     * replace(a,s,t) = v
      * a = eps && s != eps -> v = a
      * (not(contains(a,s))) -> v = a
      * s = eps -> v = t.a
@@ -1179,7 +1180,13 @@ namespace smt::noodler {
      * contains(a,s) && a != eps && s != eps -> v = x.t.y
      * tighttestprefix(s, x, not(contains(a,s) && a != eps && s != eps))
      *
-     * @param r replace term
+     * Special cases:
+     *  - the case (str.replace a (a.y) t) or (str.replace a (y.a) t)
+     *  - the case (str.replace (str.substr x 0 (1 + (str.indexof x s 0))) s t)
+     *  - the case (str.replace "" s t)
+     *  - the case (str.replace "A" s t) where a = "A" is some string char
+     *
+     * @param r str.replace(a,s,t)
      */
     void theory_str_noodler::handle_replace(expr *r) {
         if (axiomatized_persist_terms.contains(r)) { return; }
@@ -1192,10 +1199,6 @@ namespace smt::noodler {
 
         expr_ref v = get_fresh_var_for_string_function("replace", r);
 
-        expr_ref x = mk_str_var_fresh("replace_left");
-        expr_ref y = mk_str_var_fresh("replace_right");
-        expr_ref xty = mk_concat(x, mk_concat(t, y));
-        expr_ref xsy = mk_concat(x, mk_concat(s, y));
         expr_ref eps(m_util_s.str.mk_string(""), m);
         literal a_emp = mk_eq_empty(a);
         literal s_emp = mk_eq_empty(s);
@@ -1205,67 +1208,88 @@ namespace smt::noodler {
         // s = eps -> |v| = |a| + |t|
         add_axiom({~s_emp, mk_literal(mk_eq_atom(m_util_s.str.mk_length(v), m_util_a.mk_add(m_util_s.str.mk_length(a), m_util_s.str.mk_length(t))))});
 
-        // axioms for the case str.replace x (y.x) z
-        expr* t1 = nullptr, *t2 = nullptr;
-        if(m_util_s.str.is_concat(s, t1, t2) && (t1 == a || t2 == a)) {
-            if(t1 == a) {
-                add_axiom({~mk_eq_empty(t2), mk_eq(v, t,false)});
-                add_axiom({mk_eq_empty(t2), mk_eq(v, a ,false)});
-            } else {
-                add_axiom({~mk_eq_empty(t1), mk_eq(v, t,false)});
-                add_axiom({mk_eq_empty(t1), mk_eq(v, a,false)});
-            }
+        // SPECIAL CASES
 
+        // the case (str.replace a (a.y) t) or (str.replace a (y.a) t)
+        //   y = eps -> v = t
+        //   y != eps -> v = a
+        expr* t1 = nullptr, *t2 = nullptr;
+        if (m_util_s.str.is_concat(s, t1, t2) && (t1 == a || t2 == a)) {
+            literal other_empty = (t1 == a) ? mk_eq_empty(t2) : mk_eq_empty(t1);
+            add_axiom({~other_empty, mk_eq(v, t, false)});
+            add_axiom({other_empty, mk_eq(v, a, false)});
             return;
         }
 
-        expr* indexof = nullptr;
-        if(expr_cases::is_replace_indexof(a, s, m, m_util_s, m_util_a, indexof)) {
+        // the case (str.replace (str.substr x 0 (1 + (str.indexof x s 0))) s t) where a = (str.substr x 0 (1 + (str.indexof x s 0))) for some string term x
+        //   s = eps -> v = t.a
+        //   (str.indexof x s 0) = -1 -> v = eps
+        //   s in allchar && (str.indexof x s 0) != -1 -> v = a[0:-1].t
+        //   s != eps && s not in allchar && (str.indexof x s 0) != -1 -> v = a
+        if (expr* indexof = nullptr; expr_cases::is_replace_indexof(a, s, m, m_util_s, m_util_a, indexof)) {
             expr_ref minus_one(m_util_a.mk_int(-1), m);
-            expr_ref eps(m_util_s.str.mk_string(""), m);
+            // (str.indexof x s 0) = -1, i.e. whether x contains s
             literal ind_eq_m1 = mk_eq(indexof, minus_one, false);
+            // |a|-1
             expr_ref len_a_m1(m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(1)), m);
+            // (str.subtr a 0 |a|-1) which is basically a[0:-1]
             expr_ref substr(m_util_s.str.mk_substr(a, m_util_a.mk_int(0), len_a_m1), m);
+            // s in allchar
+            literal s_in_allchar = mk_literal(m_util_s.re.mk_in_re(s, m_util_s.re.mk_full_char(nullptr)));
 
             // s = eps -> v = t.a
-            add_axiom({~s_emp, mk_eq(v, mk_concat(t, a),false)});
-            add_axiom({ind_eq_m1, mk_eq(v, mk_concat(substr, t),false)});
+            add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
+            // (str.indexof x s 0) = -1 -> v = eps
             add_axiom({~ind_eq_m1, mk_eq(v, eps, false)});
+            // s in allchar && (str.indexof x s 0) != -1 -> v = a[0:-1].t
+            add_axiom({~s_in_allchar, ind_eq_m1, mk_eq(v, mk_concat(substr, t), false)});
+            // s != eps && s not in allchar && (str.indexof x s 0) != -1 -> v = a
+            add_axiom({s_emp, s_in_allchar, ind_eq_m1, mk_eq(v, a, false)});
             return;
         }
 
-        zstring str_a, str_b;
-        // str.replace "A" s t where a = "A"
-        if(m_util_s.str.is_string(a, str_a) && str_a.length() == 1) {
-            // s = emp -> v = t.a
+        // the case (str.replace "" s t) where a = ""
+        //   s = emp -> v = t
+        //   s != emp -> v = eps
+        if (zstring str_a; m_util_s.str.is_string(a, str_a) && str_a.length() == 0) {
+            // s = emp -> v = t
+            add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, eps))), mk_eq(v, t, false)});
+            // s != emp -> v = eps
+            add_axiom({s_emp, mk_eq_empty(v)});
+            return;
+        }
+
+        // the case (str.replace "A" s t) where a = "A" is some string char
+        //   s = emp -> v = t.a
+        //   s = a -> v = t
+        //   s != eps && s != a -> v = a
+        if (zstring str_a; m_util_s.str.is_string(a, str_a) && str_a.length() == 1) {
+            // s = emp -> v = t."A"
             // NOTE: we add it twice in different forms because Z3 for some reason ignores one of them sometimes, see https://github.com/VeriFIT/z3-noodler/pull/236
-            add_axiom({~s_emp, mk_literal(mk_eq_atom(v, mk_concat(t, a)))});
-            add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, eps))), mk_literal(mk_eq_atom(v, mk_concat(t, a)))});
+            add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
+            add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, eps))), mk_eq(v, mk_concat(t, a), false)});
             // s = a -> v = t
             // NOTE: if we use ~mk_eq(s, a), this diseqation does not become relevant
-            add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, a))), mk_eq(v, t,false)});
-            // add_axiom({~mk_eq(s, a, false), mk_eq(v, t,false)});
-            // s != eps && s != a -> v = a
-            add_axiom({mk_eq(s, a, false), s_emp, mk_eq(v, a,false)});
+            add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, a))), mk_eq(v, t, false)});
+            // s != eps && s != "A" -> v = "A"
+            add_axiom({mk_eq(s, a, false), s_emp, mk_eq(v, a, false)});
 
 
             // The following axioms are redundant in the sense of completeness, but in the nested replace calls
             // they can relate the contains predicate from the general replace (and thence the SAT solver can help a lot).
+            // TODO: check if it is actually helpful
             literal cnt = mk_literal(m_util_s.str.mk_contains(s, a));
             // strenghten not contains axiom with s = a
-            add_axiom({~cnt, mk_literal(m.mk_not(mk_eq_atom(s, a))), mk_eq(v, t,false)});
-            add_axiom({cnt, s_emp, mk_eq(v, a,false)});
-            ctx.force_phase(cnt);
+            // cnt(s, a) && s = a -> v = t
+            add_axiom({~cnt, mk_literal(m.mk_not(mk_eq_atom(s, a))), mk_eq(v, t, false)});
+            // !cnt(s, a) && s != eps -> v = a
+            add_axiom({cnt, s_emp, mk_eq(v, a, false)});
+            ctx.force_phase(cnt); // TODO: check if this is helpful
 
             return;
-        // str.replace "" s t where a = ""
-        } else if(m_util_s.str.is_string(a, str_a) && str_a.length() == 0) {
-            // s = emp -> v = t.a
-            add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, eps))), mk_eq(v,t,false)});
-            // s = emp -> v = t.a
-            add_axiom({s_emp, mk_eq_empty(v)});
-            return;
         }
+
+        // GENERAL CASE
 
         literal cnt = mk_literal(m_util_s.str.mk_contains(a, s));
         // a = eps && s != eps -> v = a
@@ -1274,16 +1298,21 @@ namespace smt::noodler {
         add_axiom({cnt, mk_eq(v, a, false)});
 
         // if both strings are explicit and cnt holds, extract exact lengths of the result.
-        if(m_util_s.str.is_string(s, str_a) && m_util_s.str.is_string(t, str_b) && str_a.length() >= str_b.length()) {
-            add_axiom({~cnt, mk_literal(mk_eq_atom(m_util_s.str.mk_length(v), m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(str_a.length() - str_b.length()) )))});
+        if (zstring str_a, str_b; m_util_s.str.is_string(s, str_a) && m_util_s.str.is_string(t, str_b) && str_a.length() >= str_b.length()) {
+            add_axiom({~cnt, mk_eq(m_util_s.str.mk_length(v), m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(str_a.length() - str_b.length())), false)});
         }
 
+        expr_ref x = mk_str_var_fresh("replace_left");
+        expr_ref y = mk_str_var_fresh("replace_right");
+        expr_ref xty = mk_concat(x, mk_concat(t, y));
+        expr_ref xsy = mk_concat(x, mk_concat(s, y));
+
         // s = eps -> v = t.a
-        add_axiom({~s_emp, mk_eq(v, mk_concat(t, a),false)});
+        add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
         // contains(a,s) && a != eps && s != eps -> a = x.s.y
-        add_axiom({~cnt, a_emp, s_emp, mk_eq(a, xsy,false)});
+        add_axiom({~cnt, a_emp, s_emp, mk_eq(a, xsy, false)});
         // contains(a,s) && a != eps && s != eps -> v = x.t.y
-        add_axiom({~cnt, a_emp, s_emp, mk_eq(v, xty,false)});
+        add_axiom({~cnt, a_emp, s_emp, mk_eq(v, xty, false)});
         ctx.force_phase(cnt);
         // tighttestprefix(s, x, not(contains(a,s) && a != eps && s != eps))
         tightest_prefix(s, x, {~cnt, a_emp, s_emp});
