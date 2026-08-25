@@ -216,6 +216,10 @@ namespace smt::noodler {
          *
          * @param aut_ass Automata assignment giving the language of @p x (and the alphabet used for complementing)
          * @param x The (unflattened, top-level) string variable occurring in "i = str.to_int(x)"
+         *
+         * @pre The language of @p x in @p aut_ass is non-empty (there is no sound finite bound to give otherwise,
+         * since @p aut_ass -- and hence the whole formula -- would then already be unsatisfiable regardless of
+         * to_int; callers should check for this themselves, see get_to_int_bounds_formula).
          */
         static std::pair<rational, std::optional<rational>> get_to_int_value_bounds(const AutAssignment& aut_ass, const BasicTerm& x);
 
@@ -225,7 +229,9 @@ namespace smt::noodler {
          * in @p aut_ass.
          *
          * Meant to be conjoined to a length formula as a cheap pre-check, before running the full decision
-         * procedure. Returns LenNode(LenFormulaType::TRUE) if there are no TO_INT conversions.
+         * procedure. Returns LenNode(LenFormulaType::TRUE) if there are no TO_INT conversions. If some TO_INT
+         * conversion's string variable has an empty language in @p aut_ass , returns LenNode(LenFormulaType::FALSE) instead, since
+         * @p aut_ass is then unsatisfiable regardless of the to_int bounds.
          */
         LenNode get_to_int_bounds_formula(const AutAssignment& aut_ass) const;
     };
