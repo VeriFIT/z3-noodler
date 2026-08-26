@@ -97,6 +97,78 @@ namespace smt::noodler::util {
         }
     }
 
+    bool is_arith_str_func(const expr* ex, const seq_util& m_util_s) {
+        return m_util_s.str.is_length(ex) || m_util_s.str.is_to_code(ex) || m_util_s.str.is_stoi(ex) || m_util_s.str.is_stor(ex);
+    }
+
+    expr* replace_arith_str_funcs(expr* ex, ast_manager& m, seq_util& m_util_s,
+                                  const obj_map<expr, expr*>& predicate_replace,
+                                  obj_map<expr, expr*>& fresh_vars,
+                                  obj_map<expr, expr*>& canonical_of_fresh,
+                                  obj_map<expr, expr*>& memo,
+                                  expr_ref_vector& pinned) {
+        expr* cached;
+        if (memo.find(ex, cached)) {
+            return cached;
+        }
+
+        expr* result;
+        if (is_quantifier(ex)) {
+            quantifier* q = to_quantifier(ex);
+            expr* new_body = replace_arith_str_funcs(q->get_expr(), m, m_util_s, predicate_replace, fresh_vars, canonical_of_fresh, memo, pinned);
+            if (new_body == q->get_expr()) {
+                result = ex;
+            } else {
+                quantifier* new_q = m.update_quantifier(q, new_body);
+                pinned.push_back(new_q);
+                result = new_q;
+            }
+        } else if (is_var(ex)) {
+            // bound variable, nothing to do
+            result = ex;
+        } else {
+            SASSERT(is_app(ex));
+            expr* pred_repl;
+            if (predicate_replace.find(ex, pred_repl)) {
+                // ex is a complex string (sub)term Noodler has already replaced elsewhere by a variable
+                // (e.g. `(str.at x i)` -> `@at!1`); reuse the exact same replacement so occurrences of
+                // this subterm coming from raw context formulas line up with Noodler's own length formula.
+                result = replace_arith_str_funcs(pred_repl, m, m_util_s, predicate_replace, fresh_vars, canonical_of_fresh, memo, pinned);
+            } else {
+                app* a = to_app(ex);
+                bool changed = false;
+                ptr_vector<expr> new_args;
+                for (unsigned i = 0; i < a->get_num_args(); ++i) {
+                    expr* new_arg = replace_arith_str_funcs(a->get_arg(i), m, m_util_s, predicate_replace, fresh_vars, canonical_of_fresh, memo, pinned);
+                    new_args.push_back(new_arg);
+                    changed |= (new_arg != a->get_arg(i));
+                }
+                app* rebuilt = a;
+                if (changed) {
+                    rebuilt = m.mk_app(a->get_decl(), new_args.size(), new_args.data());
+                    pinned.push_back(rebuilt);
+                }
+
+                if (is_arith_str_func(rebuilt, m_util_s)) {
+                    expr* fresh;
+                    if (!fresh_vars.find(rebuilt, fresh)) {
+                        app* fresh_const = m.mk_fresh_const("@ext_arith_str", rebuilt->get_sort(), true);
+                        pinned.push_back(fresh_const);
+                        fresh_vars.insert(rebuilt, fresh_const);
+                        canonical_of_fresh.insert(fresh_const, rebuilt);
+                        fresh = fresh_const;
+                    }
+                    result = fresh;
+                } else {
+                    result = rebuilt;
+                }
+            }
+        }
+
+        memo.insert(ex, result);
+        return result;
+    }
+
     bool split_word_to_automata(const zstring& word, const std::vector<std::shared_ptr<mata::nfa::Nfa>>& automata, std::vector<zstring>& words) {
         STRACE(str_split_word_to_automata,
             tout << "split_word_to_automata with word:\n" << word << "\n";
