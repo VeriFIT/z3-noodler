@@ -226,9 +226,9 @@ namespace smt::noodler {
          * 
          * @return Equivalence classes consisting of BasicTerms
          */
-        BasicTermEqiv get_equivalence_bt(const AutAssignment& aut_ass, smt::context& ctx, seq_util& m_util_s) const {
+        BasicTermEqiv get_equivalence_bt(const AutAssignment& aut_ass, smt::context& ctx, seq_util& m_util_s, const obj_map<expr, expr*>& predicate_replace) const {
             std::vector<std::set<BasicTerm>> ret;
-            int_expr_solver lia_solver(ctx.get_manager(), ctx.get_fparams());
+            int_expr_solver lia_solver(ctx.get_manager(), ctx.get_fparams(), predicate_replace);
 
             for (const auto& t : this->un_find) {
                 int len = key_to_value.at(t.m_key);
