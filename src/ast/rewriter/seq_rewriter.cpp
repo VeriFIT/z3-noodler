@@ -3807,7 +3807,7 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
             return BR_REWRITE_FULL;
     }
 
-#if 0 // NOODLER - causes TOs for negated_predicates
+#if 0 // NOODLER - might cause problems
     if (!u().can_be_member(a, b)) {
         result = m().mk_false();
         return BR_DONE;
@@ -5305,7 +5305,9 @@ bool seq_rewriter::reduce_eq(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_
         reduce_subsequence(ls, rs, eqs) &&
         reduce_non_overlap(ls, rs, eqs) && 
         reduce_non_overlap(rs, ls, eqs) && 
+#if 0 // NOODLER - splits (dis)equation to multiple (dis)equations => problem for disequation handling in negated_predicates benchmark
         split_bag(ls, rs, eqs) &&
+#endif
         (change = (hash_l != ls.hash() || hash_r != rs.hash() || eqs.size() != sz_eqs), 
          true);
 }
