@@ -124,7 +124,8 @@ inline lbool check_lia_sat(const LenNode& formula) {
     std::ostringstream trash;
     cmd_ctx.set_regular_stream(trash);
     smt_params str_params{};
-    int_expr_solver solver(ast_m, str_params);
+    obj_map<expr, expr*> predicate_replace; // no theory_str_noodler instance here, nothing to replace
+    int_expr_solver solver(ast_m, str_params, predicate_replace);
     return solver.check_sat(len_node_to_expr(ast_m, cmd_ctx, formula));
 }
 
