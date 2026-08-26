@@ -832,9 +832,9 @@ namespace smt::noodler {
         m_rewrite(len_formula);
         std::unique_ptr<lia_solver> solver;
         if (has_quantifier) {
-            solver = std::make_unique<quant_lia_solver>(get_manager());
+            solver = std::make_unique<quant_lia_solver>(get_manager(), this->predicate_replace);
         } else {
-            solver = std::make_unique<int_expr_solver>(get_manager(), get_fparams());
+            solver = std::make_unique<int_expr_solver>(get_manager(), get_fparams(), this->predicate_replace);
         }
 
         if (check_with_context) {

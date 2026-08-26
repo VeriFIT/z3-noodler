@@ -98,6 +98,47 @@ namespace smt::noodler::util {
 
     void get_len_exprs(expr* ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res);
 
+    /**
+     * @brief Checks whether @p ex is one of the string-argument/arithmetic-result functions whose model
+     * value we need to read directly out of an (external) arithmetic solver: str.len, str.to_code,
+     * str.stoi (str.to_int) and str.stor (str.to_real).
+     *
+     * Note that e.g. str.indexof/str.contains are intentionally NOT included here -- those are fully
+     * axiomatized (see theory_str_noodler::handle_index_of/handle_contains) and we never need to pull a
+     * model value for them directly out of the arithmetic solver.
+     */
+    bool is_arith_str_func(const expr* ex, const seq_util& m_util_s);
+
+    /**
+     * @brief Rewrites @p ex so it is safe to hand to an external solver that has no theory registered
+     * for the string sort (i.e. smt.string_solver=none).
+     *
+     * Such a solver treats every string-sorted function symbol as completely uninterpreted, including
+     * str.len/str.to_code/str.stoi/str.stor. Left as-is, their model (built by generic function
+     * model-completion) can come back as an arbitrary ite-tree over ground string arguments the solver
+     * happened to see (e.g. `(ite (= x "aa") 2 3)`) instead of a genuine arithmetic value. This function
+     * rewrites @p ex bottom-up so that:
+     *   - any subterm that already has a replacement registered in @p predicate_replace is replaced by it
+     *     (so that a term coming from a raw/original formula, e.g. `(str.len (str.at x i))`, lines up with
+     *      whatever variable Noodler's own length formula already uses for the same subterm, e.g. `@at!1`);
+     *   - every remaining application recognized by is_arith_str_func is replaced by a fresh arithmetic
+     *     constant.
+     *
+     * @p fresh_vars and @p memo must be the same maps reused for every formula handed to one external-solver
+     * instance/call, so that the same source application is always replaced by the same fresh constant
+     * (this is what keeps e.g. the derived length formula and the raw context formulas linked). Every time
+     * a new fresh constant is created, it is also registered into @p canonical_of_fresh (fresh constant ->
+     * the canonical application it stands for) so callers can map a fresh constant's model value back to
+     * the term they actually care about. Newly created expressions are appended to @p pinned to keep them
+     * alive for as long as the maps are used.
+     */
+    expr* replace_arith_str_funcs(expr* ex, ast_manager& m, seq_util& m_util_s,
+                                  const obj_map<expr, expr*>& predicate_replace,
+                                  obj_map<expr, expr*>& fresh_vars,
+                                  obj_map<expr, expr*>& canonical_of_fresh,
+                                  obj_map<expr, expr*>& memo,
+                                  expr_ref_vector& pinned);
+
     /// @brief Create a noodler (BasicTerm) variable with a given @p name representing an internal variable (should not clash with user-defined variables)
     inline BasicTerm mk_internal_noodler_var(const zstring& name) {
         // according to SMT-LIB standard, variable names starting with '@' are reserved for internal use
