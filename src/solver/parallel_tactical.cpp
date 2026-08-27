@@ -968,10 +968,9 @@ class parallel_solver {
                 throw default_exception(m_exception_msg.c_str());
             case state::is_exception_code:
                 throw z3_error(m_exception_code);
-            default:
-                UNREACHABLE();
-                return l_undef;
             }
+            UNREACHABLE();
+            return l_undef;
         }
 
         std::string const& get_reason_unknown() const { return m_reason_unknown; }
@@ -1250,7 +1249,7 @@ class parallel_solver {
                     // re-checking the same cube would spin forever. Record a sound
                     // 'unknown' verdict and stop working this branch instead.
                     std::string reason = s->reason_unknown();
-                    if (reason != "max-conflicts-reached") {
+                    if (reason != "max-conflicts-reached" && reason != "sat.max.conflicts") {
                         LOG_WORKER(1, " undef cube is not conflict-limited (" << reason << "); reporting unknown\n");
                         b.set_unknown(reason);
                         return;
@@ -1838,8 +1837,6 @@ class parallel_solver {
                     }
                     break;
                 }
-                default:
-                    UNREACHABLE();
                 }
             }
 
@@ -2183,7 +2180,7 @@ public:
                 std::string reason = ps.reason_unknown();
                 if (!reason.empty()) {
                     g->set_reason_unknown(reason);
-                    IF_VERBOSE(0, verbose_stream() << reason << "\n");
+                    IF_VERBOSE(1, verbose_stream() << reason << "\n");
                 }
             }
             break;

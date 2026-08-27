@@ -10,6 +10,7 @@ Copyright (c) 2015 Microsoft Corporation
 #include "util/util.h"
 #include "util/trace.h"
 #include <map>
+#include <string>
 #include "util/trace.h"
 
 void test_apps() {
@@ -37,6 +38,80 @@ void test_apps() {
     std::cout << r << "\n";
     Z3_solver_dec_ref(ctx, s);
     Z3_del_config(cfg);
+    Z3_del_context(ctx);
+}
+
+static void test_mk_app_polymorphic_arity() {
+    Z3_config cfg = Z3_mk_config();
+    Z3_context ctx = Z3_mk_context(cfg);
+    Z3_del_config(cfg);
+    Z3_set_error_handler(ctx, [](Z3_context, Z3_error_code) {});
+
+    Z3_sort type_var = Z3_mk_type_variable(ctx, Z3_mk_string_symbol(ctx, "A"));
+    Z3_func_decl f = Z3_mk_func_decl(ctx, Z3_mk_string_symbol(ctx, "f"), 1, &type_var, type_var);
+    Z3_sort int_sort = Z3_mk_int_sort(ctx);
+    Z3_ast args[] = {
+        Z3_mk_int(ctx, 1, int_sort), Z3_mk_int(ctx, 2, int_sort), Z3_mk_int(ctx, 3, int_sort)
+    };
+
+    ENSURE(Z3_mk_app(ctx, f, 1, args));
+    ENSURE(Z3_get_error_code(ctx) == Z3_OK);
+    ENSURE(!Z3_mk_app(ctx, f, 0, nullptr));
+    ENSURE(Z3_get_error_code(ctx) == Z3_INVALID_ARG);
+    ENSURE(!Z3_mk_app(ctx, f, 2, args));
+    ENSURE(Z3_get_error_code(ctx) == Z3_INVALID_ARG);
+
+    Z3_sort set_type_var = Z3_mk_set_sort(ctx, type_var);
+    Z3_ast poly_set = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "poly_set"), set_type_var);
+    Z3_ast poly_sets[] = { poly_set, poly_set };
+    Z3_ast set_union = Z3_mk_set_union(ctx, 2, poly_sets);
+    Z3_func_decl set_union_decl = Z3_get_app_decl(ctx, Z3_to_app(ctx, set_union));
+    ENSURE(Z3_get_arity(ctx, set_union_decl) == 2);
+
+    Z3_sort int_set_sort = Z3_mk_set_sort(ctx, int_sort);
+    Z3_ast int_sets[] = {
+        Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "int_set1"), int_set_sort),
+        Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "int_set2"), int_set_sort),
+        Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "int_set3"), int_set_sort)
+    };
+    ENSURE(Z3_mk_app(ctx, set_union_decl, 1, int_sets));
+    ENSURE(Z3_get_error_code(ctx) == Z3_OK);
+    Z3_ast set_union3 = Z3_mk_app(ctx, set_union_decl, 3, int_sets);
+    ENSURE(set_union3);
+    ENSURE(Z3_get_error_code(ctx) == Z3_OK);
+    Z3_app set_union3_app = Z3_to_app(ctx, set_union3);
+    Z3_func_decl set_union3_decl = Z3_get_app_decl(ctx, set_union3_app);
+    ENSURE(Z3_get_arity(ctx, set_union3_decl) == 2);
+    ENSURE(Z3_get_app_num_args(ctx, set_union3_app) == 2);
+    ENSURE(Z3_get_app_arg(ctx, set_union3_app, 0) == int_sets[0]);
+    Z3_app set_union3_tail = Z3_to_app(ctx, Z3_get_app_arg(ctx, set_union3_app, 1));
+    ENSURE(Z3_get_app_num_args(ctx, set_union3_tail) == 2);
+    ENSURE(Z3_get_app_arg(ctx, set_union3_tail, 0) == int_sets[1]);
+    ENSURE(Z3_get_app_arg(ctx, set_union3_tail, 1) == int_sets[2]);
+
+    Z3_sort bool_set_sort = Z3_mk_set_sort(ctx, Z3_mk_bool_sort(ctx));
+    Z3_ast bool_set = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "bool_set"), bool_set_sort);
+    Z3_ast incompatible_sets[] = { int_sets[0], int_sets[1], bool_set };
+    ENSURE(!Z3_mk_app(ctx, set_union_decl, 3, incompatible_sets));
+    ENSURE(Z3_get_error_code(ctx) == Z3_INVALID_ARG);
+
+    Z3_ast poly_value = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "poly_value"), type_var);
+    Z3_ast poly_eq = Z3_mk_eq(ctx, poly_value, poly_value);
+    Z3_func_decl eq_decl = Z3_get_app_decl(ctx, Z3_to_app(ctx, poly_eq));
+    ENSURE(Z3_mk_app(ctx, eq_decl, 3, args));
+    ENSURE(Z3_get_error_code(ctx) == Z3_OK);
+
+    Z3_sort re_type_var = Z3_mk_re_sort(ctx, Z3_mk_seq_sort(ctx, type_var));
+    Z3_ast empty_re_type_var = Z3_mk_re_empty(ctx, re_type_var);
+    Z3_ast poly_res[] = { empty_re_type_var, empty_re_type_var };
+    Z3_ast re_union = Z3_mk_re_union(ctx, 2, poly_res);
+    Z3_func_decl re_union_decl = Z3_get_app_decl(ctx, Z3_to_app(ctx, re_union));
+    Z3_sort re_int = Z3_mk_re_sort(ctx, Z3_mk_seq_sort(ctx, int_sort));
+    Z3_ast empty_re_int = Z3_mk_re_empty(ctx, re_int);
+    Z3_ast int_res[] = { empty_re_int, empty_re_int, empty_re_int };
+    ENSURE(Z3_mk_app(ctx, re_union_decl, 3, int_res));
+    ENSURE(Z3_get_error_code(ctx) == Z3_OK);
+
     Z3_del_context(ctx);
 }
 
@@ -183,135 +258,142 @@ void test_optimize_translate() {
     Z3_del_context(ctx1);
 }
 
-void test_max_reg() {    
-    // BNH multi-objective optimization problem using Z3 Optimize C API.
-    // Mimics /tmp/bnh_z3.py: two objectives over a constrained 2D domain.
-    //   f1 = 4*x1^2 + 4*x2^2
-    //   f2 = (x1-5)^2 + (x2-5)^2
-    //   0 <= x1 <= 5, 0 <= x2 <= 3
-    //   C1: (x1-5)^2 + x2^2 <= 25
-    //   C2: (x1-8)^2 + (x2+3)^2 >= 7.7
+static void test_optimize_arith_params();
 
+void test_strict_real_maximize() {
     Z3_config cfg = Z3_mk_config();
     Z3_context ctx = Z3_mk_context(cfg);
     Z3_del_config(cfg);
 
     Z3_sort real_sort = Z3_mk_real_sort(ctx);
-    Z3_ast x1 = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "x1"), real_sort);
-    Z3_ast x2 = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "x2"), real_sort);
+    Z3_ast a = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "a"), real_sort);
+    Z3_ast b = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "b"), real_sort);
 
     auto mk_real = [&](int num, int den = 1) { return Z3_mk_real(ctx, num, den); };
-    auto mk_mul = [&](Z3_ast a, Z3_ast b) { Z3_ast args[] = {a, b}; return Z3_mk_mul(ctx, 2, args); };
-    auto mk_add = [&](Z3_ast a, Z3_ast b) { Z3_ast args[] = {a, b}; return Z3_mk_add(ctx, 2, args); };
-    auto mk_sub = [&](Z3_ast a, Z3_ast b) { Z3_ast args[] = {a, b}; return Z3_mk_sub(ctx, 2, args); };
-    auto mk_sq = [&](Z3_ast a) { return mk_mul(a, a); };
+    auto mk_add = [&](Z3_ast x, Z3_ast y) { Z3_ast args[] = { x, y }; return Z3_mk_add(ctx, 2, args); };
+    auto mk_mul = [&](Z3_ast x, Z3_ast y) { Z3_ast args[] = { x, y }; return Z3_mk_mul(ctx, 2, args); };
 
-    // f1 = 4*x1^2 + 4*x2^2
-    Z3_ast f1 = mk_add(mk_mul(mk_real(4), mk_sq(x1)), mk_mul(mk_real(4), mk_sq(x2)));
-    // f2 = (x1-5)^2 + (x2-5)^2
-    Z3_ast f2 = mk_add(mk_sq(mk_sub(x1, mk_real(5))), mk_sq(mk_sub(x2, mk_real(5))));
+    Z3_optimize opt = Z3_mk_optimize(ctx);
+    Z3_optimize_inc_ref(ctx, opt);
 
-    // Helper: create optimize with BNH constraints and timeout
-    auto mk_max_reg = [&]() -> Z3_optimize {
-        Z3_optimize opt = Z3_mk_optimize(ctx);
-        Z3_optimize_inc_ref(ctx, opt);
-        // Set timeout to 5 seconds
-        Z3_params p = Z3_mk_params(ctx);
-        Z3_params_inc_ref(ctx, p);
-        Z3_params_set_uint(ctx, p, Z3_mk_string_symbol(ctx, "timeout"), 5000);
-        Z3_optimize_set_params(ctx, opt, p);
-        Z3_params_dec_ref(ctx, p);
-        // Add BNH constraints
-        Z3_optimize_assert(ctx, opt, Z3_mk_ge(ctx, x1, mk_real(0)));
-        Z3_optimize_assert(ctx, opt, Z3_mk_le(ctx, x1, mk_real(5)));
-        Z3_optimize_assert(ctx, opt, Z3_mk_ge(ctx, x2, mk_real(0)));
-        Z3_optimize_assert(ctx, opt, Z3_mk_le(ctx, x2, mk_real(3)));
-        Z3_optimize_assert(ctx, opt, Z3_mk_le(ctx, mk_add(mk_sq(mk_sub(x1, mk_real(5))), mk_sq(x2)), mk_real(25)));
-        Z3_optimize_assert(ctx, opt, Z3_mk_ge(ctx, mk_add(mk_sq(mk_sub(x1, mk_real(8))), mk_sq(mk_add(x2, mk_real(3)))), mk_real(77, 10)));
-        return opt;
-    };
+    Z3_ast lhs = mk_add(Z3_mk_unary_minus(ctx, a), mk_mul(mk_real(4), b));
+    Z3_optimize_assert(ctx, opt, Z3_mk_ge(ctx, lhs, mk_real(-1000000)));
+    Z3_optimize_assert(ctx, opt, Z3_mk_gt(ctx, mk_real(0), b));
+    unsigned h = Z3_optimize_maximize(ctx, opt, a);
 
-    auto result_str = [](Z3_lbool r) { return r == Z3_L_TRUE ? "sat" : r == Z3_L_FALSE ? "unsat" : "unknown"; };
+    ENSURE(Z3_optimize_check(ctx, opt, 0, nullptr) == Z3_L_TRUE);
 
-    unsigned num_sat = 0;
+    Z3_ast_vector lower = Z3_optimize_get_lower_as_vector(ctx, opt, h);
+    ENSURE(Z3_ast_vector_size(ctx, lower) == 3);
 
-    // Approach 1: Minimize f1 (Python: opt.minimize(f1))
-    {
-        Z3_optimize opt = mk_max_reg();
-        Z3_optimize_minimize(ctx, opt, f1);
-        Z3_lbool result = Z3_optimize_check(ctx, opt, 0, nullptr);
-        std::cout << "BNH min f1: " << result_str(result) << std::endl;
-        ENSURE(result == Z3_L_TRUE);
-        if (result == Z3_L_TRUE) {
-            Z3_model m = Z3_optimize_get_model(ctx, opt);
-            Z3_model_inc_ref(ctx, m);
-            Z3_ast val; Z3_model_eval(ctx, m, f1, true, &val);
-            std::cout << "  f1=" << Z3_ast_to_string(ctx, val) << std::endl;
-            Z3_model_dec_ref(ctx, m);
-            num_sat++;
-        }
-        Z3_optimize_dec_ref(ctx, opt);
-    }
+    int64_t inf = 0, rat = 0, eps = 0;
+    ENSURE(Z3_get_numeral_int64(ctx, Z3_ast_vector_get(ctx, lower, 0), &inf));
+    ENSURE(Z3_get_numeral_int64(ctx, Z3_ast_vector_get(ctx, lower, 1), &rat));
+    ENSURE(Z3_get_numeral_int64(ctx, Z3_ast_vector_get(ctx, lower, 2), &eps));
+    std::cout << "strict real maximize lower: "
+              << Z3_ast_to_string(ctx, Z3_optimize_get_lower(ctx, opt, h)) << std::endl;
+    ENSURE(inf == 0);
+    ENSURE(rat == 1000000);
+    ENSURE(eps < 0);
 
-    // Approach 2: Minimize f2 (Python: opt2.minimize(f2))
-    {
-        Z3_optimize opt = mk_max_reg();
-        Z3_optimize_minimize(ctx, opt, f2);
-        Z3_lbool result = Z3_optimize_check(ctx, opt, 0, nullptr);
-        std::cout << "BNH min f2: " << result_str(result) << std::endl;
-        ENSURE(result == Z3_L_TRUE);
-        if (result == Z3_L_TRUE) {
-            Z3_model m = Z3_optimize_get_model(ctx, opt);
-            Z3_model_inc_ref(ctx, m);
-            Z3_ast val; Z3_model_eval(ctx, m, f2, true, &val);
-            std::cout << "  f2=" << Z3_ast_to_string(ctx, val) << std::endl;
-            Z3_model_dec_ref(ctx, m);
-            num_sat++;
-        }
-        Z3_optimize_dec_ref(ctx, opt);
-    }
-
-    #if 0
-    // Approach 3: Weighted sum method (Python loop over weights)
-    int weights[][2] = {{1, 4}, {2, 3}, {1, 1}, {3, 2}, {4, 1}};
-    for (auto& w : weights) {
-        Z3_optimize opt = mk_max_reg();
-        Z3_ast weighted = mk_add(mk_mul(mk_real(w[0], 100), f1), mk_mul(mk_real(w[1], 100), f2));
-        Z3_optimize_minimize(ctx, opt, weighted);
-        Z3_lbool result = Z3_optimize_check(ctx, opt, 0, nullptr);
-        std::cout << "BNH weighted (w1=" << w[0] << "/5, w2=" << w[1] << "/5): "
-                  << result_str(result) << std::endl;
-        ENSURE(result == Z3_L_TRUE);
-        if (result == Z3_L_TRUE) {
-            Z3_model m = Z3_optimize_get_model(ctx, opt);
-            Z3_model_inc_ref(ctx, m);
-            Z3_ast v1, v2;
-            Z3_model_eval(ctx, m, f1, true, &v1);
-            Z3_model_eval(ctx, m, f2, true, &v2);
-            std::cout << "  f1=" << Z3_ast_to_string(ctx, v1)
-                      << " f2=" << Z3_ast_to_string(ctx, v2) << std::endl;
-            Z3_model_dec_ref(ctx, m);
-            num_sat++;
-        }
-        Z3_optimize_dec_ref(ctx, opt);
-    }
-    #endif
-
-    std::cout << "BNH: " << num_sat << "/2 optimizations returned sat" << std::endl;
-    ENSURE(num_sat == 2);
+    Z3_optimize_dec_ref(ctx, opt);
     Z3_del_context(ctx);
-    std::cout << "BNH optimization test done" << std::endl;
 }
 
+void test_strict_real_maximize_disjunction() {
+    Z3_config cfg = Z3_mk_config();
+    Z3_context ctx = Z3_mk_context(cfg);
+    Z3_del_config(cfg);
+
+    Z3_sort real_sort = Z3_mk_real_sort(ctx);
+    auto mk_const = [&](char const* name) {
+        return Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, name), real_sort);
+    };
+    Z3_ast v = mk_const("v");
+    Z3_ast j = mk_const("j");
+    Z3_ast x = mk_const("x");
+    Z3_ast zero = Z3_mk_real(ctx, 0, 1);
+    Z3_ast one = Z3_mk_real(ctx, 1, 1);
+
+    Z3_optimize opt = Z3_mk_optimize(ctx);
+    Z3_optimize_inc_ref(ctx, opt);
+    Z3_optimize_assert(ctx, opt, Z3_mk_lt(ctx, j, zero));
+    Z3_ast two_v_args[] = { v, v };
+    Z3_optimize_assert(ctx, opt, Z3_mk_gt(ctx, Z3_mk_add(ctx, 2, two_v_args), x));
+    Z3_ast cases[] = { Z3_mk_eq(ctx, zero, x), Z3_mk_eq(ctx, zero, v) };
+    Z3_optimize_assert(ctx, opt, Z3_mk_or(ctx, 2, cases));
+    Z3_ast objective_args[] = { one, x };
+    unsigned h = Z3_optimize_maximize(ctx, opt, Z3_mk_add(ctx, 2, objective_args));
+
+    ENSURE(Z3_optimize_check(ctx, opt, 0, nullptr) == Z3_L_TRUE);
+    ENSURE(std::string(Z3_ast_to_string(ctx, Z3_optimize_get_lower(ctx, opt, h))) == "1");
+
+    Z3_optimize_dec_ref(ctx, opt);
+    Z3_del_context(ctx);
+}
+
+static void test_qfnra_degree80_square_bound() {
+    Z3_config cfg = Z3_mk_config();
+    Z3_context ctx = Z3_mk_context(cfg);
+    Z3_del_config(cfg);
+
+    Z3_solver s = Z3_mk_solver(ctx);
+    Z3_solver_inc_ref(ctx, s);
+
+    // A deterministic resource limit instead of a wall-clock timeout: the fixed
+    // factoring path needs < 1M rlimit while the num_primes=1 blowup needs > 5M,
+    // so 2M separates them regardless of machine speed or debug/release build.
+    Z3_params p = Z3_mk_params(ctx);
+    Z3_params_inc_ref(ctx, p);
+    Z3_params_set_uint(ctx, p, Z3_mk_string_symbol(ctx, "rlimit"), 2000000);
+    Z3_solver_set_params(ctx, s, p);
+    Z3_params_dec_ref(ctx, p);
+
+    Z3_sort real_sort = Z3_mk_real_sort(ctx);
+    Z3_ast x = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "x"), real_sort);
+    Z3_ast y = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "y"), real_sort);
+
+    auto mk_real = [&](int num, int den = 1) { return Z3_mk_real(ctx, num, den); };
+    auto mk_mul = [&](Z3_ast a, Z3_ast b) { Z3_ast args[] = { a, b }; return Z3_mk_mul(ctx, 2, args); };
+    auto mk_pow = [&](Z3_ast base, unsigned power) {
+        Z3_ast result = mk_real(1);
+        Z3_ast factor = base;
+        while (power > 0) {
+            if (power & 1)
+                result = mk_mul(result, factor);
+            power >>= 1;
+            if (power > 0)
+                factor = mk_mul(factor, factor);
+        }
+        return result;
+    };
+
+    Z3_solver_assert(ctx, s, Z3_mk_ge(ctx, x, mk_real(1)));
+    Z3_solver_assert(ctx, s, Z3_mk_le(ctx, x, mk_real(100)));
+    Z3_solver_assert(ctx, s, Z3_mk_ge(ctx, y, mk_real(0)));
+    Z3_solver_assert(ctx, s, Z3_mk_eq(ctx, mk_pow(y, 80), x));
+    Z3_solver_assert(ctx, s, Z3_mk_lt(ctx, y, mk_real(1)));
+    Z3_lbool result = Z3_solver_check(ctx, s);
+    std::string unknown_reason;
+    if (result == Z3_L_UNDEF)
+        unknown_reason = Z3_solver_get_reason_unknown(ctx, s);
+
+    Z3_solver_dec_ref(ctx, s);
+    Z3_del_context(ctx);
+    if (result == Z3_L_UNDEF)
+        throw default_exception(("qfnra degree-80 regression returned unknown: " + unknown_reason).c_str());
+    ENSURE(result == Z3_L_FALSE);
+}
 void tst_api() {
     test_apps();
+    test_mk_app_polymorphic_arity();
     test_bvneg();
     test_mk_distinct();
     test_optimize_translate();
-}
-
-void tst_max_reg() {
-    test_max_reg();
+    test_optimize_arith_params();
+    test_strict_real_maximize();
+    test_strict_real_maximize_disjunction();
+    test_qfnra_degree80_square_bound();
 }
 
 void test_max_rev() {
@@ -472,8 +554,101 @@ void test_scaled_minimize_unbounded() {
     std::cout << "scaled minimize unbounded test done" << std::endl;
 }
 
+// Sets a global parameter for the duration of the scope and restores the
+// previous value on exit.
+class scoped_global_param {
+    std::string m_id;
+    std::string m_old;
+    bool m_had = false;
+public:
+    scoped_global_param(char const* id, char const* value) : m_id(id) {
+        Z3_string v = nullptr;
+        m_had = Z3_global_param_get(id, &v);
+        if (m_had && v)
+            m_old = v;
+        Z3_global_param_set(id, value);
+    }
+    ~scoped_global_param() {
+        if (m_had)
+            Z3_global_param_set(m_id.c_str(), m_old.c_str());
+    }
+};
+
+static Z3_lbool check_factor_problem(Z3_context ctx, unsigned arith_solver) {
+    Z3_sort int_sort = Z3_mk_int_sort(ctx);
+    Z3_ast x = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "x"), int_sort);
+    Z3_ast y = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "y"), int_sort);
+    Z3_ast lower = Z3_mk_int(ctx, 31000, int_sort);
+    Z3_ast upper = Z3_mk_int(ctx, 32000, int_sort);
+    Z3_ast product = Z3_mk_int64(ctx, 999616589, int_sort);
+    Z3_ast xy[] = { x, y };
+
+    Z3_optimize opt = Z3_mk_optimize(ctx);
+    Z3_optimize_inc_ref(ctx, opt);
+    Z3_params params = Z3_mk_params(ctx);
+    Z3_params_inc_ref(ctx, params);
+    Z3_params_set_uint(ctx, params, Z3_mk_string_symbol(ctx, "smt.arith.solver"), arith_solver);
+    Z3_params_set_uint(ctx, params, Z3_mk_string_symbol(ctx, "timeout"), 5000);
+    Z3_optimize_set_params(ctx, opt, params);
+    Z3_params_dec_ref(ctx, params);
+
+    Z3_optimize_assert(ctx, opt, Z3_mk_ge(ctx, x, lower));
+    Z3_optimize_assert(ctx, opt, Z3_mk_ge(ctx, y, lower));
+    Z3_optimize_assert(ctx, opt, Z3_mk_le(ctx, x, upper));
+    Z3_optimize_assert(ctx, opt, Z3_mk_le(ctx, y, upper));
+    Z3_optimize_assert(ctx, opt, Z3_mk_le(ctx, x, y));
+    Z3_optimize_assert(ctx, opt, Z3_mk_eq(ctx, Z3_mk_mul(ctx, 2, xy), product));
+    Z3_lbool result = Z3_optimize_check(ctx, opt, 0, nullptr);
+    Z3_optimize_dec_ref(ctx, opt);
+    return result;
+}
+
+static void test_optimize_arith_params() {
+    scoped_global_param arith_solver("smt.arith.solver", "6");
+    Z3_config cfg = Z3_mk_config();
+    Z3_context ctx = Z3_mk_context(cfg);
+    Z3_del_config(cfg);
+
+    ENSURE(check_factor_problem(ctx, 2) == Z3_L_FALSE);
+
+    Z3_optimize opt = Z3_mk_optimize(ctx);
+    Z3_optimize_inc_ref(ctx, opt);
+    Z3_params params = Z3_mk_params(ctx);
+    Z3_params_inc_ref(ctx, params);
+    Z3_params_set_symbol(ctx, params, Z3_mk_string_symbol(ctx, "optsmt_engine"),
+        Z3_mk_string_symbol(ctx, "symba"));
+    Z3_optimize_set_params(ctx, opt, params);
+    Z3_params_dec_ref(ctx, params);
+
+    Z3_sort int_sort = Z3_mk_int_sort(ctx);
+    Z3_ast x = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "z"), int_sort);
+    Z3_ast zero = Z3_mk_int(ctx, 0, int_sort);
+    Z3_ast one = Z3_mk_int(ctx, 1, int_sort);
+    Z3_optimize_assert(ctx, opt, Z3_mk_ge(ctx, x, zero));
+    Z3_optimize_assert(ctx, opt, Z3_mk_le(ctx, x, one));
+    Z3_optimize_maximize(ctx, opt, x);
+    ENSURE(Z3_optimize_check(ctx, opt, 0, nullptr) == Z3_L_TRUE);
+    Z3_string value = nullptr;
+    ENSURE(Z3_global_param_get("smt.arith.solver", &value));
+    ENSURE(value && std::string(value) == "6");
+
+    Z3_optimize_dec_ref(ctx, opt);
+    Z3_del_context(ctx);
+}
+
 void tst_scaled_min() {
     test_scaled_minimize_unbounded();
+
+    // The same objectives must stay unbounded when the integer cut/cube
+    // heuristics run less often.  At these periods the LRA optimizer stalls at
+    // a delta-rational value r + k*delta, whose blocker degenerates to the same
+    // 'objective > r' literal in consecutive rounds; the search used to stop
+    // there and report a finite value for an unbounded objective.
+    for (unsigned period : {16u, 32u, 64u, 128u}) {
+        std::cout << "lp.int_hammer_period=" << period << std::endl;
+        scoped_global_param _period("lp.int_hammer_period", std::to_string(period).c_str());
+        test_scaled_minimize_unbounded();
+    }
 }
 
 void tst_max_rev() {
@@ -617,4 +792,41 @@ void tst_box_independent() {
     Z3_optimize_dec_ref(ctx, opt2);
     Z3_del_context(ctx);
     std::cout << "box independent objectives test passed" << std::endl;
+}
+
+// Regression test for issue #10465:
+// duplicate minimize objectives must not trigger an LP assertion in debug mode.
+void tst_opt_dup_min() {
+    Z3_config cfg = Z3_mk_config();
+    Z3_context ctx = Z3_mk_context(cfg);
+    Z3_del_config(cfg);
+
+    Z3_sort bool_sort = Z3_mk_bool_sort(ctx);
+    Z3_sort real_sort = Z3_mk_real_sort(ctx);
+    Z3_ast x = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "x"), bool_sort);
+    Z3_ast i = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "i"), real_sort);
+    Z3_ast o = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "o"), real_sort);
+    Z3_ast n = Z3_mk_const(ctx, Z3_mk_string_symbol(ctx, "n"), real_sort);
+    Z3_ast zero = Z3_mk_real(ctx, 0, 1);
+
+    Z3_optimize opt = Z3_mk_optimize(ctx);
+    Z3_optimize_inc_ref(ctx, opt);
+
+    Z3_optimize_assert(ctx, opt, Z3_mk_lt(ctx, o, zero));
+    Z3_ast neg_o = Z3_mk_unary_minus(ctx, o);
+    Z3_ast disj[] = { x, Z3_mk_eq(ctx, i, neg_o) };
+    Z3_ast conj[] = { Z3_mk_or(ctx, 2, disj), Z3_mk_lt(ctx, n, zero) };
+    Z3_optimize_assert(ctx, opt, Z3_mk_and(ctx, 2, conj));
+
+    Z3_ast neg_n = Z3_mk_unary_minus(ctx, n);
+    Z3_optimize_minimize(ctx, opt, neg_n);
+    Z3_optimize_minimize(ctx, opt, neg_n);
+    Z3_optimize_minimize(ctx, opt, i);
+    Z3_optimize_minimize(ctx, opt, o);
+
+    ENSURE(Z3_optimize_check(ctx, opt, 0, nullptr) == Z3_L_TRUE);
+
+    Z3_optimize_dec_ref(ctx, opt);
+    Z3_del_context(ctx);
+    std::cout << "duplicate minimize objective test passed" << std::endl;
 }

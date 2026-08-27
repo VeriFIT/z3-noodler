@@ -42,6 +42,7 @@ Revision History:
 #include "smt/theory_polymorphism.h"
 #include "smt/theory_str_noodler/theory_str_noodler.h"
 #include "smt/theory_finite_set.h"
+#include "util/manage_warnings.h"
 
 namespace smt {
 
@@ -688,9 +689,11 @@ namespace smt {
         case arith_solver_id::AS_NEW_ARITH:
             setup_lra_arith();
             break;
+        START_DISABLE_COVERED_SWITCH_DEFAULT
         default:
             m_context.register_plugin(alloc(smt::theory_mi_arith, m_context));
             break;
+        END_DISABLE_WARNING_STMT
         }
     }
 
@@ -954,5 +957,4 @@ namespace smt {
     }
 
 }
-
 

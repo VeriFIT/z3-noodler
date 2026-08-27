@@ -8098,7 +8098,7 @@ class Solver(Z3PPObject):
             while s.check() == sat:
                 result = [s.model().eval(t_, model_completion=True) for t_ in t]
                 yield result
-                s.add(*(t_ != result_ for t_, result_ in zip(t, result)))
+                s.add(Or(t_ != result_ for t_, result_ in zip(t, result)))
         else:
             while s.check() == sat:
                 result = s.model().eval(t, model_completion=True)
@@ -8924,6 +8924,21 @@ class ApplyResult(Z3PPObject):
 # Simplifiers
 #
 #########################################
+
+def num_simplifiers(ctx=None):
+    """Return the number of simplifiers supported by the given context."""
+    return Z3_get_num_simplifiers(_get_ctx(ctx).ref())
+
+
+def simplifier_name(i, ctx=None):
+    """Return the name of the i-th simplifier supported by the given context."""
+    return Z3_get_simplifier_name(_get_ctx(ctx).ref(), i)
+
+
+def simplifier_description(name, ctx=None):
+    """Return the description of the simplifier identified by name."""
+    return Z3_simplifier_get_descr(_get_ctx(ctx).ref(), name)
+
 
 class Simplifier:
     """Simplifiers act as pre-processing utilities for solvers.

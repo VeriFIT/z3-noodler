@@ -104,6 +104,10 @@ bool horner::horner_lemmas() {
         TRACE(nla_solver, tout << "not generating horner lemmas\n";);
         return false;
     }
+    if (c().to_refine().empty()) {
+        c().set_nla_satisfied();
+        return false;
+    }
     c().lp_settings().stats().m_horner_calls++;
     const auto& matrix = c().lra.A_r();
     // choose only rows that depend on m_to_refine variables
@@ -132,4 +136,3 @@ bool horner::horner_lemmas() {
     return conflict;
 }
 }
-
