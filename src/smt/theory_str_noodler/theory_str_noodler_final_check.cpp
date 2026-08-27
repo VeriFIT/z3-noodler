@@ -825,6 +825,9 @@ namespace smt::noodler {
 
     lbool theory_str_noodler::check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core, expr_ref* model_formula) {
         if (!check_with_context && len_formula == m.mk_true()) {
+            if (model_formula != nullptr) {
+                *model_formula = expr_ref(m.mk_true(), m);
+            }
             return l_true;
         }
 
