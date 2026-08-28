@@ -90,9 +90,6 @@ namespace seq {
     }
 
     bool regex_to_range_predicate(seq_util& u, expr* r, range_predicate& out) {
-        // NOODLER - disable handling of ranges, it causes alphabet blowup
-        return false;
-
         // The range algebra only models sets of single characters over the
         // unsigned character domain [0, max_char].  Guard against any regex
         // whose element type is not a sequence of characters (e.g. a regex

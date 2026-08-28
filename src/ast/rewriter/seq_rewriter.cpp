@@ -621,8 +621,7 @@ br_status seq_rewriter::mk_seq_length(expr* a, expr_ref& result) {
         result = str().mk_length(z);
         return BR_REWRITE1;
     } 
-    // not suitable for noodler: adds length check which makes it harder
-#if 0
+    if (!is_noodler()) { // not suitable for noodler: adds length check which makes it harder
     // len(extract(x, 0, z)) = min(z, len(x))
     if (str().is_extract(a, x, y, z) && 
         m_autil.is_numeral(y, r) && r.is_zero() &&
@@ -631,7 +630,7 @@ br_status seq_rewriter::mk_seq_length(expr* a, expr_ref& result) {
         result = m().mk_ite(m_autil.mk_le(len_x, z), len_x, z);
         return BR_REWRITE_FULL;
     }
-#endif
+    }
     return BR_FAILED;
 }
 
@@ -725,13 +724,12 @@ expr_ref seq_rewriter::mk_seq_butlast(expr* t) {
 br_status seq_rewriter::lift_ites_throttled(func_decl* f, unsigned n, expr* const* args, expr_ref& result) {
     expr* c = nullptr, * t = nullptr, * e = nullptr;
     for (unsigned i = 0; i < n; ++i)
-        if (m().is_ite(args[i], c, t, e) 
-            // for noodler we want to remove ites always, hopefully nothing will break by doing this
-            // &&
-            // lift_ites_filter(f, args[i]) &&
-            // (get_depth(t) <= 2 || t->get_ref_count() == 1 ||
-            //     get_depth(e) <= 2 || e->get_ref_count() == 1)
-           ) {
+        if (m().is_ite(args[i], c, t, e) &&
+            (is_noodler() || (
+            // for noodler we want to remove ites always, not only if the following holds
+            lift_ites_filter(f, args[i]) &&
+            (get_depth(t) <= 2 || t->get_ref_count() == 1 ||
+                get_depth(e) <= 2 || e->get_ref_count() == 1)))) {
             ptr_buffer<expr> new_args;
             for (unsigned j = 0; j < n; ++j) new_args.push_back(args[j]);
             new_args[i] = t;
@@ -740,7 +738,7 @@ br_status seq_rewriter::lift_ites_throttled(func_decl* f, unsigned n, expr* cons
             expr_ref arg2(m().mk_app(f, new_args), m());
             result = m().mk_ite(c, arg1, arg2);
             TRACE(seq_verbose, tout << "lifting ite: " << mk_pp(result, m()) << std::endl;);
-            return BR_REWRITE_FULL;
+            return BR_REWRITE2;
         }
     return BR_FAILED;
 }
@@ -967,13 +965,13 @@ br_status seq_rewriter::mk_seq_extract(expr* a, expr* b, expr* c, expr_ref& resu
         return BR_DONE;
     }
 
+    constantPos &= pos.is_unsigned();
+    constantLen &= len.is_unsigned();
+
     if (constantLen && len == 1) {
         result = str().mk_at(a, b);
         return BR_REWRITE1;
     }
-
-    constantPos &= pos.is_unsigned();
-    constantLen &= len.is_unsigned();
 
     if (constantPos && constantLen && constantBase) {
         unsigned _pos = pos.get_unsigned();
@@ -1089,8 +1087,7 @@ br_status seq_rewriter::mk_seq_extract(expr* a, expr* b, expr* c, expr_ref& resu
     }
     std::function<bool(expr*)> is_unit = [&](expr *e) { return str().is_unit(e); };
 
-// not suitable for noodler: introduces nested ite in (dis)equations
-#if 0
+    if (!is_noodler()) { // not suitable for noodler: introduces nested ite in (dis)equations
     if (pos == 0 && as.forall(is_unit)) {
         result = str().mk_empty(a->get_sort());
         for (unsigned i = 1; i <= as.size(); ++i) {
@@ -1100,7 +1097,7 @@ br_status seq_rewriter::mk_seq_extract(expr* a, expr* b, expr* c, expr_ref& resu
         }
         return BR_REWRITE_FULL;
     }
-#endif
+    }
     if (pos == 0 && !constantLen) {
         return BR_FAILED;
     }
@@ -1259,8 +1256,9 @@ br_status seq_rewriter::mk_seq_contains(expr* a, expr* b, expr_ref& result) {
         }
     }
 
-    // This is for Z3-Noodler as it may itroduce seq.unit functions, which are not supported
-    return BR_FAILED;
+    // the following rules might itroduce seq.unit functions, noodler cannot handle these, so we return here
+    if (is_noodler()) { return BR_FAILED; }
+    
 
     unsigned offs = 0;
     unsigned sz = as.size();
@@ -1632,7 +1630,6 @@ br_status seq_rewriter::mk_seq_index(expr* a, expr* b, expr* c, expr_ref& result
     bool isc1 = str().is_string(a, s1);
     bool isc2 = str().is_string(b, s2);
     sort* sort_a = a->get_sort();
-    expr * c1, *c2;
 
     if (isc1 && isc2 && m_autil.is_numeral(c, r) && r.is_unsigned()) {
         int idx = s1.indexofu(s2, r.get_unsigned());
@@ -1641,9 +1638,9 @@ br_status seq_rewriter::mk_seq_index(expr* a, expr* b, expr* c, expr_ref& result
     }
 
     // indexof(s1 + s2, b, c) -> s1.indexof(b) if the result is != -1 and s1 and b are concrete strings
-    if(str().is_concat(a, c1, c2) && isc2 && str().is_string(c1, s1) && m_autil.is_numeral(c, r) && r.is_unsigned()) {
+    if (expr * c1, *c2; str().is_concat(a, c1, c2) && isc2 && str().is_string(c1, s1) && m_autil.is_numeral(c, r) && r.is_unsigned()) {
         int idx = s1.indexofu(s2, r.get_unsigned());
-        if(idx != -1) {
+        if (idx != -1) {
             result = m_autil.mk_int(idx);
             return BR_DONE;
         }
@@ -1753,8 +1750,7 @@ br_status seq_rewriter::mk_seq_index(expr* a, expr* b, expr* c, expr_ref& result
     default:
         break;
     }
-// Not suitable for Z3-Noodler as it itroduces ite constructs inside predicates.
-#if 0
+    if (!is_noodler()) { // not suitable for noodler as it itroduces ite constructs inside predicates.
     if (is_zero && !as.empty() && str().is_unit(as.get(0))) {
         expr_ref a1(str().mk_concat(as.size() - 1, as.data() + 1, as[0]->get_sort()), m());
         expr_ref b1(str().mk_index(a1, b, c), m());
@@ -1767,7 +1763,7 @@ br_status seq_rewriter::mk_seq_index(expr* a, expr* b, expr* c, expr_ref& result
         }
         return BR_REWRITE3;
     }
-#endif
+    }
     expr_ref ra(a, m());
     if (str().is_unit(b) && m().is_value(b) && 
         reduce_by_char(ra, b, 4)) {
@@ -2783,20 +2779,22 @@ br_status seq_rewriter::mk_str_itos(expr* a, expr_ref& result) {
         return BR_DONE;
     }
 
-    // not suitable for noodler, generates ite
-    // // itos(stoi(s)) -> if s = '0' or .... or s = '9' then s else ""
-    // // when |s| <= 1
-    // expr* b = nullptr;
-    // if (str().is_stoi(a, b) && max_length(b, r) && r <= 1) {
-    //     expr_ref_vector eqs(m());
-    //     for (unsigned i = 0; i < 10; ++i) {
-    //         zstring s('0' + i);
-    //         eqs.push_back(m().mk_eq(b, str().mk_string(s)));
-    //     }
-    //     result = m().mk_or(eqs);
-    //     result = m().mk_ite(result, b, str().mk_string(zstring()));
-    //     return BR_REWRITE2;
-    // }
+    if (!is_noodler()) { // not suitable for noodler, generates ite
+    // itos(stoi(s)) -> if s = '0' or .... or s = '9' then s else ""
+    // when |s| <= 1
+    expr* b = nullptr;
+
+    if (str().is_stoi(a, b) && max_length(b, r) && r <= 1) {
+        expr_ref_vector eqs(m());
+        for (unsigned i = 0; i < 10; ++i) {
+            zstring s('0' + i);
+            eqs.push_back(m().mk_eq(b, str().mk_string(s)));
+        }
+        result = m().mk_or(eqs);
+        result = m().mk_ite(result, b, str().mk_string(zstring()));
+        return BR_REWRITE2;
+    }
+    }
 
     return BR_FAILED;
 }
@@ -2831,12 +2829,12 @@ br_status seq_rewriter::mk_str_stoi(expr* a, expr_ref& result) {
     }
     expr* b;
     
+    if (!is_noodler()) { // we handle this inside noodler
     if (str().is_itos(a, b)) {
-        // we handle this inside noodler
-        // auto a = m_autil.mk_ge(b, zero());
-        // result = m().mk_ite(a, b, minus_one());
-        // return BR_DONE;
-        return BR_FAILED;
+        auto a = m_autil.mk_ge(b, zero());
+        result = m().mk_ite(a, b, minus_one());
+        return BR_DONE;
+    }
     }
     if (str().is_ubv2s(a, b)) {
         bv_util bv(m());
@@ -2869,8 +2867,7 @@ br_status seq_rewriter::mk_str_stoi(expr* a, expr_ref& result) {
         result = minus_one();
         return BR_DONE;
     }
-// the following seems to do some weird splitting with added ites, it would probably be a problem for noodler
-#if 0
+    if (!is_noodler()) { // the following seems to do some weird splitting with added ites, it would probably be a problem for noodler
     if (str().is_unit(as.back())) {
         // if head = "" then tail else
         // if tail < 0 then tail else 
@@ -2901,7 +2898,7 @@ br_status seq_rewriter::mk_str_stoi(expr* a, expr_ref& result) {
         }
         return BR_REWRITE_FULL;
     }
-#endif
+    }
 
     return BR_FAILED;
 }
@@ -3754,7 +3751,7 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
     }
 
 
-#if 0 // NOODLER - we do not use these, as we can probably handle it better inside our solver
+    if (!is_noodler()) { // we do not use these for noodler, as we can probably handle it better inside our solver
     // replace_all(x, a, b) in R where R is ground, a and b are unit-length strings
     // ==> x in R[b -> {a, b}, a -> empty]
     expr *ra_x = nullptr, *ra_a = nullptr, *ra_b = nullptr;
@@ -3770,27 +3767,30 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
         result = re().mk_in_re(ra_x, new_re);
         return BR_REWRITE_FULL;
     }
-#endif
+    }
 
     expr_ref b_s(m());
     if (lift_str_from_to_re(b, b_s)) {
-        result = m_br.mk_eq_rw(a, b_s);
-        return BR_REWRITE_FULL;
+       result = m_br.mk_eq_rw(a, b_s);
+       return BR_REWRITE_FULL;
     }
+    if (!is_noodler()) { // replacing regexes to suffix is not beneficial for noodler
     expr* c = nullptr, *d = nullptr, *e = nullptr;
-    if (false && re().is_concat(b, c, d) && re().is_to_re(c, e) && re().is_full_seq(d)) { // FIXME: NOODLER replacing regexes to prefix is not beneficial for noodler
+    if (re().is_concat(b, c, d) && re().is_to_re(c, e) && re().is_full_seq(d)) {
         result = str().mk_prefix(e, a);
         return BR_REWRITE1;
     }
-    if (false && re().is_concat(b, c, d) && re().is_to_re(d, e) && re().is_full_seq(c)) { // FIXME: NOODLER replacing regexes to suffix is not beneficial for noodler
+    if (re().is_concat(b, c, d) && re().is_to_re(d, e) && re().is_full_seq(c)) {
         result = str().mk_suffix(e, a);
         return BR_REWRITE1;
     }
+    }
     expr* b1 = nullptr;
     expr* eps = nullptr;
-    if (false && (re().is_opt(b, b1) ||
+    if (!is_noodler()) { // adding length variables from regexes is not beneficial for noodler
+    if (re().is_opt(b, b1) ||
         (re().is_union(b, b1, eps) && re().is_epsilon(eps)) ||
-        (re().is_union(b, eps, b1) && re().is_epsilon(eps)))) // FIXME: NOODLER adding length variables from regexes is not beneficial for noodler
+        (re().is_union(b, eps, b1) && re().is_epsilon(eps)))
     {
         // deterministic evaluation order: build sub-expressions first
         auto len_a = str().mk_length(a);
@@ -3798,6 +3798,7 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
         auto in_b1 = re().mk_in_re(a, b1);
         result = m().mk_ite(is_empty, m().mk_true(), in_b1);
         return BR_REWRITE_FULL;
+    }
     }
     if (str().is_empty(a)) {
         result = is_nullable(b);
@@ -3807,12 +3808,12 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
             return BR_REWRITE_FULL;
     }
 
-#if 0 // NOODLER - might cause problems
+    if (!is_noodler()) { // might cause problems for noodler
     if (!u().can_be_member(a, b)) {
         result = m().mk_false();
         return BR_DONE;
     }
-#endif
+    }
 
     return BR_FAILED;
 }
@@ -3847,7 +3848,7 @@ bool seq_rewriter::lift_str_from_to_re(expr* r, expr_ref& result)
 }
 
 br_status seq_rewriter::mk_str_to_regexp(expr* a, expr_ref& result) {
-#if 0 // NOODLER - creates unsupported operations
+    if (!is_noodler()) { // creates unsupported operations for noodler
     expr* s = nullptr, *i = nullptr;
     if (str().is_at(a, s, i)) {
         expr_ref valid(m().mk_and(
@@ -3860,7 +3861,7 @@ br_status seq_rewriter::mk_str_to_regexp(expr* a, expr_ref& result) {
             re().mk_to_re(str().mk_empty(a->get_sort())));
         return BR_REWRITE_FULL;
     }
-#endif
+    }
     return BR_FAILED;
 }
 
@@ -4049,7 +4050,7 @@ br_status seq_rewriter::mk_re_concat(expr* a, expr* b, expr_ref& result) {
         }
         return BR_REWRITE3;
     }
-#if 0 // NOODLER - right-associative form is not needed for noodler + if there is BR_DONE it does not construct correctly right-associative form (causing some weird issues, because if we rewrite already rewritten stuff, it results in two different regexes) and fixing it to BR_REWRITE2 takes looong time in some benchmarks (matching)
+    if (!is_noodler()) { // right-associative form is not needed for noodler + if there is BR_DONE it does not construct correctly right-associative form (causing some weird issues, because if we rewrite already rewritten stuff, it results in two different regexes) and fixing it to BR_REWRITE2 takes looong time in some benchmarks (matching)
     if (re().is_concat(a, a1, a2)) {
         // Maintain right-associative normal form: re().mk_concat is a raw
         // constructor, so re-simplify the result to recursively reassociate
@@ -4057,7 +4058,7 @@ br_status seq_rewriter::mk_re_concat(expr* a, expr* b, expr_ref& result) {
         result = re().mk_concat(a1, re().mk_concat(a2, b));
         return BR_DONE;
     }
-#endif
+    }
     return BR_FAILED;
 }
 
@@ -4124,6 +4125,7 @@ bool seq_rewriter::try_collapse_re_union(expr* a, expr* b, expr_ref& result) {
     if (!u().is_re(a->get_sort(), seq_sort))
         return false;
     seq::range_predicate pa(u().max_char()), pb(u().max_char());
+    if (!is_noodler()) { return false; } // disable handling of ranges, it causes alphabet blowup
     if (!seq::regex_to_range_predicate(u(), a, pa))
         return false;
     if (!seq::regex_to_range_predicate(u(), b, pb))
@@ -4137,6 +4139,7 @@ bool seq_rewriter::try_collapse_re_inter(expr* a, expr* b, expr_ref& result) {
     if (!u().is_re(a->get_sort(), seq_sort))
         return false;
     seq::range_predicate pa(u().max_char()), pb(u().max_char());
+    if (!is_noodler()) { return false; } // disable handling of ranges, it causes alphabet blowup
     if (!seq::regex_to_range_predicate(u(), a, pa))
         return false;
     if (!seq::regex_to_range_predicate(u(), b, pb))
@@ -4359,11 +4362,13 @@ br_status seq_rewriter::mk_re_inter(expr* a, expr* b, expr_ref& result) {
 br_status seq_rewriter::mk_re_diff(expr* a, expr* b, expr_ref& result) {
     seq::range_predicate pa(u().max_char()), pb(u().max_char());
     sort* seq_sort = nullptr;
+    if (!is_noodler()) { // disable handling of ranges, it causes alphabet blowup
     if (u().is_re(a->get_sort(), seq_sort)
         && seq::regex_to_range_predicate(u(), a, pa)
         && seq::regex_to_range_predicate(u(), b, pb)) {
         result = seq::range_predicate_to_regex(u(), pa - pb, seq_sort);
         return BR_DONE;
+    }
     }
     result = mk_regex_inter_normalize(a, re().mk_complement(b));
     return BR_REWRITE2;
@@ -4950,7 +4955,7 @@ br_status seq_rewriter::reduce_re_eq(expr* l, expr* r, expr_ref& result) {
         result = m().mk_true();
         return BR_DONE;
     }
-#if 0 // NOODLER - turn of bisim because it causes looping for some reason
+    if (!is_noodler()) { // turn of bisim for noodler because it causes looping for some reason
     /*
      * Try the union-find bisimulation procedure for ground regex equality.
      * Guarded against re-entry because the bisim may construct equalities
@@ -4971,7 +4976,7 @@ br_status seq_rewriter::reduce_re_eq(expr* l, expr* r, expr_ref& result) {
             break;
         }
     }
-#endif
+    }
     return BR_FAILED;
 }
 
@@ -5011,7 +5016,7 @@ br_status seq_rewriter::mk_eq_core(expr * l, expr * r, expr_ref & result) {
     if (reduce_eq_empty(l, r, result)) 
         return BR_REWRITE_FULL;
 
-#if 0 // NOODLER - we do not use the replace_all(x, a, b) rewriting stuff in mk_str_in_regexp, so this is not needed
+    if (!is_noodler()) { // we do not use the replace_all(x, a, b) rewriting stuff in mk_str_in_regexp, so this is not needed
     // a, b are unit-length ground strings => replace_all(x, a, b) in re.to_re(s)
     {
         expr *ra_x = nullptr, *ra_a = nullptr, *ra_b = nullptr;
@@ -5030,7 +5035,7 @@ br_status seq_rewriter::mk_eq_core(expr * l, expr * r, expr_ref & result) {
             return BR_REWRITE_FULL;
         }
     }
-#endif
+    }
 
 #if 0
     if (reduce_arith_eq(l, r, res) || reduce_arith_eq(r, l, res)) {
@@ -5305,9 +5310,8 @@ bool seq_rewriter::reduce_eq(expr_ref_vector& ls, expr_ref_vector& rs, expr_ref_
         reduce_subsequence(ls, rs, eqs) &&
         reduce_non_overlap(ls, rs, eqs) && 
         reduce_non_overlap(rs, ls, eqs) && 
-#if 0 // NOODLER - splits (dis)equation to multiple (dis)equations => problem for disequation handling in negated_predicates benchmark
-        split_bag(ls, rs, eqs) &&
-#endif
+        // split_bag splits (dis)equation to multiple (dis)equations => problem for disequation handling in negated_predicates benchmark for noodler, so it is skipped
+        (is_noodler() || split_bag(ls, rs, eqs)) &&
         (change = (hash_l != ls.hash() || hash_r != rs.hash() || eqs.size() != sz_eqs), 
          true);
 }

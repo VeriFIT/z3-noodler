@@ -91,6 +91,8 @@ class seq_rewriter {
     unsigned       m_re_deriv_depth { 0 };
     static const unsigned m_max_re_deriv_depth = 512;
 
+    bool is_noodler() { return true; }
+
     enum length_comparison {
         shorter_c, 
         longer_c,
