@@ -140,6 +140,11 @@ void asserted_formulas::set_eliminate_and(bool flag) {
     m_params.set_bool("bv_sort_ac", true);
     // seq theory solver keeps terms in normal form and has to interact with side-effect of rewriting
     m_params.set_bool("coalesce_chars", m_smt_params.m_string_solver != symbol("seq"));
+    // requested string solver is noodler; note this is the requested solver, not necessarily the one
+    // that ends up registered (e.g. setup::setup_seq_str() falls back to the seq theory for problems
+    // with non-String Seq sorts), but that final decision is only known once the asserted formulas
+    // (which this rewriter is used to preprocess) are available
+    m_params.set_bool("is_noodler", m_smt_params.m_string_solver == symbol("noodler"));
     m_params.set_bool("som", true);
     if (m_smt_params.m_arith_mode == arith_solver_id::AS_OLD_ARITH)
         m_params.set_bool("flat", true);

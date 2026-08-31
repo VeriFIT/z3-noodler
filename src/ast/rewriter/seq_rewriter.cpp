@@ -39,6 +39,7 @@ Authors:
 void seq_rewriter::updt_params(params_ref const & p) {
     seq_rewriter_params sp(p);
     m_coalesce_chars = sp.coalesce_chars();
+    m_is_noodler = sp.is_noodler();
 }
 
 void seq_rewriter::get_param_descrs(param_descrs & r) {
