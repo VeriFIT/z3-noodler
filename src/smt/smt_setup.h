@@ -110,6 +110,7 @@ namespace smt {
         void setup_lra_arith();
         void setup_fpa();
         void setup_str_noodler();
+        void seq_fallback_from_noodler();
         void setup_relevancy(static_features& st);
 
     public:

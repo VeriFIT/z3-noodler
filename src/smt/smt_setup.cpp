@@ -591,15 +591,16 @@ namespace smt {
             ptr_vector<expr> fmls;
             m_context.get_asserted_formulas(fmls);
             st.collect(fmls.size(), fmls.data());
-            if (st.m_has_seq_non_str)
+            if (st.m_has_seq_non_str) {
+                seq_fallback_from_noodler();
                 setup_seq();
-            else
+            } else {
                 setup_str_noodler();
+            }
         }
         else if (m_params.m_string_solver == "auto") {
             setup_unknown();
         }
- 
         else if (m_params.m_string_solver == "empty") {
             setup_seq();
         }
@@ -785,10 +786,12 @@ namespace smt {
             // theory_str_noodler only supports the String sort; fall back to Z3's
             // built-in sequence theory for problems using generic (non-String)
             // sequence sorts, e.g. (Seq Int) (see comment in setup_QF_S()).
-            if (st.m_has_seq_non_str)
+            if (st.m_has_seq_non_str) {
+                seq_fallback_from_noodler();
                 setup_seq();
-            else
+            } else {
                 setup_str_noodler();
+            }
         }
         else if (m_params.m_string_solver == "none") {
             // don't register any solver.
@@ -817,6 +820,20 @@ namespace smt {
 
     void setup::setup_str_noodler() {
         m_context.register_plugin(alloc(noodler::theory_str_noodler, m_context, m_manager, m_params));
+    }
+
+    // Called instead of setup_str_noodler() when smt.string_solver=noodler was requested but we fall
+    // back to theory_seq (see the has_seq_non_str fallback in setup_seq_str()/setup_QF_S()).
+    // seq_rewriter::is_noodler() is threaded in via params_ref (see asserted_formulas::set_eliminate_and(),
+    // which derives it from m_params.m_string_solver), so downstream code that reads m_params.m_string_solver
+    // needs to see "seq" from this point on, not the originally requested "noodler". This also has to
+    // explicitly refresh m_context.get_rewriter(): that rewriter's params are set once, in the context
+    // constructor, before this fallback decision could possibly be known, and are never re-synced afterwards.
+    void setup::seq_fallback_from_noodler() {
+        m_params.m_string_solver = symbol("seq");
+        params_ref p;
+        p.set_bool("is_noodler", false);
+        m_context.get_rewriter().updt_params(p);
     }
 
     void setup::setup_seq() {
