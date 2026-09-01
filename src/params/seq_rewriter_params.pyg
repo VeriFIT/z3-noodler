@@ -1,5 +1,4 @@
 def_module_params(module_name='rewriter',
                   class_name='seq_rewriter_params',
                   export=True,
-                  params=(("coalesce_chars", BOOL, True, "coalesce characters into strings"),
-                          ("is_noodler", BOOL, False, "seq_rewriter is backing Z3-Noodler's string theory; disables/enables rewrite rules accordingly")))
+                  params=(("coalesce_chars", BOOL, True, "coalesce characters into strings"),))

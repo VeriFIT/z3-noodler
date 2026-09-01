@@ -31,9 +31,6 @@ namespace smt::noodler {
         m_length(m),
         axiomatized_instances(),
         sat_length_formula(m)  {
-        params_ref p;
-        p.set_bool("is_noodler", true);
-        m_rewrite.updt_params(p);
     }
 
     void theory_str_noodler::display(std::ostream &os) const {
