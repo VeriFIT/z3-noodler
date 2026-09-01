@@ -4125,8 +4125,8 @@ bool seq_rewriter::try_collapse_re_union(expr* a, expr* b, expr_ref& result) {
     sort* seq_sort = nullptr;
     if (!u().is_re(a->get_sort(), seq_sort))
         return false;
+    if (is_noodler()) { return false; } // disable handling of ranges for noodler, it causes alphabet blowup
     seq::range_predicate pa(u().max_char()), pb(u().max_char());
-    if (!is_noodler()) { return false; } // disable handling of ranges, it causes alphabet blowup
     if (!seq::regex_to_range_predicate(u(), a, pa))
         return false;
     if (!seq::regex_to_range_predicate(u(), b, pb))
@@ -4139,8 +4139,8 @@ bool seq_rewriter::try_collapse_re_inter(expr* a, expr* b, expr_ref& result) {
     sort* seq_sort = nullptr;
     if (!u().is_re(a->get_sort(), seq_sort))
         return false;
+    if (is_noodler()) { return false; } // disable handling of ranges for noodler, it causes alphabet blowup
     seq::range_predicate pa(u().max_char()), pb(u().max_char());
-    if (!is_noodler()) { return false; } // disable handling of ranges, it causes alphabet blowup
     if (!seq::regex_to_range_predicate(u(), a, pa))
         return false;
     if (!seq::regex_to_range_predicate(u(), b, pb))
@@ -5017,7 +5017,7 @@ br_status seq_rewriter::mk_eq_core(expr * l, expr * r, expr_ref & result) {
     if (reduce_eq_empty(l, r, result)) 
         return BR_REWRITE_FULL;
 
-    if (!is_noodler()) { // we do not use the replace_all(x, a, b) rewriting stuff in mk_str_in_regexp, so this is not needed
+    if (!is_noodler()) { // we do not use the replace_all(x, a, b) rewriting stuff in mk_str_in_regexp for noodler, so this is not needed
     // a, b are unit-length ground strings => replace_all(x, a, b) in re.to_re(s)
     {
         expr *ra_x = nullptr, *ra_a = nullptr, *ra_b = nullptr;
