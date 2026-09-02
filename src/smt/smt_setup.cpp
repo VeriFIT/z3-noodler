@@ -591,10 +591,11 @@ namespace smt {
             ptr_vector<expr> fmls;
             m_context.get_asserted_formulas(fmls);
             st.collect(fmls.size(), fmls.data());
-            if (st.m_has_seq_non_str)
+            if (st.m_has_seq_non_str) {
                 setup_seq();
-            else
+            } else {
                 setup_str_noodler();
+            }
         }
         else if (m_params.m_string_solver == "auto") {
             setup_unknown();
@@ -785,10 +786,11 @@ namespace smt {
             // theory_str_noodler only supports the String sort; fall back to Z3's
             // built-in sequence theory for problems using generic (non-String)
             // sequence sorts, e.g. (Seq Int) (see comment in setup_QF_S()).
-            if (st.m_has_seq_non_str)
+            if (st.m_has_seq_non_str) {
                 setup_seq();
-            else
+            } else {
                 setup_str_noodler();
+            }
         }
         else if (m_params.m_string_solver == "none") {
             // don't register any solver.

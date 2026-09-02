@@ -91,6 +91,8 @@ class seq_rewriter {
     unsigned       m_re_deriv_depth { 0 };
     static const unsigned m_max_re_deriv_depth = 512;
 
+    // TODO: this function should return false when the Z3 seq solver is used instead of noodler
+    // I am unable to find a way to reliably implement this, see also reverted commits in PR https://github.com/VeriFIT/z3-noodler/pull/425
     bool is_noodler() { return true; }
 
     enum length_comparison {
