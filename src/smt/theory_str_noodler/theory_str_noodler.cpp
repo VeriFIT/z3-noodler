@@ -1266,6 +1266,7 @@ namespace smt::noodler {
         if (zstring str_a; m_util_s.str.is_string(a, str_a) && str_a.length() == 1) {
             // s = emp -> v = t."A"
             // NOTE: we add it twice in different forms because Z3 for some reason ignores one of them sometimes, see https://github.com/VeriFIT/z3-noodler/pull/236
+            // NOTE: the reason is that the disequations is not marked as relevant if ~s_emp is used, this is a potentional bug in other uses of add_axiom, see also https://github.com/VeriFIT/z3-noodler/pull/410
             add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
             add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, eps))), mk_eq(v, mk_concat(t, a), false)});
             // s = a -> v = t
