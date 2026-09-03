@@ -405,6 +405,34 @@ namespace smt::noodler {
         this->axiomatized_len_axioms.push_back(ln);
     }
 
+    /**
+     * @brief This function is called whenever a new string function/term is used in solving.
+     * 
+     * In this function we do "axiomatization". We replace more complex terms (such as str.substr, str.at, etc)
+     * into simpler ones (eqs, diseqs, regexes...). For this we use the handle_* functions. It is assumed that
+     * we do these axiomatizations on level 0 and we use axiomatized_persist_terms to mark already handled functions.
+     * The main "rules" how to write handle_* functions:
+     *   - use mk_literal to create literals from expression
+     *   - use add_axiom({lit1, lit2, ...}) to add new axioms (disjunctions)
+     *      - we usually encode implications with this
+     *      - example: (X && Y && Z) -> (A && B) should be encoded by two calls:
+     *         - add_axiom({~X, ~Y, ~Z, A})
+     *         - add_axiom({~X. ~Y, ~Z, B})
+     *   - for equations, either use mk_eq(right, left, false) to directly create literal for the equation or mk_eq_atom(left, right)
+     *      - these functions swap the sides based on their IDs, so the same equation is always the same even if we swap left with right
+     *      - never use m.mk_eq(left, right), as this function does not do swapping
+     *   - when you have a string equation and you create negated literal, it is probably better to use m.mk_literal(m.mk_not(mk_eq_atom(left, right)))
+     *      - this is because there is some problem with relevancy of disequations, see TODOs in handle_replace and https://github.com/VeriFIT/z3-noodler/pull/410
+     *      - this is actually not done everywhere right now, could be a problem
+     *      - TODO: investigate whether it is a problem,
+     * 
+     * Note that for boolean returning functions (str.prefix, str.suffix, str.contains, ...) we also get them in assign_eh
+     * where their assigned boolean value is given in the current SAT solution. For all other than negated contains, we fully
+     * axiomatize them here, so their value is ignored in assign_eh. For negated contains (a general case) we have to solve it
+     * within final_check.
+     * 
+     * @param n The newly relevant string function/term.
+     */
     void theory_str_noodler::relevant_eh(expr *const n) {
         STRACE(str, tout << "relevant: " << mk_pp(n, get_manager()) << " with family id " << to_app(n)->get_family_id() << ", sort " << n->get_sort()->get_name() << " and decl kind " << to_app(n)->get_decl_kind() << std::endl;);
 
