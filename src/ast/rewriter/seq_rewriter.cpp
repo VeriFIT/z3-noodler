@@ -2407,6 +2407,12 @@ br_status seq_rewriter::mk_seq_prefix(expr* a, expr* b, expr_ref& result) {
         return BR_DONE;
     }
 
+    // (str.prefix X (str.substr s m n)) --> (str.at s m) == X if |X|=1 and n>=1
+    zstring a_str; rational sub_len_val;
+    if(expr * sub_str = nullptr, *sub_ind = nullptr, *sub_len = nullptr; str().is_string(a, a_str) && a_str.length() == 1 && str().is_extract(b, sub_str, sub_ind, sub_len) && m_autil.is_numeral(sub_len, sub_len_val) && sub_len_val >= 1) {
+        result = m().mk_eq(str().mk_at(sub_str, sub_ind), a);
+        return BR_REWRITE2;
+    }
 
     auto [bounded_b, len_b] = max_length(b);
     if (bounded_b) {
