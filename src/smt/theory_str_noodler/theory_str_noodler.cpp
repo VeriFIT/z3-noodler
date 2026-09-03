@@ -2064,7 +2064,6 @@ namespace smt::noodler {
             add_axiom({mk_eq(ind, m_util_a.mk_int(-1), false), mk_literal(e) });
             return;
         // if constains is of the form (str.constains strX (str.at ...)) rewrite to a regular constaint ((str.at ...) \in union of chars of strX)
-        // TODO: move to the rewriter
         } else if (m_util_s.str.is_at(y) && m_util_s.str.is_string(x, str) && str.length() > 0) {
             expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_string("")), m);
             for(size_t i = 0; i < str.length(); i++) {
