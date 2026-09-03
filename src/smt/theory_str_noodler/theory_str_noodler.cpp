@@ -569,7 +569,7 @@ namespace smt::noodler {
             if (!is_true) {
                 assign_not_contains(e);
             }
-        } else if(m_util_s.str.is_le(e) || m_util_s.str.is_lt(e)) {
+        } else if(m_util_s.str.is_le(e) || m_util_s.str.is_lt(e) || m_util_s.str.is_is_digit(e)) {
             // handled in relevant_eh
         } else if (m_util_s.str.is_in_re(e)) {
             // regexes are not axiomatized. We store them to be solved later in final_check
