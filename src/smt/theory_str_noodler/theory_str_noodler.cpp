@@ -2110,6 +2110,9 @@ namespace smt::noodler {
      * @param e contains term.
      */
     void theory_str_noodler::handle_not_contains(expr *e) {
+        if(axiomatized_persist_terms.contains(m.mk_not(e))) { return; }
+        axiomatized_persist_terms.insert(m.mk_not(e));
+
         STRACE(str, tout  << "handle not(contains) " << mk_pp(e, m) << std::endl;);
 
         expr* cont = this->m.mk_not(e);
@@ -2151,8 +2154,8 @@ namespace smt::noodler {
         VERIFY(m_util_s.str.is_contains(e, x, y));
 
         zstring s;
-        // not(contains) was not axiomatized in handle_not_contains
         if(!m_util_s.str.is_string(y) && !(m_util_s.str.is_string(x, s) && s.length() <= 10)) {
+            // not(contains) was not axiomatized in handle_not_contains, we need to save it for solving in final_check
             m_not_contains_todo.push_back({{x, m},{y, m}});
         }
     }
