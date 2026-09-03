@@ -572,7 +572,30 @@ namespace smt {
         }
         else if (m_params.m_string_solver == "noodler") {
             setup_arith();
-            setup_str_noodler();
+            // theory_str_noodler only implements the theory of Strings, not the
+            // general theory of sequences (e.g. (Seq Int)). Since only one theory
+            // can be registered per AST family id, and String/Seq share the same
+            // "seq" family id, we cannot register noodler for String terms and
+            // theory_seq for generic Seq terms at the same time within one context.
+            // A per-term/atom dispatcher splitting the two is unsound in general:
+            // a String-sorted term extracted from a generic sequence (e.g.
+            // (seq.at s 0) for s : (Seq String)) can be merged with a plain string
+            // variable, which would require genuine cross-theory equality sharing
+            // between noodler and theory_seq. So whenever the problem uses any
+            // non-String Seq sort, fall back to Z3's built-in theory_seq for the
+            // *entire* seq family (Strings included) -- theory_seq natively
+            // implements the combined theory of Strings and sequences, so this
+            // stays sound and complete, at the cost of losing noodler's
+            // specialized string reasoning for that problem.
+            static_features st(m_manager);
+            ptr_vector<expr> fmls;
+            m_context.get_asserted_formulas(fmls);
+            st.collect(fmls.size(), fmls.data());
+            if (st.m_has_seq_non_str) {
+                setup_seq();
+            } else {
+                setup_str_noodler();
+            }
         }
         else if (m_params.m_string_solver == "auto") {
             setup_unknown();
@@ -760,14 +783,21 @@ namespace smt {
             setup_seq();
         }
         else if (m_params.m_string_solver == "noodler") {
-            setup_str_noodler();
+            // theory_str_noodler only supports the String sort; fall back to Z3's
+            // built-in sequence theory for problems using generic (non-String)
+            // sequence sorts, e.g. (Seq Int) (see comment in setup_QF_S()).
+            if (st.m_has_seq_non_str) {
+                setup_seq();
+            } else {
+                setup_str_noodler();
+            }
         }
         else if (m_params.m_string_solver == "none") {
             // don't register any solver.
         }
-        else if (m_params.m_string_solver == "auto") {            
+        else if (m_params.m_string_solver == "auto") {
                 setup_seq();
-        } 
+        }
         else {
             throw default_exception("invalid parameter for smt.string_solver, valid options are 'seq', 'auto', 'noodler'");
         }
