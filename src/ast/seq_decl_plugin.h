@@ -790,7 +790,7 @@ public:
         expr* mk_loop_proper(expr* r, unsigned lo, unsigned hi);
         app* mk_loop(expr* r, expr* lo);
         app* mk_loop(expr* r, expr* lo, expr* hi);
-        app* mk_empty() { return m.mk_app(m_fid, OP_RAT_EMPTY_SET, 0, nullptr, 0, nullptr, mk_ratrel()); };
+        app* mk_empty() { return m.mk_app(m_fid, OP_RAT_EMPTY_SET, 0, nullptr, 0, nullptr, mk_ratrel()); }
         app* mk_compose(expr* r, expr* s) { return m.mk_app(m_fid, OP_RAT_COMPOSE, r, s); }
         app* mk_invert(expr* r) { return m.mk_app(m_fid, OP_RAT_INVERT, r); }
         app* mk_identity(expr* r) { return m.mk_app(m_fid, OP_RAT_IDENTITY, r); }
@@ -831,7 +831,7 @@ public:
         END_DISABLE_WARNING;
 
         bool is_epsilon(expr const* r) { expr *s, *t; return is_to_rat(r, s, t) && u.str.is_empty(s) && u.str.is_empty(t); }
-        app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); };
+        app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); }
 
         bool is_ground(expr const* r) const;
     };
