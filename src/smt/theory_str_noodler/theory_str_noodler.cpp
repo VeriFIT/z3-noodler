@@ -417,14 +417,14 @@ namespace smt::noodler {
      *      - we usually encode implications with this
      *      - example: (X && Y && Z) -> (A && B) should be encoded by two calls:
      *         - add_axiom({~X, ~Y, ~Z, A})
-     *         - add_axiom({~X. ~Y, ~Z, B})
+     *         - add_axiom({~X, ~Y, ~Z, B})
      *   - for equations, either use mk_eq(right, left, false) to directly create literal for the equation or mk_eq_atom(left, right)
      *      - these functions swap the sides based on their IDs, so the same equation is always the same even if we swap left with right
      *      - never use m.mk_eq(left, right), as this function does not do swapping
      *   - when you have a string equation and you create negated literal, it is probably better to use m.mk_literal(m.mk_not(mk_eq_atom(left, right)))
      *      - this is because there is some problem with relevancy of disequations, see TODOs in handle_replace and https://github.com/VeriFIT/z3-noodler/pull/410
      *      - this is actually not done everywhere right now, could be a problem
-     *      - TODO: investigate whether it is a problem,
+     *      - TODO: investigate whether it is a problem
      * 
      * Note that for boolean returning functions (str.prefix, str.suffix, str.contains, ...) we also get them in assign_eh
      * where their assigned boolean value is given in the current SAT solution. For all other than negated contains, we fully
@@ -1294,7 +1294,7 @@ namespace smt::noodler {
         if (zstring str_a; m_util_s.str.is_string(a, str_a) && str_a.length() == 1) {
             // s = emp -> v = t."A"
             // NOTE: we add it twice in different forms because Z3 for some reason ignores one of them sometimes, see https://github.com/VeriFIT/z3-noodler/pull/236
-            // NOTE: the reason is that the disequations is not marked as relevant if ~s_emp is used, this is a potentional bug in other uses of add_axiom, see also https://github.com/VeriFIT/z3-noodler/pull/410
+            // NOTE: the reason is that the disequation is not marked as relevant if ~s_emp is used, this is a potential bug in other uses of add_axiom, see also https://github.com/VeriFIT/z3-noodler/pull/410
             add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
             add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, eps))), mk_eq(v, mk_concat(t, a), false)});
             // s = a -> v = t
