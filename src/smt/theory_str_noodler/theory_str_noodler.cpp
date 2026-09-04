@@ -405,6 +405,34 @@ namespace smt::noodler {
         this->axiomatized_len_axioms.push_back(ln);
     }
 
+    /**
+     * @brief This function is called whenever a new string function/term is used in solving.
+     * 
+     * In this function we do "axiomatization". We replace more complex terms (such as str.substr, str.at, etc)
+     * into simpler ones (eqs, diseqs, regexes...). For this we use the handle_* functions. It is assumed that
+     * we do these axiomatizations on level 0 and we use axiomatized_persist_terms to mark already handled functions.
+     * The main "rules" how to write handle_* functions:
+     *   - use mk_literal to create literals from expression
+     *   - use add_axiom({lit1, lit2, ...}) to add new axioms (disjunctions)
+     *      - we usually encode implications with this
+     *      - example: (X && Y && Z) -> (A && B) should be encoded by two calls:
+     *         - add_axiom({~X, ~Y, ~Z, A})
+     *         - add_axiom({~X, ~Y, ~Z, B})
+     *   - for equations, either use mk_eq(right, left, false) to directly create literal for the equation or mk_eq_atom(left, right)
+     *      - these functions swap the sides based on their IDs, so the same equation is always the same even if we swap left with right
+     *      - never use m.mk_eq(left, right), as this function does not do swapping
+     *   - when you have a string equation and you create negated literal, it is probably better to use m.mk_literal(m.mk_not(mk_eq_atom(left, right)))
+     *      - this is because there is some problem with relevancy of disequations, see TODOs in handle_replace and https://github.com/VeriFIT/z3-noodler/pull/410
+     *      - this is actually not done everywhere right now, could be a problem
+     *      - TODO: investigate whether it is a problem
+     * 
+     * Note that for boolean returning functions (str.prefix, str.suffix, str.contains, ...) we also get them in assign_eh
+     * where their assigned boolean value is given in the current SAT solution. For all other than negated contains, we fully
+     * axiomatize them here, so their value is ignored in assign_eh. For negated contains (a general case) we have to solve it
+     * within final_check.
+     * 
+     * @param n The newly relevant string function/term.
+     */
     void theory_str_noodler::relevant_eh(expr *const n) {
         STRACE(str, tout << "relevant: " << mk_pp(n, get_manager()) << " with family id " << to_app(n)->get_family_id() << ", sort " << n->get_sort()->get_name() << " and decl kind " << to_app(n)->get_decl_kind() << std::endl;);
 
@@ -541,7 +569,7 @@ namespace smt::noodler {
             if (!is_true) {
                 assign_not_contains(e);
             }
-        } else if(m_util_s.str.is_le(e) || m_util_s.str.is_lt(e)) {
+        } else if(m_util_s.str.is_le(e) || m_util_s.str.is_lt(e) || m_util_s.str.is_is_digit(e)) {
             // handled in relevant_eh
         } else if (m_util_s.str.is_in_re(e)) {
             // regexes are not axiomatized. We store them to be solved later in final_check
@@ -1266,6 +1294,7 @@ namespace smt::noodler {
         if (zstring str_a; m_util_s.str.is_string(a, str_a) && str_a.length() == 1) {
             // s = emp -> v = t."A"
             // NOTE: we add it twice in different forms because Z3 for some reason ignores one of them sometimes, see https://github.com/VeriFIT/z3-noodler/pull/236
+            // NOTE: the reason is that the disequation is not marked as relevant if ~s_emp is used, this is a potential bug in other uses of add_axiom, see also https://github.com/VeriFIT/z3-noodler/pull/410
             add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
             add_axiom({mk_literal(m.mk_not(mk_eq_atom(s, eps))), mk_eq(v, mk_concat(t, a), false)});
             // s = a -> v = t
@@ -1791,7 +1820,6 @@ namespace smt::noodler {
         rational val;
         zstring str;
         // handle the special case of the form (str.prefix "a" (str.substr s 5 2)) --> (str.at s 5) == "a"
-        // TODO: move to the rewriter
         if(m_util_s.str.is_string(x, str) && str.length() == 1 && m_util_s.str.is_extract(y, sub_str, sub_ind, sub_len) && m_util_a.is_numeral(sub_ind) && m_util_a.is_numeral(sub_len, val) && val.get_int32() >= 1) {
             add_axiom({~mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), mk_literal(e) });
             add_axiom({mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), ~mk_literal(e) });
@@ -2052,7 +2080,6 @@ namespace smt::noodler {
             add_axiom({mk_eq(ind, m_util_a.mk_int(-1), false), mk_literal(e) });
             return;
         // if constains is of the form (str.constains strX (str.at ...)) rewrite to a regular constaint ((str.at ...) \in union of chars of strX)
-        // TODO: move to the rewriter
         } else if (m_util_s.str.is_at(y) && m_util_s.str.is_string(x, str) && str.length() > 0) {
             expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_string("")), m);
             for(size_t i = 0; i < str.length(); i++) {
@@ -2081,6 +2108,9 @@ namespace smt::noodler {
      * @param e contains term.
      */
     void theory_str_noodler::handle_not_contains(expr *e) {
+        if(axiomatized_persist_terms.contains(m.mk_not(e))) { return; }
+        axiomatized_persist_terms.insert(m.mk_not(e));
+
         STRACE(str, tout  << "handle not(contains) " << mk_pp(e, m) << std::endl;);
 
         expr* cont = this->m.mk_not(e);
@@ -2122,8 +2152,8 @@ namespace smt::noodler {
         VERIFY(m_util_s.str.is_contains(e, x, y));
 
         zstring s;
-        // not(contains) was not axiomatized in handle_not_contains
         if(!m_util_s.str.is_string(y) && !(m_util_s.str.is_string(x, s) && s.length() <= 10)) {
+            // not(contains) was not axiomatized in handle_not_contains, we need to save it for solving in final_check
             m_not_contains_todo.push_back({{x, m},{y, m}});
         }
     }

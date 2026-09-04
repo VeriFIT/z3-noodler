@@ -720,12 +720,12 @@ public:
         MATCH_UNARY(is_of_pred);
         MATCH_UNARY(is_reverse);
         MATCH_BINARY(is_derivative);
+        MATCH_UNARY(is_from_ecma2020);
         END_DISABLE_WARNING;
         bool is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n, expr*& body, unsigned& lo) const;
         bool is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const;
         bool is_loop(expr const* n, expr*& body, expr*& lo) const;
-        MATCH_UNARY(is_from_ecma2020);
         bool is_from_ecma2020(expr const* n, zstring& pattern) const { expr *s; return is_from_ecma2020(n, s) && u.str.is_string(s, pattern); } 
         unsigned min_length(expr* r) const;
         unsigned max_length(expr* r) const;
@@ -790,7 +790,7 @@ public:
         expr* mk_loop_proper(expr* r, unsigned lo, unsigned hi);
         app* mk_loop(expr* r, expr* lo);
         app* mk_loop(expr* r, expr* lo, expr* hi);
-        app* mk_empty() { return m.mk_app(m_fid, OP_RAT_EMPTY_SET, 0, nullptr, 0, nullptr, mk_ratrel()); };
+        app* mk_empty() { return m.mk_app(m_fid, OP_RAT_EMPTY_SET, 0, nullptr, 0, nullptr, mk_ratrel()); }
         app* mk_compose(expr* r, expr* s) { return m.mk_app(m_fid, OP_RAT_COMPOSE, r, s); }
         app* mk_invert(expr* r) { return m.mk_app(m_fid, OP_RAT_INVERT, r); }
         app* mk_identity(expr* r) { return m.mk_app(m_fid, OP_RAT_IDENTITY, r); }
@@ -816,6 +816,7 @@ public:
         bool is_left_extend(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_LEFT_EXTEND); }
         bool is_right_extend(expr const* n)    const { return is_app_of(n, m_fid, OP_RAT_RIGHT_EXTEND); }
 
+        START_DISABLE_EXTRA_SEMI_WARNING;
         MATCH_BINARY(is_to_rat);
         MATCH_BINARY(is_concat);
         MATCH_BINARY(is_union);
@@ -827,9 +828,10 @@ public:
         MATCH_UNARY(is_identity);
         MATCH_UNARY(is_left_extend);
         MATCH_UNARY(is_right_extend);
+        END_DISABLE_WARNING;
 
         bool is_epsilon(expr const* r) { expr *s, *t; return is_to_rat(r, s, t) && u.str.is_empty(s) && u.str.is_empty(t); }
-        app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); };
+        app* mk_epsilon() { return mk_to_rat(u.str.mk_empty(u.mk_string_sort()), u.str.mk_empty(u.mk_string_sort())); }
 
         bool is_ground(expr const* r) const;
     };

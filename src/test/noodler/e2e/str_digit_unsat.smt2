@@ -1,0 +1,6 @@
+(set-info :status unsat)
+(set-logic QF_SLIA)
+(declare-fun x () Int)
+(assert (and (<= x 45) (<= 12 x)))
+(assert (str.is_digit (str.from_code x)))
+(check-sat)
