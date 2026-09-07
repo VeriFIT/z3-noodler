@@ -1269,14 +1269,7 @@ namespace smt::noodler {
         sat_length_formula = length_formula;
 
         if (m_params.m_produce_models) {
-            if(this->input_has_quantifiers || expr_cases::has_quantifier(length_formula, m)) {
-                // for the quantified formulae, we must avoid add_axiom as 
-                // adding axioms leads to unknown immediately (fails in the internalization). Probably add_axiom interferes with quantifier instantiation.
-                ctx.assert_expr(sat_length_formula);
-                ctx.internalize_assertions();
-            } else {
-                add_axiom(sat_length_formula);
-            }
+            add_axiom(sat_length_formula);
         }
     }
 
