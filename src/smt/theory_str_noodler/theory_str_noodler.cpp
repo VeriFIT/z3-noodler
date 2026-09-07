@@ -421,7 +421,7 @@ namespace smt::noodler {
      *   - for equations, either use mk_eq(right, left, false) to directly create literal for the equation or mk_eq_atom(left, right)
      *      - these functions swap the sides based on their IDs, so the same equation is always the same even if we swap left with right
      *      - never use m.mk_eq(left, right), as this function does not do swapping
-     *   - when you have a string equation and you create negated literal, it is probably better to use m.mk_literal(m.mk_not(mk_eq_atom(left, right)))
+     *   - when you have a string equation and you create negated literal, it is probably better to use mk_literal(m.mk_not(mk_eq_atom(left, right)))
      *      - this is because there is some problem with relevancy of disequations, see TODOs in handle_replace and https://github.com/VeriFIT/z3-noodler/pull/410
      *      - this is actually not done everywhere right now, could be a problem
      *      - TODO: investigate whether it is a problem
