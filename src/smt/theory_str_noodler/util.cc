@@ -101,6 +101,13 @@ namespace smt::noodler::util {
         return m_util_s.str.is_length(ex) || m_util_s.str.is_to_code(ex) || m_util_s.str.is_stoi(ex) || m_util_s.str.is_stor(ex);
     }
 
+    BasicTerm get_length_var_basic_term(expr* lhs, const seq_util& m_util_s) {
+        if (is_arith_str_func(lhs, m_util_s)) {
+            return get_variable_basic_term(to_app(lhs)->get_arg(0));
+        }
+        return get_variable_basic_term(lhs);
+    }
+
     expr* replace_arith_str_funcs(expr* ex, ast_manager& m, seq_util& m_util_s,
                                   const obj_map<expr, expr*>& predicate_replace,
                                   obj_map<expr, expr*>& fresh_vars,

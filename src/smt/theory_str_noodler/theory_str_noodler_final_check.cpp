@@ -1,5 +1,6 @@
 #include <mata/nfa/builder.hh>
 #include <memory>
+#include "ast/ast_util.h"
 #include "formula.h"
 #include "smt/theory_str_noodler/theory_str_noodler.h"
 #include "smt/theory_str_noodler/expr_solver.h"
@@ -880,9 +881,44 @@ namespace smt::noodler {
             *unsat_core = m.mk_and(*unsat_core, solver_core);
         }
         if (model_formula != nullptr) {
-            *model_formula = solver->get_model();
+            *model_formula = filter_model_formula_to_length_vars(solver->get_model());
         }
         return ret;
+    }
+
+    expr_ref theory_str_noodler::filter_model_formula_to_length_vars(expr_ref model_formula) {
+        if (m.is_true(model_formula)) {
+            return model_formula;
+        }
+
+        // the set of variables dec_proc actually needs (the length of) to build the model of some relevant
+        // string variable -- see noodler_var_value_proc in theory_str_noodler_model.cpp, which queries
+        // dec_proc->get_len_vars_for_model the exact same way when it is time to construct the real model.
+        // Every implementation of get_len_vars_for_model we have either ignores its argument and returns the
+        // same (decision-procedure-wide) set every time, or (UnaryDecisionProcedure, where each variable's
+        // model depends only on its own length) genuinely needs to be queried per variable, so we query it
+        // once per relevant_vars to cover both cases.
+        std::unordered_set<BasicTerm> needed_vars;
+        if (this->dec_proc) {
+            for (const BasicTerm& var : this->relevant_vars) {
+                for (const BasicTerm& needed : this->dec_proc->get_len_vars_for_model(var)) {
+                    needed_vars.insert(needed);
+                }
+            }
+        }
+
+        expr_ref_vector conjuncts(m);
+        flatten_and(model_formula.get(), conjuncts);
+        expr_ref_vector kept(m);
+        for (expr* conj : conjuncts) {
+            expr *lhs, *rhs;
+            if (m.is_eq(conj, lhs, rhs) && needed_vars.contains(util::get_length_var_basic_term(lhs, m_util_s))) {
+                kept.push_back(conj);
+            } else {
+                STRACE(str_sat_handling, tout << "Dropping non-length-sensitive model entry: " << mk_pp(conj, m) << std::endl;);
+            }
+        }
+        return expr_ref(mk_and(kept), m);
     }
 
     expr_ref theory_str_noodler::construct_refinement() {
