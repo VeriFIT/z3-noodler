@@ -101,6 +101,19 @@ namespace smt::noodler::util {
     void get_len_exprs(expr* ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res);
 
     /**
+     * @brief Recover the Noodler BasicTerm that a length-model entry's variable @p lhs stands for.
+     *
+     * @p lhs is either a str.len/str.to_code/str.stoi/str.stor application (canonical_of_fresh already
+     * resolved a fresh external-solver constant back to it, see replace_arith_str_funcs) -- in which case
+     * the relevant variable is its string argument -- or some other 0-ary constant/skolem (e.g. an
+     * internal LIA helper like the align/k variables created only for one check_len_sat call) -- in which
+     * case the constant itself, identified by its own name, is the relevant "variable". Used to decide
+     * whether a given length-model entry is about a variable Noodler actually tracks as length-sensitive
+     * (see theory_str_noodler::get_init_length_vars) before permanently asserting it.
+     */
+    BasicTerm get_length_var_basic_term(expr* lhs, const seq_util& m_util_s);
+
+    /**
      * @brief Checks whether @p ex is one of the string-argument/arithmetic-result functions whose model
      * value we need to read directly out of an (external) arithmetic solver: str.len, str.to_code,
      * str.stoi (str.to_int) and str.stor (str.to_real).
