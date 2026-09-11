@@ -1684,6 +1684,12 @@ namespace smt::noodler {
                 needed_vars.push_back(var);
             }
         }
+        // the number_var of each conversion (e.g. the "x" in "str.from_code(x)"/"str.to_int(s)") is a genuine
+        // int/real problem variable, not a string variable's length -- it has no automaton of its own, so unlike
+        // a string variable's model it cannot be reconstructed some other way if we do not keep its value here.
+        for (const TermConversion& conv : conversion_handler.get_conversions()) {
+            needed_vars.push_back(conv.number_var);
+        }
         return needed_vars;
     }
 
