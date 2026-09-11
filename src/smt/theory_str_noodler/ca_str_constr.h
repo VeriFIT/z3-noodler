@@ -179,9 +179,9 @@ namespace smt::noodler::ca {
 
         const std::vector<Predicate>& get_underlying_predicates() const {
             return this->predicates;
-        };
+        }
 
-        const size_t get_copy_cnt() const {
+        size_t get_copy_cnt() const {
             return 2*this->predicates.size() + 1;
         }
 

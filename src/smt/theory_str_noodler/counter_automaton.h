@@ -162,10 +162,6 @@ namespace smt::noodler::ca {
                                    << ", " << this->copy_idx << ">";
                     return string_builder.str();
                 }
-                default: {
-                    assert(false);
-                    return "??";
-                }
             }
         }
 

@@ -430,7 +430,7 @@ namespace smt::noodler {
             }
             STRACE(str_model_res, tout << "Model for " << var << ": " << computed_model << std::endl);
             return computed_model;
-        };
+        }
 
     public:
 

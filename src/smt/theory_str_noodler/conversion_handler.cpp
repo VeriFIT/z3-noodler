@@ -200,8 +200,6 @@ void ConversionHandler::initialize_solution(SolvingState solution) {
                 }
                 break;
             }
-            default:
-                UNREACHABLE();
         }
     }
 
@@ -975,8 +973,6 @@ std::pair<LenNode, LenNodePrecision> ConversionHandler::get_formula_encoding_con
                 result.succ.push_back(get_formula_for_int_real_conversion(conv));
                 break;
             }
-            default:
-                UNREACHABLE();
         }
     }
 

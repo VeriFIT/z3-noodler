@@ -175,7 +175,7 @@ namespace smt::noodler {
      */
     void FormulaVar::clean_varmap() {
         remove_if(this->varmap, [](const auto& n) { return n.second.size() == 0; });
-    };
+    }
 
     /**
      * @brief Remove predicate from the formula. Updates the variable map (if the variable is no further present in
@@ -271,7 +271,7 @@ namespace smt::noodler {
         for(size_t id : rem_ids) {
             remove_predicate(id);
         }
-    };
+    }
 
     /**
      * @brief Update automata assignment of @p var. If var exists in the aut assignment, we set

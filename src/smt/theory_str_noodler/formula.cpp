@@ -59,8 +59,6 @@ namespace smt::noodler {
 
                 return;
             }
-            default:
-                UNREACHABLE();
         }
     }
 
@@ -142,8 +140,6 @@ namespace smt::noodler {
                 LenNode new_child = substitute_free_vars_for_int_values_rec(node.succ.at(1), substitution);
                 return LenNode(node.type, {node.succ.at(0), new_child});
             }
-            default:
-                UNREACHABLE();
         }
 
         return LenNode(0);
@@ -203,9 +199,6 @@ namespace smt::noodler {
                 break;
             case EquationSideType::Right:
                 side_terms = get_right_side();
-                break;
-            default:
-                throw std::runtime_error("unhandled equation side_terms type");
                 break;
         }
 
@@ -307,9 +300,6 @@ namespace smt::noodler {
             case EquationSideType::Right:
                 return params[1];
                 break;
-            default:
-                throw std::runtime_error("unhandled equation side type");
-                break;
         }
     }
 
@@ -321,9 +311,6 @@ namespace smt::noodler {
                 break;
             case EquationSideType::Right:
                 return params[1];
-                break;
-            default:
-                throw std::runtime_error("unhandled equation side type");
                 break;
         }
     }
@@ -564,10 +551,6 @@ namespace smt::noodler {
         case LenFormulaType::FALSE: {
             return expr_ref(manager.mk_false(), manager);
         }
-
-        default:
-            util::throw_error("Unexpected length formula type");
-            return {{}, manager};
         }
     }
 } // Namespace smt::noodler.
