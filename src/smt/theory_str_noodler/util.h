@@ -27,6 +27,8 @@
 
 // FIXME most if not all these functions should probably be in theory_str_noodler
 
+namespace smt { class context; }
+
 namespace smt::noodler::util {
     using expr_pair = std::pair<expr_ref, expr_ref>;
     using expr_pair_flag = std::tuple<expr_ref, expr_ref, bool>;
@@ -138,6 +140,23 @@ namespace smt::noodler::util {
                                   obj_map<expr, expr*>& canonical_of_fresh,
                                   obj_map<expr, expr*>& memo,
                                   expr_ref_vector& pinned);
+
+    /**
+     * @brief Reconstruct every clause @p ctx currently holds (both theory axioms/lemmas added along the
+     * way, e.g. `theory_str_noodler::add_axiom`, and clauses learned from conflicts) as a disjunction of
+     * literal expressions, appending one expression per clause to @p result.
+     *
+     * `context::get_asserted_formula()` only exposes the original top-level assertions, and
+     * `context::get_assignments()` only exposes literals that already have a concrete truth value --
+     * neither includes clauses that still have undecided literals (e.g. a semantic axiom for
+     * str.substr/str.indexof relating a proxy variable to a real problem variable, where the guard
+     * conditions are not decided yet). Without those clauses, an external solver checking length
+     * satisfiability can pick a witness value for a proxy variable that looks fine in isolation but is
+     * only consistent as long as some as-yet-undecided literal keeps a particular value -- and once that
+     * literal is later decided the other way, the (by then permanently asserted) witness becomes
+     * inconsistent. Handing over the actual clauses lets the external solver account for that up front.
+     */
+    void get_context_clauses(context& ctx, ast_manager& m, expr_ref_vector& result);
 
     /// @brief Create a noodler (BasicTerm) variable with a given @p name representing an internal variable (should not clash with user-defined variables)
     inline BasicTerm mk_internal_noodler_var(const zstring& name) {

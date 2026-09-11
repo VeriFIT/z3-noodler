@@ -138,6 +138,17 @@ namespace smt::noodler {
                             assert_expr(e);
                         }
                     }
+                    // Assigns/get_asserted_formula only expose the original assertions and literals that
+                    // already have a concrete truth value. Clauses with still-undecided literals (e.g. a
+                    // semantic axiom for str.substr/str.indexof relating a proxy variable to a real problem
+                    // variable, guarded by not-yet-decided bound checks) are otherwise invisible here, so
+                    // include them too -- see util::get_context_clauses.
+                    expr_ref_vector context_clauses(m);
+                    util::get_context_clauses(ctx, m, context_clauses);
+                    for (expr* cl : context_clauses) {
+                        STRACE(str_lia, tout << "check_sat context from clause: " << mk_pp(cl, m) << std::endl);
+                        assert_expr(cl);
+                    }
                 }
             }
         }

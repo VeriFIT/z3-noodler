@@ -1288,6 +1288,7 @@ namespace smt::noodler {
     void theory_str_noodler::sat_handling(expr_ref model_formula) {
         last_run_was_sat = true;
         m_rewrite(model_formula);
+        STRACE(str_sat_handling, tout << "Model formula " << mk_pp(model_formula, m) << std::endl;);
         add_axiom(model_formula);
         scope_with_last_run_was_sat = m_scope_level;
     }
