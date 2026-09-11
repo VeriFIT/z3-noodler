@@ -169,6 +169,24 @@ namespace smt::noodler::util {
         return result;
     }
 
+    void get_context_clauses(context& ctx, ast_manager& m, expr_ref_vector& result) {
+        auto collect = [&](const clause_vector& clauses) {
+            for (clause* c : clauses) {
+                unsigned num_lits = c->get_num_literals();
+                if (num_lits == 0) {
+                    continue;
+                }
+                expr_ref_vector lits(m);
+                for (unsigned i = 0; i < num_lits; ++i) {
+                    lits.push_back(ctx.literal2expr(c->get_literal(i)));
+                }
+                result.push_back(lits.size() == 1 ? lits.get(0) : m.mk_or(lits.size(), lits.data()));
+            }
+        };
+        collect(ctx.get_lemmas());
+        collect(ctx.get_aux_clauses());
+    }
+
     bool split_word_to_automata(const zstring& word, const std::vector<std::shared_ptr<mata::nfa::Nfa>>& automata, std::vector<zstring>& words) {
         STRACE(str_split_word_to_automata,
             tout << "split_word_to_automata with word:\n" << word << "\n";
