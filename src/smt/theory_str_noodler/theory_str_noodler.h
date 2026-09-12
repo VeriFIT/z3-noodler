@@ -110,6 +110,15 @@ namespace smt::noodler {
         obj_hashtable<expr> axiomatized_persist_terms;
         obj_hashtable<expr> propagated_string_theory; // expressions that were already processed by string_theory_propagation (to avoid looping)
         obj_hashtable<expr> m_has_length;          // is length applied
+        // Fresh string/int variables created by mk_str_var_fresh()/mk_int_var_fresh(), used to axiomatize
+        // derived string functions (str.at, str.substr, str.indexof, str.contains, ...). Tracked explicitly
+        // (rather than e.g. by name, since the "@" prefix is merely the SMT-LIB-reserved marker for
+        // internal use and is not unique to Noodler -- other theories can create skolems named "@..." too)
+        // so that remove_irrelevant_constr() can tell apart (dis)equations that only relate our own helper
+        // variables to their definitions (redundant with the axioms that introduced them, safe to drop
+        // when irrelevant) from facts genuinely generated elsewhere (e.g. by the array theory's
+        // extensionality axiom), which have no other representation and must not be dropped.
+        obj_hashtable<expr> m_noodler_internal_vars;
         expr_ref_vector     m_length;             // length applications themselves
         std::vector<std::pair<expr_ref, stored_instance>> axiomatized_instances;
 
@@ -257,9 +266,10 @@ namespace smt::noodler {
         expr_ref mk_int_var_fresh(const std::string& name) {
             // according to SMT-LIB standard, variable names starting with '@' are reserved for internal use
             app* fresh_var = m.mk_fresh_const("@" + name, m_util_a.mk_int(), true); // need to be skolem, because it seems they are not printed for models
+            m_noodler_internal_vars.insert(fresh_var);
             return expr_ref(fresh_var, m);
         }
-        
+
         /**
          * @brief Create a fresh Z3 string variable with a given @p name followed by a unique suffix.
          *
@@ -268,6 +278,7 @@ namespace smt::noodler {
         expr_ref mk_str_var_fresh(const std::string& name) {
             // according to SMT-LIB standard, variable names starting with '@' are reserved for internal use
             app* fresh_var = m.mk_fresh_const("@" + name, m_util_s.mk_string_sort(), true); // need to be skolem, because it seems they are not printed for models
+            m_noodler_internal_vars.insert(fresh_var);
             return expr_ref(fresh_var, m);
         }
 
@@ -416,6 +427,18 @@ namespace smt::noodler {
          * @brief Adds string constraints from *_todo that are relevant for SAT checking to *_todo_rel.
          */
         void remove_irrelevant_constr();
+
+        /**
+         * @brief Check if @p e contains (anywhere, recursively) a variable from m_noodler_internal_vars,
+         * i.e. one of our own helper variables created by mk_str_var_fresh()/mk_int_var_fresh() to
+         * axiomatize derived string functions (str.at, str.substr, str.indexof, str.contains, ...).
+         *
+         * A (dis)equation/membership relating only such helper variables to their definitions is redundant
+         * with the axioms that introduced them, so it is safe (and, for performance, necessary) to drop it
+         * when Z3 considers it irrelevant -- unlike facts generated internally by other theories (e.g.
+         * array extensionality), which have no other representation.
+         */
+        bool contains_noodler_internal_var(expr* e) const;
 
         /**
         Convert (dis)equation @p ex to the instance of Predicate. As a side effect updates mapping of

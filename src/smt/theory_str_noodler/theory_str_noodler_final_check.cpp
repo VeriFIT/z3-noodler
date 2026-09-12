@@ -390,6 +390,22 @@ namespace smt::noodler {
         }
     }
 
+    bool theory_str_noodler::contains_noodler_internal_var(expr* e) const {
+        if (!is_app(e)) {
+            return false;
+        }
+        if (m_noodler_internal_vars.contains(e)) {
+            return true;
+        }
+        app* a = to_app(e);
+        for (unsigned i = 0; i < a->get_num_args(); ++i) {
+            if (contains_noodler_internal_var(a->get_arg(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void theory_str_noodler::remove_irrelevant_constr() {
         STRACE(str, tout << "Remove irrevelant" << std::endl);
 
@@ -414,9 +430,14 @@ namespace smt::noodler {
             // (relevancy is just a laziness heuristic of Z3's core and does not guarantee that a
             // constraint that is already decided true/false can be safely ignored, e.g. disequations
             // generated internally by the array theory's extensionality axiom are never marked
-            // relevant even though they are asserted true) and...
+            // relevant even though they are asserted true). We only fall back to the assignment for
+            // equations that do not just relate Noodler's own helper variables to their definitions,
+            // as those are redundant with the axioms that introduced them and including them anyway
+            // (they are almost always already-decided) causes a massive, needless blowup of the
+            // instance passed to the decision procedure. and...
             if((ctx.is_relevant(eq.get()) || ctx.is_relevant(eq_rev.get()) ||
-                ctx.find_assignment(eq.get()) != l_undef || ctx.find_assignment(eq_rev.get()) != l_undef) &&
+                ((ctx.find_assignment(eq.get()) != l_undef || ctx.find_assignment(eq_rev.get()) != l_undef) &&
+                 !contains_noodler_internal_var(we.first) && !contains_noodler_internal_var(we.second))) &&
                // ...neither equation nor its reverse are saved as relevant yet
                !this->m_word_eq_todo_rel.contains(we) && !this->m_word_eq_todo_rel.contains({we.second, we.first})
                ) {
@@ -436,9 +457,11 @@ namespace smt::noodler {
             );
 
             // check if disequation or its reverse are relevant, or already assigned a truth value
-            // (see comment above the equation case for why this is needed) and...
+            // (see comment above the equation case for why this is needed, and why we exclude
+            // disequations between Noodler's own helper variables) and...
             if((ctx.is_relevant(dis.get()) || ctx.is_relevant(dis_rev.get()) ||
-                ctx.find_assignment(dis.get()) != l_undef || ctx.find_assignment(dis_rev.get()) != l_undef) &&
+                ((ctx.find_assignment(dis.get()) != l_undef || ctx.find_assignment(dis_rev.get()) != l_undef) &&
+                 !contains_noodler_internal_var(wd.first) && !contains_noodler_internal_var(wd.second))) &&
                // ...neither disequation nor its reverse are saved as relevant yet
                !this->m_word_diseq_todo_rel.contains(wd) && !this->m_word_diseq_todo_rel.contains({wd.second, wd.first})
                ) {
@@ -465,7 +488,8 @@ namespace smt::noodler {
             // check if membership (or if we have negation, its negated form) is relevant, or already
             // assigned a truth value (see comment above the equation case) and...
             if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get()) ||
-                ctx.find_assignment(memb_app.get()) != l_undef || ctx.find_assignment(memb_app_orig.get()) != l_undef) &&
+                ((ctx.find_assignment(memb_app.get()) != l_undef || ctx.find_assignment(memb_app_orig.get()) != l_undef) &&
+                 !contains_noodler_internal_var(std::get<0>(memb)))) &&
                // this membership constraint is not added to relevant yet
                !this->m_membership_todo_rel.contains(memb)
                ) {
@@ -490,7 +514,8 @@ namespace smt::noodler {
             // check if membership (or if we have negation, its negated form) is relevant, or already
             // assigned a truth value (see comment above the equation case) and...
             if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get()) ||
-                ctx.find_assignment(memb_app.get()) != l_undef || ctx.find_assignment(memb_app_orig.get()) != l_undef) &&
+                ((ctx.find_assignment(memb_app.get()) != l_undef || ctx.find_assignment(memb_app_orig.get()) != l_undef) &&
+                 !contains_noodler_internal_var(std::get<0>(memb)) && !contains_noodler_internal_var(std::get<1>(memb)))) &&
                // this membership constraint is not added to relevant yet
                !this->m_rat_membership_todo_rel.contains(memb)
                ) {
@@ -512,7 +537,8 @@ namespace smt::noodler {
 
             // relevant, or already assigned a truth value (see comment above the equation case)
             if((ctx.is_relevant(con_expr.get()) || ctx.is_relevant(not_con_expr.get()) ||
-                ctx.find_assignment(con_expr.get()) != l_undef || ctx.find_assignment(not_con_expr.get()) != l_undef) &&
+                ((ctx.find_assignment(con_expr.get()) != l_undef || ctx.find_assignment(not_con_expr.get()) != l_undef) &&
+                 !contains_noodler_internal_var(not_con_pair.first) && !contains_noodler_internal_var(not_con_pair.second))) &&
                 !this->m_not_contains_todo_rel.contains(not_con_pair)) {
                 this->m_not_contains_todo_rel.push_back(not_con_pair);
             }
