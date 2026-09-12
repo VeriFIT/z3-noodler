@@ -410,8 +410,13 @@ namespace smt::noodler {
                      << " and its reverse is " << (ctx.is_relevant(eq_rev.get()) ? "" : "not ") << "relevant" << std::endl;
             );
 
-            // check if equation or its reverse are relevant (we check reverse to be safe) and...
-            if((ctx.is_relevant(eq.get()) || ctx.is_relevant(eq_rev.get())) &&
+            // check if equation or its reverse are relevant, or already assigned a truth value
+            // (relevancy is just a laziness heuristic of Z3's core and does not guarantee that a
+            // constraint that is already decided true/false can be safely ignored, e.g. disequations
+            // generated internally by the array theory's extensionality axiom are never marked
+            // relevant even though they are asserted true) and...
+            if((ctx.is_relevant(eq.get()) || ctx.is_relevant(eq_rev.get()) ||
+                ctx.find_assignment(eq.get()) != l_undef || ctx.find_assignment(eq_rev.get()) != l_undef) &&
                // ...neither equation nor its reverse are saved as relevant yet
                !this->m_word_eq_todo_rel.contains(we) && !this->m_word_eq_todo_rel.contains({we.second, we.first})
                ) {
@@ -430,8 +435,10 @@ namespace smt::noodler {
                      << " and its reverse is " << (ctx.is_relevant(dis_rev.get()) ? "" : "not ") << "relevant" << std::endl;
             );
 
-            // check if disequation or its reverse are relevant (we check reverse to be safe) and...
-            if((ctx.is_relevant(dis.get()) || ctx.is_relevant(dis_rev.get())) &&
+            // check if disequation or its reverse are relevant, or already assigned a truth value
+            // (see comment above the equation case for why this is needed) and...
+            if((ctx.is_relevant(dis.get()) || ctx.is_relevant(dis_rev.get()) ||
+                ctx.find_assignment(dis.get()) != l_undef || ctx.find_assignment(dis_rev.get()) != l_undef) &&
                // ...neither disequation nor its reverse are saved as relevant yet
                !this->m_word_diseq_todo_rel.contains(wd) && !this->m_word_diseq_todo_rel.contains({wd.second, wd.first})
                ) {
@@ -455,8 +462,10 @@ namespace smt::noodler {
                      << std::endl;
             );
 
-            // check if membership (or if we have negation, its negated form) is relevant and...
-            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get())) &&
+            // check if membership (or if we have negation, its negated form) is relevant, or already
+            // assigned a truth value (see comment above the equation case) and...
+            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get()) ||
+                ctx.find_assignment(memb_app.get()) != l_undef || ctx.find_assignment(memb_app_orig.get()) != l_undef) &&
                // this membership constraint is not added to relevant yet
                !this->m_membership_todo_rel.contains(memb)
                ) {
@@ -478,8 +487,10 @@ namespace smt::noodler {
                      << std::endl;
             );
 
-            // check if membership (or if we have negation, its negated form) is relevant and...
-            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get())) &&
+            // check if membership (or if we have negation, its negated form) is relevant, or already
+            // assigned a truth value (see comment above the equation case) and...
+            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get()) ||
+                ctx.find_assignment(memb_app.get()) != l_undef || ctx.find_assignment(memb_app_orig.get()) != l_undef) &&
                // this membership constraint is not added to relevant yet
                !this->m_rat_membership_todo_rel.contains(memb)
                ) {
@@ -499,7 +510,9 @@ namespace smt::noodler {
                      << std::endl;
             );
 
-            if((ctx.is_relevant(con_expr.get()) || ctx.is_relevant(not_con_expr.get())) &&
+            // relevant, or already assigned a truth value (see comment above the equation case)
+            if((ctx.is_relevant(con_expr.get()) || ctx.is_relevant(not_con_expr.get()) ||
+                ctx.find_assignment(con_expr.get()) != l_undef || ctx.find_assignment(not_con_expr.get()) != l_undef) &&
                 !this->m_not_contains_todo_rel.contains(not_con_pair)) {
                 this->m_not_contains_todo_rel.push_back(not_con_pair);
             }
