@@ -424,10 +424,7 @@ namespace smt::noodler {
          * This identifies terms whose value is controlled by another theory's internal reasoning (such as
          * the array theory's extensionality axiom) rather than by Noodler's own axiomatization of derived
          * string functions (str.at, str.substr, str.indexof, str.contains, ...), which are all seq-family
-         * applications. Used by remove_irrelevant_constr() to decide when a (dis)equation/membership that
-         * Z3 does not mark relevant must still be kept because it has no other representation, without
-         * that fallback pulling in the (mostly redundant) sea of Noodler's own already-decided string-
-         * function decomposition facts, which would otherwise blow up the decision procedure.
+         * applications.
          */
         bool is_foreign_theory_term(expr* e) const;
 
