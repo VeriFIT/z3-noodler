@@ -857,7 +857,36 @@ namespace smt::noodler {
         return l_undef;
     }
 
-    lbool theory_str_noodler::check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core, expr_ref* model_formula) {
+    lbool theory_str_noodler::check_len_sat(expr_ref len_formula, bool &check_with_context, expr_ref* unsat_core, expr_ref* model_formula) {
+        // the set of variables dec_proc actually needs (the length of) to build the model of some relevant
+        // string variable -- see noodler_var_value_proc in theory_str_noodler_model.cpp, which queries
+        // dec_proc->get_len_vars_for_model the exact same way when it is time to construct the real model.
+        // Every implementation of get_len_vars_for_model we have either ignores its argument and returns the
+        // same (decision-procedure-wide) set every time, or (UnaryDecisionProcedure, where each variable's
+        // model depends only on its own length) genuinely needs to be queried per variable, so we query it
+        // once per relevant_vars to cover both cases.
+        std::unordered_set<BasicTerm> needed_vars;
+        if (this->dec_proc) {
+            for (const BasicTerm& var : this->relevant_vars) {
+                for (const BasicTerm& needed : this->dec_proc->get_len_vars_for_model(var)) {
+                    // Some vars dec_proc reports (e.g. the fresh "@from_code_argument!.." BasicTerm created for
+                    // the number argument of a string-int(/code/real) conversion, see
+                    // theory_str_noodler::handle_conversion) are just an internal name that var_name maps back to
+                    // the real Z3 expr (e.g. the user's declared Int variable) -- and it is that real expr's own
+                    // BasicTerm which actually shows up in the model formula (via len_node_to_z3_formula's own
+                    // var_name lookup). Resolve through var_name here the exact same way
+                    // noodler_var_value_proc::get_dependencies does, so the two line up.
+                    if (auto it = this->var_name.find(needed); it != this->var_name.end() && util::is_variable(it->second.get())) {
+                        needed_vars.insert(util::get_variable_basic_term(it->second.get()));
+                    } else {
+                        needed_vars.insert(needed);
+                    }
+                }
+            }
+        }
+
+        check_with_context |= !needed_vars.empty();
+
         if (!check_with_context && len_formula == m.mk_true()) {
             if (model_formula != nullptr) {
                 *model_formula = expr_ref(m.mk_true(), m);
@@ -886,41 +915,14 @@ namespace smt::noodler {
             *unsat_core = m.mk_and(*unsat_core, solver_core);
         }
         if (model_formula != nullptr) {
-            *model_formula = filter_model_formula_to_length_vars(solver->get_model());
+            *model_formula = filter_model_formula_to_length_vars(solver->get_model(), needed_vars);
         }
         return ret;
     }
 
-    expr_ref theory_str_noodler::filter_model_formula_to_length_vars(expr_ref model_formula) {
+    expr_ref theory_str_noodler::filter_model_formula_to_length_vars(expr_ref model_formula, const std::unordered_set<BasicTerm> &needed_vars) {
         if (m.is_true(model_formula)) {
             return model_formula;
-        }
-
-        // the set of variables dec_proc actually needs (the length of) to build the model of some relevant
-        // string variable -- see noodler_var_value_proc in theory_str_noodler_model.cpp, which queries
-        // dec_proc->get_len_vars_for_model the exact same way when it is time to construct the real model.
-        // Every implementation of get_len_vars_for_model we have either ignores its argument and returns the
-        // same (decision-procedure-wide) set every time, or (UnaryDecisionProcedure, where each variable's
-        // model depends only on its own length) genuinely needs to be queried per variable, so we query it
-        // once per relevant_vars to cover both cases.
-        std::unordered_set<BasicTerm> needed_vars;
-        if (this->dec_proc) {
-            for (const BasicTerm& var : this->relevant_vars) {
-                for (const BasicTerm& needed : this->dec_proc->get_len_vars_for_model(var)) {
-                    // Some vars dec_proc reports (e.g. the fresh "@from_code_argument!.." BasicTerm created for
-                    // the number argument of a string-int(/code/real) conversion, see
-                    // theory_str_noodler::handle_conversion) are just an internal name that var_name maps back to
-                    // the real Z3 expr (e.g. the user's declared Int variable) -- and it is that real expr's own
-                    // BasicTerm which actually shows up in the model formula (via len_node_to_z3_formula's own
-                    // var_name lookup). Resolve through var_name here the exact same way
-                    // noodler_var_value_proc::get_dependencies does, so the two line up.
-                    if (auto it = this->var_name.find(needed); it != this->var_name.end() && util::is_variable(it->second.get())) {
-                        needed_vars.insert(util::get_variable_basic_term(it->second.get()));
-                    } else {
-                        needed_vars.insert(needed);
-                    }
-                }
-            }
         }
 
         expr_ref_vector conjuncts(m);
