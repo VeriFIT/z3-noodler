@@ -147,7 +147,7 @@ namespace smt::noodler::ca {
          * @param copy Copy identifying particular variable automaton
          * @param var Variable of the automaton
          */
-        void replace_symbols(char copy, size_t var);
+        void replace_symbols(size_t copy, size_t var);
 
         /**
          * @brief Add connections between copies.
