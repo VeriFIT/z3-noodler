@@ -316,16 +316,16 @@ namespace smt::noodler {
                     break;
                 }
             }
-            int left = params[0].size() - 1, right = params[1].size() - 1;
-            for(; left >= 0 && right >= 0 && left > i && right > i; left--, right--) {
-                if(params[0][left] != params[1][right]) {
+            size_t left = params[0].size(), right = params[1].size();
+            for(; left > 0 && right > 0 && left-1 > i && right-1 > i; --left, --right) {
+                if(params[0][left-1] != params[1][right-1]) {
                     break;
                 }
             }
             ret.add_predicate(
                 Predicate::create_equation(
-                    Concat(params[0].begin()+i, params[0].begin() + left + 1),
-                    Concat(params[1].begin()+i, params[1].begin() + right + 1)
+                    Concat(params[0].begin()+i, params[0].begin() + left),
+                    Concat(params[1].begin()+i, params[1].begin() + right)
                 ));
         }
         return ret;

@@ -170,7 +170,7 @@ namespace smt::noodler::ca {
 
     //-----------------------------------------------------------------------------------------------
 
-    void TagDiseqGen::replace_symbols(char copy_idx, size_t var) {
+    void TagDiseqGen::replace_symbols(size_t copy_idx, size_t var) {
         BasicTerm bt = this->aut_matrix.get_var_order()[var];
 
         // <L,x>
@@ -296,7 +296,7 @@ namespace smt::noodler::ca {
         const size_t copy_cnt = this->get_copy_cnt();
 
         // update symbols for each inner automaton
-        for (char copy = 0; copy < copy_cnt; copy++) {
+        for (size_t copy = 0; copy < copy_cnt; copy++) {
             for (size_t var = 0; var < var_order.size(); var++) {
                 // replace each automaton in the matrix with the specific AtomicSymbol
                 replace_symbols(copy, var);
