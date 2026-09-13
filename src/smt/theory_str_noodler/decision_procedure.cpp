@@ -1442,7 +1442,7 @@ namespace smt::noodler {
         }
     }
 
-    bool DecisionProcedure::is_half_full(int position, const AtomicEquationContext& equation_context) {
+    bool DecisionProcedure::is_half_full(size_t position, const AtomicEquationContext& equation_context) {
         // Check if atoms on specific index in atomic equation are in solved_atoms 
         bool is_left_atom = equation_context.solved_atoms.contains(equation_context.left_side[position]);
         bool is_right_atom = equation_context.solved_atoms.contains(equation_context.right_side[position]);
@@ -1487,7 +1487,7 @@ namespace smt::noodler {
         }
     }
 
-    void DecisionProcedure::get_model_for_cyclic_SCC(const std::vector<int> &scc){
+    void DecisionProcedure::get_model_for_cyclic_SCC(const std::vector<int> &scc) {
         //Get alphabet used for strace debugging and model updating
         const regex::Alphabet& alph(solution.aut_ass.get_alphabet());
         
@@ -1515,19 +1515,20 @@ namespace smt::noodler {
         );
         
         // Find correct word assigment for all vars in SCC
-        while(atomic_equation_context.solved_atoms.size() < atomic_equation_context.num_of_atoms){            
+        while (atomic_equation_context.solved_atoms.size() < atomic_equation_context.num_of_atoms) {            
             // Get leftmost half full atom pair's index
-            int left_most_half_full_pos = -1;
-            for (int pos = 0; pos < atomic_equation_context.left_side.size(); pos++) {
-                if (is_half_full(pos, atomic_equation_context))
-                {
+            size_t left_most_half_full_pos;
+            bool found_half_full_position = false;
+            for (size_t pos = 0; pos < atomic_equation_context.left_side.size(); pos++) {
+                if (is_half_full(pos, atomic_equation_context)) {
                     left_most_half_full_pos = pos;
+                    found_half_full_position = true;
                     break;
                 }
             }
             
             // If there is a half full atom pair (lemma 4)
-            if (left_most_half_full_pos != -1) {
+            if (found_half_full_position) {
                 Predicate::EquationSideType missing_side = !atomic_equation_context.solved_atoms.contains(atomic_equation_context.left_side[left_most_half_full_pos])
                                                          ? Predicate::EquationSideType::Left
                                                          : Predicate::EquationSideType::Right;
@@ -1560,8 +1561,8 @@ namespace smt::noodler {
         }
 
         //Update the model with correct word for each variable 
-        for(auto const& [term, word] : atomic_equation_context.scc_solution){
-            if(term.is_variable()){
+        for (auto const& [term, word] : atomic_equation_context.scc_solution) {
+            if (term.is_variable()) {
                 update_model_and_aut_ass(term, alph.get_string_from_mata_word(word));
             }
         }

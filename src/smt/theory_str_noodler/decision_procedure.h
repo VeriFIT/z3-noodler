@@ -368,7 +368,7 @@ namespace smt::noodler {
         /**
          * @brief Determines if the atom pair on the same index @p idx is half full (exactly one of them is in @p T)
          */
-        bool is_half_full(int position, const AtomicEquationContext& equation_context);
+        bool is_half_full(size_t position, const AtomicEquationContext& equation_context);
 
         /**
          * @brief Split terms in the inclusion to atoms, 
@@ -430,7 +430,7 @@ namespace smt::noodler {
             }
             STRACE(str_model_res, tout << "Model for " << var << ": " << computed_model << std::endl);
             return computed_model;
-        };
+        }
 
     public:
 

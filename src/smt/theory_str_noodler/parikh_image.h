@@ -131,11 +131,11 @@ public:
 
     const std::vector<BasicTerm>& get_gamma_fin() const {
         return this->gamma_fin;
-    };
+    }
 
     const std::vector<BasicTerm>& get_sigma() const {
         return this->sigma;
-    };
+    }
 
     void print_transition_var_labeling(std::ostream& output_stream) const;
 
@@ -241,7 +241,7 @@ public:
             pi,
             sc
         });
-    };
+    }
 
     size_t get_predicate_count() const {
         return this->predicates.size();

@@ -122,8 +122,8 @@ namespace smt::noodler {
          */
         static bool zstr_comp(const zstring& l1_val, const zstring& l2_val, unsigned n);
     public:
-        VarConstraint() : _name(), is_parsed(l_false) {};
-        VarConstraint(zstring name) : _name(std::move(name)), is_parsed (l_false) {};
+        VarConstraint() : _name(), is_parsed(l_false) {}
+        VarConstraint(zstring name) : _name(std::move(name)), is_parsed (l_false) {}
 
         /**
          * @brief Add predicate to the the var constraint. Do not check if a equation side matches 
@@ -290,7 +290,7 @@ namespace smt::noodler {
         /**
          * @brief Default constructor
          */
-        LengthProcModel() : LengthProcModel(ConstraintPool{}, {}, {}, {}) {};
+        LengthProcModel() : LengthProcModel(ConstraintPool{}, {}, {}, {}) {}
 
         /**
          * @brief Create model generation module for the given instance.
@@ -341,7 +341,7 @@ namespace smt::noodler {
          * @param str_var String variable
          * @return std::vector<BasicTerm> Relevant variables (including temporary int variables) 
          */
-        std::vector<BasicTerm> get_len_vars_for_model(const BasicTerm& str_var) { return this->length_vars; };
+        std::vector<BasicTerm> get_len_vars_for_model(const BasicTerm& str_var) { return this->length_vars; }
 
     };
 
@@ -406,7 +406,7 @@ namespace smt::noodler {
             return LenNode(LenFormulaType::TRUE);
         }
         std::pair<LenNode, LenNodePrecision> get_lengths() override;
-        void init_computation() override { };
+        void init_computation() override { }
 
         lbool preprocess(PreprocessType opt = PreprocessType::PLAIN, const BasicTermEqiv &len_eq_vars = {}) override;
 

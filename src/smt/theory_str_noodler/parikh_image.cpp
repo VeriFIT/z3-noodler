@@ -708,7 +708,7 @@ namespace smt::noodler::parikh {
         }
 
         return sampling_transition_vars_by_symbol;
-    };
+    }
 
     /**
      * @brief Get formula describing that <R> symbols are different on the run.

@@ -30,7 +30,7 @@ namespace smt::noodler {
             symbol = *alph.begin();
         }
 
-        lbool compute_next_solution() override { return l_false; };
+        lbool compute_next_solution() override { return l_false; }
 
         std::vector<BasicTerm> get_len_vars_for_model(const BasicTerm& str_var) override {
             return {str_var};

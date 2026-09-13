@@ -149,25 +149,25 @@ namespace smt::noodler {
         std::map<BasicTerm, std::set<BasicTerm>> succ;
 
     public:
-        ConcatGraph() : edges(), pred(), succ() { };
+        ConcatGraph() : edges(), pred(), succ() { }
         ConcatGraph(const ConcatGraph&) = default;
 
         void add_edge(const BasicTerm& from, const BasicTerm& to) {
             map_increment(this->edges, {from, to});
             map_set_insert(this->pred, to, from);
             map_set_insert(this->succ, from, to);
-        };
+        }
 
         unsigned get_edge_cost(const BasicTerm& from, const BasicTerm& to) const {
             return this->edges.at({from, to});
-        };
+        }
 
         std::set<BasicTerm> get_succ(const BasicTerm& t) const {
             return this->succ.at(t);
-        };
+        }
 
 
-        bool is_init(const BasicTerm& t) const { return t.get_name() == ""; };
+        bool is_init(const BasicTerm& t) const { return t.get_name() == ""; }
 
         /**
          * @brief Special node s (variable with empty name) denoting beginning and end of a concatenation. If there is
@@ -176,7 +176,7 @@ namespace smt::noodler {
          *
          * @return Special node (called init).
          */
-        BasicTerm init() const { return BasicTerm(BasicTermType::Variable, "");  };
+        BasicTerm init() const { return BasicTerm(BasicTermType::Variable, "");  }
 
         /**
          * @brief Returns nodes (variables) having only one sucessor and moreover having more than one
@@ -245,7 +245,7 @@ namespace smt::noodler {
             std::string ret;
             ret += "( " + term.to_string() + ";" + std::to_string(pred_index) + ";" + std::to_string(position) + ")";
             return ret;
-        };
+        }
     };
     //----------------------------------------------------------------------------------------------------------------------------------
 
@@ -276,12 +276,12 @@ namespace smt::noodler {
 
         std::string to_string() const;
 
-        const std::set<VarNode>& get_var_occurr(const BasicTerm& var) const { return this->varmap.at(var); };
-        bool var_occurs(const BasicTerm& var) const { return (this->varmap.contains(var) && this->varmap.at(var).size() > 0); };
-        const Predicate& get_predicate(size_t index) const { return this->predicates.at(index); };
-        const std::map<size_t, Predicate>& get_predicates() const { return this->predicates; };
-        const std::set<Predicate>& get_predicates_set() const { return this->allpreds; };
-        const VarMap& get_varmap() const { return this->varmap; };
+        const std::set<VarNode>& get_var_occurr(const BasicTerm& var) const { return this->varmap.at(var); }
+        bool var_occurs(const BasicTerm& var) const { return (this->varmap.contains(var) && this->varmap.at(var).size() > 0); }
+        const Predicate& get_predicate(size_t index) const { return this->predicates.at(index); }
+        const std::map<size_t, Predicate>& get_predicates() const { return this->predicates; }
+        const std::set<Predicate>& get_predicates_set() const { return this->allpreds; }
+        const VarMap& get_varmap() const { return this->varmap; }
         void get_side_regulars(std::vector<std::pair<size_t, Predicate>>& out) const;
         void get_simple_eqs(std::vector<std::pair<size_t, Predicate>>& out) const;
         size_t get_max_index() const { return this->max_index; }
@@ -307,7 +307,7 @@ namespace smt::noodler {
          * @param p Equation
          * @return Is simple?
          */
-        bool is_simple_eq(const Predicate& p) const { return p.is_equation() && p.get_left_side().size() == 1 && p.get_right_side().size() == 1; };
+        bool is_simple_eq(const Predicate& p) const { return p.is_equation() && p.get_left_side().size() == 1 && p.get_right_side().size() == 1; }
 
         void remove_predicate(size_t index);
         int add_predicate(const Predicate& pred, int index = -1);
@@ -317,7 +317,7 @@ namespace smt::noodler {
         void clean_varmap();
         void clean_predicates();
 
-        void remove_var_from_varmap(const BasicTerm& var) { SASSERT(!var_occurs(var)); varmap.erase(var); };
+        void remove_var_from_varmap(const BasicTerm& var) { SASSERT(!var_occurs(var)); varmap.erase(var); }
 
         /**
          * @brief Increment index pointing to a side (taking into account that left side has negative numbers
@@ -327,7 +327,7 @@ namespace smt::noodler {
          * @param incr Increment
          * @return @p incr th successor of @p val
          */
-        static int increment_side_index(int val, size_t incr) { return val > 0 ? val + incr : val - incr; };
+        static int increment_side_index(int val, size_t incr) { return val > 0 ? val + incr : val - incr; }
     };
 
     //----------------------------------------------------------------------------------------------------------------------------------
@@ -365,7 +365,7 @@ namespace smt::noodler {
         VarNodeSymDiff get_eq_sym_diff(const Concat& cat1, const Concat& cat2) const;
         bool generate_identities_suit(const VarNodeSymDiff& diff, Predicate& new_pred) const;
         ConcatGraph get_concat_graph() const;
-        bool is_var_eps(const BasicTerm& t) const { assert(t.is_variable()); return this->aut_ass.is_epsilon(t); };
+        bool is_var_eps(const BasicTerm& t) const { assert(t.is_variable()); return this->aut_ass.is_epsilon(t); }
 
         BasicTerm create_fresh_var();
         void get_concat_gather(const Concat& concat, SepEqsGather& res) const;
@@ -392,10 +392,10 @@ namespace smt::noodler {
             len_variables(lv),
             conversion_vars(conversion_vars),
             m_params(par),
-            dependency() { };
+            dependency() { }
 
-        const FormulaVar& get_formula() const { return this->formula; };
-        std::string to_string() const { return this->formula.to_string(); };
+        const FormulaVar& get_formula() const { return this->formula; }
+        std::string to_string() const { return this->formula.to_string(); }
         void get_regular_sublists(std::map<Concat, unsigned>& res) const;
         void get_eps_terms(std::set<BasicTerm>& res) const;
         const AutAssignment& get_aut_assignment() const { return this->aut_ass; }
@@ -461,7 +461,7 @@ namespace smt::noodler {
          * @param find Find
          * @param replace Replace
          */
-        void replace(const Concat& find, const Concat& replace) { this->formula.replace(find, replace); };
+        void replace(const Concat& find, const Concat& replace) { this->formula.replace(find, replace); }
         /**
          * @brief Update predicate with the given index.
          *
@@ -472,7 +472,7 @@ namespace smt::noodler {
             this->formula.remove_predicate(index);
             this->formula.add_predicate(pred, index);
         }
-        void clean_varmap() { this->formula.clean_varmap(); };
+        void clean_varmap() { this->formula.clean_varmap(); }
 
         std::string print_info(bool print_nfas = false);
     };

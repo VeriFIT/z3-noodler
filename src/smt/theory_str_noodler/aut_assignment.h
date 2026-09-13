@@ -50,7 +50,7 @@ namespace smt::noodler {
                 this->operator[](key_value.first) = std::make_shared<mata::nfa::Nfa>(key_value.second);
             }
             update_alphabet();
-        };
+        }
 
         static mata::nfa::Nfa empty_string_automaton() {
             return mata::nfa::Nfa(1, {0}, {0});

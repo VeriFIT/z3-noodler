@@ -196,11 +196,11 @@ namespace smt::noodler {
         BasicTerm atom_val;
         std::vector<struct LenNode> succ;
 
-        LenNode(rational k) : type(LenFormulaType::LEAF), atom_val(BasicTermType::Length, zstring(k)), succ() { };
-        LenNode(int k) : LenNode(rational(k)) { };
-        LenNode(unsigned k) : LenNode(rational(k)) { };
-        LenNode(BasicTerm val) : type(LenFormulaType::LEAF), atom_val(val), succ() { };
-        LenNode(LenFormulaType tp, std::vector<struct LenNode> s = {}) : type(tp), atom_val(BasicTerm(BasicTermType::Length)), succ(s) { };
+        LenNode(rational k) : type(LenFormulaType::LEAF), atom_val(BasicTermType::Length, zstring(k)), succ() { }
+        LenNode(int k) : LenNode(rational(k)) { }
+        LenNode(unsigned k) : LenNode(rational(k)) { }
+        LenNode(BasicTerm val) : type(LenFormulaType::LEAF), atom_val(val), succ() { }
+        LenNode(LenFormulaType tp, std::vector<struct LenNode> s = {}) : type(tp), atom_val(BasicTerm(BasicTermType::Length)), succ(s) { }
     };
 
     static inline std::ostream& operator<<(std::ostream& os, const LenNode& node) {
@@ -271,8 +271,6 @@ namespace smt::noodler {
             os << "(exists (( " << quantified_var << " Int))";
             break;
         }
-        default:
-            UNREACHABLE();
         }
 
         for (; children_iterator != node.succ.end(); children_iterator++) {
@@ -992,11 +990,8 @@ namespace smt::noodler {
             return "to_real";
         case ConversionType::FROM_REAL:
             return "from_real";
-
-        default:
-            UNREACHABLE();
-            return "";
         }
+        UNREACHABLE();
     }
 
     /**
