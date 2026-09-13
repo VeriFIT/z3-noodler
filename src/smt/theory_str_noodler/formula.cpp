@@ -296,11 +296,10 @@ namespace smt::noodler {
         switch (side) {
             case EquationSideType::Left:
                 return params[0];
-                break;
             case EquationSideType::Right:
                 return params[1];
-                break;
         }
+        UNREACHABLE();
     }
 
     std::vector<BasicTerm> &Predicate::get_side(const Predicate::EquationSideType side) {
@@ -308,11 +307,10 @@ namespace smt::noodler {
         switch (side) {
             case EquationSideType::Left:
                 return params[0];
-                break;
             case EquationSideType::Right:
                 return params[1];
-                break;
         }
+        UNREACHABLE();
     }
 
     std::map<BasicTerm, unsigned> Predicate::variable_count(const Predicate::EquationSideType side) const {
@@ -552,5 +550,6 @@ namespace smt::noodler {
             return expr_ref(manager.mk_false(), manager);
         }
         }
+        UNREACHABLE();
     }
 } // Namespace smt::noodler.

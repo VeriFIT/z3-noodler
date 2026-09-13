@@ -991,6 +991,7 @@ namespace smt::noodler {
         case ConversionType::FROM_REAL:
             return "from_real";
         }
+        UNREACHABLE();
     }
 
     /**

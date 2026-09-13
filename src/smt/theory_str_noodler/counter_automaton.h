@@ -163,6 +163,7 @@ namespace smt::noodler::ca {
                     return string_builder.str();
                 }
             }
+            UNREACHABLE();
         }
 
         static AtomicSymbol create_l_symbol(const BasicTerm& var) {
