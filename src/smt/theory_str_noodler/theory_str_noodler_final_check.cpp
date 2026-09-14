@@ -926,10 +926,10 @@ namespace smt::noodler {
         }
 
         for (const TermConversion& conv : m_conversion_todo) {
-            if (auto it = this->var_name.find(needed); it != this->var_name.end() && util::is_variable(it->second.get())) {
+            if (auto it = this->var_name.find(conv.number_var); it != this->var_name.end() && util::is_variable(it->second.get())) {
                 needed_vars.insert(util::get_variable_basic_term(it->second.get()));
             } else {
-                needed_vars.insert(needed);
+                needed_vars.insert(conv.number_var);
             }
         }
 
