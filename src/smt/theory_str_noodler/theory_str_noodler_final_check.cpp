@@ -1240,8 +1240,7 @@ namespace smt::noodler {
         (void)precision; // precision is always underapprox for this procedure
 
         expr_ref model_formula(m);
-        bool check_with_context = !init_length_sensitive_vars.empty();
-        if(check_len_sat(lengths, check_with_context, nullptr, &model_formula) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
+        if(check_len_sat(lengths, !init_length_sensitive_vars.empty(), nullptr, &model_formula) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
             sat_handling(model_formula);
             this->statistics.at("diseq-length-heur").num_finish++;
             STRACE(str, tout << "Solved by diseq-length heuristic: SAT" << std::endl;);
@@ -1285,8 +1284,7 @@ namespace smt::noodler {
                     } else {
                         // otherwise we find unsat core of the current assignment with the len_formula and add this unsat core as a theory lemma.
                         expr_ref unsat_core(m.mk_true(), m);
-                        bool check_with_context = true;
-                        if (check_len_sat(len_formula, check_with_context, &unsat_core) == l_false) {
+                        if (check_len_sat(len_formula, true, &unsat_core) == l_false) {
                             unsat_core = m.mk_not(unsat_core);
                             set_input_has_quantifiers(expr_cases::has_quantifier(unsat_core, m));
                             ctx.internalize(unsat_core.get(), true);
