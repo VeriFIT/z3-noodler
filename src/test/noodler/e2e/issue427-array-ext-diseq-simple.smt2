@@ -1,0 +1,7 @@
+(set-logic ALL)
+(set-info :status sat)
+(declare-const null-__Array__Int__String__ (Array Int String))
+(declare-const var2021 (Array Int String))
+(assert (not (= var2021 null-__Array__Int__String__)))
+(check-sat)
+(get-model)
