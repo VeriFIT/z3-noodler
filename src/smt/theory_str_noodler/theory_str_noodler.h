@@ -506,7 +506,7 @@ namespace smt::noodler {
          * @param[out] model_formula If this parameter is NOT nullptr, the LIA solver stores here equations of variables from @p len_formula and their models
          * (if it is sat), restricted to variables that dec_proc actually needs for model construction -- see filter_model_formula_to_length_vars.
          */
-        lbool check_len_sat(expr_ref len_formula, bool &check_with_context, expr_ref* unsat_core=nullptr, expr_ref* model_formula=nullptr);
+        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr, expr_ref* model_formula=nullptr);
 
         /**
          * @brief Restrict @p model_formula (a conjunction of equations "variable = value" produced by check_len_sat) to only those
@@ -522,7 +522,7 @@ namespace smt::noodler {
          * safe -- it means the variable's content does not matter to Noodler's own solution, so Z3's ordinary model completion for
          * whatever remains of the length constraints is free to pick any consistent value.
          */
-        expr_ref filter_model_formula_to_length_vars(expr_ref model_formula, const std::unordered_set<BasicTerm> &needed_vars);
+        expr_ref filter_model_formula_to_length_vars(expr_ref model_formula);
 
         /**
          * @brief Blocks current SAT assignment for given @p len_formula
