@@ -477,7 +477,7 @@ namespace smt::noodler {
             // check if membership (or if we have negation, its negated form) is relevant, or already
             // assigned a truth value (see comment above the equation case) and...
             if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get()) ||
-                ((ctx.find_assignment(memb_app.get()) != l_undef || ctx.find_assignment(memb_app_orig.get()) != l_undef) &&
+                (ctx.find_assignment(memb_app.get()) != l_undef &&
                  is_foreign_theory_term(std::get<0>(memb)))) &&
                // this membership constraint is not added to relevant yet
                !this->m_membership_todo_rel.contains(memb)
@@ -503,7 +503,7 @@ namespace smt::noodler {
             // check if membership (or if we have negation, its negated form) is relevant, or already
             // assigned a truth value (see comment above the equation case) and...
             if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get()) ||
-                ((ctx.find_assignment(memb_app.get()) != l_undef || ctx.find_assignment(memb_app_orig.get()) != l_undef) &&
+                (ctx.find_assignment(memb_app.get()) != l_undef &&
                  (is_foreign_theory_term(std::get<0>(memb)) || is_foreign_theory_term(std::get<1>(memb))))) &&
                // this membership constraint is not added to relevant yet
                !this->m_rat_membership_todo_rel.contains(memb)
