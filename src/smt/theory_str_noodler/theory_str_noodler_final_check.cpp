@@ -930,6 +930,10 @@ namespace smt::noodler {
             }
         }
 
+        for (const TermConversion& conv : m_conversion_todo) {
+            needed_vars.insert(conv.number_var);
+        }
+
         expr_ref_vector conjuncts(m);
         flatten_and(model_formula.get(), conjuncts);
         expr_ref_vector kept(m);
