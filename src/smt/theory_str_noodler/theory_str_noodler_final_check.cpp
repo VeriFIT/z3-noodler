@@ -881,7 +881,7 @@ namespace smt::noodler {
             *unsat_core = m.mk_and(*unsat_core, solver_core);
         }
         if (model_formula != nullptr) {
-            if (!check_with_context) {
+            if (!check_with_context && ret == l_true) {
                 solver->initialize(get_context(), true);
                 lbool ret_with_context = solver->check_sat(len_formula);
                 if (ret != ret_with_context) {
