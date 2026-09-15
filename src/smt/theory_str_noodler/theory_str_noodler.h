@@ -259,7 +259,7 @@ namespace smt::noodler {
             app* fresh_var = m.mk_fresh_const("@" + name, m_util_a.mk_int(), true); // need to be skolem, because it seems they are not printed for models
             return expr_ref(fresh_var, m);
         }
-        
+
         /**
          * @brief Create a fresh Z3 string variable with a given @p name followed by a unique suffix.
          *
@@ -418,6 +418,17 @@ namespace smt::noodler {
         void remove_irrelevant_constr();
 
         /**
+         * @brief Check if @p e is rooted by a function symbol that does not belong to the string/seq
+         * theory (and is not a plain variable/constant), e.g. an array `select`.
+         *
+         * This identifies terms whose value is controlled by another theory's internal reasoning (such as
+         * the array theory's extensionality axiom) rather than by Noodler's own axiomatization of derived
+         * string functions (str.at, str.substr, str.indexof, str.contains, ...), which are all seq-family
+         * applications.
+         */
+        bool is_foreign_theory_term(expr* e) const;
+
+        /**
         Convert (dis)equation @p ex to the instance of Predicate. As a side effect updates mapping of
         variables (BasicTerm) to the corresponding z3 expr.
         @param ex Z3 expression to be converted to Predicate.
@@ -489,11 +500,29 @@ namespace smt::noodler {
 
         /**
          * @brief Check if the length formula @p len_formula is satisfiable with the existing length constraints (the context).
-         * 
+         *
          * @param check_with_context If false, checks only if the length formula @p len_formula is satisfiable
          * @param[out] unsat_core If this parameter is NOT nullptr, the LIA solver stores here unsat core of the current @p len_formula.
+         * @param[out] model_formula If this parameter is NOT nullptr, the LIA solver stores here equations of variables from @p len_formula and their models
+         * (if it is sat), restricted to variables that dec_proc actually needs for model construction -- see filter_model_formula_to_length_vars.
          */
-        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr);
+        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr, expr_ref* model_formula=nullptr);
+
+        /**
+         * @brief Restrict @p model_formula (a conjunction of equations "variable = value" produced by check_len_sat) to only those
+         * equations about a variable that dec_proc actually needs to build some relevant string variable's model, i.e. a variable
+         * occurring in dec_proc->get_len_vars_for_model(v) for some v in relevant_vars.
+         *
+         * This is deliberately queried from dec_proc itself (instead of e.g. the init_length_sensitive_vars computed once before
+         * dec_proc starts) because a decision procedure can introduce/need additional length-sensitive variables while solving
+         * (e.g. fresh variables from splitting an equation) that were not anticipated up front. Any variable NOT in this set (e.g. a
+         * proxy for a "regular sequence" that is not otherwise length-constrained, or a purely-internal LIA helper used only to check
+         * @p len_formula itself) is left out of the returned formula: permanently asserting a value for it could later conflict with
+         * a requirement (e.g. a regex-implied minimum length) check_len_sat itself has no visibility into, while leaving it out is
+         * safe -- it means the variable's content does not matter to Noodler's own solution, so Z3's ordinary model completion for
+         * whatever remains of the length constraints is free to pick any consistent value.
+         */
+        expr_ref filter_model_formula_to_length_vars(expr_ref model_formula);
 
         /**
          * @brief Blocks current SAT assignment for given @p len_formula

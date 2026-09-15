@@ -27,6 +27,8 @@
 
 // FIXME most if not all these functions should probably be in theory_str_noodler
 
+namespace smt { class context; }
+
 namespace smt::noodler::util {
     using expr_pair = std::pair<expr_ref, expr_ref>;
     using expr_pair_flag = std::tuple<expr_ref, expr_ref, bool>;
@@ -97,6 +99,77 @@ namespace smt::noodler::util {
     BasicTerm get_variable_basic_term(expr* variable);
 
     void get_len_exprs(expr* ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res);
+
+    /**
+     * @brief Recover the Noodler BasicTerm that a length-model entry's variable @p lhs stands for.
+     *
+     * @p lhs is either a str.len/str.to_code/str.stoi/str.stor application (canonical_of_fresh already
+     * resolved a fresh external-solver constant back to it, see replace_arith_str_funcs) -- in which case
+     * the relevant variable is its string argument -- or some other 0-ary constant/skolem (e.g. an
+     * internal LIA helper like the align/k variables created only for one check_len_sat call) -- in which
+     * case the constant itself, identified by its own name, is the relevant "variable". Used to decide
+     * whether a given length-model entry is about a variable Noodler actually tracks as length-sensitive
+     * (see theory_str_noodler::get_init_length_vars) before permanently asserting it.
+     */
+    BasicTerm get_length_var_basic_term(expr* lhs, const seq_util& m_util_s);
+
+    /**
+     * @brief Checks whether @p ex is one of the string-argument/arithmetic-result functions whose model
+     * value we need to read directly out of an (external) arithmetic solver: str.len, str.to_code,
+     * str.stoi (str.to_int) and str.stor (str.to_real).
+     *
+     * Note that e.g. str.indexof/str.contains are intentionally NOT included here -- those are fully
+     * axiomatized (see theory_str_noodler::handle_index_of/handle_contains) and we never need to pull a
+     * model value for them directly out of the arithmetic solver.
+     */
+    bool is_arith_str_func(const expr* ex, const seq_util& m_util_s);
+
+    /**
+     * @brief Rewrites @p ex so it is safe to hand to an external solver that has no theory registered
+     * for the string sort (i.e. smt.string_solver=none).
+     *
+     * Such a solver treats every string-sorted function symbol as completely uninterpreted, including
+     * str.len/str.to_code/str.stoi/str.stor. Left as-is, their model (built by generic function
+     * model-completion) can come back as an arbitrary ite-tree over ground string arguments the solver
+     * happened to see (e.g. `(ite (= x "aa") 2 3)`) instead of a genuine arithmetic value. This function
+     * rewrites @p ex bottom-up so that:
+     *   - any subterm that already has a replacement registered in @p predicate_replace is replaced by it
+     *     (so that a term coming from a raw/original formula, e.g. `(str.len (str.at x i))`, lines up with
+     *      whatever variable Noodler's own length formula already uses for the same subterm, e.g. `@at!1`);
+     *   - every remaining application recognized by is_arith_str_func is replaced by a fresh arithmetic
+     *     constant.
+     *
+     * @p fresh_vars and @p memo must be the same maps reused for every formula handed to one external-solver
+     * instance/call, so that the same source application is always replaced by the same fresh constant
+     * (this is what keeps e.g. the derived length formula and the raw context formulas linked). Every time
+     * a new fresh constant is created, it is also registered into @p canonical_of_fresh (fresh constant ->
+     * the canonical application it stands for) so callers can map a fresh constant's model value back to
+     * the term they actually care about. Newly created expressions are appended to @p pinned to keep them
+     * alive for as long as the maps are used.
+     */
+    expr* replace_arith_str_funcs(expr* ex, ast_manager& m, seq_util& m_util_s,
+                                  const obj_map<expr, expr*>& predicate_replace,
+                                  obj_map<expr, expr*>& fresh_vars,
+                                  obj_map<expr, expr*>& canonical_of_fresh,
+                                  obj_map<expr, expr*>& memo,
+                                  expr_ref_vector& pinned);
+
+    /**
+     * @brief Reconstruct every clause @p ctx currently holds (both theory axioms/lemmas added along the
+     * way, e.g. `theory_str_noodler::add_axiom`, and clauses learned from conflicts) as a disjunction of
+     * literal expressions, appending one expression per clause to @p result.
+     *
+     * `context::get_asserted_formula()` only exposes the original top-level assertions, and
+     * `context::get_assignments()` only exposes literals that already have a concrete truth value --
+     * neither includes clauses that still have undecided literals (e.g. a semantic axiom for
+     * str.substr/str.indexof relating a proxy variable to a real problem variable, where the guard
+     * conditions are not decided yet). Without those clauses, an external solver checking length
+     * satisfiability can pick a witness value for a proxy variable that looks fine in isolation but is
+     * only consistent as long as some as-yet-undecided literal keeps a particular value -- and once that
+     * literal is later decided the other way, the (by then permanently asserted) witness becomes
+     * inconsistent. Handing over the actual clauses lets the external solver account for that up front.
+     */
+    void get_context_clauses(context& ctx, ast_manager& m, expr_ref_vector& result);
 
     /// @brief Create a noodler (BasicTerm) variable with a given @p name representing an internal variable (should not clash with user-defined variables)
     inline BasicTerm mk_internal_noodler_var(const zstring& name) {

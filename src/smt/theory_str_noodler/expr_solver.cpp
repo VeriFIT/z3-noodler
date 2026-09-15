@@ -4,13 +4,15 @@ Eternal glory to Yu-Fang.
 */
 
 #include "expr_solver.h"
+#include "util.h"
 #include "ast/ast_pp.h"
 
 namespace smt::noodler {
     lbool int_expr_solver::check_sat(expr* e) {
         TRACE(str_lia, tout << "check_sat start\n";);
 
-        erv.push_back(e);
+        expr* e_rw = rewrite_for_external_solver(e);
+        erv.push_back(e_rw);
         kernel solver(m, fp);
         lbool r = solver.check(erv);
         erv.pop_back();
@@ -21,6 +23,39 @@ namespace smt::noodler {
                 unsat_core = m.mk_and(unsat_core, solver.get_unsat_core_expr(i));
             }
             STRACE(str_lia, tout << "UNSAT core:" << std::endl << mk_pp(unsat_core, m));
+        }
+
+        model_formula = m.mk_true();
+        if (r == lbool::l_true) {
+            model_ref mdl;
+            solver.get_model(mdl);
+
+            // Collect vars from the rewritten formula: genuine int/real variables are kept as-is, while
+            // the fresh constants introduced by rewrite_for_external_solver stand for str.len/str.to_code/
+            // str.stoi/str.stor applications (see canonical_of_fresh) and must be evaluated back into
+            // an equation over the original application, not over the fresh constant itself.
+            struct collect_vars {
+                ast_manager &m;
+                expr_ref_vector vars;
+                seq_util m_util_s;
+
+                collect_vars(ast_manager &m) : m(m), vars(m), m_util_s(m) {}
+                void operator()(expr* e) {
+                    if (!m_util_s.is_string(e->get_sort()) && util::is_variable(e)) {
+                        vars.push_back(e);
+                    }
+                }
+            };
+            collect_vars cv(m);
+            for_each_expr(cv, e_rw);
+            for (expr* v : cv.vars) {
+                expr_ref res(m);
+                mdl->eval_expr(v, res);
+                expr* canonical;
+                expr* lhs = canonical_of_fresh.find(v, canonical) ? canonical : v;
+                STRACE(str_lia, tout << "Model for " << mk_pp(lhs, m) << " is " << mk_pp(res, m) << std::endl;);
+                model_formula = m.mk_and(model_formula, m.mk_eq(lhs, res));
+            }
         }
 
         TRACE(str_lia, tout << "check_sat end\n";);
@@ -44,12 +79,23 @@ namespace smt::noodler {
                         assert_expr(e);
                     }
                 }
+                // Assigns/get_asserted_formula only expose the original assertions and literals that
+                // already have a concrete truth value. Clauses with still-undecided literals (e.g. a
+                // semantic axiom for str.substr/str.indexof relating a proxy variable to a real problem
+                // variable, guarded by not-yet-decided bound checks) are otherwise invisible here, so
+                // include them too -- see util::get_context_clauses.
+                expr_ref_vector context_clauses(m);
+                util::get_context_clauses(ctx, m, context_clauses);
+                for (expr* cl : context_clauses) {
+                    STRACE(str_lia, tout << "check_sat context from clause: " << mk_pp(cl, m) << std::endl);
+                    assert_expr(cl);
+                }
             }
         }
     }
 
     void int_expr_solver::assert_expr(expr * e) {
-        erv.push_back(e);
+        erv.push_back(rewrite_for_external_solver(e));
     }
 
     void int_expr_solver::get_unsat_core(expr_ref& dst) {
