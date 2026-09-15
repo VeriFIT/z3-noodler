@@ -246,7 +246,7 @@ namespace smt::noodler {
         // s.t = u where u \in ab, |s| > 100. The only length variable is s, but we need
         // to include also length of |u| to propagate the value to |s|
         expr_ref lengths = len_node_to_z3_formula(main_dec_proc->get_initial_lengths(true));
-        if(check_len_sat(lengths, check_len_sat_with_context) == l_false) {
+        if (check_len_sat(lengths, true) == l_false) {
             STRACE(str, tout << "Unsat from initial lengths (1)" << std::endl);
 
             this->statistics.at("stabilization").num_solved_preprocess++;
@@ -297,7 +297,7 @@ namespace smt::noodler {
         // it is possible that the arithmetic formula becomes unsatisfiable already by adding the
         // length constraints from initial assignment
         lengths = len_node_to_z3_formula(dec_proc->get_initial_lengths());
-        if(check_len_sat(lengths, check_len_sat_with_context) == l_false) {
+        if (check_len_sat(lengths, true) == l_false) {
             this->statistics.at("stabilization").num_solved_preprocess++;
             STRACE(str, tout << "Unsat from initial lengths (2)" << std::endl);
             block_curr_len(lengths, true, true);
@@ -834,16 +834,15 @@ namespace smt::noodler {
         dec_proc->init_computation();
         this->statistics.at("underapprox").num_start++;
 
-        bool check_with_context = !init_length_sensitive_vars.empty();
-        auto check_lens = [this, &check_with_context](bool) {
+        auto check_lens = [this](bool) {
             expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
-            return check_len_sat(lengths, check_with_context);
+            return check_len_sat(lengths, true);
         };
 
-        while(main_dec_proc->compute_next_solution_with_len_checks(check_lens) == l_true) {
+        while (main_dec_proc->compute_next_solution_with_len_checks(check_lens) == l_true) {
             expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
             expr_ref model_formula(m);
-            if(check_len_sat(lengths, check_with_context, nullptr, &model_formula) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
+            if (check_len_sat(lengths, true, nullptr, &model_formula) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
                 sat_handling(model_formula);
                 this->statistics.at("underapprox").num_finish++;
                 return l_true;
@@ -1062,15 +1061,13 @@ namespace smt::noodler {
         expr_ref block_len(m.mk_false(), m);
         dec_proc->init_computation();
         this->statistics.at("nielsen").num_start++;
-        // if there are no length vars in the current string formula, we do not need to check with context
-        bool check_len_sat_with_context = !init_length_sensitive_vars.empty();
 
         while (true) {
             lbool result = dec_proc->compute_next_solution();
             if (result == l_true) {
                 expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
                 expr_ref model_formula(m);
-                if(check_len_sat(lengths, check_len_sat_with_context, nullptr, &model_formula) == l_true) {
+                if (check_len_sat(lengths, true, nullptr, &model_formula) == l_true) {
                     sat_handling(model_formula);
                     this->statistics.at("nielsen").num_finish++;
                     return l_true;
@@ -1079,13 +1076,7 @@ namespace smt::noodler {
                     block_len = m.mk_or(block_len, lengths);
                 }
             } else if (result == l_false) {
-                // we did not find a solution (with satisfiable length constraints)
-                // we need to block current assignment
-                if (!check_len_sat_with_context) {
-                    block_curr_len(expr_ref(m.mk_false(), m));
-                } else {
-                    block_curr_len(block_len);
-                }
+                block_curr_len(block_len);
                 this->statistics.at("nielsen").num_finish++;
                 return l_false;
             } else {
@@ -1112,14 +1103,13 @@ namespace smt::noodler {
         this->statistics.at("length").num_start++;
         dec_proc->init_computation();
 
-        bool check_len_sat_with_context = !init_length_sensitive_vars.empty(); // if there are no length vars in the current string formula, we do not need to check with context
         lbool result = dec_proc->compute_next_solution();
 
         if (result == l_true) {
             auto [formula, precision] = dec_proc->get_lengths();
             expr_ref lengths = len_node_to_z3_formula(formula);
             expr_ref model_formula(m);
-            if(check_len_sat(lengths, check_len_sat_with_context, nullptr, &model_formula) == l_true) {
+            if (check_len_sat(lengths, true, nullptr, &model_formula) == l_true) {
                 sat_handling(model_formula);
                 this->statistics.at("length").num_finish++;
                 STRACE(str, tout << "len: sat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
@@ -1129,11 +1119,7 @@ namespace smt::noodler {
                 block_len = m.mk_or(block_len, lengths);
 
                 if (precision != LenNodePrecision::UNDERAPPROX) {
-                    if (!check_len_sat_with_context) {
-                        block_curr_len(expr_ref(m.mk_false(), m));
-                    } else {
-                        block_curr_len(lengths);
-                    }
+                    block_curr_len(lengths);
                     this->statistics.at("length").num_finish++;
                     return l_false;
                 } else if (len_dec_proc->get_formula().get_predicates().size() > 10) {
@@ -1248,7 +1234,7 @@ namespace smt::noodler {
         (void)precision; // precision is always underapprox for this procedure
 
         expr_ref model_formula(m);
-        if(check_len_sat(lengths, !init_length_sensitive_vars.empty(), nullptr, &model_formula) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
+        if (check_len_sat(lengths, true, nullptr, &model_formula) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
             sat_handling(model_formula);
             this->statistics.at("diseq-length-heur").num_finish++;
             STRACE(str, tout << "Solved by diseq-length heuristic: SAT" << std::endl;);
@@ -1326,14 +1312,9 @@ namespace smt::noodler {
         this->statistics.at("unary").num_start++;
         this->statistics.at("unary").num_finish++;
         expr_ref model_formula(m);
-        bool check_len_sat_with_context = !init_length_sensitive_vars.empty(); // if there are no length vars in the current string formula, we do not need to check with context
-        if(check_len_sat(lengths, check_len_sat_with_context, nullptr, &model_formula) == l_false) {
+        if( check_len_sat(lengths, true, nullptr, &model_formula) == l_false) {
             STRACE(str, tout << "Unsat from unary procedure with LIA formula: " << mk_pp(lengths, m) << std::endl);
-            if (!check_len_sat_with_context) {
-                block_curr_len(expr_ref(m.mk_false(), m));
-            } else {
-                block_curr_len(lengths);
-            }
+            block_curr_len(lengths);
             return l_false;
         } else {
             STRACE(str, tout << "Sat from unary procedure with LIA formula: " << mk_pp(lengths, m) << std::endl);
