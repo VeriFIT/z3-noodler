@@ -391,8 +391,8 @@ namespace smt::noodler {
     }
 
     bool theory_str_noodler::is_foreign_theory_term(expr* e) const {
-        // check that it is not a variable (args > 0) because their family id is usually null
-        return is_app(e) && to_app(e)->get_num_args() > 0 && to_app(e)->get_family_id() != m_util_s.get_family_id();
+        // check if it comes from different thoery (null_family_id is uninterpreted function/variable)
+        return is_app(e) && to_app(e)->get_family_id() != null_family_id && to_app(e)->get_family_id() != m_util_s.get_family_id();
     }
 
     void theory_str_noodler::remove_irrelevant_constr() {
