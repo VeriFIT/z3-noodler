@@ -391,8 +391,13 @@ namespace smt::noodler {
     }
 
     bool theory_str_noodler::is_foreign_theory_term(expr* e) const {
-        // check if it comes from different thoery (null_family_id is uninterpreted function/variable)
-        return is_app(e) && to_app(e)->get_family_id() != null_family_id && to_app(e)->get_family_id() != m_util_s.get_family_id();
+        if (!is_app(e)) {
+            return false;
+        }
+        family_id fid = to_app(e)->get_family_id();
+        return fid != null_family_id // it is not uninterpreted function/variable
+            && fid != m.get_family_id(symbol("recfun")) // nor is it recursive function
+            && fid != m_util_s.get_family_id(); // and it is of different theory than this one
     }
 
     void theory_str_noodler::remove_irrelevant_constr() {

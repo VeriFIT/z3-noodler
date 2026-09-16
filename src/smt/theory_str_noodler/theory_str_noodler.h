@@ -419,7 +419,7 @@ namespace smt::noodler {
 
         /**
          * @brief Check if @p e is rooted by a function symbol that does not belong to the string/seq
-         * theory (and is not a plain variable/uninterpreted function), e.g. an array `select`.
+         * theory (and is not a plain variable/uninterpreted/recursive function), e.g. an array `select`.
          *
          * This identifies terms whose value is controlled by another theory's internal reasoning (such as
          * the array theory's extensionality axiom) rather than by Noodler's own axiomatization of derived
