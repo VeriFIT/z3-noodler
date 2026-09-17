@@ -390,6 +390,16 @@ namespace smt::noodler {
         }
     }
 
+    bool theory_str_noodler::is_foreign_theory_term(expr* e) const {
+        if (!is_app(e)) {
+            return false;
+        }
+        family_id fid = to_app(e)->get_family_id();
+        return fid != null_family_id // it is not uninterpreted function/variable
+            && fid != m.get_family_id(symbol("recfun")) // nor is it recursive function
+            && fid != m_util_s.get_family_id(); // and it is of different theory than this one
+    }
+
     void theory_str_noodler::remove_irrelevant_constr() {
         STRACE(str, tout << "Remove irrevelant" << std::endl);
 
@@ -410,8 +420,19 @@ namespace smt::noodler {
                      << " and its reverse is " << (ctx.is_relevant(eq_rev.get()) ? "" : "not ") << "relevant" << std::endl;
             );
 
-            // check if equation or its reverse are relevant (we check reverse to be safe) and...
-            if((ctx.is_relevant(eq.get()) || ctx.is_relevant(eq_rev.get())) &&
+            // check if equation or its reverse are relevant, or already assigned a truth value
+            // (relevancy is just a laziness heuristic of Z3's core and does not guarantee that a
+            // constraint that is already decided true/false can be safely ignored, e.g. disequations
+            // generated internally by the array theory's extensionality axiom are never marked
+            // relevant even though they are asserted true). We only fall back to the assignment when
+            // one side is rooted in a foreign (non-string) theory, since that is the signature of a
+            // fact controlled by another theory's internal reasoning with no other representation;
+            // Noodler's own string-function decomposition (dis)equations are always seq-family/plain
+            // variables on both sides, so this avoids a massive, needless blowup of the instance passed
+            // to the decision procedure from including those (almost always already-decided) facts. and...
+            if((ctx.is_relevant(eq.get()) || ctx.is_relevant(eq_rev.get()) ||
+                ((ctx.find_assignment(eq.get()) != l_undef || ctx.find_assignment(eq_rev.get()) != l_undef) &&
+                 (is_foreign_theory_term(we.first) || is_foreign_theory_term(we.second)))) &&
                // ...neither equation nor its reverse are saved as relevant yet
                !this->m_word_eq_todo_rel.contains(we) && !this->m_word_eq_todo_rel.contains({we.second, we.first})
                ) {
@@ -430,8 +451,11 @@ namespace smt::noodler {
                      << " and its reverse is " << (ctx.is_relevant(dis_rev.get()) ? "" : "not ") << "relevant" << std::endl;
             );
 
-            // check if disequation or its reverse are relevant (we check reverse to be safe) and...
-            if((ctx.is_relevant(dis.get()) || ctx.is_relevant(dis_rev.get())) &&
+            // check if disequation or its reverse are relevant, or already assigned a truth value
+            // (see comment above the equation case for why this is needed and how it is scoped) and...
+            if((ctx.is_relevant(dis.get()) || ctx.is_relevant(dis_rev.get()) ||
+                ((ctx.find_assignment(dis.get()) != l_undef || ctx.find_assignment(dis_rev.get()) != l_undef) &&
+                 (is_foreign_theory_term(wd.first) || is_foreign_theory_term(wd.second)))) &&
                // ...neither disequation nor its reverse are saved as relevant yet
                !this->m_word_diseq_todo_rel.contains(wd) && !this->m_word_diseq_todo_rel.contains({wd.second, wd.first})
                ) {
@@ -455,8 +479,11 @@ namespace smt::noodler {
                      << std::endl;
             );
 
-            // check if membership (or if we have negation, its negated form) is relevant and...
-            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get())) &&
+            // check if membership (or if we have negation, its negated form) is relevant, or already
+            // assigned a truth value (see comment above the equation case) and...
+            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get()) ||
+                (ctx.find_assignment(memb_app.get()) != l_undef &&
+                 is_foreign_theory_term(std::get<0>(memb)))) &&
                // this membership constraint is not added to relevant yet
                !this->m_membership_todo_rel.contains(memb)
                ) {
@@ -478,8 +505,11 @@ namespace smt::noodler {
                      << std::endl;
             );
 
-            // check if membership (or if we have negation, its negated form) is relevant and...
-            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get())) &&
+            // check if membership (or if we have negation, its negated form) is relevant, or already
+            // assigned a truth value (see comment above the equation case) and...
+            if((ctx.is_relevant(memb_app.get()) || ctx.is_relevant(memb_app_orig.get()) ||
+                (ctx.find_assignment(memb_app.get()) != l_undef &&
+                 (is_foreign_theory_term(std::get<0>(memb)) || is_foreign_theory_term(std::get<1>(memb))))) &&
                // this membership constraint is not added to relevant yet
                !this->m_rat_membership_todo_rel.contains(memb)
                ) {
@@ -499,7 +529,10 @@ namespace smt::noodler {
                      << std::endl;
             );
 
-            if((ctx.is_relevant(con_expr.get()) || ctx.is_relevant(not_con_expr.get())) &&
+            // relevant, or already assigned a truth value (see comment above the equation case)
+            if((ctx.is_relevant(con_expr.get()) || ctx.is_relevant(not_con_expr.get()) ||
+                ((ctx.find_assignment(con_expr.get()) != l_undef || ctx.find_assignment(not_con_expr.get()) != l_undef) &&
+                 (is_foreign_theory_term(not_con_pair.first) || is_foreign_theory_term(not_con_pair.second)))) &&
                 !this->m_not_contains_todo_rel.contains(not_con_pair)) {
                 this->m_not_contains_todo_rel.push_back(not_con_pair);
             }

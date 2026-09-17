@@ -259,7 +259,7 @@ namespace smt::noodler {
             app* fresh_var = m.mk_fresh_const("@" + name, m_util_a.mk_int(), true); // need to be skolem, because it seems they are not printed for models
             return expr_ref(fresh_var, m);
         }
-        
+
         /**
          * @brief Create a fresh Z3 string variable with a given @p name followed by a unique suffix.
          *
@@ -416,6 +416,17 @@ namespace smt::noodler {
          * @brief Adds string constraints from *_todo that are relevant for SAT checking to *_todo_rel.
          */
         void remove_irrelevant_constr();
+
+        /**
+         * @brief Check if @p e is rooted by a function symbol that does not belong to the string/seq
+         * theory (and is not a plain variable/uninterpreted/recursive function), e.g. an array `select`.
+         *
+         * This identifies terms whose value is controlled by another theory's internal reasoning (such as
+         * the array theory's extensionality axiom) rather than by Noodler's own axiomatization of derived
+         * string functions (str.at, str.substr, str.indexof, str.contains, ...), which are all seq-family
+         * applications.
+         */
+        bool is_foreign_theory_term(expr* e) const;
 
         /**
         Convert (dis)equation @p ex to the instance of Predicate. As a side effect updates mapping of
