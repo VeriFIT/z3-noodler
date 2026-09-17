@@ -4,6 +4,7 @@ Eternal glory to Yu-Fang.
 */
 
 #include "expr_solver.h"
+#include "util.h"
 #include "ast/ast_pp.h"
 
 namespace smt::noodler {
