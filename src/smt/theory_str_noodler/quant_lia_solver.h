@@ -122,7 +122,7 @@ namespace smt::noodler {
          * @param ctx Current context
          * @param include_assignment Include the current assignment from the context?
          */
-        void initialize(context& ctx, bool include_assignment = true) override {
+        void initialize(context& ctx, bool include_assignment = true, bool include_clauses = false) override {
             if(!initialized){
                 initialized=true;
                 expr_ref_vector Assigns(m);
@@ -138,6 +138,8 @@ namespace smt::noodler {
                             assert_expr(e);
                         }
                     }
+                }
+                if (include_clauses) {
                     // Assigns/get_asserted_formula only expose the original assertions and literals that
                     // already have a concrete truth value. Clauses with still-undecided literals (e.g. a
                     // semantic axiom for str.substr/str.indexof relating a proxy variable to a real problem

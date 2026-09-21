@@ -146,11 +146,8 @@ namespace smt::noodler {
         vector<std::tuple<expr_ref, expr_ref, expr_ref, bool>> m_rat_membership_todo_rel; // contains the 2 string variables and rat. relation. + flag telling us if it is negated (false -> negated)
         // we cannot decide relevancy of to_code, from_code, to_int and from_int, so we assume everything in m_conversion_todo is relevant => no _todo_rel version
 
-        // TODO: the following three things should probably be done differently
         // true if last run of final_check_eh was sat (if it is true, then final_check_eh always return sat)
         bool last_run_was_sat = false;
-        // the length formula from the last run that was sat
-        expr_ref sat_length_formula;
         // the scope at which the last run was sat (so if we pop behind this scope, we have to forget that the last run was sat)
         int scope_with_last_run_was_sat = -1;
 
@@ -506,7 +503,7 @@ namespace smt::noodler {
          * @param[out] model_formula If this parameter is NOT nullptr, the LIA solver stores here equations of variables from @p len_formula and their models
          * (if it is sat), restricted to variables that dec_proc actually needs for model construction -- see filter_model_formula_to_length_vars.
          */
-        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr, expr_ref* model_formula=nullptr);
+        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr, expr_ref* model_formula=nullptr, bool check_with_clauses = false);
 
         /**
          * @brief Restrict @p model_formula (a conjunction of equations "variable = value" produced by check_len_sat) to only those
@@ -636,7 +633,7 @@ namespace smt::noodler {
          * 
          * @param length_formula - formula with which we got sat
          */
-        void sat_handling(expr_ref length_formula);
+        lbool sat_handling(expr_ref length_formula);
 
         /***************** FINAL_CHECK_EH HELPING FUNCTIONS END *******************/
 

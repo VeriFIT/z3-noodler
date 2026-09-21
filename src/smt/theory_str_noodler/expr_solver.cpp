@@ -62,7 +62,7 @@ namespace smt::noodler {
         return r;
     }
 
-    void int_expr_solver::initialize(context& ctx, bool include_assignment) {
+    void int_expr_solver::initialize(context& ctx, bool include_assignment, bool include_clauses) {
         if(!initialized){
             initialized=true;
             expr_ref_vector Assigns(m);
@@ -79,6 +79,8 @@ namespace smt::noodler {
                         assert_expr(e);
                     }
                 }
+            }
+            if (include_clauses) {
                 // Assigns/get_asserted_formula only expose the original assertions and literals that
                 // already have a concrete truth value. Clauses with still-undecided literals (e.g. a
                 // semantic axiom for str.substr/str.indexof relating a proxy variable to a real problem
