@@ -1278,27 +1278,6 @@ namespace smt::noodler {
         last_run_was_sat = true;
         m_rewrite(length_formula);
         scope_with_last_run_was_sat = m_scope_level;
-        if (m_params.m_produce_models && !len_vars.empty()) {
-            // If we want to produce models, we would like to limit the lengths more significantly,
-            // so that Z3 arith solver does not give us some large numbers (for example it can give 60000
-            // and returning such a long model can take a long time).
-            // We therefore check if we can still get a model if we limit all lengths by some number.
-            const int LENGTH_LIMIT = 100; // this seems a small enough number so that model generation is easy, while allowing model to pass trough for most benchmarks
-            expr_ref_vector len_constraints(m);
-            for (expr* len_var : len_vars) {
-                // |len_var| <= LENGTH_LIMIT
-                len_constraints.push_back(expr_ref(m_util_a.mk_le(m_util_s.str.mk_length(len_var), m_util_a.mk_int(LENGTH_LIMIT)), m));
-            }
-            expr_ref length_formula_underapprox(m.mk_and(length_formula, m.mk_and(len_constraints)), m);
-            STRACE(str_sat_handling, tout << "Checking if we can put stronger limits on lengths with formula " << mk_pp(length_formula_underapprox, m) << " which is ";);
-            if (check_len_sat(length_formula_underapprox, true) == lbool::l_true) { // we need to check with context, we are asking whether we can limit lengths of all length variables depending (also) on the context
-                // we can limit the lengths => add it to the resulting length formula
-                STRACE(str_sat_handling, tout << "sat\n");
-                length_formula = length_formula_underapprox;
-            } else {
-                STRACE(str_sat_handling, tout << "unsat\n");
-            }
-        }
         sat_length_formula = length_formula;
 
         if (m_params.m_produce_models) {
