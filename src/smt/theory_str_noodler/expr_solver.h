@@ -42,7 +42,7 @@ namespace smt::noodler {
        }
 
         lbool check_sat(expr* e) override;
-        void initialize(context& ctx, bool include_assignment = true) override;
+        void initialize(context& ctx, bool include_assignment = true, bool include_clauses = false) override;
         void get_unsat_core(expr_ref& dst) override;
         void assert_expr(expr * e);
         expr_ref get_model() override { return model_formula; }
