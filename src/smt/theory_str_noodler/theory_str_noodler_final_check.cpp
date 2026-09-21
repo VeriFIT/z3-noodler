@@ -326,7 +326,7 @@ namespace smt::noodler {
         };
         auto check_lens = [&check_lens_with_precision, this, &lengths, &block_len, &check_len_sat_with_context](bool add_to_block) -> lbool {
             auto [is_lengths_sat, precision] = check_lens_with_precision();
-            if (add_to_block) {
+            if (add_to_block && is_lengths_sat == l_false) {
                 block_len = m.mk_or(block_len, lengths);
             }
             return is_lengths_sat;
