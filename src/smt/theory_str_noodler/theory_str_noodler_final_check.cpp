@@ -1073,7 +1073,7 @@ namespace smt::noodler {
                     } else {
                         STRACE(str, tout << "nielsen len unsat" <<  mk_pp(lengths, m) << std::endl;);
                         block_len = m.mk_or(block_len, lengths);
-                        check_len_sat_with_context = false;
+                        check_len_sat_with_context = true;
                     }
                 } else {
                     STRACE(str, tout << "nielsen len unsat" <<  mk_pp(lengths, m) << std::endl;);
@@ -1127,7 +1127,7 @@ namespace smt::noodler {
                     return l_true;
                 } else {
                     len_sat = l_false;
-                    check_len_sat_with_context = false;
+                    check_len_sat_with_context = true;
                 }
             }
             if (len_sat = l_false) {
@@ -1340,7 +1340,7 @@ namespace smt::noodler {
                 return l_true;
             } else {
                 len_sat = l_false;
-                check_len_sat_with_context = false;
+                check_len_sat_with_context = true;
             }
         }
         if (len_sat == l_false) {
@@ -1351,6 +1351,8 @@ namespace smt::noodler {
                 block_curr_len(lengths);
             }
             return l_false;
+        } else {
+            UNREACHABLE();
         }
     }
 
