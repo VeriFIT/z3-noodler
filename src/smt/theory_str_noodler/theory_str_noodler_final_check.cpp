@@ -1357,9 +1357,19 @@ namespace smt::noodler {
     }
 
     lbool theory_str_noodler::sat_handling(expr_ref length_formula) {
-        expr_ref model_formula(m);
-        bool model_got_from_underapprox = false;
-        if (!len_vars.empty()) {
+        if (expr_cases::has_quantifier(length_formula, m) || this->input_has_quantifiers) {
+            expr_ref model_formula(m);
+            lbool len_result_with_full_context = check_len_sat(length_formula, true, nullptr, &model_formula, true);
+            if (len_result_with_full_context != lbool::l_true) { return len_result_with_full_context; }
+            last_run_was_sat = true;
+            m_rewrite(model_formula);
+            STRACE(str_sat_handling, tout << "Model formula " << mk_pp(model_formula, m) << std::endl;);
+            add_axiom(model_formula);
+            scope_with_last_run_was_sat = m_scope_level;
+            return l_true;
+        }
+
+        if (!len_vars.empty() && m_params.m_produce_models) {
             // If we want to produce models, we would like to limit the lengths more significantly,
             // so that Z3 arith solver does not give us some large numbers (for example it can give 60000
             // and returning such a long model can take a long time).
@@ -1372,25 +1382,18 @@ namespace smt::noodler {
             }
             expr_ref length_formula_underapprox(m.mk_and(length_formula, m.mk_and(len_constraints)), m);
             STRACE(str_sat_handling, tout << "Checking if we can put stronger limits on lengths with formula " << mk_pp(length_formula_underapprox, m) << " which is ";);
-            if (check_len_sat(length_formula_underapprox, true, nullptr, &model_formula, true) == lbool::l_true) { // we need to check with context, we are asking whether we can limit lengths of all length variables depending (also) on the context
+            if (check_len_sat(length_formula_underapprox, true) == lbool::l_true) { // we need to check with context, we are asking whether we can limit lengths of all length variables depending (also) on the context
                 // we can limit the lengths => add it to the resulting length formula
                 STRACE(str_sat_handling, tout << "sat\n");
                 length_formula = length_formula_underapprox;
-                model_got_from_underapprox = true;
             } else {
                 STRACE(str_sat_handling, tout << "unsat\n");
             }
         }
 
-        if (!model_got_from_underapprox) {
-            lbool len_result_with_full_context = check_len_sat(length_formula, true, nullptr, &model_formula, true);
-            if (len_result_with_full_context != lbool::l_true) { return len_result_with_full_context; }
-        }
-
         last_run_was_sat = true;
-        m_rewrite(model_formula);
-        STRACE(str_sat_handling, tout << "Model formula " << mk_pp(model_formula, m) << std::endl;);
-        add_axiom(model_formula);
+        m_rewrite(length_formula);
+        add_axiom(length_formula);
         scope_with_last_run_was_sat = m_scope_level;
         return l_true;
     }
