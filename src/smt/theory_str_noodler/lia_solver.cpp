@@ -23,7 +23,7 @@ namespace smt::noodler {
         }
         // the core is expressed over rewrite_for_external_solver's fresh constants -- translate it back
         // to the caller's own vocabulary.
-        unsat_core = expr_ref(util::translate_fresh_vars_back(unsat_core, m, canonical_of_fresh), m);
+        unsat_core = util::translate_fresh_vars_back(unsat_core, m, canonical_of_fresh);
         STRACE(str_lia, tout << "UNSAT core:" << std::endl << mk_pp(unsat_core, m));
     }
 
