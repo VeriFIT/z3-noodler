@@ -1346,9 +1346,9 @@ namespace smt::noodler {
                 block_curr_len(lengths);
             }
             return l_false;
-        } else {
-            UNREACHABLE();
         }
+        UNREACHABLE();
+        return l_undef;
     }
 
     lbool theory_str_noodler::sat_handling(expr_ref length_formula) {
