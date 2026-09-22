@@ -162,7 +162,7 @@ namespace smt::noodler::util {
      * solver's fresh constants. Used to translate a model or unsat core coming back from an external
      * ("none" string-solver) sub-kernel/tactic-solver.
      */
-    expr* translate_fresh_vars_back(expr* ex, ast_manager& m, const obj_map<expr, expr*>& canonical_of_fresh);
+    expr_ref translate_fresh_vars_back(expr* ex, ast_manager& m, const obj_map<expr, expr*>& canonical_of_fresh);
 
     /**
      * @brief Reconstruct every clause @p ctx currently holds (both theory axioms/lemmas added along the

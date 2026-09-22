@@ -177,9 +177,9 @@ namespace smt::noodler::util {
         return result;
     }
 
-    expr* translate_fresh_vars_back(expr* ex, ast_manager& m, const obj_map<expr, expr*>& canonical_of_fresh) {
+    expr_ref translate_fresh_vars_back(expr* ex, ast_manager& m, const obj_map<expr, expr*>& canonical_of_fresh) {
         if (canonical_of_fresh.empty()) {
-            return ex;
+            return expr_ref(ex, m);
         }
         expr_safe_replace replace(m);
         for (const auto& entry : canonical_of_fresh) {
