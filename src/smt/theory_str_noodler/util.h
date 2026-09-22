@@ -155,6 +155,16 @@ namespace smt::noodler::util {
                                   expr_ref_vector& pinned);
 
     /**
+     * @brief Undo the fresh-constant substitution replace_arith_str_funcs performed: replaces every
+     * occurrence of a fresh constant registered in @p canonical_of_fresh (fresh constant -> the
+     * str.len/str.to_code/str.stoi/str.stor application it stands for) by that canonical application, so
+     * that @p ex is expressed again purely over the caller's own vocabulary instead of the external
+     * solver's fresh constants. Used to translate a model or unsat core coming back from an external
+     * ("none" string-solver) sub-kernel/tactic-solver.
+     */
+    expr* translate_fresh_vars_back(expr* ex, ast_manager& m, const obj_map<expr, expr*>& canonical_of_fresh);
+
+    /**
      * @brief Reconstruct every clause @p ctx currently holds (both theory axioms/lemmas added along the
      * way, e.g. `theory_str_noodler::add_axiom`, and clauses learned from conflicts) as a disjunction of
      * literal expressions, appending one expression per clause to @p result.

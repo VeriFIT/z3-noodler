@@ -77,6 +77,11 @@ namespace smt::noodler {
             sl->assert_expr(erv);
             auto res = sl->check_sat();
             sl->get_unsat_core(unsat_core);
+            // the core is expressed over rewrite_for_external_solver's fresh constants -- translate it
+            // back to the caller's own vocabulary (see util::translate_fresh_vars_back).
+            for (unsigned i = 0; i < unsat_core.size(); ++i) {
+                unsat_core[i] = util::translate_fresh_vars_back(unsat_core.get(i), m, canonical_of_fresh);
+            }
             erv.pop_back();
 
             model_formula = m.mk_true();

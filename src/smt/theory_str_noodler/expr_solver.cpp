@@ -22,6 +22,9 @@ namespace smt::noodler {
             for (unsigned i = 0; i < solver.get_unsat_core_size(); ++i) {
                 unsat_core = m.mk_and(unsat_core, solver.get_unsat_core_expr(i));
             }
+            // the core is expressed over rewrite_for_external_solver's fresh constants -- translate it
+            // back to the caller's own vocabulary (see util::translate_fresh_vars_back).
+            unsat_core = expr_ref(util::translate_fresh_vars_back(unsat_core, m, canonical_of_fresh), m);
             STRACE(str_lia, tout << "UNSAT core:" << std::endl << mk_pp(unsat_core, m));
         }
 

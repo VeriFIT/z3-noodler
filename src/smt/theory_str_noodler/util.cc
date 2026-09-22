@@ -2,6 +2,7 @@
 
 #include "util/gparams.h"
 #include "util/z3_exception.h"
+#include "ast/rewriter/expr_safe_replace.h"
 
 #include "util.h"
 #include "theory_str_noodler.h"
@@ -173,6 +174,19 @@ namespace smt::noodler::util {
         }
 
         memo.insert(ex, result);
+        return result;
+    }
+
+    expr* translate_fresh_vars_back(expr* ex, ast_manager& m, const obj_map<expr, expr*>& canonical_of_fresh) {
+        if (canonical_of_fresh.empty()) {
+            return ex;
+        }
+        expr_safe_replace replace(m);
+        for (const auto& entry : canonical_of_fresh) {
+            replace.insert(&entry.get_key(), entry.get_value());
+        }
+        expr_ref result(m);
+        replace(ex, result);
         return result;
     }
 
