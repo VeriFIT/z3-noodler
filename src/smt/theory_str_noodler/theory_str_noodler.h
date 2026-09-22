@@ -146,11 +146,8 @@ namespace smt::noodler {
         vector<std::tuple<expr_ref, expr_ref, expr_ref, bool>> m_rat_membership_todo_rel; // contains the 2 string variables and rat. relation. + flag telling us if it is negated (false -> negated)
         // we cannot decide relevancy of to_code, from_code, to_int and from_int, so we assume everything in m_conversion_todo is relevant => no _todo_rel version
 
-        // TODO: the following three things should probably be done differently
         // true if last run of final_check_eh was sat (if it is true, then final_check_eh always return sat)
         bool last_run_was_sat = false;
-        // the length formula from the last run that was sat
-        expr_ref sat_length_formula;
         // the scope at which the last run was sat (so if we pop behind this scope, we have to forget that the last run was sat)
         int scope_with_last_run_was_sat = -1;
 
@@ -500,11 +497,29 @@ namespace smt::noodler {
 
         /**
          * @brief Check if the length formula @p len_formula is satisfiable with the existing length constraints (the context).
-         * 
+         *
          * @param check_with_context If false, checks only if the length formula @p len_formula is satisfiable
          * @param[out] unsat_core If this parameter is NOT nullptr, the LIA solver stores here unsat core of the current @p len_formula.
+         * @param[out] model_formula If this parameter is NOT nullptr, the LIA solver stores here equations of variables from @p len_formula and their models
+         * (if it is sat), restricted to variables that dec_proc actually needs for model construction -- see filter_model_formula_to_length_vars.
          */
-        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr);
+        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr, expr_ref* model_formula=nullptr, bool check_with_clauses = false);
+
+        /**
+         * @brief Restrict @p model_formula (a conjunction of equations "variable = value" produced by check_len_sat) to only those
+         * equations about a variable that dec_proc actually needs to build some relevant string variable's model, i.e. a variable
+         * occurring in dec_proc->get_len_vars_for_model(v) for some v in relevant_vars.
+         *
+         * This is deliberately queried from dec_proc itself (instead of e.g. the init_length_sensitive_vars computed once before
+         * dec_proc starts) because a decision procedure can introduce/need additional length-sensitive variables while solving
+         * (e.g. fresh variables from splitting an equation) that were not anticipated up front. Any variable NOT in this set (e.g. a
+         * proxy for a "regular sequence" that is not otherwise length-constrained, or a purely-internal LIA helper used only to check
+         * @p len_formula itself) is left out of the returned formula: permanently asserting a value for it could later conflict with
+         * a requirement (e.g. a regex-implied minimum length) check_len_sat itself has no visibility into, while leaving it out is
+         * safe -- it means the variable's content does not matter to Noodler's own solution, so Z3's ordinary model completion for
+         * whatever remains of the length constraints is free to pick any consistent value.
+         */
+        expr_ref filter_model_formula_to_length_vars(expr_ref model_formula);
 
         /**
          * @brief Blocks current SAT assignment for given @p len_formula
@@ -618,7 +633,7 @@ namespace smt::noodler {
          * 
          * @param length_formula - formula with which we got sat
          */
-        void sat_handling(expr_ref length_formula);
+        lbool sat_handling(expr_ref length_formula);
 
         /***************** FINAL_CHECK_EH HELPING FUNCTIONS END *******************/
 
