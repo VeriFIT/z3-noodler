@@ -71,7 +71,7 @@ namespace smt::noodler {
          *
          * @param ctx The Z3 `context` from which to take asserted formulas and current assignment.
          * @param include_assignment If true, include (assert) expressions corresponding to the current model returned by SMT core.
-         * @param include_clauses If true, also include clauses (e.g. not-yet-fully-decided theory axioms) currently held by @p ctx, see util::get_context_clauses.
+         * @param include_clauses If true, also include clauses (e.g. not-yet-fully-decided theory axioms) currently held by @p ctx.
          */
         virtual void initialize(context& ctx, bool include_assignment = true, bool include_clauses = false);
 
