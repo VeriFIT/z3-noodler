@@ -1083,13 +1083,13 @@ namespace smt::noodler {
                 }
             }
         }
-        // each free place marked by -1 replace by "a"
+        // each free place marked by -1 replace by the default model character
         zstring solution = "";
         for(size_t i = 0; i < res_skeleton.size(); i++) {
             if(res_skeleton[i] != -1) {
                 solution = solution + zstring(unsigned(res_skeleton[i]));
             } else {
-                solution = solution + "a";
+                solution = solution + zstring(util::get_default_model_char());
             }
         }
         return solution;
