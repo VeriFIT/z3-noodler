@@ -19,7 +19,7 @@ namespace smt::noodler {
         void get_dependencies(buffer<model_value_dependency> & result) override {
             for (const BasicTerm& var : needed_vars) { // we assume that all needed_vars are either string or int variables
                 SASSERT(var.get_type() == BasicTermType::Variable);
-                expr_ref arith_var = util::resolve_arith_var_expr(var, th.var_name, th.m, th.m_util_s, th.m_util_a);
+                expr_ref arith_var = util::basic_term_to_length_expr(var, th.var_name, th.m, th.m_util_s, th.m_util_a);
                 result.push_back(model_value_dependency(th.ctx.get_enode(arith_var)));
             }
         }

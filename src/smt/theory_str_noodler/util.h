@@ -95,39 +95,6 @@ namespace smt::noodler::util {
     BasicTerm get_variable_basic_term(expr* variable);
 
     /**
-     * @brief Resolve a Noodler length/arith @p var to the z3 arithmetic expr it stands for.
-     *
-     * If @p var is already mapped in @p known_vars, returns that expr directly -- wrapped in `str.len`
-     * when the mapped expr is string-sorted, since this is only ever used where what is actually wanted
-     * is the *length* of a mapped string variable, never its value. Otherwise (no mapping is known for
-     * @p var, e.g. it is an internal variable introduced only by one decision-procedure/length-check call)
-     * creates a fresh skolem constant named after @p var's own name, of int or real sort depending on
-     * @p var's type -- the inverse of this encoding is what get_length_var_basic_term()/
-     * get_variable_basic_term() expect when recovering @p var from such an expr later on.
-     *
-     * Shared by convert_len_node_to_z3_formula() (via LenFormulaContext::known_z3_exprs) and
-     * theory_str_noodler::noodler_var_value_proc::get_dependencies() (via theory_str_noodler::var_name) --
-     * the two places that otherwise independently re-derived the same BasicTerm -> z3 expr encoding.
-     */
-    expr_ref resolve_arith_var_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
-                                    ast_manager& m, const seq_util& m_util_s, arith_util& m_util_a);
-
-    void get_len_exprs(expr* ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res);
-
-    /**
-     * @brief Recover the Noodler BasicTerm that a length-model entry's variable @p lhs stands for.
-     *
-     * @p lhs is either a str.len/str.to_code/str.stoi/str.stor application (canonical_of_fresh already
-     * resolved a fresh external-solver constant back to it, see lia_solver::replace_arith_str_funcs) -- in which case
-     * the relevant variable is its string argument -- or some other 0-ary constant/skolem (e.g. an
-     * internal LIA helper like the align/k variables created only for one check_len_sat call) -- in which
-     * case the constant itself, identified by its own name, is the relevant "variable". Used to decide
-     * whether a given length-model entry is about a variable Noodler actually tracks as length-sensitive
-     * (see theory_str_noodler::get_init_length_vars) before permanently asserting it.
-     */
-    BasicTerm get_length_var_basic_term(expr* lhs, const seq_util& m_util_s);
-
-    /**
      * @brief Checks whether @p ex is one of the string-argument/arithmetic-result functions whose model
      * value we need to read directly out of an (external) arithmetic solver: str.len, str.to_code,
      * str.stoi (str.to_int) and str.stor (str.to_real).
@@ -137,6 +104,22 @@ namespace smt::noodler::util {
      * model value for them directly out of the arithmetic solver.
      */
     bool is_arith_str_func(const expr* ex, const seq_util& m_util_s);
+
+    /**
+     * @brief Returns the BasicTerm that @p ex stands for: if @p ex is an is_arith_str_func application,
+     * the variable in its string argument; otherwise @p ex's own variable (see get_variable_basic_term).
+     */
+    BasicTerm basic_term_from_arith_str_func(expr* ex, const seq_util& m_util_s);
+
+    /**
+     * @brief Returns the z3 arithmetic expr representing @p var: its mapped expr from @p known_vars
+     * (wrapped in `str.len` if that expr is string-sorted), or, if @p var has no mapping in @p known_vars,
+     * a fresh skolem constant named after @p var, of int or real sort depending on @p var's type.
+     */
+    expr_ref basic_term_to_length_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
+                                    ast_manager& m, const seq_util& m_util_s, arith_util& m_util_a);
+
+    void get_len_exprs(expr* ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res);
 
     /// @brief Create a noodler (BasicTerm) variable with a given @p name representing an internal variable (should not clash with user-defined variables)
     inline BasicTerm mk_internal_noodler_var(const zstring& name) {

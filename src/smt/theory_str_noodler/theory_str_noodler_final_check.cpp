@@ -935,7 +935,7 @@ namespace smt::noodler {
         expr_ref_vector kept(m);
         for (expr* conj : conjuncts) {
             expr *lhs, *rhs;
-            if (m.is_eq(conj, lhs, rhs) && needed_vars.contains(util::get_length_var_basic_term(lhs, m_util_s))) {
+            if (m.is_eq(conj, lhs, rhs) && needed_vars.contains(util::basic_term_from_arith_str_func(lhs, m_util_s))) {
                 kept.push_back(conj);
             } else {
                 STRACE(str_sat_handling, tout << "Dropping non-length-sensitive model entry: " << mk_pp(conj, m) << std::endl;);

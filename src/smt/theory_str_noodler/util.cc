@@ -73,7 +73,18 @@ namespace smt::noodler::util {
         return BasicTerm{ BasicTermType::Variable, variable_app->get_decl()->get_name().str() };
     }
 
-    expr_ref resolve_arith_var_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
+    bool is_arith_str_func(const expr* ex, const seq_util& m_util_s) {
+        return m_util_s.str.is_length(ex) || m_util_s.str.is_to_code(ex) || m_util_s.str.is_stoi(ex) || m_util_s.str.is_stor(ex);
+    }
+
+    BasicTerm basic_term_from_arith_str_func(expr* ex, const seq_util& m_util_s) {
+        if (is_arith_str_func(ex, m_util_s)) {
+            return get_variable_basic_term(to_app(ex)->get_arg(0));
+        }
+        return get_variable_basic_term(ex);
+    }
+
+    expr_ref basic_term_to_length_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
                                     ast_manager& m, const seq_util& m_util_s, arith_util& m_util_a) {
         auto known_it = known_vars.find(var);
         if (known_it != known_vars.end()) {
@@ -85,10 +96,9 @@ namespace smt::noodler::util {
             return known_expr;
         }
 
-        // var is not known yet (e.g. an internal variable introduced only by one decision-procedure/
-        // length-check call) -- needs to be skolem, because it seems they are not printed for models.
-        // This is also the naming convention get_variable_basic_term()/get_length_var_basic_term() expect
-        // when recovering var from such an expr later on.
+        // var is not known yet -- needs to be skolem, because it seems they are not printed for models.
+        // Named after var itself, so that basic_term_from_arith_str_func()/get_variable_basic_term() can
+        // recover var from this expr later on.
         app* skolem = m.mk_skolem_const(symbol(var.get_name().encode()), var.is_real_variable() ? m_util_a.mk_real() : m_util_a.mk_int());
         return expr_ref(skolem, m);
     }
@@ -115,17 +125,6 @@ namespace smt::noodler::util {
         for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
             get_len_exprs(ex_app->get_arg(i), m_util_s, m, res);
         }
-    }
-
-    bool is_arith_str_func(const expr* ex, const seq_util& m_util_s) {
-        return m_util_s.str.is_length(ex) || m_util_s.str.is_to_code(ex) || m_util_s.str.is_stoi(ex) || m_util_s.str.is_stor(ex);
-    }
-
-    BasicTerm get_length_var_basic_term(expr* lhs, const seq_util& m_util_s) {
-        if (is_arith_str_func(lhs, m_util_s)) {
-            return get_variable_basic_term(to_app(lhs)->get_arg(0));
-        }
-        return get_variable_basic_term(lhs);
     }
 
     bool split_word_to_automata(const zstring& word, const std::vector<std::shared_ptr<mata::nfa::Nfa>>& automata, std::vector<zstring>& words) {

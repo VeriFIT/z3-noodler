@@ -404,7 +404,7 @@ namespace smt::noodler {
             }
         }
 
-        return util::resolve_arith_var_expr(node.atom_val, ctx.known_z3_exprs, ctx.manager, ctx.seq_utilities, ctx.arith_utilities);
+        return util::basic_term_to_length_expr(node.atom_val, ctx.known_z3_exprs, ctx.manager, ctx.seq_utilities, ctx.arith_utilities);
     }
 
     expr_ref convert_len_node_to_z3_formula(LenFormulaContext &ctx, const LenNode &node) {
