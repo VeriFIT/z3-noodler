@@ -911,11 +911,10 @@ namespace smt::noodler {
             needed_exprs.insert(e.get());
             needed_exprs_pinned.push_back(e);
         };
-        if (this->dec_proc) {
-            for (const BasicTerm& var : this->relevant_vars) {
-                for (const BasicTerm& needed : this->dec_proc->get_len_vars_for_model(var)) {
-                    add_needed(needed);
-                }
+        SASSERT(this->dec_proc);
+        for (const BasicTerm& var : this->relevant_vars) {
+            for (const BasicTerm& needed : this->dec_proc->get_len_vars_for_model(var)) {
+                add_needed(needed);
             }
         }
 
