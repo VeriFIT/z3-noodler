@@ -895,39 +895,34 @@ namespace smt::noodler {
             return model_formula;
         }
 
-        // the set of variables dec_proc actually needs (the length of) to build the model of some relevant
-        // string variable -- see noodler_var_value_proc in theory_str_noodler_model.cpp, which queries
-        // dec_proc->get_len_vars_for_model the exact same way when it is time to construct the real model.
-        // Every implementation of get_len_vars_for_model we have either ignores its argument and returns the
-        // same (decision-procedure-wide) set every time, or (UnaryDecisionProcedure, where each variable's
-        // model depends only on its own length) genuinely needs to be queried per variable, so we query it
-        // once per relevant_vars to cover both cases.
-        std::unordered_set<BasicTerm> needed_vars;
+        // the set of z3 exprs dec_proc actually needs (the length/arith value of) to build the model of some
+        // relevant string variable -- see noodler_var_value_proc in theory_str_noodler_model.cpp, which
+        // queries dec_proc->get_len_vars_for_model the exact same way when it is time to construct the real
+        // model, and resolves each needed BasicTerm to a z3 expr via the same util::basic_term_to_length_expr
+        // used below -- so a model equation survives filtering here exactly when noodler_var_value_proc would
+        // also ask for its value. Every implementation of get_len_vars_for_model we have either ignores its
+        // argument and returns the same (decision-procedure-wide) set every time, or (UnaryDecisionProcedure,
+        // where each variable's model depends only on its own length) genuinely needs to be queried per
+        // variable, so we query it once per relevant_vars to cover both cases.
+        obj_hashtable<expr> needed_exprs;
+        expr_ref_vector needed_exprs_pinned(m); // keeps the exprs in needed_exprs alive
+        auto add_needed = [&](const BasicTerm& var) {
+            expr_ref e = util::basic_term_to_length_expr(var, this->var_name, m, m_util_s, m_util_a);
+            needed_exprs.insert(e.get());
+            needed_exprs_pinned.push_back(e);
+        };
         if (this->dec_proc) {
             for (const BasicTerm& var : this->relevant_vars) {
                 for (const BasicTerm& needed : this->dec_proc->get_len_vars_for_model(var)) {
-                    // Some vars dec_proc reports (e.g. the fresh "@from_code_argument!.." BasicTerm created for
-                    // the number argument of a string-int(/code/real) conversion, see
-                    // theory_str_noodler::handle_conversion) are just an internal name that var_name maps back to
-                    // the real Z3 expr (e.g. the user's declared Int variable) -- and it is that real expr's own
-                    // BasicTerm which actually shows up in the model formula (via len_node_to_z3_formula's own
-                    // var_name lookup). Resolve through var_name here the exact same way
-                    // noodler_var_value_proc::get_dependencies does, so the two line up.
-                    if (auto it = this->var_name.find(needed); it != this->var_name.end() && util::is_variable(it->second.get())) {
-                        needed_vars.insert(util::get_variable_basic_term(it->second.get()));
-                    } else {
-                        needed_vars.insert(needed);
-                    }
+                    add_needed(needed);
                 }
             }
         }
 
+        // we also need to get models of variables representing conversions, so that the internal solver can give the conversions the
+        // correct values (as these are handled by arith solver and not by string solver, so this will force the correct value in the arith solver)
         for (const TermConversion& conv : m_conversion_todo) {
-            if (auto it = this->var_name.find(conv.number_var); it != this->var_name.end() && util::is_variable(it->second.get())) {
-                needed_vars.insert(util::get_variable_basic_term(it->second.get()));
-            } else {
-                needed_vars.insert(conv.number_var);
-            }
+            add_needed(conv.number_var);
         }
 
         expr_ref_vector conjuncts(m);
@@ -935,7 +930,7 @@ namespace smt::noodler {
         expr_ref_vector kept(m);
         for (expr* conj : conjuncts) {
             expr *lhs, *rhs;
-            if (m.is_eq(conj, lhs, rhs) && needed_vars.contains(util::basic_term_from_arith_str_func(lhs, m_util_s))) {
+            if (m.is_eq(conj, lhs, rhs) && needed_exprs.contains(lhs)) {
                 kept.push_back(conj);
             } else {
                 STRACE(str_sat_handling, tout << "Dropping non-length-sensitive model entry: " << mk_pp(conj, m) << std::endl;);

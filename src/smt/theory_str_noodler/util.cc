@@ -77,13 +77,6 @@ namespace smt::noodler::util {
         return m_util_s.str.is_length(ex) || m_util_s.str.is_to_code(ex) || m_util_s.str.is_stoi(ex) || m_util_s.str.is_stor(ex);
     }
 
-    BasicTerm basic_term_from_arith_str_func(expr* ex, const seq_util& m_util_s) {
-        if (is_arith_str_func(ex, m_util_s)) {
-            return get_variable_basic_term(to_app(ex)->get_arg(0));
-        }
-        return get_variable_basic_term(ex);
-    }
-
     expr_ref basic_term_to_length_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
                                     ast_manager& m, const seq_util& m_util_s, arith_util& m_util_a) {
         auto known_it = known_vars.find(var);
@@ -97,8 +90,6 @@ namespace smt::noodler::util {
         }
 
         // var is not known yet -- needs to be skolem, because it seems they are not printed for models.
-        // Named after var itself, so that basic_term_from_arith_str_func()/get_variable_basic_term() can
-        // recover var from this expr later on.
         app* skolem = m.mk_skolem_const(symbol(var.get_name().encode()), var.is_real_variable() ? m_util_a.mk_real() : m_util_a.mk_int());
         return expr_ref(skolem, m);
     }

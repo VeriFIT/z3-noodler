@@ -95,21 +95,10 @@ namespace smt::noodler::util {
     BasicTerm get_variable_basic_term(expr* variable);
 
     /**
-     * @brief Checks whether @p ex is one of the string-argument/arithmetic-result functions whose model
-     * value we need to read directly out of an (external) arithmetic solver: str.len, str.to_code,
-     * str.stoi (str.to_int) and str.stor (str.to_real).
-     *
-     * Note that e.g. str.indexof/str.contains are intentionally NOT included here -- those are fully
-     * axiomatized (see theory_str_noodler::handle_index_of/handle_contains) and we never need to pull a
-     * model value for them directly out of the arithmetic solver.
+     * @brief Checks whether @p ex is one of the string-argument/arithmetic-result functions, that is:
+     * str.len, str.to_code str.to_int and str.to_real.
      */
     bool is_arith_str_func(const expr* ex, const seq_util& m_util_s);
-
-    /**
-     * @brief Returns the BasicTerm that @p ex stands for: if @p ex is an is_arith_str_func application,
-     * the variable in its string argument; otherwise @p ex's own variable (see get_variable_basic_term).
-     */
-    BasicTerm basic_term_from_arith_str_func(expr* ex, const seq_util& m_util_s);
 
     /**
      * @brief Returns the z3 arithmetic expr representing @p var: its mapped expr from @p known_vars
