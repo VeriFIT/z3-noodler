@@ -71,7 +71,12 @@ namespace smt::noodler::regex {
             return 0; // this is unreachable, return something so we can compile
         }
 
-        // We want to find first "nice" character where we go in this order
+        // We prefer the default model character (if it is not used and can be represented in the current encoding)
+        if (const mata::Symbol default_char = util::get_default_model_char(); !alphabet.contains(default_char)) {
+            return default_char;
+        }
+
+        // Otherwise, we want to find first "nice" character where we go in this order
         //  - lowercase a-z
         //  - uppercase A-Z
         //  - digits 0-9
@@ -940,13 +945,13 @@ namespace smt::noodler::regex {
         } else if (m_util_s.re.is_diff(regex)) { // Handle diff.
             throw regex_model_fail();
         } else if (m_util_s.re.is_dot_plus(regex)) { // Handle dot plus.
-            return zstring("a"); // return one iteration, i.e., arbitrary char
+            return zstring(util::get_default_model_char()); // return one iteration, i.e., arbitrary char
         } else if (m_util_s.re.is_empty(regex)) { // Handle empty language.
             throw regex_model_fail();
         } else if (m_util_s.re.is_epsilon(regex)) { // Handle epsilon.
             return zstring();
         } else if (m_util_s.re.is_full_char(regex)) { // Handle full char (single occurrence of any string symbol, '.').
-            return zstring("a"); // return arbitrary char
+            return zstring(util::get_default_model_char()); // return arbitrary char
         } else if (m_util_s.re.is_full_seq(regex)) {
             return zstring(); // return arbitrary word
         } else if (m_util_s.re.is_intersection(regex)) { // Handle intersection.

@@ -117,7 +117,7 @@ namespace smt::noodler {
                 //     (ite (and (= x!0 "\u{0}") (= x!1 ".")) "\u{0}" String!val!0))
                 // )
                 unsigned len = val.get_unsigned();
-                std::vector<unsigned> res(len, 'a');
+                std::vector<unsigned> res(len, util::get_default_model_char());
                 expr* v = m_util_s.str.mk_string(zstring(res.size(), res.data()));
                 proto_model& mdl = m.get_model();
                 value_factory* vf = mdl.get_factory(m_util_s.get_family_id());

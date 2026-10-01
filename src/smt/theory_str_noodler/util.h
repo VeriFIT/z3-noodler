@@ -45,6 +45,13 @@ namespace smt::noodler::util {
     inline bool is_dummy_symbol(mata::Symbol sym) { return sym == get_dummy_symbol(); }
 
     /**
+     * @brief Get the preferred default character used in models for positions that are not constrained (U+1F4A9, PILE OF POO).
+     *
+     * If the current string encoding cannot represent it (e.g., encoding=ascii or encoding=bmp), 'a' is used instead.
+     */
+    inline mata::Symbol get_default_model_char() { return (0x1F4A9 <= zstring::max_char()) ? mata::Symbol{0x1F4A9} : mata::Symbol{'a'}; }
+
+    /**
      * Throws error and select which class to throw based on debug (if we are
      * debugging, we do not want z3 to catch our error, if we are not debugging
      * we want z3 to catch it and return unknown).
