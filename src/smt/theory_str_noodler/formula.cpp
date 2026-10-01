@@ -393,38 +393,18 @@ namespace smt::noodler {
 
         // Check whether we already have a z3 expr for this variable. Expressions for quantified variables
         // cannot be cached as they variable.id is dynamic.
-        auto known_expr_it = ctx.known_z3_exprs.find(node.atom_val);
-        if (known_expr_it != ctx.known_z3_exprs.end()) {  // We have a know/cached z3_expr
-            expr_ref expr = known_expr_it->second;
+        if (!ctx.known_z3_exprs.contains(node.atom_val)) {
+            std::string var_name = node.atom_val.get_name().encode();
+            auto it = ctx.quantified_vars.find(var_name);
+            if (it != ctx.quantified_vars.end()) {
+                int quantifier_node_height = it->second;
+                int de_brujin_index = ctx.current_quantif_depth - (quantifier_node_height + 1);
 
-            if (ctx.seq_utilities.is_string(expr.get()->get_sort())) {
-                // for string variables we want its length
-                return expr_ref(ctx.seq_utilities.str.mk_length(expr), ctx.manager);
+                return expr_ref(ctx.manager.mk_var(de_brujin_index, ctx.arith_utilities.mk_int()), ctx.manager);
             }
-
-            // we assume here that all other variables are int/real, so they map into the predicate they represent
-            return expr;
         }
 
-        std::string var_name = node.atom_val.get_name().encode();
-        auto it = ctx.quantified_vars.find(var_name);
-        bool is_quantified = (it != ctx.quantified_vars.end());
-
-        if (is_quantified) {
-            int quantifier_node_height = it->second;
-            int de_brujin_index = ctx.current_quantif_depth - (quantifier_node_height + 1);
-
-            return expr_ref(ctx.manager.mk_var(de_brujin_index, ctx.arith_utilities.mk_int()), ctx.manager);
-        }
-
-        // Not quantified - needs to be skolem, because it seems they are not printed for models
-        app* var;
-        if (node.atom_val.is_real_variable()) {
-            var = ctx.manager.mk_skolem_const(symbol(var_name.c_str()), ctx.arith_utilities.mk_real());
-        } else {
-            var = ctx.manager.mk_skolem_const(symbol(var_name.c_str()), ctx.arith_utilities.mk_int());
-        }
-        return expr_ref(var, ctx.manager);
+        return util::basic_term_to_length_expr(node.atom_val, ctx.known_z3_exprs, ctx.manager, ctx.seq_utilities, ctx.arith_utilities);
     }
 
     expr_ref convert_len_node_to_z3_formula(LenFormulaContext &ctx, const LenNode &node) {
