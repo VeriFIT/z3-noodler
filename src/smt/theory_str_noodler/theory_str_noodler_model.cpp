@@ -19,19 +19,7 @@ namespace smt::noodler {
         void get_dependencies(buffer<model_value_dependency> & result) override {
             for (const BasicTerm& var : needed_vars) { // we assume that all needed_vars are either string or int variables
                 SASSERT(var.get_type() == BasicTermType::Variable);
-                expr_ref arith_var(th.m);
-                // the following is similar to code in len_node_to_z3_formula()
-                if(!th.var_name.contains(var)) {
-                    // if the variable is not found, it was introduced in the preprocessing/decision procedure
-                    // (either as a string or int var), i.e. we can just create a new z3 variable with the same name 
-                    arith_var = th.m.mk_skolem_const(symbol(var.get_name().encode()), th.m_util_a.mk_int());
-                } else {
-                    arith_var = th.var_name.at(var); // for int var, we just take the var
-                    if (th.m_util_s.is_string(arith_var->get_sort())) {
-                        // for string var, we want its length
-                        arith_var = expr_ref(th.m_util_s.str.mk_length(arith_var), th.m);
-                    }
-                }
+                expr_ref arith_var = util::resolve_arith_var_expr(var, th.var_name, th.m, th.m_util_s, th.m_util_a);
                 result.push_back(model_value_dependency(th.ctx.get_enode(arith_var)));
             }
         }

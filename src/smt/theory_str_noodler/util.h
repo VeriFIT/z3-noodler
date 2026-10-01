@@ -94,6 +94,24 @@ namespace smt::noodler::util {
      */
     BasicTerm get_variable_basic_term(expr* variable);
 
+    /**
+     * @brief Resolve a Noodler length/arith @p var to the z3 arithmetic expr it stands for.
+     *
+     * If @p var is already mapped in @p known_vars, returns that expr directly -- wrapped in `str.len`
+     * when the mapped expr is string-sorted, since this is only ever used where what is actually wanted
+     * is the *length* of a mapped string variable, never its value. Otherwise (no mapping is known for
+     * @p var, e.g. it is an internal variable introduced only by one decision-procedure/length-check call)
+     * creates a fresh skolem constant named after @p var's own name, of int or real sort depending on
+     * @p var's type -- the inverse of this encoding is what get_length_var_basic_term()/
+     * get_variable_basic_term() expect when recovering @p var from such an expr later on.
+     *
+     * Shared by convert_len_node_to_z3_formula() (via LenFormulaContext::known_z3_exprs) and
+     * theory_str_noodler::noodler_var_value_proc::get_dependencies() (via theory_str_noodler::var_name) --
+     * the two places that otherwise independently re-derived the same BasicTerm -> z3 expr encoding.
+     */
+    expr_ref resolve_arith_var_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
+                                    ast_manager& m, const seq_util& m_util_s, arith_util& m_util_a);
+
     void get_len_exprs(expr* ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res);
 
     /**

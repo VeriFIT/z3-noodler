@@ -73,6 +73,26 @@ namespace smt::noodler::util {
         return BasicTerm{ BasicTermType::Variable, variable_app->get_decl()->get_name().str() };
     }
 
+    expr_ref resolve_arith_var_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
+                                    ast_manager& m, const seq_util& m_util_s, arith_util& m_util_a) {
+        auto known_it = known_vars.find(var);
+        if (known_it != known_vars.end()) {
+            expr_ref known_expr = known_it->second;
+            if (m_util_s.is_string(known_expr->get_sort())) {
+                // for string variables we want its length
+                return expr_ref(m_util_s.str.mk_length(known_expr), m);
+            }
+            return known_expr;
+        }
+
+        // var is not known yet (e.g. an internal variable introduced only by one decision-procedure/
+        // length-check call) -- needs to be skolem, because it seems they are not printed for models.
+        // This is also the naming convention get_variable_basic_term()/get_length_var_basic_term() expect
+        // when recovering var from such an expr later on.
+        app* skolem = m.mk_skolem_const(symbol(var.get_name().encode()), var.is_real_variable() ? m_util_a.mk_real() : m_util_a.mk_int());
+        return expr_ref(skolem, m);
+    }
+
     void get_len_exprs(expr* const ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res) {
 
         if(is_quantifier(ex)) {
