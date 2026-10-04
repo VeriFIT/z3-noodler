@@ -6,6 +6,7 @@
 #include <map>
 #include <set>
 #include <queue>
+#include <algorithm>
 #include <string>
 
 #include <mata/nfa/nfa.hh>
@@ -285,6 +286,9 @@ namespace smt::noodler {
         void get_side_regulars(std::vector<std::pair<size_t, Predicate>>& out) const;
         void get_simple_eqs(std::vector<std::pair<size_t, Predicate>>& out) const;
         size_t get_max_index() const { return this->max_index; }
+        bool contains_pred_type(PredicateType type) const {
+            return std::any_of(this->predicates.begin(), this->predicates.end(), [type](const auto& pr) { return pr.second.get_type() == type; });
+        }
         bool contains_simple_eqs() const { std::vector<std::pair<size_t, Predicate>> out; get_simple_eqs(out); return out.size() > 0;  }
 
         std::set<VarNode> get_var_positions(const Predicate& pred, size_t index, bool incl_lit=false) const;
