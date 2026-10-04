@@ -359,7 +359,8 @@ namespace smt::noodler {
         std::unordered_set<BasicTerm> len_variables;
         std::set<BasicTerm> conversion_vars; // all conversion vars should always be also in len vars, also it should not contain literals
 
-        const theory_str_noodler_params& m_params;
+        // stored by value: several callers pass a temporary (e.g., default params), which would dangle if stored by reference
+        const theory_str_noodler_params m_params;
 
         Dependency dependency;
 

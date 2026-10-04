@@ -851,3 +851,23 @@ TEST_CASE( "Remove extension", "[noodler]" ) {
         CHECK(prep.get_dependency().empty());
     }
 }
+
+// Regression test for issue #485: FormulaPreprocessor used to store the params by reference, so passing
+// a temporary (as done, e.g., in ca_str_constr.cpp) led to a dangling reference read in update_reg_constr
+// (detectable with -fsanitize=address).
+TEST_CASE( "Params passed as temporary", "[noodler]" ) {
+    BasicTerm x{ BasicTermType::Variable, "x" };
+    BasicTerm y{ BasicTermType::Variable, "y" };
+    BasicTerm z{ BasicTermType::Variable, "z" };
+    AutAssignment aut_ass({
+        {x, regex_to_nfa("(a|b)*")},
+        {y, regex_to_nfa("(a|b)*")},
+        {z, regex_to_nfa("(a|b)*")},
+    });
+    Formula conj;
+    conj.add_predicate(Predicate::create_disequation({x}, {y}));
+    conj.add_predicate(Predicate::create_equation({x}, {z}));
+    FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+    prep.propagate_variables(); // reads params in update_reg_constr
+    CHECK(prep.get_formula().get_predicates_set().size() == 1);
+}
