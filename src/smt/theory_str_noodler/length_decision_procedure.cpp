@@ -1071,7 +1071,8 @@ namespace smt::noodler {
      * @return zstring Model of @p multi_var
      */
     zstring LengthProcModel::get_multivar_model(const BasicTerm& multi_var, const std::map<BasicTerm,rational>& arith_model) {
-        std::vector<long> res_skeleton(arith_model.at(multi_var).get_int32());
+        // positions not fixed by any block stay -1 (free) and get the filler below
+        std::vector<long> res_skeleton(arith_model.at(multi_var).get_int32(), -1);
         for(const auto& [block_var, var_constr] : this->block_pool) {
             if(var_constr.get_vars().contains(multi_var)) {
                 std::vector<long> act_skeleton = get_multivar_skeleton(block_var, multi_var, arith_model);
