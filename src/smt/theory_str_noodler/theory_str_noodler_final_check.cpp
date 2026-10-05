@@ -341,7 +341,7 @@ namespace smt::noodler {
                 if (is_lengths_sat == l_true) {
                     STRACE(str, tout << "len sat " << mk_pp(lengths, m) << std::endl;);
                     lbool result_of_sat_handling = sat_handling(lengths);
-                    if (result_of_sat_handling = l_true) {
+                    if (result_of_sat_handling == l_true) {
                         if(precision == LenNodePrecision::OVERAPPROX) {
                             ctx.get_fparams().is_overapprox = true;
                         }
@@ -1124,7 +1124,7 @@ namespace smt::noodler {
                     check_len_sat_with_context = true;
                 }
             }
-            if (len_sat = l_false) {
+            if (len_sat == l_false) {
                 STRACE(str, tout << "len: unsat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
                 block_len = m.mk_or(block_len, lengths);
 
