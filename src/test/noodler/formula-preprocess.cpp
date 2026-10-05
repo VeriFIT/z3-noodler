@@ -871,3 +871,44 @@ TEST_CASE( "Params passed as temporary", "[noodler]" ) {
     prep.propagate_variables(); // reads params in update_reg_constr
     CHECK(prep.get_formula().get_predicates_set().size() == 1);
 }
+
+// Regression test for issue #441: when skip_len_sat removes an equation L = R because L is single-occurring
+// and Sigma^*, variables of R have to become length variables if L contains a length variable, otherwise
+// the languages of R are not exported to the LIA solver. This must hold also without model generation.
+TEST_CASE( "Skip len sat", "[noodler]" ) {
+    BasicTerm y1{ BasicTermType::Variable, "y_1" };
+    BasicTerm y2{ BasicTermType::Variable, "y_2" };
+    BasicTerm z{ BasicTermType::Variable, "z" };
+    BasicTerm x{ BasicTermType::Variable, "x" };
+    BasicTerm b{ BasicTermType::Literal, "b" };
+    AutAssignment aut_ass({
+        {y1, regex_to_nfa("(a|b)*")},
+        {y2, regex_to_nfa("(a|b)*")},
+        {z, regex_to_nfa("(aa)*|b")},
+        {x, regex_to_nfa("a*")},
+        {b, regex_to_nfa("b")},
+    });
+    Predicate eq_kept(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({z}), std::vector<BasicTerm>({b, x}) }));
+
+    SECTION("removed left side") {
+        Predicate eq_rem(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({y1, y2}), std::vector<BasicTerm>({z}) }));
+        Formula conj;
+        conj.add_predicate(eq_rem);
+        conj.add_predicate(eq_kept);
+        FormulaPreprocessor prep(conj, aut_ass, {y1}, {}, {});
+        prep.skip_len_sat();
+        CHECK(prep.get_formula().get_predicates_set() == std::set<Predicate>({ eq_kept }));
+        CHECK(prep.get_len_variables().contains(z));
+    }
+
+    SECTION("removed right side") {
+        Predicate eq_rem(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({z}), std::vector<BasicTerm>({y1, y2}) }));
+        Formula conj;
+        conj.add_predicate(eq_rem);
+        conj.add_predicate(eq_kept);
+        FormulaPreprocessor prep(conj, aut_ass, {y1}, {}, {});
+        prep.skip_len_sat();
+        CHECK(prep.get_formula().get_predicates_set() == std::set<Predicate>({ eq_kept }));
+        CHECK(prep.get_len_variables().contains(z));
+    }
+}
