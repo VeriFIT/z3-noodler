@@ -598,6 +598,23 @@ namespace smt::noodler {
                 return l_undef;	// We cannot solve this formula
             }
         }
+
+        // The multi var LIA compares occurrences of the multi var only in the coordinates of blocks containing
+        // it directly. If such a block is nested in another block, literals of the outer block lying on the
+        // nested occurrence are never compared with the other occurrences (and the model generation places the
+        // multi var only at its direct positions). Hence, we support only multi vars occurring in top-level blocks.
+        if(multi_vars.size() == 1) {
+            const BasicTerm& multi_var = *multi_vars.begin();
+            for (const auto& [var, constr] : pool) {
+                for (const BasicTerm& nested : constr.get_dependencies()) {
+                    if(pool.at(nested).get_vars().contains(multi_var)) {
+                        STRACE(str, tout << "len: multi var " << multi_var << " occurs in the nested block " << nested << std::endl;);
+                        return l_undef;
+                    }
+                }
+            }
+        }
+
         this->len_model = LengthProcModel(this->pool, this->subst_map, this->init_aut_ass, multi_vars);
         for(const BasicTerm& var : this->init_length_sensitive_vars) {
             this->len_model.add_len_var(var);
