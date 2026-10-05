@@ -300,6 +300,7 @@ namespace smt::noodler {
                 return params[1];
         }
         UNREACHABLE();
+        return params[0]; // return dummy value
     }
 
     std::vector<BasicTerm> &Predicate::get_side(const Predicate::EquationSideType side) {
@@ -311,6 +312,7 @@ namespace smt::noodler {
                 return params[1];
         }
         UNREACHABLE();
+        return params[0]; // return dummy value
     }
 
     std::map<BasicTerm, unsigned> Predicate::variable_count(const Predicate::EquationSideType side) const {
@@ -551,5 +553,6 @@ namespace smt::noodler {
         }
         }
         UNREACHABLE();
+        return expr_ref(manager); // return dummy value
     }
 } // Namespace smt::noodler.
