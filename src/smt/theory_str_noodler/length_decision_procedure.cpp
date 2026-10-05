@@ -192,10 +192,21 @@ namespace smt::noodler {
         auto conv = pool.get_lit_conversion();
         std::vector<zstring> other_lits = this->get_lits();
 
+        // Literals of the block of multi_var (if multi_var is a block var, including nested blocks) are
+        // propagated to every block containing multi_var, always at the same offset inside multi_var. They
+        // hence agree in all blocks and are skipped both as source literals and as literals of this block
+        // (otherwise each of them collides with its own copy). A source literal overlapping one of them
+        // comes from another side of the source block, so they are already aligned there.
+        std::set<zstring> multi_var_lits {};
+        if(pool.contains(multi_var)) {
+            multi_var_lits.insert(pool.at(multi_var).get_lits().begin(), pool.at(multi_var).get_lits().end());
+        }
+
         // formula saying that inside of the interval [begin, end] there is no literal in x
         auto free_formula = [&](const BasicTerm& var, const LenNode& begin, const LenNode& end) -> LenNode {
             LenNode formula(LenFormulaType::AND);
             for(const zstring& lit : other_lits) {
+                if(multi_var_lits.contains(lit)) continue;
                 LenNode or_fle(LenFormulaType::OR);
                 // b_x(lit) + |lit| <= begin hence
                 // b_x(lit) - begin <= -|lit|
@@ -385,6 +396,7 @@ namespace smt::noodler {
 
         LenNode formula(LenFormulaType::AND);
         for(const zstring& lit : pool.at(source_var).get_lits()) {
+            if(multi_var_lits.contains(lit)) continue;
             formula.succ.push_back(in_formula_case1(multi_var, lit));
             formula.succ.push_back(in_formula_case2(multi_var, lit));
             formula.succ.push_back(in_formula_case3(multi_var, lit));
