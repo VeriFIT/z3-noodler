@@ -2165,11 +2165,11 @@ namespace smt::noodler {
      * not(x < y) -> x = y | y < x
      * x < y -> x != y
      * x < y -> not(y < x)
-     * x < y -> y = x.w2 | x = u.v1.w1
-     * x < y -> y = x.w2 | y = u.v2.w2
-     * x < y -> y = x.w2 | v1 in re.allchar
-     * x < y -> y = x.w2 | v2 in re.allchar
-     * x < y -> y = x.w2 | to_code(v1) + k = to_code(v2) & k >= 1
+     * x < y -> y = u.v2.w2
+     * x < y -> v2 in re.allchar
+     * x < y -> x = u | x = u.v1.w1
+     * x < y -> x = u | v1 in re.allchar
+     * x < y -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
      * @param e str.< predicate
      */
     void theory_str_noodler::handle_lex_lt(expr *e) {
@@ -2186,17 +2186,16 @@ namespace smt::noodler {
         expr_ref lex_post_right = mk_str_var_fresh("lex_post_right");
         expr_ref px(m_util_s.str.mk_concat(m_util_s.str.mk_concat(lex_pre, lex_in_left), lex_post_left), m);
         expr_ref py(m_util_s.str.mk_concat(m_util_s.str.mk_concat(lex_pre, lex_in_right), lex_post_right), m);
-        expr_ref py_prefix(m_util_s.str.mk_concat(x, lex_post_left), m);
         string_theory_propagation(px);
         string_theory_propagation(py);
 
         expr_ref x_px(mk_eq_atom(x, px), m);
         expr_ref y_py(mk_eq_atom(y, py), m);
-        expr_ref x_is_prefix_of_y(mk_eq_atom(y, py_prefix), m);
+        // we do not need to use prefix(x,y), this is enough as we do not care about negated prefix
+        expr_ref x_is_prefix_of_y(mk_eq_atom(y, lex_pre), m);
         literal lit_e = mk_literal(e);
         literal lit_x_px = mk_literal(x_px);
         literal lit_y_py = mk_literal(y_py);
-        // we do not need to use prefix(x,y), this is enough as we do not care about negated prefix
         literal lit_x_is_prefix_of_y = mk_literal(x_is_prefix_of_y);
 
         expr_ref re_in_left(m_util_s.re.mk_in_re(lex_in_left, m_util_s.re.mk_full_char(nullptr)), m);
@@ -2222,15 +2221,15 @@ namespace smt::noodler {
 
         // If x<y, then either x is prefix of y, or the first differing char has larger code-point value in y
 
-        // x < y -> y = x.w2 | x = u.v1.w1
+        // x < y -> y = u.v2.w2
+        add_axiom({~lit_e, lit_y_py});
+        // x < y -> v2 in re.allchar
+        add_axiom({~lit_e, mk_literal(re_in_right)});
+        // x < y -> x = u | x = u.v1.w1
         add_axiom({~lit_e, lit_x_is_prefix_of_y, lit_x_px});
-        // x < y -> y = x.w2 | y = u.v2.w2
-        add_axiom({~lit_e, lit_x_is_prefix_of_y, lit_y_py});
-        // x < y -> y = x.w2 | v1 in re.allchar
+        // x < y -> x = u | v1 in re.allchar
         add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(re_in_left)});
-        // x < y -> y = x.w2 | v2 in re.allchar
-        add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(re_in_right)});
-        // x < y -> y = x.w2 | to_code(v1) + k = to_code(v2) & k >= 1
+        // x < y -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
         add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(to_code_lt)});
     }
 
