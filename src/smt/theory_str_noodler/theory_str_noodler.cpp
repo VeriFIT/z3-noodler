@@ -2192,7 +2192,7 @@ namespace smt::noodler {
         expr_ref x_px(mk_eq_atom(x, px), m);
         expr_ref y_py(mk_eq_atom(y, py), m);
         // we do not need to use prefix(x,y), this is enough as we do not care about negated prefix
-        expr_ref x_is_prefix_of_y(mk_eq_atom(y, lex_pre), m);
+        expr_ref x_is_prefix_of_y(mk_eq_atom(x, lex_pre), m);
         literal lit_e = mk_literal(e);
         literal lit_x_px = mk_literal(x_px);
         literal lit_y_py = mk_literal(y_py);
