@@ -2165,12 +2165,11 @@ namespace smt::noodler {
      * not(x < y) -> x = y | y < x
      * x < y -> x != y
      * x < y -> not(y < x)
-     * prefix(x,y) && x != y -> x < y
-     * x < y & !prefix(x,y) -> x = u.v1.w1
-     * x < y & !prefix(x,y) -> y = u.v2.w2
-     * x < y & !prefix(x,y) -> v1 in re.allchar
-     * x < y & !prefix(x,y) -> v2 in re.allchar
-     * x < y & !prefix(x,y) -> to_code(v1) + k = to_code(v2) & k >= 1
+     * x < y -> y = x.w2 | x = u.v1.w1
+     * x < y -> y = x.w2 | y = u.v2.w2
+     * x < y -> y = x.w2 | v1 in re.allchar
+     * x < y -> y = x.w2 | v2 in re.allchar
+     * x < y -> y = x.w2 | to_code(v1) + k = to_code(v2) & k >= 1
      * @param e str.< predicate
      */
     void theory_str_noodler::handle_lex_lt(expr *e) {
@@ -2179,7 +2178,6 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_lt(e, x, y));
         expr_ref eps(m_util_s.str.mk_string(""), m);
-        expr_ref x_prefixof_y(m_util_s.str.mk_prefix(x, y), m);
 
         expr_ref lex_pre = mk_str_var_fresh("lex_pre");
         expr_ref lex_in_left = mk_str_var_fresh("lex_in_left");
@@ -2188,14 +2186,18 @@ namespace smt::noodler {
         expr_ref lex_post_right = mk_str_var_fresh("lex_post_right");
         expr_ref px(m_util_s.str.mk_concat(m_util_s.str.mk_concat(lex_pre, lex_in_left), lex_post_left), m);
         expr_ref py(m_util_s.str.mk_concat(m_util_s.str.mk_concat(lex_pre, lex_in_right), lex_post_right), m);
+        expr_ref py_prefix(m_util_s.str.mk_concat(x, lex_post_left), m);
         string_theory_propagation(px);
         string_theory_propagation(py);
 
         expr_ref x_px(mk_eq_atom(x, px), m);
         expr_ref y_py(mk_eq_atom(y, py), m);
+        expr_ref x_is_prefix_of_y(mk_eq_atom(y, py_prefix), m);
         literal lit_e = mk_literal(e);
         literal lit_x_px = mk_literal(x_px);
         literal lit_y_py = mk_literal(y_py);
+        // we do not need to use prefix(x,y), this is enough as we do not care about negated prefix
+        literal lit_x_is_prefix_of_y = mk_literal(x_is_prefix_of_y);
 
         expr_ref re_in_left(m_util_s.re.mk_in_re(lex_in_left, m_util_s.re.mk_full_char(nullptr)), m);
         expr_ref re_in_right(m_util_s.re.mk_in_re(lex_in_right, m_util_s.re.mk_full_char(nullptr)), m);
@@ -2210,7 +2212,6 @@ namespace smt::noodler {
         add_axiom({mk_literal(m_util_a.mk_ge(vark, m_util_a.mk_int(1)))});
 
         literal lit_e_switch = mk_literal(m_util_s.str.mk_lex_lt(y,x));
-        literal prefix = mk_literal(x_prefixof_y);
 
         // not(x < y) -> x = y | y < x
         add_axiom({lit_e, mk_eq(x,y,false), lit_e_switch});
@@ -2219,18 +2220,18 @@ namespace smt::noodler {
         // x < y -> not(y < x)
         add_axiom({~lit_e, ~lit_e_switch});
 
-        // prefix(x,y) && x != y -> x < y
-        add_axiom({~prefix, mk_eq(x,y,false), lit_e});
-        // x < y & !prefix(x,y) -> x = u.v1.w1
-        add_axiom({~lit_e, prefix, lit_x_px});
-        // x < y & !prefix(x,y) -> y = u.v2.w2
-        add_axiom({~lit_e, prefix, lit_y_py});
-        // x < y & !prefix(x,y) -> v1 in re.allchar
-        add_axiom({~lit_e, prefix, mk_literal(re_in_left)});
-        // x < y & !prefix(x,y) -> v2 in re.allchar
-        add_axiom({~lit_e, prefix, mk_literal(re_in_right)});
-        // x < y & !prefix(x,y) -> to_code(v1) + k = to_code(v2) & k >= 1
-        add_axiom({~lit_e, prefix, mk_literal(to_code_lt)});
+        // If x<y, then either x is prefix of y, or the first differing char has larger code-point value in y
+
+        // x < y -> y = x.w2 | x = u.v1.w1
+        add_axiom({~lit_e, lit_x_px});
+        // x < y -> y = x.w2 | y = u.v2.w2
+        add_axiom({~lit_e, lit_x_is_prefix_of_y, lit_y_py});
+        // x < y -> y = x.w2 | v1 in re.allchar
+        add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(re_in_left)});
+        // x < y -> y = x.w2 | v2 in re.allchar
+        add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(re_in_right)});
+        // x < y -> y = x.w2 | to_code(v1) + k = to_code(v2) & k >= 1
+        add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(to_code_lt)});
     }
 
     void theory_str_noodler::handle_ecma_re(expr* e) {
