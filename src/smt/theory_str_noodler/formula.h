@@ -992,6 +992,7 @@ namespace smt::noodler {
             return "from_real";
         }
         UNREACHABLE();
+        return ""; // return dummy value
     }
 
     /**
