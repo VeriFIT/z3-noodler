@@ -407,6 +407,14 @@ namespace smt::noodler {
         /// @brief Returns the model_value_proc for string variable @p str_expr based on whether it is used in dec_proc or not
         model_value_proc* model_of_string_var(app* str_var);
 
+        /**
+         * @brief Check whether some argument of concatenation @p str_concat is in the same equivalence class as @p str_concat.
+         *
+         * In such a case, all other arguments are necessarily empty and the model of @p str_concat cannot be computed
+         * from the models of its arguments (it would depend on itself).
+         */
+        bool concat_has_arg_in_own_class(app* str_concat) const;
+
         /// @brief Handles (recursively) ITE in @p e in model generation
         app* get_ite_value(expr* e) const;
 

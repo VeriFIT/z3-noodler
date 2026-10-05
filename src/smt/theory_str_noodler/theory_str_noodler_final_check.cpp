@@ -1275,25 +1275,48 @@ namespace smt::noodler {
         last_run_was_sat = true;
         m_rewrite(length_formula);
         scope_with_last_run_was_sat = m_scope_level;
-        if (m_params.m_produce_models && !len_vars.empty()) {
+        if (m_params.m_produce_models) {
             // If we want to produce models, we would like to limit the lengths more significantly,
             // so that Z3 arith solver does not give us some large numbers (for example it can give 60000
             // and returning such a long model can take a long time).
             // We therefore check if we can still get a model if we limit all lengths by some number.
             const int LENGTH_LIMIT = 100; // this seems a small enough number so that model generation is easy, while allowing model to pass trough for most benchmarks
+            auto mk_len_limit = [&](expr* str_var) {
+                // |str_var| <= LENGTH_LIMIT
+                return expr_ref(m_util_a.mk_le(m_util_s.str.mk_length(str_var), m_util_a.mk_int(LENGTH_LIMIT)), m);
+            };
             expr_ref_vector len_constraints(m);
             for (expr* len_var : len_vars) {
-                // |len_var| <= LENGTH_LIMIT
-                len_constraints.push_back(expr_ref(m_util_a.mk_le(m_util_s.str.mk_length(len_var), m_util_a.mk_int(LENGTH_LIMIT)), m));
+                len_constraints.push_back(mk_len_limit(len_var));
             }
-            expr_ref length_formula_underapprox(m.mk_and(length_formula, m.mk_and(len_constraints)), m);
-            STRACE(str_sat_handling, tout << "Checking if we can put stronger limits on lengths with formula " << mk_pp(length_formula_underapprox, m) << " which is ";);
-            if (check_len_sat(length_formula_underapprox, true) == lbool::l_true) { // we need to check with context, we are asking whether we can limit lengths of all length variables depending (also) on the context
-                // we can limit the lengths => add it to the resulting length formula
-                STRACE(str_sat_handling, tout << "sat\n");
-                length_formula = length_formula_underapprox;
-            } else {
-                STRACE(str_sat_handling, tout << "unsat\n");
+            // String variables that are not length variables but whose length occurs in the context (e.g., the fresh
+            // variables from the axiom of a contains that is false, see issue #483). Their model is
+            // constructed only from their length, which arith solver can set to something huge (e.g., 2^32).
+            expr_ref_vector other_len_constraints(m);
+            for (enode* n : ctx.enodes()) {
+                expr* len_arg = nullptr;
+                if (m_util_s.str.is_length(n->get_expr(), len_arg) && ctx.is_relevant(n) && util::is_str_variable(len_arg, m_util_s) && !len_vars.contains(len_arg)) {
+                    other_len_constraints.push_back(mk_len_limit(len_arg));
+                }
+            }
+            // we first try to limit all lengths, if it is not possible, we limit only the lengths of length variables
+            std::vector<expr_ref> candidates;
+            if (!other_len_constraints.empty()) {
+                candidates.push_back(expr_ref(m.mk_and(length_formula, m.mk_and(len_constraints), m.mk_and(other_len_constraints)), m));
+            }
+            if (!len_constraints.empty()) {
+                candidates.push_back(expr_ref(m.mk_and(length_formula, m.mk_and(len_constraints)), m));
+            }
+            for (const expr_ref& length_formula_underapprox : candidates) {
+                STRACE(str_sat_handling, tout << "Checking if we can put stronger limits on lengths with formula " << mk_pp(length_formula_underapprox, m) << " which is ";);
+                if (check_len_sat(length_formula_underapprox, true) == lbool::l_true) { // we need to check with context, we are asking whether we can limit lengths of all length variables depending (also) on the context
+                    // we can limit the lengths => add it to the resulting length formula
+                    STRACE(str_sat_handling, tout << "sat\n");
+                    length_formula = length_formula_underapprox;
+                    break;
+                } else {
+                    STRACE(str_sat_handling, tout << "unsat\n");
+                }
             }
         }
         sat_length_formula = length_formula;
