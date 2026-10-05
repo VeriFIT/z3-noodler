@@ -1355,6 +1355,7 @@ namespace smt::noodler {
         #if 0
         if (expr_cases::has_quantifier(length_formula, m) || this->input_has_quantifiers) {
             expr_ref model_formula(m);
+            // meed to include also clauses, as without it the model could be potentionally incorrect
             lbool len_result_with_full_context = check_len_sat(length_formula, true, nullptr, &model_formula, true);
             if (len_result_with_full_context != lbool::l_true) { return len_result_with_full_context; }
             last_run_was_sat = true;
