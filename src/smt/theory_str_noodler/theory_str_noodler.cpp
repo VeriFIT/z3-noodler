@@ -2165,7 +2165,7 @@ namespace smt::noodler {
      * not(x < y) -> x = y | y < x
      * x < y -> x != y
      * x < y -> not(y < x)
-     * prefix(x,y) -> x < y
+     * prefix(x,y) && x != y -> x < y
      * x < y & !prefix(x,y) -> x = u.v1.w1
      * x < y & !prefix(x,y) -> y = u.v2.w2
      * x < y & !prefix(x,y) -> v1 in re.allchar
@@ -2219,8 +2219,8 @@ namespace smt::noodler {
         // x < y -> not(y < x)
         add_axiom({~lit_e, ~lit_e_switch});
 
-        // prefix(x,y) -> x < y
-        add_axiom({~prefix, lit_e});
+        // prefix(x,y) && x != y -> x < y
+        add_axiom({~prefix, mk_eq(x,y,false), lit_e});
         // x < y & !prefix(x,y) -> x = u.v1.w1
         add_axiom({~lit_e, prefix, lit_x_px});
         // x < y & !prefix(x,y) -> y = u.v2.w2
