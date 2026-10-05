@@ -1351,6 +1351,8 @@ namespace smt::noodler {
     }
 
     lbool theory_str_noodler::sat_handling(expr_ref length_formula) {
+        // TODO: using model from external solvers for quantifiers needs some more testing, so it is not enabled for now
+        #if 0
         if (expr_cases::has_quantifier(length_formula, m) || this->input_has_quantifiers) {
             expr_ref model_formula(m);
             lbool len_result_with_full_context = check_len_sat(length_formula, true, nullptr, &model_formula, true);
@@ -1362,6 +1364,7 @@ namespace smt::noodler {
             scope_with_last_run_was_sat = m_scope_level;
             return l_true;
         }
+        #endif
 
         if (!len_vars.empty() && m_params.m_produce_models) {
             // If we want to produce models, we would like to limit the lengths more significantly,
@@ -1386,9 +1389,16 @@ namespace smt::noodler {
         }
 
         last_run_was_sat = true;
-        m_rewrite(length_formula);
-        add_axiom(length_formula);
         scope_with_last_run_was_sat = m_scope_level;
+        m_rewrite(length_formula);
+        if (this->input_has_quantifiers || expr_cases::has_quantifier(length_formula, m)) {
+            // for the quantified formulae, we must avoid add_axiom as 
+            // adding axioms leads to unknown immediately (fails in the internalization). Probably add_axiom interferes with quantifier instantiation.
+            ctx.assert_expr(length_formula);
+            ctx.internalize_assertions();
+        } else {
+            add_axiom(length_formula);
+        }
         return l_true;
     }
 
