@@ -859,18 +859,22 @@ namespace smt::noodler {
         } else {
             block_model.solution = this->model[block_var];
         }
+        this->expanded_blocks.insert(block_var);
         // so-far solution_str contains solution for the block var
         for(const BasicTerm& bt : block_model.terms) {
             if(bt.is_literal()) continue;
-            if(this->model.contains(bt)) continue;
 
-            // for each variable computea the model from model of the block var
-            int var_pos = arith_model.at(begin_of(bt.get_name(), block_var.get_name())).get_int32();
-            int var_length = arith_model.at(bt).get_int32();
-            zstring var_model = block_model.solution.extract(var_pos, var_length);
-            this->model[bt] = var_model;
-            // if we set a block variable, propagate the value to all variables in the block
-            if(this->block_models.contains(bt)) {
+            if(!this->model.contains(bt)) {
+                // for each variable computea the model from model of the block var
+                int var_pos = arith_model.at(begin_of(bt.get_name(), block_var.get_name())).get_int32();
+                int var_length = arith_model.at(bt).get_int32();
+                zstring var_model = block_model.solution.extract(var_pos, var_length);
+                this->model[bt] = var_model;
+            }
+            // if bt is a block variable, propagate its value to all variables in its block. This is needed
+            // also if bt already has a model: the multi var gets its model before any block is processed
+            // and it might be a block var itself (e.g. y = u v); its block is not a root block.
+            if(this->block_models.contains(bt) && !this->expanded_blocks.contains(bt)) {
                 // in the successor block, we need to keep the model for the block var, which was set in this block
                 // we propagate values to the remaining variables in the successor block
                 generate_block_models(bt, this->block_models[bt], arith_model);
@@ -887,6 +891,7 @@ namespace smt::noodler {
      */
     void LengthProcModel::compute_model(const std::map<BasicTerm,rational>& arith_model) {
         this->model.clear();
+        this->expanded_blocks.clear();
 
         assign_multi_vars(arith_model);
 
