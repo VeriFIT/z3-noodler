@@ -2223,7 +2223,7 @@ namespace smt::noodler {
         // If x<y, then either x is prefix of y, or the first differing char has larger code-point value in y
 
         // x < y -> y = x.w2 | x = u.v1.w1
-        add_axiom({~lit_e, lit_x_px});
+        add_axiom({~lit_e, lit_x_is_prefix_of_y, lit_x_px});
         // x < y -> y = x.w2 | y = u.v2.w2
         add_axiom({~lit_e, lit_x_is_prefix_of_y, lit_y_py});
         // x < y -> y = x.w2 | v1 in re.allchar
