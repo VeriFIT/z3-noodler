@@ -1132,6 +1132,13 @@ namespace smt::noodler::regex {
             for (mata::nfa::State current_state : current_states) {
                 // the current_state will become "replacing state" of the prefix tree
                 prefix_automaton.final.insert(current_state);
+                // if current_state was already a one-symbol-output state (e.g. a delimiter state
+                // of a previous replace of length 1), its output is about to be overwritten, so we
+                // need to remove it from the old symbol's set, otherwise a later add_find could
+                // incorrectly start matching from this state using the stale (already replaced) symbol
+                if (const mata::Word& old_replacing_word = replacing_map[current_state]; old_replacing_word.size() == 1) {
+                    one_symbol_replace_to_prefix_state[old_replacing_word[0]].erase(current_state);
+                }
                 replacing_map[current_state] = util::get_mata_word_zstring(replace);
                 if (replace.length() == 1) {
                     one_symbol_replace_to_prefix_state[replace[0]].insert(current_state);
