@@ -1,0 +1,6 @@
+(set-info :status unsat)
+(declare-const x String)
+(assert (not (str.suffixof x "abc")))
+(assert (str.in_re x (re.union (str.to_re "bc") (str.to_re "zzz"))))
+(assert (not (= x "zzz")))
+(check-sat)
