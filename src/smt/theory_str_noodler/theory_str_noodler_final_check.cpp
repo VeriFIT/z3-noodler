@@ -1346,7 +1346,6 @@ namespace smt::noodler {
             }
             return l_false;
         }
-        UNREACHABLE();
         return l_undef;
     }
 
