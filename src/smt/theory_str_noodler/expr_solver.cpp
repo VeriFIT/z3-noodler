@@ -30,19 +30,16 @@ namespace smt::noodler {
     void int_expr_solver::initialize(context& ctx, bool include_assignment) {
         if(!initialized){
             initialized=true;
+            expr_ref_vector Assigns(m);
+            ctx.get_assignments(Assigns);
             for (unsigned i = 0; i < ctx.get_num_asserted_formulas(); ++i) {
                 STRACE(str_lia, tout<< "check_sat context from asserted: " << mk_pp(ctx.get_asserted_formula(i),m) << std::endl);
                 assert_expr(ctx.get_asserted_formula(i));
 
             }
             if (include_assignment) {
-                // Relevancy has to be checked on the literal (i.e., its atom), not on the expression
-                // obtained from it: for a negative literal, the expression is a fresh (not atom) term,
-                // which is never relevant, so all negatively assigned literals would be dropped.
-                for (literal lit : ctx.assigned_literals()) {
-                    if(ctx.is_relevant(lit)) {
-                        expr_ref e(m);
-                        ctx.literal2expr(lit, e);
+                for (auto & e : Assigns){
+                    if(ctx.is_relevant(e)) {
                         STRACE(str_lia, tout << "check_sat context from assign: " << mk_pp(e, m) << std::endl);
                         assert_expr(e);
                     }

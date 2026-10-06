@@ -1223,26 +1223,10 @@ namespace smt::noodler {
                         // otherwise we find unsat core of the current assignment with the len_formula and add this unsat core as a theory lemma.
                         expr_ref unsat_core(m.mk_true(), m);
                         if (check_len_sat(len_formula, true, &unsat_core) == l_false) {
+                            unsat_core = m.mk_not(unsat_core);
                             set_input_has_quantifiers(expr_cases::has_quantifier(unsat_core, m));
-                            // We add the negation of the unsat core as a clause. Parts of the core that are already
-                            // atoms (or negated atoms) of the context are used directly as literals. We cannot use
-                            // mk_literal on them, as rewriting might make different atoms of the core equal (e.g.,
-                            // (= x (str.++ (str.++ a b) c)) and (not (= x (str.++ a (str.++ b c))))), yielding
-                            // a trivially true clause, which does not block anything, and we would loop forever.
-                            expr_ref_vector core_parts(m);
-                            flatten_and(unsat_core, core_parts);
-                            std::vector<literal> blocking_clause;
-                            for (expr* part : core_parts) {
-                                expr* atom = part;
-                                bool is_neg = m.is_not(part, atom);
-                                if (ctx.b_internalized(atom)) {
-                                    literal lit = ctx.get_literal(atom);
-                                    blocking_clause.push_back(is_neg ? lit : ~lit);
-                                } else {
-                                    blocking_clause.push_back(~mk_literal(part));
-                                }
-                            }
-                            add_axiom(blocking_clause);
+                            ctx.internalize(unsat_core.get(), true);
+                            add_axiom({mk_literal(unsat_core)});
                             block_curr_len(len_formula, false);
                             STRACE(str, tout << "loop-protection: unsat " << std::endl;);
                             return l_false;

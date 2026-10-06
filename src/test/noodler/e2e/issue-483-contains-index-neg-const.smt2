@@ -1,5 +1,0 @@
-(set-info :status sat)
-(declare-fun x () String)
-(assert (str.in_re x (re.++ (str.to_re "ab") (re.range "d" "e"))))
-(assert (not (str.contains (str.substr x 0 (+ (- 4294967295) (str.indexof x "b" 0))) "b")))
-(check-sat)

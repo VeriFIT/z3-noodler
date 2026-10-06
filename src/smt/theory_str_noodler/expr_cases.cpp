@@ -13,7 +13,7 @@ bool is_contains_index(expr* e, expr*& ind, ast_manager& m, seq_util& m_util_s, 
         expr *subb1 = nullptr, *subb2 = nullptr, *num = nullptr;
         rational num_val; //n
         if(m_util_s.str.is_extract(subs, str, subb1, subb2)) {
-            if(m_util_a.is_zero(subb1) && m_util_a.is_add(subb2, num, ind) && m_util_a.is_numeral(num, num_val) && num_val.is_pos()) { 
+            if(m_util_a.is_zero(subb1) && m_util_a.is_add(subb2, num, ind) && m_util_a.is_numeral(num, num_val) && num_val.get_int32() > 0) { 
                 if(m_util_s.str.is_index(ind, str_ind, val_ind) || (m_util_s.str.is_index(ind, str_ind, val_ind, offset_ind) && m_util_a.is_zero(offset_ind))) {
                     if(str != str_ind || val != val_ind) {
                         return false;
