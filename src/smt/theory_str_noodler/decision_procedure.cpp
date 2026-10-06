@@ -590,8 +590,7 @@ namespace smt::noodler {
         // get the LIA formula describing solutions for special predicates
         if(this->m_params.m_ca_constr) {
             conjuncts.push_back(get_formula_for_ca_diseqs());
-        }
-        if (!solution.postponed_disequations.get_predicates().empty()) {
+        } else if (!solution.postponed_disequations.get_predicates().empty()) {
             conjuncts.push_back(solution.get_disequations_underapprox_length_formula());
             // For postponed disequations we currently encode only |lhs| != |rhs|.
             // This is an underapproximation of string disequality and must not be
@@ -1138,6 +1137,11 @@ namespace smt::noodler {
 
     void DecisionProcedure::init_model(const std::map<BasicTerm,rational>& arith_model) {
         if (is_model_initialized) { return ;}
+
+        if ((this->m_params.m_ca_constr && !solution.postponed_disequations.get_predicates().empty()) || !not_contains.get_predicates().empty()) {
+            // TODO: add support for constructing model from ca automata
+            util::throw_error("We do not support (yet) construction of models from counter automata");
+        }
 
         // Move inclusions from inclusions_from_preprocessing to solution (and clear inclusions_from_preprocessing)
         // the inclusions from preprocessing should be of form where all vars on right side

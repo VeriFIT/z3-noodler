@@ -1,0 +1,15 @@
+(set-logic QF_SLIA)
+(set-info :status sat)
+
+(declare-const a String)
+(declare-const b String)
+(assert (str.in_re a (re.++ ;(re.+ (str.to_re "a"))
+(str.to_re "bb") (re.* (str.to_re "a")) )))
+(assert (str.in_re b (re.++ (re.* (str.to_re "b"))
+;(re.+ (str.to_re "a"))
+)))
+(assert (not (str.contains a b)))
+; (assert (= (str.len a) 4))
+; (assert (= (str.len b) 2))
+
+(check-sat)
