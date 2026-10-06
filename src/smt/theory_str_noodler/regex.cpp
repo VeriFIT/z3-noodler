@@ -1031,6 +1031,14 @@ namespace smt::noodler::regex {
             return true; // replacing empty string with anything is NOOP
         }
 
+        // if some previously added find deletes (replaces by empty string), it can join its
+        // neighbouring characters together and create a new occurrence of a find of length >= 2,
+        // which this simultaneous-matching construction cannot detect -> it cannot be added
+        // (single-character finds are fine, as a deletion cannot create a new one-character match)
+        if (has_empty_replace && find.length() >= 2) {
+            return false;
+        }
+
         STRACE(str_add_find,
             tout << "add_find: Adding find string " << find << " to be replaced with " << replace << "\n";
         );
@@ -1127,6 +1135,11 @@ namespace smt::noodler::regex {
             } else {
                 // if the length is 1, we pretend that this replace string is a new delimiter
                 find_delimiters.insert(replace[0]);
+            }
+
+            if (replace.length() == 0) {
+                // this find deletes; remember it so that later finds of length >= 2 get rejected
+                has_empty_replace = true;
             }
 
             for (mata::nfa::State current_state : current_states) {
