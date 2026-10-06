@@ -2071,7 +2071,13 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_contains(e, x, y));
 
-        // if contains is of the form (str.contains (str.substr value2 0 (+ n (str.indexof value2 "A" 0))) "A"), derive simpler constraints
+        // if contains is of the form (str.contains (str.substr value2 0 (+ n (str.indexof value2 lit 0))) lit)
+        // with lit a string literal and n >= |lit|, derive simpler constraints: the constraint is
+        // then equivalent to (str.indexof value2 lit 0) != -1. This equivalence requires lit to be
+        // a literal (so its length is known) and n >= |lit| (both checked in is_contains_index):
+        // for smaller n (including negative n), the prefix taken by str.substr can cut off the
+        // first occurrence of lit before it is complete, so the substr/indexof terms no longer
+        // agree on whether lit occurs.
         expr * ind = nullptr;
         zstring str;
         if(expr_cases::is_contains_index(e, ind, m, m_util_s, m_util_a)) {
@@ -2081,7 +2087,7 @@ namespace smt::noodler {
             add_axiom({~mk_eq(ind, m_util_a.mk_int(-1), false), ~mk_literal(e) });
             add_axiom({mk_eq(ind, m_util_a.mk_int(-1), false), mk_literal(e) });
             return;
-        // if constains is of the form (str.constains strX (str.at ...)) rewrite to a regular constaint ((str.at ...) \in union of chars of strX)
+        // if contains is of the form (str.constains strX (str.at ...)) rewrite to a regular constaint ((str.at ...) \in union of chars of strX)
         } else if (m_util_s.str.is_at(y) && m_util_s.str.is_string(x, str) && str.length() > 0) {
             expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_string("")), m);
             for(size_t i = 0; i < str.length(); i++) {
