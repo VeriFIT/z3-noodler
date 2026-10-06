@@ -2004,9 +2004,8 @@ namespace smt::noodler {
         // handle the case not(suffix x "ABC")
         if(m_util_s.str.is_string(y, str)) {
             literal lit_e = mk_literal(e);
-            str = str.reverse();
             for(size_t i = 0; i <= str.length(); i++) {
-                zstring substr = str.extract(0, i);
+                zstring substr = str.extract(i, str.length()-i);
                 add_axiom({lit_e, mk_literal(m.mk_not(mk_eq_atom(x, m_util_s.str.mk_string(substr))))});
             }
             return;
