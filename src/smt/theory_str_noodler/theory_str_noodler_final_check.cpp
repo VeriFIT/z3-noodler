@@ -1069,12 +1069,9 @@ namespace smt::noodler {
                     }
                     this->statistics.at("length").num_finish++;
                     return l_false;
-                } else if (len_dec_proc->get_formula().get_predicates().size() > 10) {
-                    ctx.get_fparams().is_underapprox = true;
-                    block_curr_len(expr_ref(m.mk_false(), m));
-                    this->statistics.at("length").num_finish++;
-                    return l_false;
                 } else {
+                    // An unsatisfiable underapproximation does not justify any lemma (blocking would
+                    // exclude real solutions) --> continue with other decision procedures.
                     return l_undef;
                 }
             }
