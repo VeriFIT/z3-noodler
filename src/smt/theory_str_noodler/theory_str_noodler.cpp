@@ -1034,8 +1034,10 @@ namespace smt::noodler {
         //    - this case is very useful for pyex, try for example on QF_SLIA/20180523-Reynolds/pyex/peterc-pyex-doc-cav17-zz/httplib2/httplib2-entry-disposition/39783579d992a26f238877df4ca2ead6571ddafc66bf1b6d7fd58db0.smt2
         //    - if (str.indexof s t n) != -1 (i.e. t occurs somewhere in s starting from position n), then we can rewrite
         //           (str.substr s 0 (1 + (str.indexof s t n)))   to   (str.++ (str.substr s 0 (str.indexof s t n)) t[0])
-        //    - we add axiom
+        //    - if t does not occur anywhere (i.e. (str.indexof s t n) == -1), we have (str.substr s 0 0), which is empty string
+        //    - we add axioms
         //         (str.indexof s t n) != -1 -> (str.substr s 0 (1 + (str.indexof s t n))) = (str.++ (str.substr s 0 (str.indexof s t n)) t[0])
+        //         (str.indexof s t n) == -1 -> (str.substr s 0 (1 + (str.indexof s t n))) = ""
         if(zstring indexof_find_string; m_util_a.is_zero(i) && expr_cases::is_one_add_indexof_string(l, s, m, m_util_s, m_util_a, indexof_find_string) && !indexof_find_string.empty()) {
             literal indexof_did_not_find = mk_eq(l, zero, false); // if (1 + (str.indexof s t n))==0, then t was not found in s from position n
             // we get the indexof expr by substracting 1 from l
@@ -1051,6 +1053,7 @@ namespace smt::noodler {
 
             // (str.indexof s t n) != -1 -> (str.substr s 0 (1 + (str.indexof s t n))) = (str.++ (str.substr s 0 (str.indexof s t n)) t[0])
             add_axiom({indexof_did_not_find, mk_eq(e, conc, false)});
+            add_axiom({~indexof_did_not_find, mk_eq_empty(e)});
             return;
         }
 
