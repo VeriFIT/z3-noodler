@@ -1225,6 +1225,15 @@ namespace smt::noodler::regex {
                             // if the delimiter starts matching a longer word, we only need to print the currently read word and go to
                             // the state of transducer that already read the delimiter
                             add_printing_transition(symbol, replacing_word, result_state, prefix_state_to_result_state.at(*prefix_state_for_delimiter));
+
+                            // we also need to handle the case where the currently read symbol was the last symbol of the
+                            // input word: the restarted match never gets to complete, so we print what we have read so far
+                            // (including the delimiter itself, as it is not going to be part of a replace) and end in state 1
+                            mata::Word end_of_input_word = replacing_word;
+                            for (const mata::Symbol s : replacing_map.at(*prefix_state_for_delimiter)) {
+                                end_of_input_word.push_back(s);
+                            }
+                            add_printing_transition(symbol, end_of_input_word, result_state, 1);
                         }
                     } else {
                         // the current symbol is not a delimiter, therefore we will not be matching anything, so we can just print the word we
