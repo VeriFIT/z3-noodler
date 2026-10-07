@@ -1604,9 +1604,7 @@ namespace smt::noodler {
 
             Predicate predicate_with_var_on_right_side;
             if (solution.get_predicate_with_var_on_right_side(var, predicate_with_var_on_right_side)) {
-                // TODO check if predicate_with_var_on_right_side lays on a cycle.
-                // If it is on a cycle, then we need to use (and implement) the horrible proof.
-                // Right now if there is some cycle (checked using vars_whose_model_we_are_computing), we throw error.
+                // predicate_with_var_on_right_side cannot lay on a cycle, cyclic parts of the inclusion graph should be handled by init_model
 
                 // Transducers are simple, because we assume they are of the form
                 //      output_var = T(var)
