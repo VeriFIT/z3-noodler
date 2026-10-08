@@ -894,7 +894,7 @@ namespace smt::noodler {
             if(bt.is_literal()) continue;
 
             if(!this->model.contains(bt)) {
-                // for each variable computea the model from model of the block var
+                // for each variable compute the model from model of the block var
                 int var_pos = arith_model.at(begin_of(bt.get_name(), block_var.get_name())).get_int32();
                 int var_length = arith_model.at(bt).get_int32();
                 zstring var_model = block_model.solution.extract(var_pos, var_length);
