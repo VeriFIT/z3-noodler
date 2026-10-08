@@ -182,9 +182,21 @@ namespace smt::noodler::ca {
             nonsampling_transition.insert(ca::AtomicSymbol::create_p_symbol(bt, copy_idx_labeling_tag));
         }
 
-        mata::Symbol new_symbol = this->alph.add_symbol(nonsampling_transition);
-        mata::nfa::Nfa aut = this->aut_matrix.get_aut(copy_idx, var);
-        mata::nfa::Nfa res = aut.get_one_letter_aut(new_symbol);
+        const mata::nfa::Nfa& aut = this->aut_matrix.get_aut(copy_idx, var);
+        mata::nfa::Nfa res;
+        if (this->track_letters) {
+            // Keep a separate transition for every symbol, so that parallel transitions reading different
+            // symbols are not merged into one.
+            res = mata::nfa::Nfa(aut.num_of_states(), aut.initial, aut.final);
+            for (const mata::nfa::Transition& trans : aut.delta.transitions()) {
+                TagSet tag_set = nonsampling_transition;
+                tag_set.insert(ca::AtomicSymbol::create_a_symbol(bt, trans.symbol));
+                res.delta.add(trans.source, this->alph.add_symbol(tag_set), trans.target);
+            }
+        } else {
+            mata::Symbol new_symbol = this->alph.add_symbol(nonsampling_transition);
+            res = aut.get_one_letter_aut(new_symbol);
+        }
         this->aut_matrix.set_aut(copy_idx, var, res, false);
     }
 
@@ -937,7 +949,7 @@ namespace smt::noodler::ca {
             });
         }
 
-        ca::TagDiseqGen tag_automaton_generator(not_contains, workspace_aut_assignment);
+        ca::TagDiseqGen tag_automaton_generator(not_contains, workspace_aut_assignment, /* track_letters */ true);
 
         ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
         std::set<AtomicSymbol> atomic_symbols = tag_automaton.gather_used_symbols();
