@@ -381,6 +381,9 @@ namespace smt::noodler::ca {
                     literal_table.emplace(concat_term, literal_handle);
                     new_concat.push_back(literal_handle);
                     assignment[literal_handle] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(concat_term.get_name()));
+                } else {
+                    // Repeated occurrence of the same literal: reuse its handle (it denotes a single word, so it behaves like a repeated variable with a fixed value).
+                    new_concat.push_back(literal_handle_it->second);
                 }
             } else {
                 new_concat.push_back(concat_term);

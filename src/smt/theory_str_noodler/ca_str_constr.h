@@ -195,6 +195,17 @@ namespace smt::noodler::ca {
     };
 
     /**
+     * @brief Replace literals in @p concat by handle variables. Every occurrence of the same literal
+     * is replaced by the same handle, which is stored in @p literal_table.
+     *
+     * @param concat Concatenation of terms
+     * @param literal_table Mapping of literals to their handle variables (extended with new handles)
+     * @param assignment Automata assignment, extended with word automata for the new handles
+     * @return std::vector<BasicTerm> Concatenation with literals replaced by their handles
+     */
+    std::vector<BasicTerm> replace_literals_in_concat(const std::vector<BasicTerm>& concat, std::map<BasicTerm, BasicTerm>& literal_table, AutAssignment& assignment);
+
+    /**
      * @brief Get LIA formula for disequations. The LIA formula describes all length
      * models of the diseqation.
      *
