@@ -482,3 +482,22 @@ TEST_CASE("Noodler SMT-LIB end-to-end", "[noodler][smt2][e2e]") {
 
     }
 }
+
+// Issue #480: free positions of the multi var in the length procedure must get the filler
+// character, not U+0000 (the push forces the length procedure to answer).
+TEST_CASE("Length procedure multi var model has no NUL filler", "[noodler][smt2][e2e]") {
+    temp_file script(".smt2",
+        "(declare-fun x () String)\n"
+        "(declare-fun y () String)\n"
+        "(declare-fun z () String)\n"
+        "(push 1)\n"
+        "(assert (= x (str.++ z \"a\")))\n"
+        "(assert (= y (str.++ \"b\" z)))\n"
+        "(assert (>= (str.len z) 3))\n"
+        "(check-sat)\n"
+        "(get-value (x y z))\n");
+    const solver_run result = run_z3_process(script.path());
+    CAPTURE(result.output);
+    REQUIRE(parse_last_status(result.output) == l_true);
+    CHECK(result.output.find("\\u{0}") == std::string::npos);
+}
