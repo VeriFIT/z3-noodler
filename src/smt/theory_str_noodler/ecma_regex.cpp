@@ -42,9 +42,12 @@ namespace smt::noodler::ecma {
         std::ostringstream sanitized;
 
         auto is_continuation = [&](uint32_t idx) -> bool {
+            if (idx >= raw_input.length()) {
+                return false;
+            }
             bool is_raw_byte = raw_input[idx] <= 0xFF;
             bool is_continuation_byte = (raw_input[idx] & 0xC0) == 0x80;  // top two bits must be 10xxxxxx
-            return idx < raw_input.length() && is_raw_byte && is_continuation_byte;
+            return is_raw_byte && is_continuation_byte;
         };
 
         // Unicode replacement character -- used when invalid byte is encountered
@@ -503,7 +506,7 @@ namespace smt::noodler::ecma {
         // case '{n}'
         if (m_regex[m_position] == '}') {
             m_position++;  // consume '}'
-            if (m_regex[m_position] == '?') {
+            if (m_position < m_regex.length() && m_regex[m_position] == '?') {
                 // skip lazy quantifier
                 m_position++;
             }
@@ -524,7 +527,7 @@ namespace smt::noodler::ecma {
         // case '{n,}'
         if (m_regex[m_position] == '}') {
             m_position++;  // consume '}'
-            if (m_regex[m_position] == '?') {
+            if (m_position < m_regex.length() && m_regex[m_position] == '?') {
                 // skip lazy quantifier
                 m_position++;
             }
@@ -542,7 +545,7 @@ namespace smt::noodler::ecma {
         // '}' after number -> case {n,m}
         if (m_regex[m_position] == '}') {
             m_position++;  // consume '}'
-            if (m_regex[m_position] == '?') {
+            if (m_position < m_regex.length() && m_regex[m_position] == '?') {
                 m_position++;
             }
             return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, upper_bound});
@@ -668,7 +671,7 @@ namespace smt::noodler::ecma {
             case '+':
             case '?':
                 // lazy quantifier -- not relevant for membership problem, just skip it
-                if (m_regex[m_position] == '?') {
+                if (m_position < m_regex.length() && m_regex[m_position] == '?') {
                     m_position++;
                 }
                 return make_token(TokenType::QUANTIFIER, current_char);
