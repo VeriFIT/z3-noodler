@@ -2178,6 +2178,7 @@ namespace smt::noodler {
      * x < y -> x = u | x = u.v1.w1
      * x < y -> x = u | v1 in re.allchar
      * x < y -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
+     * x < y & x = eps -> y != eps (not neccessary, but can lead to better solution)
      * @param e str.< predicate
      */
     void theory_str_noodler::handle_lex_lt(expr *e) {
@@ -2239,6 +2240,9 @@ namespace smt::noodler {
         add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(re_in_left)});
         // x < y -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
         add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(to_code_lt)});
+
+        // This is not needed, but can help find solution: x < y & x = eps -> y != eps
+        add_axiom({~lit_e, ~mk_eq_empty(x), ~mk_eq_empty(y)});
     }
 
     void theory_str_noodler::handle_ecma_re(expr* e) {
