@@ -2233,7 +2233,9 @@ namespace smt::noodler {
         literal x_empty = mk_eq_empty(x);
 
         // x < y & x = eps -> y != eps
-        add_axiom({~lit_e, ~x_empty, ~mk_eq_empty(y)});
+        if (x_empty != false_literal) {
+            add_axiom({~lit_e, mk_literal(m.mk_not(mk_eq_atom(x, eps))), mk_literal(m.mk_not(mk_eq_atom(y, eps)))});
+        }
         // x < y & x != eps -> y = u.v2.w2
         add_axiom({~lit_e, x_empty, lit_y_py});
         // x < y & x != eps -> v2 in re.allchar
