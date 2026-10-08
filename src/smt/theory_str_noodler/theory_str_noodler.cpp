@@ -2173,12 +2173,12 @@ namespace smt::noodler {
      * not(x < y) -> x = y | y < x
      * x < y -> x != y
      * x < y -> not(y < x)
-     * x < y -> y = u.v2.w2
-     * x < y -> v2 in re.allchar
-     * x < y -> x = u | x = u.v1.w1
-     * x < y -> x = u | v1 in re.allchar
-     * x < y -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
-     * x < y & x = eps -> y != eps (not neccessary, but can lead to better solution)
+     * x < y & x = eps -> y != eps              (not neccessary, but can help)
+     * x < y & x != eps -> y = u.v2.w2          (x != eps is not neccessary, but can help, same for further axioms)
+     * x < y & x != eps -> v2 in re.allchar
+     * x < y & x != eps -> x = u | x = u.v1.w1
+     * x < y & x != eps -> x = u | v1 in re.allchar
+     * x < y & x != eps -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
      * @param e str.< predicate
      */
     void theory_str_noodler::handle_lex_lt(expr *e) {
@@ -2230,19 +2230,21 @@ namespace smt::noodler {
 
         // If x<y, then either x is prefix of y, or the first differing char has larger code-point value in y
 
-        // x < y -> y = u.v2.w2
-        add_axiom({~lit_e, lit_y_py});
-        // x < y -> v2 in re.allchar
-        add_axiom({~lit_e, mk_literal(re_in_right)});
-        // x < y -> x = u | x = u.v1.w1
-        add_axiom({~lit_e, lit_x_is_prefix_of_y, lit_x_px});
-        // x < y -> x = u | v1 in re.allchar
-        add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(re_in_left)});
-        // x < y -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
-        add_axiom({~lit_e, lit_x_is_prefix_of_y, mk_literal(to_code_lt)});
+        literal x_empty = mk_eq_empty(x);
 
-        // This is not needed, but can help find solution: x < y & x = eps -> y != eps
-        add_axiom({~lit_e, ~mk_eq_empty(x), ~mk_eq_empty(y)});
+        // x < y & x = eps -> y != eps
+        add_axiom({~lit_e, ~x_empty, ~mk_eq_empty(y)});
+        // x < y & x != eps -> y = u.v2.w2
+        add_axiom({~lit_e, x_empty, lit_y_py});
+        // x < y & x != eps -> v2 in re.allchar
+        add_axiom({~lit_e, x_empty, mk_literal(re_in_right)});
+        // x < y & x != eps -> x = u | x = u.v1.w1
+        add_axiom({~lit_e, x_empty, lit_x_is_prefix_of_y, lit_x_px});
+        // x < y & x != eps -> x = u | v1 in re.allchar
+        add_axiom({~lit_e, x_empty, lit_x_is_prefix_of_y, mk_literal(re_in_left)});
+        // x < y & x != eps -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
+        add_axiom({~lit_e, x_empty, lit_x_is_prefix_of_y, mk_literal(to_code_lt)});
+
     }
 
     void theory_str_noodler::handle_ecma_re(expr* e) {
