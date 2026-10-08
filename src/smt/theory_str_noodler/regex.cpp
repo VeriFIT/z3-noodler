@@ -1031,6 +1031,14 @@ namespace smt::noodler::regex {
             return true; // replacing empty string with anything is NOOP
         }
 
+        // if some previously added find deletes (replaces by empty string), it can join its
+        // neighbouring characters together and create a new occurrence of a find of length >= 2,
+        // which this simultaneous-matching construction cannot detect -> it cannot be added
+        // (single-character finds are fine, as a deletion cannot create a new one-character match)
+        if (has_empty_replace && find.length() >= 2) {
+            return false;
+        }
+
         STRACE(str_add_find,
             tout << "add_find: Adding find string " << find << " to be replaced with " << replace << "\n";
         );
@@ -1129,9 +1137,21 @@ namespace smt::noodler::regex {
                 find_delimiters.insert(replace[0]);
             }
 
+            if (replace.length() == 0) {
+                // this find deletes; remember it so that later finds of length >= 2 get rejected
+                has_empty_replace = true;
+            }
+
             for (mata::nfa::State current_state : current_states) {
                 // the current_state will become "replacing state" of the prefix tree
                 prefix_automaton.final.insert(current_state);
+                // if current_state was already a one-symbol-output state (e.g. a delimiter state
+                // of a previous replace of length 1), its output is about to be overwritten, so we
+                // need to remove it from the old symbol's set, otherwise a later add_find could
+                // incorrectly start matching from this state using the stale (already replaced) symbol
+                if (const mata::Word& old_replacing_word = replacing_map[current_state]; old_replacing_word.size() == 1) {
+                    one_symbol_replace_to_prefix_state[old_replacing_word[0]].erase(current_state);
+                }
                 replacing_map[current_state] = util::get_mata_word_zstring(replace);
                 if (replace.length() == 1) {
                     one_symbol_replace_to_prefix_state[replace[0]].insert(current_state);
@@ -1225,6 +1245,15 @@ namespace smt::noodler::regex {
                             // if the delimiter starts matching a longer word, we only need to print the currently read word and go to
                             // the state of transducer that already read the delimiter
                             add_printing_transition(symbol, replacing_word, result_state, prefix_state_to_result_state.at(*prefix_state_for_delimiter));
+
+                            // we also need to handle the case where the currently read symbol was the last symbol of the
+                            // input word: the restarted match never gets to complete, so we print what we have read so far
+                            // (including the delimiter itself, as it is not going to be part of a replace) and end in state 1
+                            mata::Word end_of_input_word = replacing_word;
+                            for (const mata::Symbol s : replacing_map.at(*prefix_state_for_delimiter)) {
+                                end_of_input_word.push_back(s);
+                            }
+                            add_printing_transition(symbol, end_of_input_word, result_state, 1);
                         }
                     } else {
                         // the current symbol is not a delimiter, therefore we will not be matching anything, so we can just print the word we
