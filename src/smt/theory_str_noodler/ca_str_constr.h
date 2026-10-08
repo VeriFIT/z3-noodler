@@ -138,6 +138,9 @@ namespace smt::noodler::ca {
         AutAssignment           aut_ass;
         std::vector<Predicate>  predicates;
         ca::CounterAlphabet     alph {};
+        // Whether non-sampling transitions keep the alphabet symbol they read (in an <A,x,symb> tag). Needed by
+        // not-contains to make sure that two runs of the tag automaton read the same word.
+        bool                    track_letters = false;
 
     protected:
         /**
@@ -190,6 +193,9 @@ namespace smt::noodler::ca {
 
         TagDiseqGen(const std::vector<Predicate>& disequations, const AutAssignment& aut_ass) : aut_matrix(disequations, aut_ass),
             aut_ass(aut_ass), predicates(disequations), alph() { }
+
+        TagDiseqGen(const Predicate& diseq, const AutAssignment& aut_ass, bool track_letters) : aut_matrix(diseq, aut_ass),
+            aut_ass(aut_ass), predicates({diseq}), alph(), track_letters(track_letters) { }
 
 
     };

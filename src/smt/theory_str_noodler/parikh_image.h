@@ -296,7 +296,8 @@ public:
     LenNode assert_copy_transition_correctness() const;
 };
 
-typedef std::pair<mata::nfa::State, mata::nfa::State> StatePair;
+// (origin of source state, letter, origin of target state) identifying transitions that are copies of the same transition
+typedef std::tuple<mata::nfa::State, mata::Symbol, mata::nfa::State> IsomorphicTransitionKey;
 
 /**
  * @brief Parikh image computation for tag automaton representing not contains.
@@ -332,8 +333,16 @@ public:
     mata::nfa::State map_copy_state_into_its_origin(const mata::nfa::State state) const;
 
     /**
+     * Get the letter read by a transition labeled with @p transition_symbol, i.e., the symbol stored in its
+     * <A,x,symb> or <R,x,i,symb> tag. Returns EPSILON for transitions without such a tag.
+     */
+    mata::Symbol get_transition_letter(const mata::Symbol transition_symbol) const;
+
+    /**
      * Given a @p parikh_image of the underlying tag automaton, group transitions that were
-     * created using the same transition of the eps-concatenation as a template.
+     * created using the same transition of the eps-concatenation as a template. Requires
+     * the tag automaton to be constructed with letter tracking (see TagDiseqGen), so that
+     * transitions reading different letters are distinguished.
      *
      * For example, if the eps-concatenation contained (q, a, q'), then the tag automaton
      * will contain multiple transitions (q, <Tags>, q') (a bit over-simplified).
@@ -341,7 +350,7 @@ public:
      * Internally abuses the fact that there the state `p` and `p+K` for some fixed K is a copy
      * of the same state from the eps-concatenation.
      */
-    std::unordered_map<StatePair, std::vector<LenNode>> group_isomorphic_transitions_across_copies(const std::map<Transition, BasicTerm>& parikh_image) const;
+    std::map<IsomorphicTransitionKey, std::vector<LenNode>> group_isomorphic_transitions_across_copies(const std::map<Transition, BasicTerm>& parikh_image) const;
 
     /**
      * Create a formula asserting that @p parikh_image and @p other_parikh_image

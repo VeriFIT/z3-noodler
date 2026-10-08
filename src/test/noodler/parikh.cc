@@ -64,7 +64,7 @@ TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula simple", "[noo
     AutAssignment aut_assignment;
     aut_assignment[get_var('x')] = regex_to_nfa("abc");
 
-    ca::TagDiseqGen tag_automaton_generator(not_contains, aut_assignment);
+    ca::TagDiseqGen tag_automaton_generator(not_contains, aut_assignment, /* track_letters */ true);
 
     ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
 
@@ -1161,4 +1161,55 @@ TEST_CASE("NotContains::get_lia_for_not_contains binds lengths to the top-level 
 
     // y = a occurs in both ab and ba
     CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 1) }) == l_false);
+}
+
+TEST_CASE("NotContains::get_lia_for_not_contains same-word constraint respects letters (issue #463)", "[noodler]") {
+    // x in {ab, ba}, y in (a|b)c*: the edge reading the first letter of y has two letters, a and b.
+    // not-contains(x, y) holds iff |y| > 2. Satisfiable cases are not checked, as the solver struggles
+    // with the universal quantifier in the formula.
+    Formula not_contains;
+    not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+
+    AutAssignment aut_assignment;
+    aut_assignment[get_var('x')] = regex_to_nfa("ab|ba");
+    aut_assignment[get_var('y')] = regex_to_nfa("(a|b)c*");
+
+    auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+    CHECK(lia.second == LenNodePrecision::PRECISE);
+
+    // y is a or b, both occur in both ab and ba
+    CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 1) }) == l_false);
+}
+
+TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula distinguishes letters (issue #463)", "[noodler]") {
+    // not-contains(x, y) with x in (a|b)c: the edge q0 -> q1 of x reads a or b
+    Predicate not_contains(PredicateType::NotContains, {{get_var('x')}, {get_var('y')}});
+
+    AutAssignment aut_assignment;
+    aut_assignment[get_var('x')] = regex_to_nfa("(a|b)c");
+    aut_assignment[get_var('y')] = regex_to_nfa("c");
+
+    ca::TagDiseqGen tag_automaton_generator(not_contains, aut_assignment, /* track_letters */ true);
+    ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
+    std::set<ca::AtomicSymbol> used_symbols = tag_automaton.gather_used_symbols();
+    ParikhImageNotContTag not_contains_parikh(tag_automaton, used_symbols, tag_automaton_generator.get_aut_matrix().get_number_of_states_in_row());
+
+    not_contains_parikh.compute_parikh_image();
+    const std::map<Transition, BasicTerm> parikh_image = not_contains_parikh.get_trans_vars();
+
+    // Every group of isomorphic transitions reads a single letter, and both a and b have their own group
+    std::set<mata::Symbol> letters_of_first_edge;
+    for (const auto& [key, transition_vars] : not_contains_parikh.group_isomorphic_transitions_across_copies(parikh_image)) {
+        std::set<BasicTerm> vars_in_group = extract_summed_basic_terms_from_len_nodes(transition_vars);
+        std::set<mata::Symbol> letters_in_group;
+        for (const auto& [transition, transition_var] : parikh_image) {
+            if (!vars_in_group.contains(transition_var)) continue;
+            letters_in_group.insert(not_contains_parikh.get_transition_letter(std::get<1>(transition)));
+        }
+        CHECK(letters_in_group == std::set<mata::Symbol>{std::get<1>(key)});
+        if (std::get<1>(key) == 'a' || std::get<1>(key) == 'b') {
+            letters_of_first_edge.insert(std::get<1>(key));
+        }
+    }
+    CHECK(letters_of_first_edge == std::set<mata::Symbol>{'a', 'b'});
 }
