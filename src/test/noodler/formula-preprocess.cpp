@@ -851,3 +851,34 @@ TEST_CASE( "Remove extension", "[noodler]" ) {
         CHECK(prep.get_dependency().empty());
     }
 }
+
+TEST_CASE( "Replace not contains with untrimmed haystack automaton (issue #440)", "[noodler]" ) {
+    BasicTerm h{BasicTermType::Variable, "h"};
+    BasicTerm n{BasicTermType::Variable, "n"};
+
+    // L(h) = {abc}, with a useless branch reading a.x (state 5 is not final)
+    mata::nfa::Nfa haystack_nfa(6, {0}, {3});
+    haystack_nfa.delta.add(0, 'a', 1);
+    haystack_nfa.delta.add(1, 'b', 2);
+    haystack_nfa.delta.add(2, 'c', 3);
+    haystack_nfa.delta.add(0, 'a', 4);
+    haystack_nfa.delta.add(4, 'x', 5);
+
+    Formula conj;
+    conj.add_predicate(Predicate::create_not_contains({h}, {n}));
+
+    SECTION("words of the useless branch are not factors") {
+        AutAssignment aut_ass({{h, haystack_nfa}, {n, regex_to_nfa("x|ax")}});
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        CHECK(prep.replace_not_contains());
+        CHECK(prep.get_formula().get_predicates_set().empty());
+        CHECK(mata::nfa::are_equivalent(*prep.get_aut_assignment().at(n), regex_to_nfa("x|ax")));
+    }
+
+    SECTION("factors are removed") {
+        AutAssignment aut_ass({{h, haystack_nfa}, {n, regex_to_nfa("bc|x")}});
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        CHECK(prep.replace_not_contains());
+        CHECK(mata::nfa::are_equivalent(*prep.get_aut_assignment().at(n), regex_to_nfa("x")));
+    }
+}

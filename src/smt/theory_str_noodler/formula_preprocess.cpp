@@ -1810,6 +1810,9 @@ namespace smt::noodler {
                 }
                 if(this->aut_ass.is_singleton(haystack[0]) && needle[0].is_variable()) {
                     mata::nfa::Nfa nfa_copy = *this->aut_ass.at(haystack[0]);
+                    // Useless states would add words that are not factors of the haystack word after marking
+                    // all states initial and final. In a trimmed NFA, each path is a part of an accepting run.
+                    nfa_copy.trim();
                     for(unsigned i = 0; i < nfa_copy.num_of_states(); i++) {
                         nfa_copy.initial.insert(i);
                         nfa_copy.final.insert(i);
