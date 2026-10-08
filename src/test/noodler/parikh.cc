@@ -1085,3 +1085,41 @@ TEST_CASE("NotContains::get_lia_for_not_contains fallback counts literal lengths
         CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 4) }) == l_false);
     }
 }
+
+TEST_CASE("NotContains::get_lia_for_not_contains finite-needle heuristic keeps initial/final states (issue #449)", "[noodler]") {
+    // not-contains(x, t) with t in {a, b}: x has to avoid the letter chosen for t
+    Formula not_contains;
+    not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('t')}));
+
+    SECTION("haystack can avoid a letter") {
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("(a|b)*");
+        aut_assignment[get_var('t')] = regex_to_nfa("a|b");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 0) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 3) }) == l_true);
+    }
+
+    SECTION("haystack contains every letter of the needle") {
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("a+b+");
+        aut_assignment[get_var('t')] = regex_to_nfa("a|b");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, {}) == l_false);
+    }
+
+    SECTION("haystack can avoid the letter only if it is empty") {
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("a*");
+        aut_assignment[get_var('t')] = regex_to_nfa("a");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 0) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 3) }) == l_false);
+    }
+}

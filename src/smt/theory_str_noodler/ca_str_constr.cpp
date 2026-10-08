@@ -560,10 +560,8 @@ namespace smt::noodler::ca {
             return automaton;
         }
 
-        mata::nfa::Nfa new_automaton;
-        new_automaton.delta.allocate(automaton.num_of_states());
-        new_automaton.initial = automaton.initial;
-        new_automaton.final = automaton.final;
+        // Keep the states (including initial and final ones) and the alphabet, only the transitions are filtered
+        mata::nfa::Nfa new_automaton(automaton.num_of_states(), automaton.initial, automaton.final, automaton.alphabet);
 
         // We are dealing with a concrete symbol, e.g., 'a'
         for (mata::nfa::State source_state = 0; source_state < automaton.num_of_states(); source_state++) {
