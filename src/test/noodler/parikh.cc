@@ -1050,3 +1050,38 @@ TEST_CASE("NotContains::get_lia_for_not_contains encodes all predicates", "[nood
         CHECK(check_not_contains_lia(lia, { len_eq('x', 4), len_eq('y', 2) }) == l_false);
     }
 }
+
+TEST_CASE("NotContains::get_lia_for_not_contains fallback counts literal lengths (issue #438)", "[noodler]") {
+    // x is not flat, hence the |needle| > |haystack| fallback is used
+    BasicTerm lit_a(BasicTermType::Literal, "a");
+    BasicTerm lit_ab(BasicTermType::Literal, "ab");
+
+    AutAssignment aut_assignment;
+    aut_assignment[get_var('x')] = regex_to_nfa("ab(a|b)*");
+    aut_assignment[get_var('y')] = regex_to_nfa("b*");
+    // the solver assigns word automata to literals
+    aut_assignment[lit_a] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa("a"));
+    aut_assignment[lit_ab] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa("ab"));
+
+    SECTION("literal in the needle") {
+        // not-contains(x, "a".y) is underapproximated by 1 + |y| > |x|
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {lit_a, get_var('y')}));
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::UNDERAPPROX);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 2) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 1) }) == l_false);
+    }
+
+    SECTION("literal in the haystack") {
+        // not-contains("ab".x, y) is underapproximated by |y| > 2 + |x|
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({lit_ab, get_var('x')}, {get_var('y')}));
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::UNDERAPPROX);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 5) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 4) }) == l_false);
+    }
+}
