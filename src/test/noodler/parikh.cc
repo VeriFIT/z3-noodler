@@ -1145,3 +1145,20 @@ TEST_CASE("replace_literals_in_concat keeps repeated literals (issue #461)", "[n
     CHECK(aut_assignment.at(handle_c)->is_in_lang(mata::Word{'c'}));
     CHECK(aut_assignment.at(handle_d)->is_in_lang(mata::Word{'d'}));
 }
+
+TEST_CASE("NotContains::get_lia_for_not_contains binds lengths to the top-level run (issue #462)", "[noodler]") {
+    // x in {ab, ba}, y in ac*: not-contains(x, y) holds iff |y| > 2. Satisfiable cases are not checked,
+    // as the solver struggles with the universal quantifier in the formula.
+    Formula not_contains;
+    not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+
+    AutAssignment aut_assignment;
+    aut_assignment[get_var('x')] = regex_to_nfa("ab|ba");
+    aut_assignment[get_var('y')] = regex_to_nfa("ac*");
+
+    auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+    CHECK(lia.second == LenNodePrecision::PRECISE);
+
+    // y = a occurs in both ab and ba
+    CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 1) }) == l_false);
+}

@@ -1309,6 +1309,12 @@ namespace smt::noodler::parikh {
         LenNode top_level_parikh = compute_parikh_image();
         std::map<Transition, BasicTerm> top_level_parikh_vars = this->get_trans_vars();
 
+        // Bind the lengths |x| to the tag counters #<L,x> of the top-level run. This has to be done before
+        // the second-level Parikh image is computed, as it replaces the tag counters with fresh variables,
+        // which are existentially quantified inside the FORALL (issue #462).
+        LenNode var_lengths_from_tag_count_formula = get_var_length(not_contains.get_set());
+        STRACE(str_not_contains, tout << "* get_var_length:  " << std::endl << var_lengths_from_tag_count_formula << std::endl << std::endl;);
+
         // #Optimize(mhecko): We should just rename the variables found in the formula instead
         //                    of recomputing it from scratch.
 
@@ -1328,9 +1334,6 @@ namespace smt::noodler::parikh {
 
         LenNode mismatch = get_nt_all_mismatch_formula(not_contains);
         STRACE(str_not_contains, tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
-
-        LenNode var_lengths_from_tag_count_formula = get_var_length(not_contains.get_set());
-        STRACE(str_not_contains, tout << "* get_var_length:  " << std::endl << var_lengths_from_tag_count_formula << std::endl << std::endl;);
 
         LenNode diff_symbol = get_diff_symbol_formula();
         STRACE(str_not_contains, tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);
