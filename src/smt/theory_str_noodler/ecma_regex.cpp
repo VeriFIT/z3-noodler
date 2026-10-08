@@ -1,7 +1,6 @@
 #include "ecma_regex.h"
 
 #include "ast/ast.h"
-#include "ast/expr_abstract.h"
 #include "ast/seq_decl_plugin.h"
 #include "util.h"
 #include "util/debug.h"
@@ -22,6 +21,7 @@ namespace smt::noodler::ecma {
     // ======================= UTILS =======================
     constexpr uint32_t HEX_SEQUENCE_LEN = 2;
     constexpr uint32_t UNICODE_ESCAPE_SEQUENCE_LEN = 4;
+    constexpr Z3Char MAX_UNICODE_CODE_POINT = 0x10FFFF;
     constexpr Z3Char BACKSPACE_LITERAL = 8;
     constexpr uint64_t UNBOUNDED = std::numeric_limits<uint64_t>::max();
     constexpr bool debug_mode = false;
@@ -38,8 +38,9 @@ namespace smt::noodler::ecma {
     constexpr Z3Char CH_LS = 0x2028;      // Line Separator
     constexpr Z3Char CH_PS = 0x2029;      // Paragraph Separator
 
-    zstring sanitize_ecma_regex_input(const zstring& raw_input) {
-        std::ostringstream sanitized;
+    zstring sanitize_ecma_regex_input(const zstring &raw_input) {
+        std::vector<Z3Char> sanitized;
+        sanitized.reserve(raw_input.length());
 
         auto is_continuation = [&](uint32_t idx) -> bool {
             if (idx >= raw_input.length()) {
@@ -50,80 +51,54 @@ namespace smt::noodler::ecma {
             return is_raw_byte && is_continuation_byte;
         };
 
-        // Unicode replacement character -- used when invalid byte is encountered
-        auto insert_unicode_replacement = [&]() {
-            sanitized << "\\u{fffd}";
-        };
-
         uint32_t i = 0;
         while (i < raw_input.length()) {
-            Z3Char raw_char = raw_input[i];
+            const Z3Char raw_char = raw_input[i];
 
-            // If the character value is > 0xFF, the zstring constructor already parsed it into a valid Unicode code
-            // point --> skip this. Originally, the character was in form \uXXXX or similar.
-            if (raw_char > 0xFF) {
-                sanitized << "\\u{" << std::hex << raw_char << std::dec << "}";
-                i++;
-                continue;
+            uint32_t seq_len = 0;   // length of the UTF-8 sequence started by raw_char (0 if raw_char is no lead byte)
+            Z3Char code_point = 0;
+            Z3Char min_code_point = 0;  // smallest code point that is not an overlong encoding
+            if (raw_char >= 0x80 && raw_char <= 0xFF) {
+                if ((raw_char & 0xE0) == 0xC0) {
+                    // 110xxxxx 10xxxxxx (2 bytes)
+                    seq_len = 2;
+                    code_point = raw_char & 0x1F;
+                    min_code_point = 0x80;
+                } else if ((raw_char & 0xF0) == 0xE0) {
+                    // 1110xxxx 10xxxxxx 10xxxxxx (3 bytes)
+                    seq_len = 3;
+                    code_point = raw_char & 0x0F;
+                    min_code_point = 0x800;
+                } else if ((raw_char & 0xF8) == 0xF0) {
+                    // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (4 bytes)
+                    seq_len = 4;
+                    code_point = raw_char & 0x07;
+                    min_code_point = 0x10000;
+                }
             }
 
-            if (raw_char < 0x80) {
-                // 0xxxxxxx (1 byte)
-                sanitized << static_cast<char>(raw_char);
-                i++;
-            } else if ((raw_char & 0xE0) == 0xC0) {
-                // 110xxxxx 10xxxxxx (2 bytes)
-                if (!is_continuation(i + 1)) {
-                    insert_unicode_replacement();
-                    i++;
-                    continue;
+            bool is_valid_utf8 = seq_len > 0;
+            for (uint32_t j = 1; j < seq_len; j++) {
+                if (!is_continuation(i + j)) {
+                    is_valid_utf8 = false;
+                    break;
                 }
-                Z3Char code_point = ((raw_char & 0x1F) << 6) | (raw_input[i + 1] & 0x3F);
-                if (code_point < 0x80) {
-                    insert_unicode_replacement();
-                    i += 2;
-                    continue;
-                }
-                sanitized << "\\u{" << std::hex << code_point << std::dec << "}";
-                i += 2;
-            } else if ((raw_char & 0xF0) == 0xE0) {
-                // 1110xxxx 10xxxxxx 10xxxxxx (3 bytes)
-                if (!is_continuation(i + 1) || !is_continuation(i + 2)) {
-                    insert_unicode_replacement();
-                    i++;
-                    continue;
-                }
-                Z3Char code_point =
-                    ((raw_char & 0x0F) << 12) | ((raw_input[i + 1] & 0x3F) << 6) | (raw_input[i + 2] & 0x3F);
-                if (code_point < 0x800 || (code_point >= 0xD800 && code_point <= 0xDFFF)) {
-                    insert_unicode_replacement();
-                    i += 3;
-                    continue;
-                }
-                sanitized << "\\u{" << std::hex << code_point << std::dec << "}";
-                i += 3;
-            } else if ((raw_char & 0xF8) == 0xF0) {
-                // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (4 bytes)
-                if (!is_continuation(i + 1) || !is_continuation(i + 2) || !is_continuation(i + 3)) {
-                    insert_unicode_replacement();
-                    i++;
-                    continue;
-                }
-                Z3Char code_point = ((raw_char & 0x07) << 18) | ((raw_input[i + 1] & 0x3F) << 12) |
-                                    ((raw_input[i + 2] & 0x3F) << 6) | (raw_input[i + 3] & 0x3F);
-                if (code_point < 0x10000 || code_point > 0x10FFFF) {
-                    insert_unicode_replacement();
-                    i += 4;
-                    continue;
-                }
-                sanitized << "\\u{" << std::hex << code_point << std::dec << "}";
-                i += 4;
+                code_point = (code_point << 6) | (raw_input[i + j] & 0x3F);
+            }
+            // reject overlong encodings, surrogates, and code points that cannot be represented
+            is_valid_utf8 = is_valid_utf8 && code_point >= min_code_point &&
+                            !(code_point >= 0xD800 && code_point <= 0xDFFF) && code_point <= zstring::max_char();
+
+            if (is_valid_utf8) {
+                sanitized.push_back(code_point);
+                i += seq_len;
             } else {
-                insert_unicode_replacement();
+                sanitized.push_back(raw_char);
                 i++;
             }
         }
-        return zstring(sanitized.str().c_str());
+
+        return zstring(static_cast<unsigned>(sanitized.size()), sanitized.data());
     }
 
     GraphFragment chain_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
@@ -312,25 +287,74 @@ namespace smt::noodler::ecma {
     }
 
     Token ECMALexer::get_unicode_escape_seq_token() {
-        // unicode escape sequence in format \uHHHH
-        // currently m_position is on the first hex digit right after '\u' -- hence the 3
-        if (m_position + 3 >= m_regex.length()) {
+        // unicode escape sequence, handled as with the 'u' flag, in one of the formats
+        //   \uHHHH, \uHHHH\uHHHH (surrogate pair encoding a single code point), \u{H...} (code point up to 0x10FFFF)
+        // currently m_position is right after '\u'
+
+        // if the sequence is malformed, then '\u' is a literal 'u' and the rest is parsed separately
+        auto fallback = [&]() {
             m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\u'
             return make_token(TokenType::LITERAL, static_cast<Z3Char>('u'));
+        };
+
+        auto make_code_point_token = [&](const Z3Char code_point) {
+            if (code_point > zstring::max_char()) {
+                util::throw_error("Unsupported: character in ECMA regex unicode escape sequence exceeds the maximal "
+                                  "character of the current string encoding");
+            }
+            return make_token(TokenType::LITERAL, code_point);
+        };
+
+        // reads 4 hex digits starting at pos into code_point; returns false if they are not all valid
+        auto read_four_hex_digits = [&](const uint32_t pos, Z3Char& code_point) {
+            if (pos + UNICODE_ESCAPE_SEQUENCE_LEN > m_regex.length()) {
+                return false;
+            }
+            for (uint32_t i = 0; i < UNICODE_ESCAPE_SEQUENCE_LEN; i++) {
+                if (!is_hex_digit(m_regex[pos + i])) {
+                    return false;
+                }
+            }
+            code_point = hex2char(zstring_view(&m_regex[pos], UNICODE_ESCAPE_SEQUENCE_LEN));
+            return true;
+        };
+
+        // case \u{H...}
+        if (m_position < m_regex.length() && m_regex[m_position] == '{') {
+            uint32_t pos = m_position + 1;  // skip '{'
+            Z3Char code_point = 0;
+            while (pos < m_regex.length() && is_hex_digit(m_regex[pos])) {
+                code_point = code_point * 16 + hex2char(zstring_view(&m_regex[pos], 1));
+                if (code_point > MAX_UNICODE_CODE_POINT) {
+                    util::throw_error("ECMA regex syntax error: Code point out of range in unicode escape sequence");
+                }
+                pos++;
+            }
+            if (pos == m_position + 1 || pos >= m_regex.length() || m_regex[pos] != '}') {
+                return fallback();
+            }
+            m_position = pos + 1;  // consume hex digits and '}'
+            return make_code_point_token(code_point);
         }
 
-        for (uint32_t i = 0; i < UNICODE_ESCAPE_SEQUENCE_LEN; i++) {
-            const Z3Char current_char = m_regex[m_position + i];
-            if (!is_hex_digit(current_char)) {
-                m_position = m_lexeme_start_pos + 2;  // rollback to skip just '\u'
-                return make_token(TokenType::LITERAL, static_cast<Z3Char>('u'));
+        // case \uHHHH
+        Z3Char code_point;
+        if (!read_four_hex_digits(m_position, code_point)) {
+            return fallback();
+        }
+        m_position += UNICODE_ESCAPE_SEQUENCE_LEN;
+
+        // case \uHHHH\uHHHH -- leading surrogate followed by trailing surrogate encodes a single code point
+        const bool is_leading_surrogate = code_point >= 0xD800 && code_point <= 0xDBFF;
+        if (is_leading_surrogate && m_position + 1 < m_regex.length() && m_regex[m_position] == '\\' &&
+            m_regex[m_position + 1] == 'u') {
+            Z3Char trailing;
+            if (read_four_hex_digits(m_position + 2, trailing) && trailing >= 0xDC00 && trailing <= 0xDFFF) {
+                code_point = 0x10000 + ((code_point - 0xD800) << 10) + (trailing - 0xDC00);
+                m_position += 2 + UNICODE_ESCAPE_SEQUENCE_LEN;  // consume '\u' and the hex digits
             }
         }
-
-        util::throw_error(
-            "How did we get here? The zstring constructor should have parsed the unicode sequence for us");
-        // return dummy token, because compilation errors with return type (execution wont get here)
-        return {};
+        return make_code_point_token(code_point);
     }
 
     Token ECMALexer::get_control_escape_seq_token() {
