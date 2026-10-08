@@ -28,7 +28,8 @@ public:
         return m_size;
     }
 
-    const uint32_t& operator[](const size_t index) const {
+    const uint32_t &operator[](const size_t index) const {
+        SASSERT(index < m_size);
         return m_data[index];
     }
 
