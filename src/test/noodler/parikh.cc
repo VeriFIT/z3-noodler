@@ -939,3 +939,114 @@ TEST_CASE("Disequations :: check assert_register_values", "[noodler]") {
     REQUIRE(register_values_formula.succ[3].succ.size() == 36);
     check_register_stores_for_level(3, tag_automaton, formula_generator, register_values_formula.succ[3]);
 }
+
+namespace {
+    LenNode len_eq(char var, int value) {
+        return LenNode(LenFormulaType::EQ, {get_var(var), value});
+    }
+
+    lbool check_not_contains_lia(const std::pair<LenNode, LenNodePrecision>& lia, const std::vector<LenNode>& additional_constraints) {
+        LenNode formula(LenFormulaType::AND, {lia.first});
+        formula.succ.insert(formula.succ.end(), additional_constraints.begin(), additional_constraints.end());
+
+        // Convert directly (not via SMT-LIB2 text), as the formula can contain empty sums
+        ast_manager manager;
+        reg_decl_plugins(manager);
+        arith_util arith_util_i(manager);
+        seq_util seq_util_i(manager);
+        std::map<std::string, unsigned> quantified_vars;
+        std::map<BasicTerm, expr_ref> known_exprs;
+        LenFormulaContext ctx {
+            .manager = manager,
+            .arith_utilities = arith_util_i,
+            .seq_utilities = seq_util_i,
+            .quantified_vars = quantified_vars,
+            .known_z3_exprs = known_exprs,
+        };
+        expr_ref z3_formula = convert_len_node_to_z3_formula(ctx, formula);
+
+        smt_params params{};
+        int_expr_solver solver(manager, params);
+        return solver.check_sat(z3_formula);
+    }
+}
+
+TEST_CASE("NotContains::get_lia_for_not_contains encodes all predicates", "[noodler]") {
+    SECTION("variable-disjoint predicates (issue #437)") {
+        // x, y in b*; z, w in a*: not-contains(z, w) requires |w| > |z|
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('z')}, {get_var('w')}));
+
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("b*");
+        aut_assignment[get_var('y')] = regex_to_nfa("b*");
+        aut_assignment[get_var('z')] = regex_to_nfa("a*");
+        aut_assignment[get_var('w')] = regex_to_nfa("a*");
+
+        Formula swapped_not_contains;
+        swapped_not_contains.add_predicate(not_contains.get_predicates().at(1));
+        swapped_not_contains.add_predicate(not_contains.get_predicates().at(0));
+
+        for (const Formula& formula : { not_contains, swapped_not_contains }) {
+            auto lia = ca::get_lia_for_not_contains(formula, aut_assignment, true);
+            CHECK(lia.second == LenNodePrecision::PRECISE);
+            CHECK(check_not_contains_lia(lia, {}) == l_true);
+            CHECK(check_not_contains_lia(lia, { LenNode(LenFormulaType::LEQ, {get_var('w'), get_var('z')}) }) == l_false);
+        }
+    }
+
+    SECTION("finite needles, needle is also a haystack") {
+        // x in {a, bb}, y in {a, b}, z = b: not-contains(y, z) forces y = a, hence x = bb
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('y')}, {get_var('z')}));
+
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("a|bb");
+        aut_assignment[get_var('y')] = regex_to_nfa("a|b");
+        aut_assignment[get_var('z')] = regex_to_nfa("b");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 1) }) == l_false);
+    }
+
+    SECTION("finite needles, all combinations of needle values are tried") {
+        // x in b+d avoids u, v, y only for u = a, v = c, y = a
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('u')}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('v')}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("b+d");
+        aut_assignment[get_var('u')] = regex_to_nfa("a|b");
+        aut_assignment[get_var('v')] = regex_to_nfa("a|c");
+        aut_assignment[get_var('y')] = regex_to_nfa("a|d");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, {}) == l_true);
+    }
+
+    SECTION("predicates sharing variables are underapproximated including literal lengths") {
+        // not-contains(x, y.ab) and not-contains(y, x.ba): underapproximated by |y|+2 > |x| and |x|+2 > |y|
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y'), BasicTerm(BasicTermType::Literal, "ab")}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('y')}, {get_var('x'), BasicTerm(BasicTermType::Literal, "ba")}));
+
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("(a|b)*");
+        aut_assignment[get_var('y')] = regex_to_nfa("(a|b)*");
+        // the solver assigns word automata to literals
+        aut_assignment[BasicTerm(BasicTermType::Literal, "ab")] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa("ab"));
+        aut_assignment[BasicTerm(BasicTermType::Literal, "ba")] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa("ba"));
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::UNDERAPPROX);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 3), len_eq('y', 3) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 4), len_eq('y', 2) }) == l_false);
+    }
+}

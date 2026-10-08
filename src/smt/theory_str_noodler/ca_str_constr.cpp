@@ -520,26 +520,16 @@ namespace smt::noodler::ca {
     }
 
     void try_next_word_choice(WordChoicesForFiniteLanguages& choices) {
-        bool previous_choices_were_reset = false;
-        size_t num_of_slot_overflows = 0;
-        for (auto current_slot = choices.slots.begin(); current_slot != choices.slots.end(); current_slot++) {
-            WordChoice& current_choice = *current_slot;
-
+        // Odometer increment: advance the first slot; on overflow, reset it and carry into the next slot.
+        // The choices are exhausted once the carry propagates past the last slot.
+        for (WordChoice& current_choice : choices.slots) {
             current_choice.current_word++;
-            if (current_choice.current_word == current_choice.language.end()) {
-                current_choice.current_word = current_choice.language.begin();
-                previous_choices_were_reset = true;
-                num_of_slot_overflows += 1;
+            if (current_choice.current_word != current_choice.language.end()) {
+                return;
             }
-
-            if (!previous_choices_were_reset) {
-                break;
-            }
+            current_choice.current_word = current_choice.language.begin();
         }
-
-        if (num_of_slot_overflows == choices.slots.size()) {
-            choices.exhausted = true;
-        }
+        choices.exhausted = true;
     }
 
     void write_word_choices(const WordChoicesForFiniteLanguages& choices, std::ostream& out_stream) {
@@ -572,6 +562,8 @@ namespace smt::noodler::ca {
 
         mata::nfa::Nfa new_automaton;
         new_automaton.delta.allocate(automaton.num_of_states());
+        new_automaton.initial = automaton.initial;
+        new_automaton.final = automaton.final;
 
         // We are dealing with a concrete symbol, e.g., 'a'
         for (mata::nfa::State source_state = 0; source_state < automaton.num_of_states(); source_state++) {
@@ -587,60 +579,81 @@ namespace smt::noodler::ca {
         return new_automaton;
     }
 
+    /**
+     * @brief Get the automaton for a term occurring in a not-contains predicate; literals that are
+     * not present in the assignment get their word automaton.
+     */
+    std::shared_ptr<mata::nfa::Nfa> get_term_automaton(const BasicTerm& term, const AutAssignment& aut_assignment) {
+        if (term.is_literal() && !aut_assignment.contains(term)) {
+            return std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa(term.get_name()));
+        }
+        return aut_assignment.at(term);
+    }
+
+    /**
+     * @brief Heuristic for not-contains predicates whose needles are single terms with a finite language
+     * consisting only of one-letter words.
+     *
+     * For such a needle n, not-contains(h, n) holds iff n = c for some letter c of L(n) and c does not occur
+     * in h. We therefore enumerate all combinations of letters for the needles, fix each needle to its chosen
+     * letter, remove the letter from the haystack languages, and describe lengths of the resulting languages.
+     * All predicates are handled jointly, so the resulting formula is precise.
+     *
+     * @return Disjunction (over letter choices) of length formulae, or std::nullopt if the heuristic does not apply.
+     */
     std::optional<LenNode> try_solving_notcontains_with_finite_rhs(const std::vector<Predicate>& not_contains_predicates, const AutAssignment& aut_assignment) {
         // Check that every not-contains has a finite RHS
         // @Note we currently do not support finite languages where RHS contains more than one variable
-        bool can_apply_heuristic = true;
-
         std::map<BasicTerm, std::set<mata::Word>> rhs_var_words;
         for (const Predicate& not_contains : not_contains_predicates) {
-            if (not_contains.get_needle().size() > 1) {
-                STRACE(str_not_contains, tout << "* Cannot apply heuristics for finite side not-contains - we do not support more than 1 variable on RHS. Problematic predicate: \n  - " << not_contains << std::endl; );
-                can_apply_heuristic = false;
-                break;
+            if (not_contains.get_needle().size() != 1) {
+                STRACE(str_not_contains, tout << "* Cannot apply heuristics for finite side not-contains - we support only exactly 1 term on RHS. Problematic predicate: \n  - " << not_contains << std::endl; );
+                return std::nullopt;
             }
 
             const BasicTerm& rhs_var = not_contains.get_needle().at(0);
-            std::shared_ptr<mata::nfa::Nfa> rhs_var_automaton = aut_assignment.at(rhs_var);
+            if (rhs_var_words.contains(rhs_var)) continue;
+
+            std::shared_ptr<mata::nfa::Nfa> rhs_var_automaton = get_term_automaton(rhs_var, aut_assignment);
 
             bool is_finite = rhs_var_automaton->is_acyclic();
             if (!is_finite) {
                 STRACE(str_not_contains, tout << "* Cannot apply heuristics for finite side not-contains - RHS var has infinite language. Problematic predicate: \n  - " << not_contains << std::endl; );
-                can_apply_heuristic = false;
-                break;
+                return std::nullopt;
             }
 
             std::set<mata::Word> words = rhs_var_automaton->get_words(rhs_var_automaton->num_of_states());
 
-            bool are_all_words_have_length_one = true;  // In principle, nothing prevents us from dealing with the general case, but the implementation would have to be much more complex
+            // In principle, nothing prevents us from dealing with the general case, but the implementation would have to be much more complex
             for (const mata::Word& word : words) {
                 if (word.size() != 1) {
-                    are_all_words_have_length_one = false;
-                    break;
+                    STRACE(str_not_contains, tout << "* Cannot apply heuristics for finite side not-contains - RHS var has finite language with words longer than 1. Problematic predicate: \n  - " << not_contains << std::endl; );
+                    return std::nullopt;
                 }
             }
 
-            rhs_var_words.emplace(rhs_var, std::move(words));
-
-            if (!are_all_words_have_length_one) {
-                STRACE(str_not_contains, tout << "* Cannot apply heuristics for finite side not-contains - RHS var has finite language with words longer than 1. Problematic predicate: \n  - " << not_contains << std::endl; );
-                can_apply_heuristic = false;
-                break;
+            if (words.empty()) {
+                // The needle has no value at all, hence there is no solution
+                return std::make_optional(LenNode(LenFormulaType::FALSE));
             }
+
+            rhs_var_words.emplace(rhs_var, std::move(words));
         }
 
-        if (!can_apply_heuristic) return std::nullopt;
-
         std::map<BasicTerm, SharedPredicates> predicates_sharing_rhs_var;
+        std::set<BasicTerm> all_terms;
         for (const auto& not_contains : not_contains_predicates) {
             const BasicTerm& rhs_var = not_contains.get_needle().at(0);
             SharedPredicates& shared_predicates_info = predicates_sharing_rhs_var[rhs_var];
             shared_predicates_info.predicates.push_back(&not_contains);
             for (const BasicTerm& lhs_var : not_contains.get_haystack()) {
                 shared_predicates_info.all_lhs_variables.insert(lhs_var);
+                all_terms.insert(lhs_var);
             }
+            all_terms.insert(rhs_var);
         }
 
+        // predicates_sharing_rhs_var and rhs_var_words have the same keys, hence slots are ordered in the same way
         WordChoicesForFiniteLanguages word_choices;
         for (const auto& [var, var_words] : rhs_var_words) {
             WordChoice initial_choice = {.var = var, .language = var_words, .current_word = var_words.begin() };
@@ -650,11 +663,26 @@ namespace smt::noodler::ca {
         LenNode lengths_of_all_solutions (LenFormulaType::OR, {});
 
         for (; !word_choices.exhausted; try_next_word_choice(word_choices)) {
-            AutAssignment assignment_for_this_word_choice = aut_assignment; // Make a local copy of the assignment
+            std::map<BasicTerm, std::shared_ptr<mata::nfa::Nfa>> assignment_for_this_word_choice;
+            for (const BasicTerm& term : all_terms) {
+                assignment_for_this_word_choice[term] = get_term_automaton(term, aut_assignment);
+            }
 
-            int var_idx = 0;
+            // Fix each needle to its chosen word. This matters if the needle occurs also in some haystack (or
+            // its language would be pruned below), as the chosen word must be the actual value of the needle.
+            for (const WordChoice& word_choice_for_var : word_choices.slots) {
+                assert(word_choice_for_var.current_word->size() == 1);
+                mata::nfa::Nfa word_nfa(2, {0}, {1});
+                word_nfa.delta.add(0, word_choice_for_var.current_word->at(0), 1);
+                assignment_for_this_word_choice[word_choice_for_var.var] = std::make_shared<mata::nfa::Nfa>(
+                    mata::nfa::intersection(*assignment_for_this_word_choice[word_choice_for_var.var], word_nfa).trim()
+                );
+            }
+
+            size_t var_idx = 0;
             for (const auto& [rhs_var, var_predicates] : predicates_sharing_rhs_var) {
                 const WordChoice& word_choice_for_var = word_choices.slots[var_idx];
+                assert(word_choice_for_var.var == rhs_var);
 
                 for (const BasicTerm& lhs_var : var_predicates.all_lhs_variables) {
                     assignment_for_this_word_choice[lhs_var] = std::make_shared<mata::nfa::Nfa>(prune_subword_from_automaton(*assignment_for_this_word_choice[lhs_var], *word_choice_for_var.current_word));
@@ -786,36 +814,63 @@ namespace smt::noodler::ca {
         return try_making_rhs_longer_than_lhs(not_contains_predicates, aut_assignment);
     }
 
-    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& formula, const AutAssignment& var_assignment, bool use_tag_proc) {
-        if (formula.get_predicates().empty()) {
-            return { LenNode(LenFormulaType::TRUE), LenNodePrecision::PRECISE };
+    /**
+     * @brief Split not-contains predicates into groups such that no two predicates from different groups share
+     * a variable (literals are constants, so they can be shared freely).
+     *
+     * Solutions of variable-disjoint groups are independent, hence a conjunction of precise formulae for
+     * the individual groups is a precise formula for all predicates.
+     */
+    std::vector<std::vector<Predicate>> split_not_contains_into_var_disjoint_groups(const std::vector<Predicate>& predicates) {
+        // union-find over predicate indices
+        std::vector<size_t> parent(predicates.size());
+        for (size_t i = 0; i < predicates.size(); ++i) {
+            parent[i] = i;
+        }
+        auto find = [&parent](size_t i) {
+            while (parent[i] != i) {
+                parent[i] = parent[parent[i]];
+                i = parent[i];
+            }
+            return i;
+        };
+
+        std::map<BasicTerm, size_t> first_predicate_with_var;
+        for (size_t i = 0; i < predicates.size(); ++i) {
+            for (const BasicTerm& var : predicates[i].get_set()) {
+                if (!var.is_variable()) continue;
+                auto [it, inserted] = first_predicate_with_var.emplace(var, i);
+                if (!inserted) {
+                    parent[find(i)] = find(it->second);
+                }
+            }
         }
 
-        FormulaPreprocessor prep_handler{formula, var_assignment, {}, {}, {}};
-        prep_handler.propagate_eps();
-
-        bool is_not_contains_obviously_false = !prep_handler.replace_not_contains();
-        bool is_not_contains_syntactically_false = prep_handler.can_unify_not_contains();
-
-        if (is_not_contains_obviously_false || is_not_contains_syntactically_false) {
-            return { LenNode(LenFormulaType::FALSE), LenNodePrecision::PRECISE };
+        std::map<size_t, std::vector<Predicate>> groups_by_root;
+        for (size_t i = 0; i < predicates.size(); ++i) {
+            groups_by_root[find(i)].push_back(predicates[i]);
         }
 
-        AutAssignment actual_var_assignment = prep_handler.get_aut_assignment();
-        const Predicate& not_contains_with_literals = formula.get_predicates().at(0);
+        std::vector<std::vector<Predicate>> groups;
+        for (auto& [root, group] : groups_by_root) {
+            groups.push_back(std::move(group));
+        }
+        return groups;
+    }
 
-        bool can_construct_lia = true;
-
+    /**
+     * @brief Get LIA formula for a group of not-contains predicates (see get_lia_for_not_contains).
+     */
+    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains_group(const std::vector<Predicate>& not_contains_group, const AutAssignment& actual_var_assignment, bool use_tag_proc) {
         { // Priority - apply fast heuristics before attempting to use the great LIA hammer
-            std::optional<LenNode> heuristic_solution = try_solving_notcontains_with_finite_rhs({not_contains_with_literals}, actual_var_assignment);
+            std::optional<LenNode> heuristic_solution = try_solving_notcontains_with_finite_rhs(not_contains_group, actual_var_assignment);
             if (heuristic_solution.has_value()) {
                 return { heuristic_solution.value(), LenNodePrecision::PRECISE };
             }
 
             // Word-power heuristic: if every variable's language is w* for some word w,
             // not-contains(haystack, needle) holds whenever |needle| > |haystack|.
-            const std::vector<Predicate>& all_predicates = formula.get_predicates();
-            std::optional<LenNode> word_power_solution = try_notcontains_word_power_heuristic(all_predicates, actual_var_assignment);
+            std::optional<LenNode> word_power_solution = try_notcontains_word_power_heuristic(not_contains_group, actual_var_assignment);
             if (word_power_solution.has_value()) {
                 STRACE(str_not_contains, tout << "* Word-power heuristic applied: returning |needle| > |haystack|\n";);
                 return { word_power_solution.value(), LenNodePrecision::PRECISE };
@@ -826,10 +881,17 @@ namespace smt::noodler::ca {
             return { LenNode(LenFormulaType::FALSE), LenNodePrecision::UNDERAPPROX };
         }
 
-        if (formula.get_predicates().size() > 1) {
-            // We have more than 1 notContains, for now we pretent we don't know what to do with it
-            can_construct_lia = false;
+        if (not_contains_group.size() > 1) {
+            // The tag automaton construction supports only a single not-contains. Conjoining formulae for
+            // the individual predicates would not be precise, as each of them existentially picks its own word
+            // for the shared variables. We therefore only underapproximate by |needle| > |haystack| for every
+            // predicate. The predicates still contain literals, whose lengths are thus taken into account.
+            STRACE(str_not_contains, tout << "* Multiple not-contains sharing variables: underapproximating by |needle| > |haystack|\n";);
+            return { try_making_rhs_longer_than_lhs(not_contains_group, actual_var_assignment), LenNodePrecision::UNDERAPPROX };
         }
+
+        const Predicate& not_contains_with_literals = not_contains_group.at(0);
+        bool can_construct_lia = true;
 
         std::map<BasicTerm, BasicTerm> literal_table;
         AutAssignment workspace_aut_assignment = actual_var_assignment;
@@ -858,7 +920,8 @@ namespace smt::noodler::ca {
 
         if (!can_construct_lia) {
             // We cannot use the big LIA hammer, maybe we can apply some of the smaller hammers
-            LenNode rhs_is_longer_than_lhs = try_making_rhs_longer_than_lhs({not_contains}, workspace_aut_assignment);
+            // Use the predicate with literals, so that the lengths of literals are taken into account
+            LenNode rhs_is_longer_than_lhs = try_making_rhs_longer_than_lhs({not_contains_with_literals}, workspace_aut_assignment);
             return { rhs_is_longer_than_lhs, LenNodePrecision::UNDERAPPROX }; // Return here, there is nothing better we can do as we cannot construct a precise LIA
         }
 
@@ -897,6 +960,42 @@ namespace smt::noodler::ca {
         );
 
         return { not_contains_formula, LenNodePrecision::PRECISE };
+    }
+
+    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& formula, const AutAssignment& var_assignment, bool use_tag_proc) {
+        if (formula.get_predicates().empty()) {
+            return { LenNode(LenFormulaType::TRUE), LenNodePrecision::PRECISE };
+        }
+
+        FormulaPreprocessor prep_handler{formula, var_assignment, {}, {}, {}};
+        prep_handler.propagate_eps();
+
+        bool is_not_contains_obviously_false = !prep_handler.replace_not_contains();
+        bool is_not_contains_syntactically_false = prep_handler.can_unify_not_contains();
+
+        if (is_not_contains_obviously_false || is_not_contains_syntactically_false) {
+            return { LenNode(LenFormulaType::FALSE), LenNodePrecision::PRECISE };
+        }
+
+        AutAssignment actual_var_assignment = prep_handler.get_aut_assignment();
+
+        // Every predicate has to be encoded: groups of predicates sharing variables are encoded separately
+        // and the resulting formulae are conjoined.
+        LenNode result (LenFormulaType::AND, {});
+        LenNodePrecision precision = LenNodePrecision::PRECISE;
+        for (const std::vector<Predicate>& group : split_not_contains_into_var_disjoint_groups(formula.get_predicates())) {
+            auto [group_formula, group_precision] = get_lia_for_not_contains_group(group, actual_var_assignment, use_tag_proc);
+            if (group_formula.type == LenFormulaType::FALSE && group_precision == LenNodePrecision::PRECISE) {
+                return { group_formula, group_precision };
+            }
+            result.succ.push_back(std::move(group_formula));
+            precision = get_resulting_precision_for_conjunction(precision, group_precision);
+        }
+
+        if (result.succ.size() == 1) {
+            return { result.succ.at(0), precision };
+        }
+        return { result, precision };
     }
 
 }
