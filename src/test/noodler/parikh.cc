@@ -1123,3 +1123,25 @@ TEST_CASE("NotContains::get_lia_for_not_contains finite-needle heuristic keeps i
         CHECK(check_not_contains_lia(lia, { len_eq('x', 3) }) == l_false);
     }
 }
+
+TEST_CASE("replace_literals_in_concat keeps repeated literals (issue #461)", "[noodler]") {
+    BasicTerm lit_c(BasicTermType::Literal, "c");
+    BasicTerm lit_d(BasicTermType::Literal, "d");
+    BasicTerm x = get_var('x');
+    BasicTerm y = get_var('y');
+
+    std::map<BasicTerm, BasicTerm> literal_table;
+    AutAssignment aut_assignment;
+
+    // not-contains(x."c".x, y."c".y."d"."c"): the literal table is shared by haystack and needle
+    std::vector<BasicTerm> haystack = ca::replace_literals_in_concat({x, lit_c, x}, literal_table, aut_assignment);
+    std::vector<BasicTerm> needle = ca::replace_literals_in_concat({y, lit_c, y, lit_d, lit_c}, literal_table, aut_assignment);
+
+    REQUIRE(literal_table.size() == 2);
+    BasicTerm handle_c = literal_table.at(lit_c);
+    BasicTerm handle_d = literal_table.at(lit_d);
+    CHECK(haystack == std::vector<BasicTerm>{x, handle_c, x});
+    CHECK(needle == std::vector<BasicTerm>{y, handle_c, y, handle_d, handle_c});
+    CHECK(aut_assignment.at(handle_c)->is_in_lang(mata::Word{'c'}));
+    CHECK(aut_assignment.at(handle_d)->is_in_lang(mata::Word{'d'}));
+}
