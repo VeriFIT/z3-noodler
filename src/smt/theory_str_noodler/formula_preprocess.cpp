@@ -1186,11 +1186,10 @@ namespace smt::noodler {
                     // the right side in the model generation)
                     removed_inclusions_for_model.push_back(pr.second.get_switched_sides_predicate());
 
-                    // if we need to produce models and left side contains some length variable,
-                    // we need to make all variables on the right side length too, so that we
-                    // select the correct lengths during the model generation
-                    if (!set_disjoint(this->len_variables, pr.second.get_side_vars(Predicate::EquationSideType::Left))
-                        && m_params.m_produce_models) {
+                    // if left side contains some length variable, we need to make all variables
+                    // on the right side length too, so that the length constraints of their languages
+                    // are emitted to the LIA solver (needed for soundness, not only for model generation)
+                    if (!set_disjoint(this->len_variables, pr.second.get_side_vars(Predicate::EquationSideType::Left))) {
                         for (BasicTerm right_var : pr.second.get_side_vars(Predicate::EquationSideType::Right)) {
                             len_variables.insert(right_var);
                         }

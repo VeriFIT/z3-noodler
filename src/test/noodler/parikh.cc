@@ -400,6 +400,53 @@ TEST_CASE("LenFormula : variables are numbered correctly", "[noodler]") {
     }
 }
 
+TEST_CASE("LenFormula : shadowed quantified variables are numbered correctly", "[noodler]") {
+    /*
+     *    \exists x                    \exists x
+     *        |                            |
+     *       AND               ==>        AND
+     *      /   \                        /   \
+     *  \exists x  x=1               \exists x  (0)=1
+     *     |                           |
+     *    x=2                        (0)=2
+     *
+     * The inner quantifier shadows the outer one; the binding of the outer one has to be restored afterwards.
+     */
+    BasicTerm var_x (BasicTermType::Variable, "x");
+
+    LenNode inner = dsl_exists(var_x, LenNode(LenFormulaType::EQ, {var_x, 2}));
+    LenNode root = dsl_exists(var_x, LenNode(LenFormulaType::AND, {inner, LenNode(LenFormulaType::EQ, {var_x, 1})}));
+
+    ast_manager manager;
+    reg_decl_plugins(manager);
+
+    arith_util arith_util_i(manager);
+    seq_util seq_util_i(manager);
+    std::map<std::string, unsigned> quantified_vars;
+    std::map<BasicTerm, expr_ref> known_exprs;
+
+    LenFormulaContext ctx {
+        .manager = manager,
+        .arith_utilities = arith_util_i,
+        .seq_utilities = seq_util_i,
+        .quantified_vars = quantified_vars,
+        .known_z3_exprs = known_exprs,
+    };
+
+    expr_ref z3_formula = convert_len_node_to_z3_formula(ctx, root);
+    CHECK(quantified_vars.empty());
+
+    REQUIRE(z3_formula.get()->get_kind() == AST_QUANTIFIER);  // Exists x
+    auto conjunction = to_quantifier(z3_formula.get())->get_expr();
+    REQUIRE(conjunction->get_kind() == AST_APP);
+    REQUIRE(to_app(conjunction)->get_name().str() == "and");
+
+    auto inner_quantif = to_app(conjunction)->get_arg(0);
+    REQUIRE(inner_quantif->get_kind() == AST_QUANTIFIER);
+    assert_eq_correct(to_quantifier(inner_quantif)->get_expr(), 0, 2); // inner x=2 => (0)=2
+    assert_eq_correct(to_app(conjunction)->get_arg(1), 0, 1);          // outer x=1 => (0)=1
+}
+
 std::optional<size_t> find_mismatch_pos_tag(std::set<AtomicSymbol>& tag_set, const BasicTerm& var) {
     for (auto& tag : tag_set) {
         if (tag.type == AtomicSymbol::TagType::MISMATCH_POS && tag.var == var) return tag.copy_idx;
