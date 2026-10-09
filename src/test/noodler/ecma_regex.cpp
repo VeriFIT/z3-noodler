@@ -109,8 +109,8 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
     }
 
     SECTION("Quantifier with too large bounds") {
-        for (const char* r : {"{1,18446744073709551616}", "{18446744073709551616}", "{18446744073709551617}",
-                              "{18446744073709551615}", "{18446744073709551615,}", "{10001}", "{1,10001}"}) {
+        for (const char *r : {"{1,18446744073709551616}", "{18446744073709551616}", "{18446744073709551617}",
+                              "{18446744073709551615}", "{18446744073709551615,}", "{1000001}", "{1,1000001}"}) {
             zstring regex = r;
             std::unordered_map<zstring_view, uint32_t> map;
             ECMALexer lexer(regex, map);
@@ -124,7 +124,7 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
         ECMALexer lexer(regex, map);
         Token t = lexer.get_next_token();
         REQUIRE(t.type == TokenType::QUANTIFIER);
-        REQUIRE(std::get<QuantifierRange>(t.payload).min == 10000);
+        REQUIRE(std::get<QuantifierRange>(t.payload).min == 1'000'000);
     }
 
     SECTION("Unfinished quantifier with overflowing bound is a literal") {
