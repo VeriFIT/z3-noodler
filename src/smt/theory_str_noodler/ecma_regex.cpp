@@ -1663,7 +1663,11 @@ namespace smt::noodler::ecma {
     }
 
     RegexComponent ASTNodeCharClass::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
-        SASSERT(!m_elements.empty());
+        if (m_elements.empty()) {
+            // empty char class [] --> empty language; negated empty char class [^] --> Sigma*
+            return m_is_negated ? app_ref(util_s.re.mk_full_char(nullptr), m) : app_ref(util_s.re.mk_empty(nullptr), m);
+        }
+
         app_ref_vector class_elements(m);
 
         for (const CharClassElement& elem : m_elements) {
