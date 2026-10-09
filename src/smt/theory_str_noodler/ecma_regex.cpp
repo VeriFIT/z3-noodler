@@ -427,7 +427,7 @@ namespace smt::noodler::ecma {
     }
 
     Token ECMALexer::octal_or_backref(const Z3Char first_digit) {
-        Z3Char decimal_val = first_digit - '0';
+        uint64_t decimal_val = first_digit - '0';
         const uint32_t fallback_pos = m_position;  // save position right after the first digit
 
         // greedily read as much digits as possible
@@ -436,13 +436,17 @@ namespace smt::noodler::ecma {
             if (!is_digit(digit)) {
                 break;
             }
-            decimal_val = decimal_val * 10 + (digit - '0');
+            // Once the value exceeds the number of groups, it cannot be a backreference -- stop accumulating to
+            // prevent overflow (which could wrap it back to a valid group number).
+            if (decimal_val <= m_num_capture_groups) {
+                decimal_val = decimal_val * 10 + (digit - '0');
+            }
             m_position++;
         }
 
         // try to match it to a backreference
         if (decimal_val > 0 && decimal_val <= m_num_capture_groups) {
-            return make_token(TokenType::BACKREFERENCE, decimal_val);
+            return make_token(TokenType::BACKREFERENCE, static_cast<Z3Char>(decimal_val));
         }
 
         // cannot be backreference --> match the input to an octal escape sequence
@@ -690,6 +694,8 @@ namespace smt::noodler::ecma {
             case 'v':
                 return make_token(TokenType::LITERAL, CH_VT);
             case '0':
+                // backreference cannot start with 0 -> always octal escape, e.g. \01 is U+0001
+                return get_octal_escape_sequence_token(false, second_char);
             case '1':
             case '2':
             case '3':
