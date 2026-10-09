@@ -56,9 +56,12 @@ namespace smt::noodler::ecma {
     };
 
     /**
-     * @brief Convert utf-8 @p raw_input into a sanitized form where each Z3Char (uint32_t) represents a single Unicode code point.
-     * 
-     * @param raw_input The original ECMA regex pattern as a UTF-8 encoded string. May contain multi-byte characters.
+     * @brief Convert @p raw_input into a sanitized form where each Z3Char (uint32_t) represents a single Unicode code point.
+     *
+     * Byte sequences in 0x80-0xFF that form valid UTF-8 (raw UTF-8 in the pattern) are decoded into code points, all
+     * other characters are kept as they are. Escape sequences (e.g., \uHHHH) are not decoded, this is left to the lexer.
+     *
+     * @param raw_input The original ECMA regex pattern. May contain raw UTF-8 encoded multi-byte characters.
      * @return zstring The sanitized regex pattern.
      */
     zstring sanitize_ecma_regex_input(const zstring& raw_input);
@@ -282,7 +285,8 @@ namespace smt::noodler::ecma {
         Token get_named_backref_token();
         Token octal_or_backref(Z3Char first_digit);
         Token get_octal_escape_sequence_token(bool from_char_class, Z3Char first_digit);
-        uint32_t validate_and_get_bound(uint64_t& bound_value);
+        uint32_t validate_and_get_bound(uint64_t &bound_value);
+        Token make_quantifier_token(uint64_t min, uint64_t max);
         Token get_braced_quant_token();
         Token get_lookbehind_or_named_group_token();
         Token get_special_group_or_lookaround_token();

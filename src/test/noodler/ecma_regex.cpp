@@ -101,6 +101,41 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
         REQUIRE(t.lexeme == "{1,2}");
     }
 
+    SECTION("Quantifier {n,m} out of order") {
+        zstring regex = "{3,2}";
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
+        REQUIRE_THROWS(lexer.get_next_token());
+    }
+
+    SECTION("Quantifier with too large bounds") {
+        for (const char *r : {"{1,18446744073709551616}", "{18446744073709551616}", "{18446744073709551617}",
+                              "{18446744073709551615}", "{18446744073709551615,}", "{1000001}", "{1,1000001}"}) {
+            zstring regex = r;
+            std::unordered_map<zstring_view, uint32_t> map;
+            ECMALexer lexer(regex, map);
+            REQUIRE_THROWS(lexer.get_next_token());
+        }
+    }
+
+    SECTION("Quantifier with bound at the limit") {
+        zstring regex = "{1000000,}";
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
+        Token t = lexer.get_next_token();
+        REQUIRE(t.type == TokenType::QUANTIFIER);
+        REQUIRE(std::get<QuantifierRange>(t.payload).min == 1'000'000);
+    }
+
+    SECTION("Unfinished quantifier with overflowing bound is a literal") {
+        zstring regex = "{18446744073709551616";
+        std::unordered_map<zstring_view, uint32_t> map;
+        ECMALexer lexer(regex, map);
+        Token t = lexer.get_next_token();
+        REQUIRE(t.type == TokenType::LITERAL);
+        REQUIRE(std::get<uint32_t>(t.payload) == '{');
+    }
+
     SECTION("Dot") {
         zstring regex = ".";
         std::unordered_map<zstring_view, uint32_t> map;
@@ -614,6 +649,39 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
         Token t_backref = lexer2.get_next_token();
         REQUIRE(t_backref.type == TokenType::BACKREFERENCE);
         REQUIRE(std::get<uint32_t>(t_backref.payload) == 1);
+
+        // 4294967297 = 2^32 + 1 must not wrap to backreference \1 -- it is octal \42 followed by literals
+        zstring regex3 = "(a)\\4294967297";
+        std::unordered_map<zstring_view, uint32_t> map3;
+        ECMALexer lexer3(regex3, map3);
+
+        REQUIRE(lexer3.get_next_token().type == TokenType::GROUP_START);
+        REQUIRE(lexer3.get_next_token().type == TokenType::LITERAL);
+        REQUIRE(lexer3.get_next_token().type == TokenType::GROUP_END);
+        Token t_octal = lexer3.get_next_token();
+        REQUIRE(t_octal.type == TokenType::LITERAL);
+        REQUIRE(std::get<uint32_t>(t_octal.payload) == '"');
+        Token t_next = lexer3.get_next_token();
+        REQUIRE(t_next.type == TokenType::LITERAL);
+        REQUIRE(std::get<uint32_t>(t_next.payload) == '9');
+
+        // \01 is never a backreference, even when group 1 exists -- it is octal U+0001; \08 is NUL followed by '8'
+        zstring regex4 = "(a)\\01\\08";
+        std::unordered_map<zstring_view, uint32_t> map4;
+        ECMALexer lexer4(regex4, map4);
+
+        REQUIRE(lexer4.get_next_token().type == TokenType::GROUP_START);
+        REQUIRE(lexer4.get_next_token().type == TokenType::LITERAL);
+        REQUIRE(lexer4.get_next_token().type == TokenType::GROUP_END);
+        Token t_01 = lexer4.get_next_token();
+        REQUIRE(t_01.type == TokenType::LITERAL);
+        REQUIRE(std::get<uint32_t>(t_01.payload) == 1);
+        Token t_08 = lexer4.get_next_token();
+        REQUIRE(t_08.type == TokenType::LITERAL);
+        REQUIRE(std::get<uint32_t>(t_08.payload) == 0);
+        Token t_8 = lexer4.get_next_token();
+        REQUIRE(t_8.type == TokenType::LITERAL);
+        REQUIRE(std::get<uint32_t>(t_8.payload) == '8');
     }
 
     SECTION("Character classes") {
