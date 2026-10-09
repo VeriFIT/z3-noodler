@@ -24,6 +24,9 @@ namespace smt::noodler::ecma {
     constexpr Z3Char MAX_UNICODE_CODE_POINT = 0x10FFFF;
     constexpr Z3Char BACKSPACE_LITERAL = 8;
     constexpr uint64_t UNBOUNDED = std::numeric_limits<uint64_t>::max();
+    // Quantifiers with finite bounds are translated by materializing that many copies of the subregex, so larger
+    // bounds are unsupported.
+    constexpr uint64_t MAX_QUANTIFIER_BOUND = 1'000'000;
     constexpr bool debug_mode = false;
 
     constexpr Z3Char CH_HT = 0x0009;      // Horizontal Tab
@@ -510,11 +513,26 @@ namespace smt::noodler::ecma {
             if (!is_digit(current_digit)) {
                 break;
             }
-            bound_value = bound_value * 10 + static_cast<uint64_t>(current_digit - '0');
+            // Saturate just above the supported maximum to prevent overflow (and collision with UNBOUNDED)
+            if (bound_value <= MAX_QUANTIFIER_BOUND) {
+                bound_value = std::min(bound_value * 10 + (current_digit - '0'), MAX_QUANTIFIER_BOUND + 1);
+            }
             m_position++;
             parsed_digits++;
         }
         return parsed_digits;
+    }
+
+    Token ECMALexer::make_quantifier_token(uint64_t min, uint64_t max) {
+        // Called only once the quantifier is known to be well-formed (otherwise '{' is a literal).
+        if (min > max) {
+            util::throw_error("ECMA regex syntax error: numbers out of order in {} quantifier");
+        }
+        if (min > MAX_QUANTIFIER_BOUND || (max != UNBOUNDED && max > MAX_QUANTIFIER_BOUND)) {
+            util::throw_error("Unsupported: ECMA regex quantifier bound exceeds " +
+                              std::to_string(MAX_QUANTIFIER_BOUND));
+        }
+        return make_token(TokenType::QUANTIFIER, QuantifierRange{min, max});
     }
 
     Token ECMALexer::get_braced_quant_token() {
@@ -534,7 +552,7 @@ namespace smt::noodler::ecma {
                 // skip lazy quantifier
                 m_position++;
             }
-            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, lower_bound});
+            return make_quantifier_token(lower_bound, lower_bound);
         }
 
         if (m_regex[m_position] != ',') {
@@ -555,7 +573,7 @@ namespace smt::noodler::ecma {
                 // skip lazy quantifier
                 m_position++;
             }
-            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, UNBOUNDED});
+            return make_quantifier_token(lower_bound, UNBOUNDED);
         }
 
         uint64_t upper_bound = 0;
@@ -572,7 +590,7 @@ namespace smt::noodler::ecma {
             if (m_position < m_regex.length() && m_regex[m_position] == '?') {
                 m_position++;
             }
-            return make_token(TokenType::QUANTIFIER, QuantifierRange {lower_bound, upper_bound});
+            return make_quantifier_token(lower_bound, upper_bound);
         }
 
         // not a well-formed quantifier --> '{' is a literal
@@ -939,6 +957,11 @@ namespace smt::noodler::ecma {
                 final_regular_segment = util_s.re.mk_union(final_regular_segment, regular_alternatives[i]);
             }
             return final_regular_segment;
+        }
+
+        // No alternatives at all (should not happen for valid input) -- matches nothing
+        if (regular_alternatives.empty() && nonregular_alternatives.empty()) {
+            return app_ref(util_s.re.mk_empty(util_s.re.mk_re(util_s.mk_string_sort())), m);
         }
 
         // Since alternation is commutative, unite all nonregular fragments first
