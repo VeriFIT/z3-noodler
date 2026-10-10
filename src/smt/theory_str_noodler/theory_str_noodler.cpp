@@ -2182,6 +2182,9 @@ namespace smt::noodler {
      * @param e str.< predicate
      */
     void theory_str_noodler::handle_lex_lt(expr *e) {
+        if (axiomatized_persist_terms.contains(e)) { return; }
+        axiomatized_persist_terms.insert(e);
+
         STRACE(str, tout  << "handle lessthan: " << mk_pp(e, m) << std::endl;);
 
         expr *x = nullptr, *y = nullptr;
