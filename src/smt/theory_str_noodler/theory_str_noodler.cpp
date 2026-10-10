@@ -29,8 +29,7 @@ namespace smt::noodler {
         m_util_s(m),
         var_eqs(m_util_a),
         m_length(m),
-        axiomatized_instances(),
-        sat_length_formula(m)  {
+        axiomatized_instances() {
     }
 
     void theory_str_noodler::display(std::ostream &os) const {
