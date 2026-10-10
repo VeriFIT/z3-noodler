@@ -1034,8 +1034,10 @@ namespace smt::noodler {
         //    - this case is very useful for pyex, try for example on QF_SLIA/20180523-Reynolds/pyex/peterc-pyex-doc-cav17-zz/httplib2/httplib2-entry-disposition/39783579d992a26f238877df4ca2ead6571ddafc66bf1b6d7fd58db0.smt2
         //    - if (str.indexof s t n) != -1 (i.e. t occurs somewhere in s starting from position n), then we can rewrite
         //           (str.substr s 0 (1 + (str.indexof s t n)))   to   (str.++ (str.substr s 0 (str.indexof s t n)) t[0])
-        //    - we add axiom
+        //    - if t does not occur anywhere (i.e. (str.indexof s t n) == -1), we have (str.substr s 0 0), which is empty string
+        //    - we add axioms
         //         (str.indexof s t n) != -1 -> (str.substr s 0 (1 + (str.indexof s t n))) = (str.++ (str.substr s 0 (str.indexof s t n)) t[0])
+        //         (str.indexof s t n) == -1 -> (str.substr s 0 (1 + (str.indexof s t n))) = ""
         if(zstring indexof_find_string; m_util_a.is_zero(i) && expr_cases::is_one_add_indexof_string(l, s, m, m_util_s, m_util_a, indexof_find_string) && !indexof_find_string.empty()) {
             literal indexof_did_not_find = mk_eq(l, zero, false); // if (1 + (str.indexof s t n))==0, then t was not found in s from position n
             // we get the indexof expr by substracting 1 from l
@@ -1051,6 +1053,7 @@ namespace smt::noodler {
 
             // (str.indexof s t n) != -1 -> (str.substr s 0 (1 + (str.indexof s t n))) = (str.++ (str.substr s 0 (str.indexof s t n)) t[0])
             add_axiom({indexof_did_not_find, mk_eq(e, conc, false)});
+            add_axiom({~indexof_did_not_find, mk_eq_empty(e)});
             return;
         }
 
@@ -2001,9 +2004,8 @@ namespace smt::noodler {
         // handle the case not(suffix x "ABC")
         if(m_util_s.str.is_string(y, str)) {
             literal lit_e = mk_literal(e);
-            str = str.reverse();
             for(size_t i = 0; i <= str.length(); i++) {
-                zstring substr = str.extract(0, i);
+                zstring substr = str.extract(i, str.length()-i);
                 add_axiom({lit_e, mk_literal(m.mk_not(mk_eq_atom(x, m_util_s.str.mk_string(substr))))});
             }
             return;
@@ -2069,7 +2071,13 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_contains(e, x, y));
 
-        // if contains is of the form (str.contains (str.substr value2 0 (+ n (str.indexof value2 "A" 0))) "A"), derive simpler constraints
+        // if contains is of the form (str.contains (str.substr value2 0 (+ n (str.indexof value2 lit 0))) lit)
+        // with lit a string literal and n >= |lit|, derive simpler constraints: the constraint is
+        // then equivalent to (str.indexof value2 lit 0) != -1. This equivalence requires lit to be
+        // a literal (so its length is known) and n >= |lit| (both checked in is_contains_index):
+        // for smaller n (including negative n), the prefix taken by str.substr can cut off the
+        // first occurrence of lit before it is complete, so the substr/indexof terms no longer
+        // agree on whether lit occurs.
         expr * ind = nullptr;
         zstring str;
         if(expr_cases::is_contains_index(e, ind, m, m_util_s, m_util_a)) {
@@ -2079,7 +2087,7 @@ namespace smt::noodler {
             add_axiom({~mk_eq(ind, m_util_a.mk_int(-1), false), ~mk_literal(e) });
             add_axiom({mk_eq(ind, m_util_a.mk_int(-1), false), mk_literal(e) });
             return;
-        // if constains is of the form (str.constains strX (str.at ...)) rewrite to a regular constaint ((str.at ...) \in union of chars of strX)
+        // if contains is of the form (str.constains strX (str.at ...)) rewrite to a regular constaint ((str.at ...) \in union of chars of strX)
         } else if (m_util_s.str.is_at(y) && m_util_s.str.is_string(x, str) && str.length() > 0) {
             expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_string("")), m);
             for(size_t i = 0; i < str.length(); i++) {
@@ -2165,22 +2173,23 @@ namespace smt::noodler {
      * not(x < y) -> x = y | y < x
      * x < y -> x != y
      * x < y -> not(y < x)
-     * x < y & x = eps -> y != eps
-     * x < y & x != eps -> x = u.v1.w1
-     * x < y & x != eps -> y = u.v2.w2
-     * x < y & x != eps -> v1 in re.allchar
+     * x < y & x = eps -> y != eps              (not neccessary, but can help)
+     * x < y & x != eps -> y = u.v2.w2          (x != eps is not neccessary, but can help, same for further axioms)
      * x < y & x != eps -> v2 in re.allchar
-     * x < y & x != eps -> to_code(v1) + k = to_code(v2) & k >= 1
+     * x < y & x != eps -> x = u | x = u.v1.w1
+     * x < y & x != eps -> x = u | v1 in re.allchar
+     * x < y & x != eps -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
      * @param e str.< predicate
      */
     void theory_str_noodler::handle_lex_lt(expr *e) {
+        if (axiomatized_persist_terms.contains(e)) { return; }
+        axiomatized_persist_terms.insert(e);
+
         STRACE(str, tout  << "handle lessthan: " << mk_pp(e, m) << std::endl;);
 
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_lt(e, x, y));
         expr_ref eps(m_util_s.str.mk_string(""), m);
-        expr_ref x_eps(mk_eq_atom(x, eps), m);
-        expr_ref y_eps(mk_eq_atom(y, eps), m);
 
         expr_ref lex_pre = mk_str_var_fresh("lex_pre");
         expr_ref lex_in_left = mk_str_var_fresh("lex_in_left");
@@ -2194,9 +2203,12 @@ namespace smt::noodler {
 
         expr_ref x_px(mk_eq_atom(x, px), m);
         expr_ref y_py(mk_eq_atom(y, py), m);
+        // we do not need to use prefix(x,y), this is enough as we do not care about negated prefix
+        expr_ref x_is_prefix_of_y(mk_eq_atom(x, lex_pre), m);
         literal lit_e = mk_literal(e);
         literal lit_x_px = mk_literal(x_px);
         literal lit_y_py = mk_literal(y_py);
+        literal lit_x_is_prefix_of_y = mk_literal(x_is_prefix_of_y);
 
         expr_ref re_in_left(m_util_s.re.mk_in_re(lex_in_left, m_util_s.re.mk_full_char(nullptr)), m);
         expr_ref re_in_right(m_util_s.re.mk_in_re(lex_in_right, m_util_s.re.mk_full_char(nullptr)), m);
@@ -2210,8 +2222,6 @@ namespace smt::noodler {
         // k >= 1
         add_axiom({mk_literal(m_util_a.mk_ge(vark, m_util_a.mk_int(1)))});
 
-        literal lit_x_eps = mk_literal(x_eps);
-        literal lit_y_eps = mk_literal(y_eps);
         literal lit_e_switch = mk_literal(m_util_s.str.mk_lex_lt(y,x));
 
         // not(x < y) -> x = y | y < x
@@ -2221,18 +2231,25 @@ namespace smt::noodler {
         // x < y -> not(y < x)
         add_axiom({~lit_e, ~lit_e_switch});
 
+        // If x<y, then either x is prefix of y, or the first differing char has larger code-point value in y
+
+        literal x_empty = mk_eq_empty(x);
+
         // x < y & x = eps -> y != eps
-        add_axiom({~lit_e, ~lit_x_eps, ~lit_y_eps});
-        // x < y & x != eps -> x = u.v1.w1
-        add_axiom({~lit_e, lit_x_eps, lit_x_px});
+        if (x_empty != false_literal) {
+            add_axiom({~lit_e, mk_literal(m.mk_not(mk_eq_atom(x, eps))), mk_literal(m.mk_not(mk_eq_atom(y, eps)))});
+        }
         // x < y & x != eps -> y = u.v2.w2
-        add_axiom({~lit_e, lit_x_eps, lit_y_py});
-        // x < y & x != eps -> v1 in re.allchar
-        add_axiom({~lit_e, lit_x_eps, mk_literal(re_in_left)});
+        add_axiom({~lit_e, x_empty, lit_y_py});
         // x < y & x != eps -> v2 in re.allchar
-        add_axiom({~lit_e, lit_x_eps, mk_literal(re_in_right)});
-        // x < y & x != eps -> to_code(v1) + k = to_code(v2) & k >= 1
-        add_axiom({~lit_e, lit_x_eps,  mk_literal(to_code_lt)});
+        add_axiom({~lit_e, x_empty, mk_literal(re_in_right)});
+        // x < y & x != eps -> x = u | x = u.v1.w1
+        add_axiom({~lit_e, x_empty, lit_x_is_prefix_of_y, lit_x_px});
+        // x < y & x != eps -> x = u | v1 in re.allchar
+        add_axiom({~lit_e, x_empty, lit_x_is_prefix_of_y, mk_literal(re_in_left)});
+        // x < y & x != eps -> x = u | to_code(v1) + k = to_code(v2) & k >= 1
+        add_axiom({~lit_e, x_empty, lit_x_is_prefix_of_y, mk_literal(to_code_lt)});
+
     }
 
     void theory_str_noodler::handle_ecma_re(expr* e) {

@@ -1,0 +1,6 @@
+(set-logic QF_S)
+(set-info :status sat)
+(declare-const x String)
+(assert (str.in_re x (re.union (str.to_re "a") (str.to_re "ab"))))
+(assert (str.< "a" x))
+(check-sat)
