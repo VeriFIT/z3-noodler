@@ -6,8 +6,8 @@
 namespace smt::noodler {
     class quant_lia_solver : public lia_solver {
     public:
-        quant_lia_solver(ast_manager& m, const obj_map<expr, expr*>& predicate_replace):
-            lia_solver(m, predicate_replace) {
+        quant_lia_solver(ast_manager& m):
+            lia_solver(m) {
         }
 
         /**

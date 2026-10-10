@@ -10,8 +10,7 @@ namespace smt::noodler {
     lbool int_expr_solver::check_sat(expr* e) {
         TRACE(str_lia, tout << "check_sat start\n";);
 
-        expr* e_rw = rewrite_for_external_solver(e);
-        erv.push_back(e_rw);
+        erv.push_back(e);
         kernel solver(m, fp);
         lbool r = solver.check(erv);
         erv.pop_back();
@@ -27,7 +26,7 @@ namespace smt::noodler {
         if (r == lbool::l_true) {
             model_ref mdl;
             solver.get_model(mdl);
-            compute_model_formula(e_rw, mdl);
+            compute_model_formula(e, mdl);
         }
 
         TRACE(str_lia, tout << "check_sat end\n";);

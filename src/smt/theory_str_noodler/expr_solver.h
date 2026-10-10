@@ -13,8 +13,8 @@ namespace smt::noodler {
     class int_expr_solver : public lia_solver {
         smt_params fp;
     public:
-        int_expr_solver(ast_manager& m, smt_params fp, const obj_map<expr, expr*>& predicate_replace):
-            lia_solver(m, predicate_replace), fp(fp) {
+        int_expr_solver(ast_manager& m, smt_params fp):
+            lia_solver(m), fp(fp) {
             this->fp.m_string_solver = symbol("none");
        }
 

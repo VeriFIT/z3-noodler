@@ -21,8 +21,7 @@ namespace smt::noodler {
         // tactic solver used by z3 to solve quantified LIA formula
         ref<solver> sl = mk_tactic2solver(m, mk_lia_tactic(m, p), p, false, true, true, symbol("ALL"));
 
-        expr* e_rw = rewrite_for_external_solver(e);
-        erv.push_back(e_rw);
+        erv.push_back(e);
         sl->assert_expr(erv);
         auto res = sl->check_sat();
         expr_ref_vector raw_core(m);
@@ -36,7 +35,7 @@ namespace smt::noodler {
         if (res == lbool::l_true) {
             model_ref mdl;
             sl->get_model(mdl);
-            compute_model_formula(e_rw, mdl);
+            compute_model_formula(e, mdl);
         }
 
         return res;
