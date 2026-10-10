@@ -64,7 +64,7 @@ TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula simple", "[noo
     AutAssignment aut_assignment;
     aut_assignment[get_var('x')] = regex_to_nfa("abc");
 
-    ca::TagDiseqGen tag_automaton_generator(not_contains, aut_assignment);
+    ca::TagDiseqGen tag_automaton_generator(not_contains, aut_assignment, /* track_letters */ true);
 
     ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
 
@@ -938,4 +938,278 @@ TEST_CASE("Disequations :: check assert_register_values", "[noodler]") {
     check_register_stores_for_level(2, tag_automaton, formula_generator, register_values_formula.succ[2]);
     REQUIRE(register_values_formula.succ[3].succ.size() == 36);
     check_register_stores_for_level(3, tag_automaton, formula_generator, register_values_formula.succ[3]);
+}
+
+namespace {
+    LenNode len_eq(char var, int value) {
+        return LenNode(LenFormulaType::EQ, {get_var(var), value});
+    }
+
+    lbool check_not_contains_lia(const std::pair<LenNode, LenNodePrecision>& lia, const std::vector<LenNode>& additional_constraints) {
+        LenNode formula(LenFormulaType::AND, {lia.first});
+        formula.succ.insert(formula.succ.end(), additional_constraints.begin(), additional_constraints.end());
+
+        // Convert directly (not via SMT-LIB2 text), as the formula can contain empty sums
+        ast_manager manager;
+        reg_decl_plugins(manager);
+        arith_util arith_util_i(manager);
+        seq_util seq_util_i(manager);
+        std::map<std::string, unsigned> quantified_vars;
+        std::map<BasicTerm, expr_ref> known_exprs;
+        LenFormulaContext ctx {
+            .manager = manager,
+            .arith_utilities = arith_util_i,
+            .seq_utilities = seq_util_i,
+            .quantified_vars = quantified_vars,
+            .known_z3_exprs = known_exprs,
+        };
+        expr_ref z3_formula = convert_len_node_to_z3_formula(ctx, formula);
+
+        smt_params params{};
+        int_expr_solver solver(manager, params);
+        return solver.check_sat(z3_formula);
+    }
+}
+
+TEST_CASE("NotContains::get_lia_for_not_contains encodes all predicates", "[noodler]") {
+    SECTION("variable-disjoint predicates (issue #437)") {
+        // x, y in b*; z, w in a*: not-contains(z, w) requires |w| > |z|
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('z')}, {get_var('w')}));
+
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("b*");
+        aut_assignment[get_var('y')] = regex_to_nfa("b*");
+        aut_assignment[get_var('z')] = regex_to_nfa("a*");
+        aut_assignment[get_var('w')] = regex_to_nfa("a*");
+
+        Formula swapped_not_contains;
+        swapped_not_contains.add_predicate(not_contains.get_predicates().at(1));
+        swapped_not_contains.add_predicate(not_contains.get_predicates().at(0));
+
+        for (const Formula& formula : { not_contains, swapped_not_contains }) {
+            auto lia = ca::get_lia_for_not_contains(formula, aut_assignment, true);
+            CHECK(lia.second == LenNodePrecision::PRECISE);
+            CHECK(check_not_contains_lia(lia, {}) == l_true);
+            CHECK(check_not_contains_lia(lia, { LenNode(LenFormulaType::LEQ, {get_var('w'), get_var('z')}) }) == l_false);
+        }
+    }
+
+    SECTION("finite needles, needle is also a haystack") {
+        // x in {a, bb}, y in {a, b}, z = b: not-contains(y, z) forces y = a, hence x = bb
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('y')}, {get_var('z')}));
+
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("a|bb");
+        aut_assignment[get_var('y')] = regex_to_nfa("a|b");
+        aut_assignment[get_var('z')] = regex_to_nfa("b");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 1) }) == l_false);
+    }
+
+    SECTION("finite needles, all combinations of needle values are tried") {
+        // x in b+d avoids u, v, y only for u = a, v = c, y = a
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('u')}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('v')}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("b+d");
+        aut_assignment[get_var('u')] = regex_to_nfa("a|b");
+        aut_assignment[get_var('v')] = regex_to_nfa("a|c");
+        aut_assignment[get_var('y')] = regex_to_nfa("a|d");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, {}) == l_true);
+    }
+
+    SECTION("predicates sharing variables are underapproximated including literal lengths") {
+        // not-contains(x, y.ab) and not-contains(y, x.ba): underapproximated by |y|+2 > |x| and |x|+2 > |y|
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y'), BasicTerm(BasicTermType::Literal, "ab")}));
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('y')}, {get_var('x'), BasicTerm(BasicTermType::Literal, "ba")}));
+
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("(a|b)*");
+        aut_assignment[get_var('y')] = regex_to_nfa("(a|b)*");
+        // the solver assigns word automata to literals
+        aut_assignment[BasicTerm(BasicTermType::Literal, "ab")] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa("ab"));
+        aut_assignment[BasicTerm(BasicTermType::Literal, "ba")] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa("ba"));
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::UNDERAPPROX);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 3), len_eq('y', 3) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 4), len_eq('y', 2) }) == l_false);
+    }
+}
+
+TEST_CASE("NotContains::get_lia_for_not_contains fallback counts literal lengths (issue #438)", "[noodler]") {
+    // x is not flat, hence the |needle| > |haystack| fallback is used
+    BasicTerm lit_a(BasicTermType::Literal, "a");
+    BasicTerm lit_ab(BasicTermType::Literal, "ab");
+
+    AutAssignment aut_assignment;
+    aut_assignment[get_var('x')] = regex_to_nfa("ab(a|b)*");
+    aut_assignment[get_var('y')] = regex_to_nfa("b*");
+    // the solver assigns word automata to literals
+    aut_assignment[lit_a] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa("a"));
+    aut_assignment[lit_ab] = std::make_shared<mata::nfa::Nfa>(AutAssignment::create_word_nfa("ab"));
+
+    SECTION("literal in the needle") {
+        // not-contains(x, "a".y) is underapproximated by 1 + |y| > |x|
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {lit_a, get_var('y')}));
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::UNDERAPPROX);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 2) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 1) }) == l_false);
+    }
+
+    SECTION("literal in the haystack") {
+        // not-contains("ab".x, y) is underapproximated by |y| > 2 + |x|
+        Formula not_contains;
+        not_contains.add_predicate(Predicate::create_not_contains({lit_ab, get_var('x')}, {get_var('y')}));
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::UNDERAPPROX);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 5) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 4) }) == l_false);
+    }
+}
+
+TEST_CASE("NotContains::get_lia_for_not_contains finite-needle heuristic keeps initial/final states (issue #449)", "[noodler]") {
+    // not-contains(x, t) with t in {a, b}: x has to avoid the letter chosen for t
+    Formula not_contains;
+    not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('t')}));
+
+    SECTION("haystack can avoid a letter") {
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("(a|b)*");
+        aut_assignment[get_var('t')] = regex_to_nfa("a|b");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 0) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 3) }) == l_true);
+    }
+
+    SECTION("haystack contains every letter of the needle") {
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("a+b+");
+        aut_assignment[get_var('t')] = regex_to_nfa("a|b");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, {}) == l_false);
+    }
+
+    SECTION("haystack can avoid the letter only if it is empty") {
+        AutAssignment aut_assignment;
+        aut_assignment[get_var('x')] = regex_to_nfa("a*");
+        aut_assignment[get_var('t')] = regex_to_nfa("a");
+
+        auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+        CHECK(lia.second == LenNodePrecision::PRECISE);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 0) }) == l_true);
+        CHECK(check_not_contains_lia(lia, { len_eq('x', 3) }) == l_false);
+    }
+}
+
+TEST_CASE("replace_literals_in_concat keeps repeated literals (issue #461)", "[noodler]") {
+    BasicTerm lit_c(BasicTermType::Literal, "c");
+    BasicTerm lit_d(BasicTermType::Literal, "d");
+    BasicTerm x = get_var('x');
+    BasicTerm y = get_var('y');
+
+    std::map<BasicTerm, BasicTerm> literal_table;
+    AutAssignment aut_assignment;
+
+    // not-contains(x."c".x, y."c".y."d"."c"): the literal table is shared by haystack and needle
+    std::vector<BasicTerm> haystack = ca::replace_literals_in_concat({x, lit_c, x}, literal_table, aut_assignment);
+    std::vector<BasicTerm> needle = ca::replace_literals_in_concat({y, lit_c, y, lit_d, lit_c}, literal_table, aut_assignment);
+
+    REQUIRE(literal_table.size() == 2);
+    BasicTerm handle_c = literal_table.at(lit_c);
+    BasicTerm handle_d = literal_table.at(lit_d);
+    CHECK(haystack == std::vector<BasicTerm>{x, handle_c, x});
+    CHECK(needle == std::vector<BasicTerm>{y, handle_c, y, handle_d, handle_c});
+    CHECK(aut_assignment.at(handle_c)->is_in_lang(mata::Word{'c'}));
+    CHECK(aut_assignment.at(handle_d)->is_in_lang(mata::Word{'d'}));
+}
+
+TEST_CASE("NotContains::get_lia_for_not_contains binds lengths to the top-level run (issue #462)", "[noodler]") {
+    // x in {ab, ba}, y in ac*: not-contains(x, y) holds iff |y| > 2. Satisfiable cases are not checked,
+    // as the solver struggles with the universal quantifier in the formula.
+    Formula not_contains;
+    not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+
+    AutAssignment aut_assignment;
+    aut_assignment[get_var('x')] = regex_to_nfa("ab|ba");
+    aut_assignment[get_var('y')] = regex_to_nfa("ac*");
+
+    auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+    CHECK(lia.second == LenNodePrecision::PRECISE);
+
+    // y = a occurs in both ab and ba
+    CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 1) }) == l_false);
+}
+
+TEST_CASE("NotContains::get_lia_for_not_contains same-word constraint respects letters (issue #463)", "[noodler]") {
+    // x in {ab, ba}, y in (a|b)c*: the edge reading the first letter of y has two letters, a and b.
+    // not-contains(x, y) holds iff |y| > 2. Satisfiable cases are not checked, as the solver struggles
+    // with the universal quantifier in the formula.
+    Formula not_contains;
+    not_contains.add_predicate(Predicate::create_not_contains({get_var('x')}, {get_var('y')}));
+
+    AutAssignment aut_assignment;
+    aut_assignment[get_var('x')] = regex_to_nfa("ab|ba");
+    aut_assignment[get_var('y')] = regex_to_nfa("(a|b)c*");
+
+    auto lia = ca::get_lia_for_not_contains(not_contains, aut_assignment, true);
+    CHECK(lia.second == LenNodePrecision::PRECISE);
+
+    // y is a or b, both occur in both ab and ba
+    CHECK(check_not_contains_lia(lia, { len_eq('x', 2), len_eq('y', 1) }) == l_false);
+}
+
+TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula distinguishes letters (issue #463)", "[noodler]") {
+    // not-contains(x, y) with x in (a|b)c: the edge q0 -> q1 of x reads a or b
+    Predicate not_contains(PredicateType::NotContains, {{get_var('x')}, {get_var('y')}});
+
+    AutAssignment aut_assignment;
+    aut_assignment[get_var('x')] = regex_to_nfa("(a|b)c");
+    aut_assignment[get_var('y')] = regex_to_nfa("c");
+
+    ca::TagDiseqGen tag_automaton_generator(not_contains, aut_assignment, /* track_letters */ true);
+    ca::TagAut tag_automaton = tag_automaton_generator.construct_tag_aut();
+    std::set<ca::AtomicSymbol> used_symbols = tag_automaton.gather_used_symbols();
+    ParikhImageNotContTag not_contains_parikh(tag_automaton, used_symbols, tag_automaton_generator.get_aut_matrix().get_number_of_states_in_row());
+
+    not_contains_parikh.compute_parikh_image();
+    const std::map<Transition, BasicTerm> parikh_image = not_contains_parikh.get_trans_vars();
+
+    // Every group of isomorphic transitions reads a single letter, and both a and b have their own group
+    std::set<mata::Symbol> letters_of_first_edge;
+    for (const auto& [key, transition_vars] : not_contains_parikh.group_isomorphic_transitions_across_copies(parikh_image)) {
+        std::set<BasicTerm> vars_in_group = extract_summed_basic_terms_from_len_nodes(transition_vars);
+        std::set<mata::Symbol> letters_in_group;
+        for (const auto& [transition, transition_var] : parikh_image) {
+            if (!vars_in_group.contains(transition_var)) continue;
+            letters_in_group.insert(not_contains_parikh.get_transition_letter(std::get<1>(transition)));
+        }
+        CHECK(letters_in_group == std::set<mata::Symbol>{std::get<1>(key)});
+        if (std::get<1>(key) == 'a' || std::get<1>(key) == 'b') {
+            letters_of_first_edge.insert(std::get<1>(key));
+        }
+    }
+    CHECK(letters_of_first_edge == std::set<mata::Symbol>{'a', 'b'});
 }
