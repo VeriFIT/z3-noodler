@@ -1009,8 +1009,13 @@ namespace smt::noodler {
         // Refinement of languages is beneficial only for instances containing not(contains) or disequalities (it is used to reduce the number of
         // disequations/not(contains). For a strong reduction you need to have languages as precise as possible). In the case of
         // pure equalitities it could create bigger automata, which may be problem later during the noodlification.
-        // Note that this->formula was moved into prep_handler, so we have to query the formula of prep_handler.
-        if(prep_handler.get_formula().contains_pred_type(PredicateType::Inequation) || prep_handler.get_formula().contains_pred_type(PredicateType::NotContains)) {
+        // The refinement is currently DISABLED. The original condition queried this->formula, which is already moved into
+        // prep_handler at this point, so the refinement has never been applied in practice. Enabling it (by querying
+        // prep_handler.get_formula()) causes substantial slow-downs (e.g., str-term-small-rw_544 from QF_SLIA goes
+        // from 0.01s to a timeout due to automata blow-up in propagate_variables). The refinement is only an optimization,
+        // so skipping it is sound. Enable it again only after a proper benchmark evaluation.
+        constexpr bool ENABLE_REFINE_LANGUAGES = false;
+        if(ENABLE_REFINE_LANGUAGES && (prep_handler.get_formula().contains_pred_type(PredicateType::Inequation) || prep_handler.get_formula().contains_pred_type(PredicateType::NotContains))) {
             // Refine languages is applied in the order given by the predicates. Single iteration
             // might not update crucial variables that could contradict the formula.
             // Two iterations seem to be a good trade-off since the automata could explode in the fixpoint.
