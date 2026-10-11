@@ -1,0 +1,8 @@
+(set-logic ALL)
+(set-info :status unsat)
+(declare-fun f (Int) String)
+(declare-fun x () String)
+(assert (forall ((i Int)) (= (str.len (f i)) i)))
+(assert (= (str.len (f 5)) (str.len x)))
+(assert (str.in_re x (re.* (str.to_re "aa"))))
+(check-sat)
