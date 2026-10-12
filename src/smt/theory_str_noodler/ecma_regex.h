@@ -736,11 +736,16 @@ namespace smt::noodler::ecma {
      * `start_index` is the index into `m_current_path_vars` at the moment the lookahead was encountered.
      * When the lookahead is evaluated at the end vertex, the suffix of the string is obtained by concatenating the
      * string variables from `start_index` to the end of `m_current_path_vars`.
+     *
+     * `group_vars` holds the captures of the groups closed at the moment the lookahead was encountered (only for
+     * non-regular lookaheads, which can contain backreferences). Backreferences inside the lookahead refer to these
+     * captures, not to the ones at the end of the path, which later iterations of a quantifier may reset or overwrite.
      */
     struct ActiveLookahead {
         std::variant<app_ref, GraphFragment> subregex;
         bool is_positive;
         std::size_t start_index;
+        std::unordered_map<GroupID, expr_ref_vector> group_vars;
     };
 
     /**
@@ -926,9 +931,19 @@ namespace smt::noodler::ecma {
         bool has_group(GroupID gid) const;
 
         /**
+         * @brief Replace the variable lists of all capture groups by @p group_vars.
+         *
+         * @param group_vars The new variable lists of capture groups.
+         * @return The previous variable lists of capture groups.
+         */
+        std::unordered_map<GroupID, expr_ref_vector>
+        replace_group_vars(std::unordered_map<GroupID, expr_ref_vector> group_vars);
+
+        /**
          * @brief Postpone a lookahead assertion for evaluation at the end of the current path.
          *
-         * Saves the @p subregex, polarity and current position in the matched string.
+         * Saves the @p subregex, polarity, current position in the matched string and, for a non-regular lookahead,
+         * the captures of the currently closed groups.
          *
          * @param subregex    The lookahead subregex.
          * @param is_positive The lookahead polarity.

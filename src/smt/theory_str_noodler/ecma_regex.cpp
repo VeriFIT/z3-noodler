@@ -2141,7 +2141,24 @@ namespace smt::noodler::ecma {
     }
 
     void DFSContext::push_lookahead(const std::variant<app_ref, GraphFragment>& subregex, bool is_positive) {
-        m_active_lookaheads.push_back({subregex, is_positive, m_current_path_vars.size() - 1});
+        // Only a non-regular lookahead can contain backreferences
+        std::unordered_map<GroupID, expr_ref_vector> closed_group_vars;
+        if (std::holds_alternative<GraphFragment>(subregex)) {
+            for (const auto& [gid, vars] : m_group_vars) {
+                // The capture of a group that is still open is undefined at this position
+                if (std::ranges::find(m_active_groups, gid) == m_active_groups.end()) {
+                    closed_group_vars.emplace(gid, vars);
+                }
+            }
+        }
+        m_active_lookaheads.push_back(
+            {subregex, is_positive, m_current_path_vars.size() - 1, std::move(closed_group_vars)});
+    }
+
+    std::unordered_map<GroupID, expr_ref_vector>
+    DFSContext::replace_group_vars(std::unordered_map<GroupID, expr_ref_vector> group_vars) {
+        std::swap(m_group_vars, group_vars);
+        return group_vars;
     }
 
     void DFSContext::commit_current_path(const expr_ref_vector& additional_constraints) {
@@ -2524,7 +2541,11 @@ namespace smt::noodler::ecma {
                 expr_ref local_prefix_to_la = ctx.concat_vars(0, la.start_index);
                 ctx.set_base_prefix(expr_ref(m_util_s.str.mk_concat(old_base, local_prefix_to_la), m_manager));
 
+                // Backreferences inside the lookahead refer to the captures at the lookahead position
+                std::unordered_map<GroupID, expr_ref_vector> path_end_group_vars =
+                    ctx.replace_group_vars(la.group_vars);
                 expr_ref inner_result = run_inner_rcg_dfs(inner_frag, subregex_la_var, ctx);
+                ctx.replace_group_vars(std::move(path_end_group_vars));
 
                 ctx.set_base_prefix(old_base);
                 final_constraints.push_back(inner_result);
