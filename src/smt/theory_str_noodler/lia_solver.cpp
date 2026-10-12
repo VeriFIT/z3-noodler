@@ -21,11 +21,11 @@ namespace smt::noodler {
     }
 
     expr_ref lia_solver::eval_arith_str_func(app* a, model_ref& mdl) {
-        SASSERT(util::is_arith_str_func(a, m_util_s) && a->get_num_args() == 1);
+        SASSERT(util::is_arith_str_func(a, m_util_s) && a->get_num_args() == 1 && is_uninterp_const(a->get_arg(0)));
         func_interp* fi = mdl->get_func_interp(a->get_decl());
-        expr_ref arg_val(m);
-        if (fi != nullptr && mdl->eval_expr(a->get_arg(0), arg_val) && m.is_value(arg_val)) {
-            expr* args[1] = { arg_val.get() };
+        expr* arg_val = mdl->get_const_interp(to_app(a->get_arg(0))->get_decl());
+        if (fi != nullptr && arg_val != nullptr && m.is_value(arg_val)) {
+            expr* args[1] = { arg_val };
             func_entry* entry = fi->get_entry(args);
             if (entry != nullptr) {
                 return expr_ref(entry->get_result(), m);
@@ -43,9 +43,12 @@ namespace smt::noodler {
     }
 
     void lia_solver::compute_model_formula(expr* e, model_ref& mdl) {
-        // Collect int/real variables and str.len/str.to_code/str.to_int/str.to_real applications. We skip
-        // applications that are not ground, i.e., those depending on a quantified variable, as they do not
-        // have a single value.
+        // Collect int/real variables and str.len/str.to_code/str.to_int/str.to_real applications whose argument
+        // is a (string) variable. Applications over complex terms are skipped: the model formula is needed only
+        // for Noodler's length variables (see theory_str_noodler::filter_model_formula_to_length_vars), and
+        // evaluating a complex argument in the model of the external solver can be expensive or even not
+        // terminate (e.g., unfolding a recursive function over an abstract string value). This also skips
+        // applications depending on a quantified variable, which do not have a single value.
         struct collect_terms {
             ast_manager &m;
             seq_util m_util_s;
@@ -55,7 +58,7 @@ namespace smt::noodler {
             collect_terms(ast_manager &m) : m(m), m_util_s(m), vars(m), arith_str_apps(m) {}
             void operator()(expr* e) {
                 if (util::is_arith_str_func(e, m_util_s)) {
-                    if (is_ground(e)) {
+                    if (is_uninterp_const(to_app(e)->get_arg(0))) {
                         arith_str_apps.push_back(e);
                     }
                 } else if (!m_util_s.is_string(e->get_sort()) && util::is_variable(e)) {

@@ -40,7 +40,7 @@ namespace smt::noodler {
 
         /**
          * @brief Get the value of @p a (an application of str.len/str.to_code/str.to_int/str.to_real,
-         * see util::is_arith_str_func) in the model @p mdl of the external solver.
+         * see util::is_arith_str_func, to a string variable) in the model @p mdl of the external solver.
          *
          * The external solver has no string theory, so these functions are uninterpreted there, and their
          * model is a table (func_interp) mapping values of the string argument to arithmetic values, plus
@@ -55,13 +55,13 @@ namespace smt::noodler {
          * there is one, and the else value otherwise. We therefore do this lookup ourselves.
          *
          * Falls back to mdl->eval_expr if the lookup is not possible (no table for the function, the
-         * argument does not evaluate to a value, or there is no usable else value).
+         * argument has no value in the model, or there is no usable else value).
          */
         expr_ref eval_arith_str_func(app* a, model_ref& mdl);
 
-        /// Build `model_formula` by evaluating, in @p mdl, every int/real variable and every ground
-        /// str.len/str.to_code/str.to_int/str.to_real application (see eval_arith_str_func) occurring
-        /// in @p e.
+        /// Build `model_formula` by evaluating, in @p mdl, every int/real variable and every
+        /// str.len/str.to_code/str.to_int/str.to_real application to a string variable (see
+        /// eval_arith_str_func) occurring in @p e.
         void compute_model_formula(expr* e, model_ref& mdl);
 
     public:
