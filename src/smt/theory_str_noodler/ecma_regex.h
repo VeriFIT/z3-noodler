@@ -106,11 +106,16 @@ namespace smt::noodler::ecma {
      * If the inner pattern is fully regular it is stored as z3 regular expression via app_ref; the DFS evaluates it
      * with `str.to_re` constraint. If the inner pattern contains non-regular constructs it is stored as a GraphFragment
      * and evaluated by running a nested DFS on the fragment.
+     *
+     * `contains_lookahead` is set for a non-regular lookbehind whose fragment contains a lookahead (also the one of
+     * a word boundary). Such a lookahead must be evaluated against the rest of the whole string, not only against the
+     * rest of the lookbehind target.
      */
     struct Lookaround {
         std::variant<app_ref, GraphFragment> subregex;
         LookaroundDirection direction;
         bool is_positive;
+        bool contains_lookahead = false;
     };
 
     using Anchor = uint32_t;
@@ -517,6 +522,7 @@ namespace smt::noodler::ecma {
         void set_type(TokenType type);
         void set_payload(Z3Char payload);
         void set_expr(ASTNodeRef expr);
+        bool is_lookbehind() const;
 
         /**
          * @brief Builds the constraint graph fragment for zero-width assertions.
@@ -563,6 +569,15 @@ namespace smt::noodler::ecma {
          */
         static GraphFragment make_word_boundary_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m,
                                                          bool is_word_boundary);
+
+        /**
+         * @brief Check whether the @p fragment contains a lookahead edge (nested lookarounds are not searched).
+         *
+         * @param graph    The RCG owning the fragment.
+         * @param fragment The fragment to search.
+         * @return bool True if some edge reachable from the fragment's v_in is a lookahead.
+         */
+        static bool contains_lookahead(const RegexConstraintGraph& graph, const GraphFragment& fragment);
     };
 
     /**
@@ -893,6 +908,10 @@ namespace smt::noodler::ecma {
      * `m_base_prefix` holds all the string variables accumulated by outer DFS calls.
      * `get_global_prefix()` concatenates `m_base_prefix` with the current inner DFS path's variables to give the full
      * prefix at the current position in the original target string.
+     *
+     * `m_base_suffix` is the rest of the original target string after the end of the current DFS target. It is
+     * nonempty only inside a lookbehind, whose target ends at the lookbehind position. `get_global_suffix()` appends
+     * it to the current path's variables, so that lookaheads see the rest of the whole string.
      */
     class DFSContext {
     public:
@@ -901,6 +920,7 @@ namespace smt::noodler::ecma {
               m_util_s(util),
               m_str_sort(util.mk_string_sort()),
               m_base_prefix(manager),
+              m_base_suffix(manager),
               m_unique_paths(manager),
               m_current_path_vars(manager),
               m_current_path_constraints(manager),
@@ -912,6 +932,8 @@ namespace smt::noodler::ecma {
         VertexID get_end_vertex() const;
         void set_base_prefix(const expr_ref& p);
         expr_ref get_base_prefix() const;
+        void set_base_suffix(const expr_ref& s);
+        expr_ref get_base_suffix() const;
 
         /**
          * @brief Save the current DFS state before exploring one outgoing edge.
@@ -1102,6 +1124,15 @@ namespace smt::noodler::ecma {
         expr_ref get_global_prefix() const;
 
         /**
+         * @brief Return the rest of the original target string from the edge variable at @p start_idx on the current
+         * path, across all DFS levels.
+         *
+         * @param start_idx Index of the first edge variable of the suffix.
+         * @return expr_ref The global suffix expression.
+         */
+        expr_ref get_global_suffix(uint32_t start_idx) const;
+
+        /**
          * @brief Concatenate all edge variables captured by a group @p gid on the current path.
          *
          * @param gid The capture group whose variable list to concatenate.
@@ -1117,6 +1148,7 @@ namespace smt::noodler::ecma {
         app* m_target_string = nullptr;
         VertexID m_end_vertex = UNKNOWN_VERTEX;
         expr_ref m_base_prefix;
+        expr_ref m_base_suffix;
 
         expr_ref_vector m_unique_paths;
         expr_ref_vector m_current_path_vars;
@@ -1215,11 +1247,15 @@ namespace smt::noodler::ecma {
 
         /**
          * @brief Throw "unsupported" if a backreference refers to a capture group inside a lookaround that does not
-         * enclose the backreference.
+         * enclose the backreference, or to a capture group inside a lookbehind.
          *
          * ES2020 keeps the captures made inside a successful positive lookaround, taken from its first inner match in
          * backtracking order (lookarounds are atomic). The DFS evaluates a non-regular lookaround in a nested search
          * and discards its captures, so such a backreference would wrongly match the empty string.
+         *
+         * ES2020 matches a lookbehind from right to left, so captures and backreferences inside it are evaluated in
+         * the reverse order. The DFS traverses the lookbehind from left to right and would resolve such a
+         * backreference against the wrong capture.
          *
          * @param root The root of the regex AST.
          */

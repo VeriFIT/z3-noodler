@@ -1184,6 +1184,35 @@ namespace smt::noodler::ecma {
         m_subpattern = std::move(expr);
     }
 
+    bool ASTNodeAssertion::is_lookbehind() const {
+        return m_assert_type == TokenType::LOOKBEHIND_POS_START || m_assert_type == TokenType::LOOKBEHIND_NEG_START;
+    }
+
+    bool ASTNodeAssertion::contains_lookahead(const RegexConstraintGraph& graph, const GraphFragment& fragment) {
+        std::vector<bool> visited(graph.vertices.size(), false);
+        std::vector<VertexID> to_visit {fragment.v_in};
+        visited[fragment.v_in] = true;
+        while (!to_visit.empty()) {
+            const VertexID vertex = to_visit.back();
+            to_visit.pop_back();
+            for (const EdgeID eid : graph.vertices[vertex].outgoing_edges) {
+                const RCGEdge& edge = graph.edges[eid];
+                if (std::holds_alternative<AssertionEdge>(edge.payload)) {
+                    const AssertionEdge& assertion = std::get<AssertionEdge>(edge.payload);
+                    if (std::holds_alternative<Lookaround>(assertion.payload) &&
+                        std::get<Lookaround>(assertion.payload).direction == LookaroundDirection::FORWARD) {
+                        return true;
+                    }
+                }
+                if (!visited[edge.target]) {
+                    visited[edge.target] = true;
+                    to_visit.push_back(edge.target);
+                }
+            }
+        }
+        return false;
+    }
+
     RegexComponent ASTNodeAssertion::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
         // Anchors -- directly create AssertionEdge with the anchor as the payload
         if (m_assert_type == TokenType::ASSERTION) {
@@ -1238,11 +1267,14 @@ namespace smt::noodler::ecma {
             inner_frag = chain_fragments(graph, sigma_frag, inner_frag);
         }
 
+        // A lookahead inside a lookbehind must see the rest of the whole string (see handle_lookaround_constraints())
+        const bool has_lookahead = dir == LookaroundDirection::BACKWARD && contains_lookahead(graph, inner_frag);
+
         // Wrap the resulting fragment into an AssertionEdge
         VertexID v_in = graph.create_vertex();
         VertexID v_out = graph.create_vertex();
-        EdgeID eid =
-            graph.create_edge(v_out, RCGEdgePayload {AssertionEdge {Lookaround {std::move(inner_frag), dir, true}}});
+        EdgeID eid = graph.create_edge(
+            v_out, RCGEdgePayload {AssertionEdge {Lookaround {std::move(inner_frag), dir, true, has_lookahead}}});
         graph.vertices[v_in].outgoing_edges.push_back(eid);
         return GraphFragment {v_in, v_out, {eid}};
     }
@@ -2200,6 +2232,14 @@ namespace smt::noodler::ecma {
         return m_base_prefix;
     }
 
+    void DFSContext::set_base_suffix(const expr_ref& s) {
+        m_base_suffix = s;
+    }
+
+    expr_ref DFSContext::get_base_suffix() const {
+        return m_base_suffix;
+    }
+
     bool DFSContext::has_group(GroupID gid) const {
         return m_group_vars.contains(gid);
     }
@@ -2362,6 +2402,20 @@ namespace smt::noodler::ecma {
         return expr_ref(m_util_s.str.mk_concat(m_base_prefix, local_prefix), m_manager);
     }
 
+    expr_ref DFSContext::get_global_suffix(const uint32_t start_idx) const {
+        expr_ref local_suffix = concat_vars(start_idx);
+        expr* empty_str = m_util_s.str.mk_empty(m_str_sort);
+
+        if (m_base_suffix.get() == empty_str) {
+            return local_suffix;
+        }
+        if (local_suffix.get() == empty_str) {
+            return m_base_suffix;
+        }
+
+        return expr_ref(m_util_s.str.mk_concat(local_suffix, m_base_suffix), m_manager);
+    }
+
     DFSStateSnapshot DFSContext::save_snapshot() const {
         DFSStateSnapshot s;
         s.num_path_vars = m_current_path_vars.size();
@@ -2487,6 +2541,10 @@ namespace smt::noodler::ecma {
                 util::throw_error("Unsupported: backreference to a capture group inside a lookaround that does not "
                                   "contain the backreference");
             }
+            if (innermost->is_lookbehind()) {
+                util::throw_error("Unsupported: backreference to a capture group inside a lookbehind (lookbehinds "
+                                  "are matched from right to left)");
+            }
         }
     }
 
@@ -2549,6 +2607,7 @@ namespace smt::noodler::ecma {
         DFSContext ctx {m_manager, m_util_s};
         ctx.set_target(target_string);
         ctx.set_base_prefix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
+        ctx.set_base_suffix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
         ctx.set_end_vertex(m_graph.end_vertex);
         rcg_dfs_visit(m_graph.start_vertex, ctx);
 
@@ -2649,14 +2708,25 @@ namespace smt::noodler::ecma {
                 expr_ref old_base = ctx.get_base_prefix();
                 ctx.set_base_prefix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
 
+                // The inner target ends at the lookbehind position, but a lookahead inside the lookbehind sees the rest
+                // of the whole string --> introduce x_rest such that target = global_prefix ++ x_rest.
+                expr_ref old_suffix = ctx.get_base_suffix();
+                if (lookaround.contains_lookahead) {
+                    const app_ref rest_var(ctx.mk_fresh_string_var(), m_manager);
+                    const expr_ref prefix_and_rest(m_util_s.str.mk_concat(global_prefix, rest_var), m_manager);
+                    ctx.add_path_constraint({m_manager.mk_eq(m_global_target_string, prefix_and_rest), m_manager});
+                    ctx.set_base_suffix(expr_ref(rest_var, m_manager));
+                }
+
                 // The subregex lookbehind is evaluated in a separate run of DFS on the subgraph.
                 // We hand over x_lb which is the new global target for the inner DFS
                 // run. The constraints for x_lb are generated in the same way.
                 const expr_ref inner_result = run_inner_rcg_dfs(subregex_fragment, subregex_lb_var, ctx);
 
-                // Restore the original base prefix for the outer DFS run and add the generated constraints for the
-                // lookbehind.
+                // Restore the original base prefix and suffix for the outer DFS run and add the generated constraints
+                // for the lookbehind.
                 ctx.set_base_prefix(old_base);
+                ctx.set_base_suffix(old_suffix);
                 ctx.add_path_constraint({to_app(inner_result.get()), m_manager});
             }
         }
@@ -2664,7 +2734,7 @@ namespace smt::noodler::ecma {
 
     void RegexConstraintBuilder::generate_lookahead_constraints(DFSContext& ctx, expr_ref_vector& final_constraints) {
         for (const ActiveLookahead& la : ctx.get_active_lookaheads()) {
-            expr_ref suffix = ctx.concat_vars(la.start_index);
+            expr_ref suffix = ctx.get_global_suffix(la.start_index);
 
             if (std::holds_alternative<app_ref>(la.subregex)) {
                 app_ref la_var(ctx.mk_fresh_string_var(), m_manager);
@@ -2692,6 +2762,9 @@ namespace smt::noodler::ecma {
                 expr_ref old_base = ctx.get_base_prefix();
                 expr_ref local_prefix_to_la = ctx.concat_vars(0, la.start_index);
                 ctx.set_base_prefix(expr_ref(m_util_s.str.mk_concat(old_base, local_prefix_to_la), m_manager));
+                // The inner target already reaches the end of the whole string
+                expr_ref old_suffix = ctx.get_base_suffix();
+                ctx.set_base_suffix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
 
                 // Backreferences inside the lookahead refer to the captures at the lookahead position
                 std::unordered_map<GroupID, expr_ref_vector> path_end_group_vars =
@@ -2700,6 +2773,7 @@ namespace smt::noodler::ecma {
                 ctx.replace_group_vars(std::move(path_end_group_vars));
 
                 ctx.set_base_prefix(old_base);
+                ctx.set_base_suffix(old_suffix);
                 final_constraints.push_back(inner_result);
             }
         }

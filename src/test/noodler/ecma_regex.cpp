@@ -1914,5 +1914,13 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
         REQUIRE_NOTHROW(build_and_serialize_rcg("(?=(?=(a)\\1))", m));
         REQUIRE_NOTHROW(build_and_serialize_rcg("(a)(?=\\1)", m));
         REQUIRE_NOTHROW(build_and_serialize_rcg("^(a)b(?<=\\1b)$", m));
+        REQUIRE_NOTHROW(build_and_serialize_rcg("(?<=(?=(a)\\1))", m));
+    }
+
+    SECTION("Backreference to a capture group inside a lookbehind is unsupported") {
+        // Lookbehinds are matched from right to left
+        REQUIRE_THROWS(build_and_serialize_rcg("^ba(?<=\\1(a))$", m));
+        REQUIRE_THROWS(build_and_serialize_rcg("^a(?<=(a)\\1)$", m));
+        REQUIRE_THROWS(build_and_serialize_rcg("(?<=(a)(?=\\1))", m));
     }
 }
