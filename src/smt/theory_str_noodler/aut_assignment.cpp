@@ -187,6 +187,23 @@ namespace smt::noodler {
         return true;
     }
 
+    bool AutAssignment::occurs_only_as_suffix(const BasicTerm& t, const BasicTerm& sep) const {
+        const mata::nfa::Nfa& sep_aut = *this->at(sep);
+        mata::nfa::Nfa t_sep = mata::nfa::concatenate(*this->at(t), sep_aut);
+
+        // Σ over symbols of t·sep is sufficient as the result is intersected with t·sep
+        mata::nfa::Nfa sigma_star(1, {0}, {0});
+        mata::nfa::Nfa sigma_plus(2, {0}, {1});
+        for (const mata::Symbol& symb : mata::nfa::create_alphabet(t_sep).get_alphabet_symbols()) {
+            sigma_star.delta.add(0, symb, 0);
+            sigma_plus.delta.add(0, symb, 1);
+            sigma_plus.delta.add(1, symb, 1);
+        }
+        // Σ*·sep·Σ+: an occurrence of sep that is not a suffix
+        mata::nfa::Nfa non_suffix = mata::nfa::concatenate(mata::nfa::concatenate(sigma_star, sep_aut), sigma_plus);
+        return mata::nfa::intersection(t_sep, non_suffix).is_lang_empty();
+    }
+
     bool AutAssignment::is_flat(const BasicTerm& t) const {
         bool flat = true;
 

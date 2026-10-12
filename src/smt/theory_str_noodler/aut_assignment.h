@@ -312,6 +312,17 @@ namespace smt::noodler {
         }
 
         /**
+         * @brief Check if @p sep occurs in each word of L(t)·L(sep) only as its suffix, i.e.,
+         * (L(t)·L(sep)) ∩ (Σ*·L(sep)·Σ+) = ∅. For a literal @p sep this means that for each
+         * X = t·sep·..., the first occurrence of sep in X is at position |t|.
+         *
+         * @param t Term preceding the separator
+         * @param sep Separator (typically a literal)
+         * @return true <-> L(sep) occurs in L(t)·L(sep) only as a suffix
+         */
+        bool occurs_only_as_suffix(const BasicTerm& t, const BasicTerm& sep) const;
+
+        /**
          * @brief Check if the language of the basic term has a fixed length
          * 
          * @param t BasicTerm

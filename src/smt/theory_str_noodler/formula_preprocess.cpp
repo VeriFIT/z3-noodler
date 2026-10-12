@@ -1315,13 +1315,14 @@ namespace smt::noodler {
     /**
      * @brief Infer equalities from required alignments. For instance for 
      * X = Y1 "A" Y2
-     * X = Z1 "A" Z2 where "A" not in L(Y1) and "A" not in L(Z1)
-     * infer Y1 = Z1.
+     * X = Z1 "A" Z2 where "A" occurs in L(Y1)·"A" and in L(Z1)·"A" only as a suffix
+     * infer Y1 = Z1 (both |Y1| and |Z1| are then the position of the first occurrence of "A" in X).
+     * Note that "A" not in L(Y1) is not sufficient (e.g., Y1 in (aa)+ and "A" = "a").
      * 
      * Works also for a propagated case, for instance
      * X = Y1 "A" Y2
      * X = W Z2 
-     * W = Z1 "A" Z3 where "A" not in L(Y1) and "A" not in L(Z1)
+     * W = Z1 "A" Z3 where "A" occurs in L(Y1)·"A" and in L(Z1)·"A" only as a suffix
      */
     void FormulaPreprocessor::infer_alignment() {
         STRACE(str_prep, tout << "Preprocessing step - infer_alignment\n";);
@@ -1400,7 +1401,7 @@ namespace smt::noodler {
         if(!side[1].is_literal()) {
             return false;
         }
-        if(this->aut_ass.are_disjoint(side[0], side[1])) {
+        if(this->aut_ass.occurs_only_as_suffix(side[0], side[1])) {
             if(container[side[1]].contains(side[0])) {
                 return false;
             }
