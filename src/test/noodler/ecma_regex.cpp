@@ -1113,9 +1113,20 @@ namespace smt::noodler::ecma::test {
         return s;
     }
 
-    // Builds the group-start / group-end marker string for a single edge, e.g. " STARTS {1,2} ENDS {1}".
+    // Builds the marker string for a single edge, e.g. " STARTS {1,2} ENDS {1}" or " RESETS {1}" or " NONEMPTY".
     static std::string serialize_edge_markers(const RegexConstraintGraph& graph, EdgeID eid) {
         std::string res;
+        if (graph.group_resets.contains(eid)) {
+            res += " RESETS {";
+            for (const uint32_t gid : graph.group_resets.at(eid)) {
+                res += std::to_string(gid) + ",";
+            }
+            res.pop_back();
+            res += "}";
+        }
+        if (graph.nonempty_iterations.contains(eid)) {
+            res += " NONEMPTY";
+        }
         if (graph.group_starts.contains(eid) && !graph.group_starts.at(eid).empty()) {
             res += " STARTS {";
             for (const uint32_t gid : graph.group_starts.at(eid)) {
@@ -1837,5 +1848,55 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
                 " (EDGE *->* [ANCHOR '$'])"
                 " (EDGE *->* [MATCH re.all])"
                 ")");
+    }
+
+    // ---- Bounded quantifiers over non-regular subpatterns ----
+
+    SECTION("Unrolled iterations with capture group reset the captures") {
+        REQUIRE(build_and_serialize_rcg("(?:(a)|b){2}\\1", m) ==
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [EPSILON] RESETS {1})"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [MATCH (str.to_re \"b\")])"
+                " (EDGE *->* [EPSILON] RESETS {1})"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [MATCH (str.to_re \"b\")])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [MATCH re.all])"
+                ")");
+    }
+
+    SECTION("Optional iteration with capture group must be nonempty") {
+        REQUIRE(build_and_serialize_rcg("(?:(a)|b)?\\1", m) ==
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [EPSILON] RESETS {1})"
+                // Zero iterations
+                " (EDGE *->* [MATCH (str.to_re \"\")])"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [MATCH (str.to_re \"b\")])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [EPSILON] NONEMPTY)"
+                " (EDGE *->* [MATCH re.all])"
+                ")");
+    }
+
+    SECTION("Unrolled iterations without capture group have no iteration edges") {
+        REQUIRE(build_and_serialize_rcg("(a)(?:b\\1){2}", m) ==
+                "(RCG"
+                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [MATCH (str.to_re \"b\")])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [MATCH (str.to_re \"b\")])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [MATCH re.all])"
+                ")");
+    }
+
+    SECTION("Zero iterations of non-regular subpattern stay regular") {
+        REQUIRE(build_and_serialize_rcg("(?:(a)\\1){0}", m) ==
+                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"\")]) (EDGE *->* [MATCH re.all]))");
     }
 }

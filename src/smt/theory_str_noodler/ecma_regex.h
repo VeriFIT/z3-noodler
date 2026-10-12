@@ -143,7 +143,8 @@ namespace smt::noodler::ecma {
               outgoing_edges(std::move(edges)) { }
     };
 
-    using RCGEdgePayload = std::variant<std::monostate, MatchEdge, AssertionEdge, BackrefEdge>;
+    using MarkerEdge = std::monostate;  // no payload, used for bookkeeping only
+    using RCGEdgePayload = std::variant<MarkerEdge, MatchEdge, AssertionEdge, BackrefEdge>;
 
     struct RCGEdge {
         EdgeID id;
@@ -163,23 +164,36 @@ namespace smt::noodler::ecma {
      * Vertices represent split points where the regex transitions between regular and non-regular components, or other
      * structural boundaries (such as alternations).
      *
-     * Edges carry one of three payloads:
-     *   - MatchEdge:     the edge variable belongs to a standard Z3 regex.
-     *   - AssertionEdge: zero-width assertion (anchors, lookarounds); variable is "".
-     *   - BackrefEdge:   the edge variable must equal the string captured by a group.
+     * Edges carry one of four payloads:
+     *   - MatchEdge:      the edge variable belongs to a standard Z3 regex.
+     *   - AssertionEdge:  zero-width assertion (anchors, lookarounds); variable is "".
+     *   - BackrefEdge:    the edge variable must equal the string captured by a group.
+     *   - MarkerEdge:     consumes nothing and gets no edge variable, it only carries bookkeeping
+     *                     (see `group_resets` and `nonempty_iterations`).
      *
      * A valid match corresponds to a path from start_vertex to end_vertex, where
      * the concatenated edge variables equal the target string.
      *
      * The `group_starts` and `group_ends` maps track which edges open and close
      * specific capture groups, allowing the DFS to evaluate backreferences.
+     *
+     * The `group_resets` and `nonempty_iterations` maps mark the marker edges that start and end the iterations of
+     * an unrolled bounded quantifier (see ASTNodeQuantifier::unroll()).
      */
     struct RegexConstraintGraph {
         std::vector<RCGVertex> vertices;
         std::vector<RCGEdge> edges;
 
+        //
         std::unordered_map<EdgeID, std::vector<GroupID>> group_starts;
         std::unordered_map<EdgeID, std::vector<GroupID>> group_ends;
+
+        // Edges starting an iteration of an unrolled quantifier, mapped to the capture groups inside the quantified
+        // subpattern. ES2020 resets these captures to undefined at the start of every iteration.
+        std::unordered_map<EdgeID, std::vector<GroupID>> group_resets;
+        // Edges ending an iteration beyond the quantifier minimum, mapped to the edge that started the iteration.
+        // ES2020 rejects such an iteration if it matched the empty string.
+        std::unordered_map<EdgeID, EdgeID> nonempty_iterations;
 
         VertexID start_vertex = UNKNOWN_VERTEX;
         VertexID end_vertex = UNKNOWN_VERTEX;
@@ -231,6 +245,17 @@ namespace smt::noodler::ecma {
      * @return GraphFragment A two-vertex fragment with a single epsilon MatchEdge.
      */
     GraphFragment make_epsilon_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m);
+
+    /**
+     * @brief Create a fragment with a single MarkerEdge.
+     *
+     * Unlike an epsilon fragment, the marker edge gets no edge variable and no constraint during the DFS. It is used
+     * only to attach bookkeeping to a position in the graph.
+     *
+     * @param graph The RCG to add the fragment to.
+     * @return GraphFragment A two-vertex fragment with a single marker edge.
+     */
+    GraphFragment make_marker_fragment(RegexConstraintGraph& graph);
 
     // ================== ECMA REGEX LEXER ==================
 
@@ -370,6 +395,15 @@ namespace smt::noodler::ecma {
          * @param referenced 
          */
         virtual void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) { }
+
+        /**
+         * @brief Recursively collect IDs of all capture groups in this subtree.
+         *
+         * Used by ASTNodeQuantifier::unroll() to find the captures that are reset at the start of every iteration.
+         *
+         * @param gids Vector to which every capture group ID found in the subtree is appended.
+         */
+        virtual void collect_capture_groups(std::vector<GroupID> &gids) const {}
     };
 
     /**
@@ -403,6 +437,7 @@ namespace smt::noodler::ecma {
         void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
 
     private:
         std::vector<ASTNodeRef> m_alternatives;
@@ -435,6 +470,7 @@ namespace smt::noodler::ecma {
         void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
 
     private:
         std::vector<ASTNodeRef> m_terms;
@@ -467,6 +503,7 @@ namespace smt::noodler::ecma {
         void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
 
     private:
         TokenType m_assert_type {};
@@ -504,7 +541,7 @@ namespace smt::noodler::ecma {
      *
      * If the child is regular, get_subgraph() delegates to the corresponding Z3 API
      * (mk_star, mk_plus, mk_loop). If the child is non-regular and the quantifier is
-     * bounded, the quantifier is unrolled into an explicit disjunction first.
+     * bounded, the quantifier is unrolled into an explicit alternation of iteration chains.
      */
     class ASTNodeQuantifier : public ASTNode {
     public:
@@ -515,15 +552,16 @@ namespace smt::noodler::ecma {
         void strip_captures() override;
 
         /**
-         * @brief Expand a bounded quantifier {min,max} into an explicit disjunction.
+         * @brief Expand a bounded quantifier {min,max} with a non-regular child into the graph.
          *
-         * Produces an ASTNodeDisjunction equivalent to:
-         *   (epsilon | child^min | ... | child^max)
-         * where epsilon is included only when min == 0.
+         * Produces a fragment equivalent to:
+         *   (child^min | ... | child^max | epsilon)
+         * where epsilon is included only when min == 0. Every iteration is a fresh copy of the child's subgraph, see
+         * make_iteration().
          *
-         * @return ASTNodeRef A new ASTNodeDisjunction semantically equivalent to the quantifier node.
+         * @return GraphFragment The fragment of the unrolled quantifier.
          */
-        ASTNodeRef unroll() const;
+        GraphFragment unroll(RegexConstraintGraph &graph, seq_util &util_s, ast_manager &m) const;
 
         /**
          * @brief Build the regex/subgraph for a quantifier node.
@@ -538,10 +576,29 @@ namespace smt::noodler::ecma {
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
 
     private:
         QuantifierRange m_range {};
         ASTNodeRef m_child;
+
+        /**
+         * @brief Build one iteration of the unrolled quantifier as a fresh copy of the child's subgraph.
+         *
+         * ES2020 RepeatMatcher resets the captures inside the quantified subpattern at the start of every iteration
+         * (step 4) and rejects an iteration beyond the minimum that matched the empty string (step 2.b). If the child
+         * contains capture groups, the copy is therefore wrapped in marker edges: the first one is registered in
+         * `group_resets`, and for iterations beyond the minimum, the last one is registered in `nonempty_iterations`.
+         *
+         * Without capture groups, iterations do not influence each other and an empty iteration can be left out
+         * without changing the matched string, so the copy is returned as is.
+         *
+         * @param captures  The capture groups inside the child.
+         * @param iteration 1-based number of the iteration in its chain.
+         * @return GraphFragment The fragment of a single iteration.
+         */
+        GraphFragment make_iteration(RegexConstraintGraph &graph, seq_util &util_s, ast_manager &m,
+                                     const std::vector<GroupID> &captures, uint64_t iteration) const;
     };
 
     /**
@@ -629,6 +686,7 @@ namespace smt::noodler::ecma {
         void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
 
     private:
         GroupType m_type = GroupType::CAPTURE;
@@ -931,6 +989,32 @@ namespace smt::noodler::ecma {
         bool has_group(GroupID gid) const;
 
         /**
+         * @brief Reset the captures of the groups @p gids to undefined.
+         *
+         * A backreference to a reset group matches the empty string until the group is entered again.
+         *
+         * @param gids The group IDs to reset.
+         */
+        void reset_groups(const std::vector<GroupID> &gids);
+
+        /**
+         * @brief Remember the current position on the path as the start of the quantifier iteration that begins on
+         * the edge @p start_eid.
+         *
+         * @param start_eid The edge starting the iteration.
+         */
+        void mark_iteration_start(EdgeID start_eid);
+
+        /**
+         * @brief Concatenate the edge variables of the current path from the start of the quantifier iteration that
+         * began on the edge @p start_eid.
+         *
+         * @param start_eid The edge starting the iteration.
+         * @return expr_ref The string matched by the iteration so far.
+         */
+        expr_ref concat_iteration_vars(EdgeID start_eid) const;
+
+        /**
          * @brief Replace the variable lists of all capture groups by @p group_vars.
          *
          * @param group_vars The new variable lists of capture groups.
@@ -1006,6 +1090,11 @@ namespace smt::noodler::ecma {
         std::vector<GroupID> m_active_groups;
         std::unordered_map<GroupID, expr_ref_vector> m_group_vars;
         std::vector<ActiveLookahead> m_active_lookaheads;
+
+        // Index into `m_current_path_vars` where the quantifier iteration started by the given edge begins.
+        // It does not need to be part of the snapshot: the RCG is acyclic and the edge ending an iteration is only
+        // reachable through the edge starting it, so the stored index always comes from the current path.
+        std::unordered_map<EdgeID, unsigned> m_iteration_starts;
 
         // Accumulates every fresh variable created via mk_fresh_string_var() across the entire DFS (including inner
         // DFS runs for lookarounds). Used to existentially quantify over auxiliary variables in the final formula.
@@ -1127,6 +1216,17 @@ namespace smt::noodler::ecma {
          * @param edge_var The string variable representing the @p edge.
          */
         void generate_edge_constraints(DFSContext& ctx, const RCGEdge& edge, const app_ref& edge_var);
+
+        /**
+         * @brief Require the quantifier iteration that began on the edge @p start_eid to match a nonempty string.
+         *
+         * ES2020 RepeatMatcher (step 2.b): an iteration beyond the quantifier minimum fails if it matched the empty
+         * string.
+         *
+         * @param ctx       The DFS context.
+         * @param start_eid The edge starting the iteration.
+         */
+        void generate_nonempty_iteration_constraint(DFSContext &ctx, EdgeID start_eid);
 
         /**
          * @brief One step of the DFS traversal of RCG.

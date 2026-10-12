@@ -169,6 +169,14 @@ namespace smt::noodler::ecma {
         return GraphFragment {v_in, v_out, {eid}};
     }
 
+    GraphFragment make_marker_fragment(RegexConstraintGraph& graph) {
+        const VertexID v_in = graph.create_vertex();
+        const VertexID v_out = graph.create_vertex();
+        const EdgeID eid = graph.create_edge(v_out, RCGEdgePayload{MarkerEdge{}});
+        graph.vertices[v_in].outgoing_edges.push_back(eid);
+        return GraphFragment{v_in, v_out, {eid}};
+    }
+
     // =============== REGEX CONSTRAINT GRAPH ==============
 
     void RegexConstraintGraph::add_vertex(RCGVertex vtx) {
@@ -957,6 +965,12 @@ namespace smt::noodler::ecma {
         }
     }
 
+    void ASTNodeDisjunction::collect_capture_groups(std::vector<GroupID>& gids) const {
+        for (const ASTNodeRef& alternative : m_alternatives) {
+            alternative->collect_capture_groups(gids);
+        }
+    }
+
     ASTNodeRef ASTNodeDisjunction::clone() const {
         auto cloned = std::make_unique<ASTNodeDisjunction>();
         for (const auto& alt : m_alternatives) {
@@ -1071,6 +1085,12 @@ namespace smt::noodler::ecma {
     void ASTNodeAlternative::strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) {
         for (const ASTNodeRef& term : m_terms) {
             term->strip_unreferenced_captures(referenced);
+        }
+    }
+
+    void ASTNodeAlternative::collect_capture_groups(std::vector<GroupID>& gids) const {
+        for (const ASTNodeRef& term : m_terms) {
+            term->collect_capture_groups(gids);
         }
     }
 
@@ -1233,6 +1253,12 @@ namespace smt::noodler::ecma {
         }
     }
 
+    void ASTNodeAssertion::collect_capture_groups(std::vector<GroupID>& gids) const {
+        if (m_subpattern != nullptr) {
+            m_subpattern->collect_capture_groups(gids);
+        }
+    }
+
     ASTNodeRef ASTNodeAssertion::clone() const {
         auto cloned = std::make_unique<ASTNodeAssertion>();
         cloned->m_assert_type = m_assert_type;
@@ -1327,24 +1353,58 @@ namespace smt::noodler::ecma {
         return cloned;
     }
 
-    ASTNodeRef ASTNodeQuantifier::unroll() const {
-        auto disj = std::make_unique<ASTNodeDisjunction>();
+    GraphFragment ASTNodeQuantifier::unroll(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        std::vector<GroupID> captures;
+        m_child->collect_capture_groups(captures);
 
-        if (m_range.min == 0) {
-            disj->add_alternative(std::make_unique<ASTNodeAlternative>());
-        }
-
-        // Create chains with (min, min+1, ..., max) subtrees and alternate them all.
+        // Create chains with (min, min+1, ..., max) iterations and alternate them all.
+        std::vector<GraphFragment> chains;
         const uint64_t start = std::max<uint64_t>(1, m_range.min);
         for (uint64_t k = start; k <= m_range.max; ++k) {
-            auto alt = std::make_unique<ASTNodeAlternative>();
-            for (uint64_t i = 0; i < k; ++i) {
-                alt->add_term(m_child->clone());
+            GraphFragment chain = make_iteration(graph, util_s, m, captures, 1);
+            for (uint64_t i = 2; i <= k; ++i) {
+                chain = chain_fragments(graph, chain, make_iteration(graph, util_s, m, captures, i));
             }
-            disj->add_alternative(std::move(alt));
+            chains.push_back(chain);
         }
 
-        return disj;
+        // Zero iterations
+        if (m_range.min == 0) {
+            chains.push_back(make_epsilon_fragment(graph, util_s, m));
+        }
+
+        SASSERT(!chains.empty());
+        GraphFragment result = chains[0];
+        for (std::size_t i = 1; i < chains.size(); ++i) {
+            result = alternate_fragments(graph, result, chains[i]);
+        }
+        return result;
+    }
+
+    GraphFragment ASTNodeQuantifier::make_iteration(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m,
+                                                    const std::vector<GroupID>& captures,
+                                                    const uint64_t iteration) const {
+        // The child is non-regular (checked in get_subgraph()), therefore its subgraph is always a fragment
+        const RegexComponent child_subgraph = m_child->get_subgraph(graph, util_s, m);
+        SASSERT(std::holds_alternative<GraphFragment>(child_subgraph));
+        const GraphFragment body = std::get<GraphFragment>(child_subgraph);
+        if (captures.empty()) {
+            return body;
+        }
+
+        // Marker edge starting the iteration -- resets the captures inside the child
+        const GraphFragment start = make_marker_fragment(graph);
+        const EdgeID start_eid = start.edges_pointing_to_vout[0];
+        graph.group_resets[start_eid] = captures;
+        GraphFragment result = chain_fragments(graph, start, body);
+
+        // Marker edge ending an iteration beyond the minimum -- the iteration must not match the empty string
+        if (iteration > m_range.min) {
+            const GraphFragment end = make_marker_fragment(graph);
+            graph.nonempty_iterations[end.edges_pointing_to_vout[0]] = start_eid;
+            result = chain_fragments(graph, result, end);
+        }
+        return result;
     }
 
     RegexComponent ASTNodeQuantifier::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
@@ -1356,8 +1416,12 @@ namespace smt::noodler::ecma {
             if (m_range.max == UNBOUNDED) {
                 util::throw_error("Unsupported regex structure: Non-regular constructs under kleene star/kleene plus");
             }
-            // Nonregular fragments under bounded quantifier -- statically unroll the AST and convert to graph fragment.
-            return unroll()->get_subgraph(graph, util_s, m);
+            // Zero iterations only -- matches the empty string and leaves all captures untouched.
+            if (m_range.max == 0) {
+                return app_ref(util_s.re.mk_epsilon(util_s.mk_string_sort()), m);
+            }
+            // Nonregular fragments under bounded quantifier -- statically unroll into the graph.
+            return unroll(graph, util_s, m);
         }
 
         // Regular subregex --> directly create the corresponding regular expression
@@ -1431,6 +1495,10 @@ namespace smt::noodler::ecma {
 
     void ASTNodeQuantifier::strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) {
         m_child->strip_unreferenced_captures(referenced);
+    }
+
+    void ASTNodeQuantifier::collect_capture_groups(std::vector<GroupID>& gids) const {
+        m_child->collect_capture_groups(gids);
     }
 
     uint64_t ASTNodeLiteral::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1596,6 +1664,14 @@ namespace smt::noodler::ecma {
             m_type = GroupType::NONCAPTURE;
         }
         m_child->strip_unreferenced_captures(referenced);
+    }
+
+    void ASTNodeGroup::collect_capture_groups(std::vector<GroupID>& gids) const {
+        // Same condition as in get_subgraph() -- every group that is not NONCAPTURE is tracked in the graph
+        if (m_type != GroupType::NONCAPTURE) {
+            gids.push_back(m_gid);
+        }
+        m_child->collect_capture_groups(gids);
     }
 
     ASTNodeRef ASTNodeGroup::clone() const {
@@ -2084,6 +2160,20 @@ namespace smt::noodler::ecma {
 
     bool DFSContext::has_group(GroupID gid) const {
         return m_group_vars.contains(gid);
+    }
+
+    void DFSContext::reset_groups(const std::vector<GroupID>& gids) {
+        for (GroupID gid : gids) {
+            m_group_vars.erase(gid);
+        }
+    }
+
+    void DFSContext::mark_iteration_start(EdgeID start_eid) {
+        m_iteration_starts[start_eid] = m_current_path_vars.size();
+    }
+
+    expr_ref DFSContext::concat_iteration_vars(EdgeID start_eid) const {
+        return concat_vars(m_iteration_starts.at(start_eid));
     }
 
     const std::vector<ActiveLookahead>& DFSContext::get_active_lookaheads() const {
@@ -2612,6 +2702,12 @@ namespace smt::noodler::ecma {
         }
     }
 
+    void RegexConstraintBuilder::generate_nonempty_iteration_constraint(DFSContext& ctx, const EdgeID start_eid) {
+        const expr_ref iteration_string = ctx.concat_iteration_vars(start_eid);
+        const app_ref is_empty(m_manager.mk_eq(iteration_string, m_util_s.str.mk_empty(m_str_sort)), m_manager);
+        ctx.add_path_constraint({m_manager.mk_not(is_empty), m_manager});
+    }
+
     void RegexConstraintBuilder::rcg_dfs_visit(const VertexID current_vertex, DFSContext& ctx) {
         // End of (sub)graph reached --> evaluate postponed lookaheads and commit current path
         if (current_vertex == ctx.get_end_vertex()) {
@@ -2626,16 +2722,29 @@ namespace smt::noodler::ecma {
             const RCGEdge& edge = m_graph.edges[eid];
             DFSStateSnapshot snapshot = ctx.save_snapshot();
 
+            // Start of a quantifier iteration -- reset the captures inside the quantified subpattern
+            if (m_graph.group_resets.contains(eid)) {
+                ctx.reset_groups(m_graph.group_resets.at(eid));
+                ctx.mark_iteration_start(eid);
+            }
+
             // Mark all groups that begin on this edge as active
             if (m_graph.group_starts.contains(eid)) {
                 ctx.start_groups(m_graph.group_starts.at(eid));
             }
 
             // Create a fresh variable (and add it to all the active capture groups) and generate constraints for the
-            // current edge
-            app_ref edge_var = ctx.create_edge_var();
-            ctx.push_edge_var_to_groups(edge_var);
-            generate_edge_constraints(ctx, edge, edge_var);
+            // current edge. Marker edges consume nothing and only carry bookkeeping, so they get no variable.
+            if (!std::holds_alternative<MarkerEdge>(edge.payload)) {
+                app_ref edge_var = ctx.create_edge_var();
+                ctx.push_edge_var_to_groups(edge_var);
+                generate_edge_constraints(ctx, edge, edge_var);
+            }
+
+            // End of a quantifier iteration beyond the minimum -- it must not match the empty string
+            if (m_graph.nonempty_iterations.contains(eid)) {
+                generate_nonempty_iteration_constraint(ctx, m_graph.nonempty_iterations.at(eid));
+            }
 
             // Mark all groups that end on this edge as inactive
             if (m_graph.group_ends.contains(eid)) {
