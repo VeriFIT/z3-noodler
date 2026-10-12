@@ -589,12 +589,18 @@ namespace smt::noodler {
                 Predicate new_pred;
                 if(generate_identities_suit(diff, new_pred) && new_pred != pr1.second && new_pred != pr2.second) {
                     new_preds.insert({index, new_pred});
-                    /// It assumes L = A B X; L = A B Y1 Y2 ... 
-                    /// diff.first should contain X; diff.second Y1 Y2
-                    if(diff.first.size() == 1) { // if a new predicate is of the form X = Y1 Y2 ... 
-                        rem_ids.insert(pr2.first); // remove L = A B Y1 Y2
-                    } else {
-                        rem_ids.insert(pr1.first);
+                    // Removing one equation of the pair is justified by the other one (pr1 && pr2 <-> kept && new_pred).
+                    // Hence, remove only if none of them is already removed, otherwise the justifications might
+                    // form a cycle (e.g., X = Y U, X = Y V, X = Y U W would remove all three equations).
+                    // The new identity is implied by the formula in any case.
+                    if(!rem_ids.contains(pr1.first) && !rem_ids.contains(pr2.first)) {
+                        /// It assumes L = A B X; L = A B Y1 Y2 ...
+                        /// diff.first should contain X; diff.second Y1 Y2
+                        if(diff.first.size() == 1) { // if a new predicate is of the form X = Y1 Y2 ...
+                            rem_ids.insert(pr2.first); // remove L = A B Y1 Y2
+                        } else {
+                            rem_ids.insert(pr1.first);
+                        }
                     }
                     index++;
                 }

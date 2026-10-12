@@ -1016,3 +1016,35 @@ TEST_CASE( "Infer alignment", "[noodler]" ) {
         CHECK(infer(preds, aut_ass) == std::set<Predicate>(preds.begin(), preds.end()));
     }
 }
+
+// issue #442: removals justified by each other must not remove all equations sharing a side
+TEST_CASE( "Generate identities circular removal", "[noodler]" ) {
+    BasicTerm x{ BasicTermType::Variable, "x"};
+    BasicTerm y{ BasicTermType::Variable, "y"};
+    BasicTerm u{ BasicTermType::Variable, "u"};
+    BasicTerm v{ BasicTermType::Variable, "v"};
+    BasicTerm w{ BasicTermType::Variable, "w"};
+    AutAssignment aut_ass({
+        {x, regex_to_nfa("a+")}, {y, regex_to_nfa("b+")}, {u, regex_to_nfa("ab|ba")},
+        {v, regex_to_nfa("(a|b)*")}, {w, regex_to_nfa("(a|b)*")},
+    });
+
+    std::vector<Predicate> eqs = {
+        Predicate::create_equation({x}, {y, u}),
+        Predicate::create_equation({x}, {y, v}),
+        Predicate::create_equation({x}, {y, u, w}),
+    };
+    std::vector<size_t> order = {0, 1, 2};
+    do {
+        Formula conj;
+        for (size_t i : order) {
+            conj.add_predicate(eqs[i]);
+        }
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        prep.generate_identities();
+        // x and y must stay constrained by some of the original equations
+        std::set<Predicate> res = prep.get_formula().get_predicates_set();
+        INFO(prep.get_formula().to_string());
+        CHECK(std::any_of(eqs.begin(), eqs.end(), [&res](const Predicate& eq) { return res.contains(eq); }));
+    } while (std::next_permutation(order.begin(), order.end()));
+}
