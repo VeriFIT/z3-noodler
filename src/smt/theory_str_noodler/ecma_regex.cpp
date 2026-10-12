@@ -2210,7 +2210,7 @@ namespace smt::noodler::ecma {
         }
     }
 
-    void DFSContext::push_lookahead(const std::variant<app_ref, GraphFragment>& subregex, bool is_positive) {
+    void DFSContext::push_lookahead(const RegexComponent& subregex, bool is_positive) {
         // Only a non-regular lookahead can contain backreferences
         std::unordered_map<GroupID, expr_ref_vector> closed_group_vars;
         if (std::holds_alternative<GraphFragment>(subregex)) {

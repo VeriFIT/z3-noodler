@@ -93,6 +93,20 @@ namespace smt::noodler::ecma {
         std::vector<EdgeID> edges_pointing_to_vout;
     };
 
+    /**
+     * The result type of ASTNode::get_subgraph(). Each AST node converts itself into
+     * one of two forms:
+     *
+     *   app_ref       -- the subtree is fully regular and collapses to a single Z3 regex expression.
+     *
+     *   GraphFragment -- the subtree contains non-regular constructs (backreferences, anchors, or lookarounds) and is
+     *                    represented as a sub-portion of the RCG. The DFS will traverse this subgraph and generate
+     *                    explicit string constraints for each path through it.
+     *
+     * The more subtrees are kept as app_refs, the smaller the RCG and the fewer constraints are generated.
+     */
+    using RegexComponent = std::variant<GraphFragment, app_ref>;
+
     enum class LookaroundDirection {
         FORWARD,
         BACKWARD
@@ -111,7 +125,7 @@ namespace smt::noodler::ecma {
      * rest of the lookbehind target.
      */
     struct Lookaround {
-        std::variant<app_ref, GraphFragment> subregex;
+        RegexComponent subregex;
         LookaroundDirection direction;
         bool is_positive;
         bool contains_lookahead = false;
@@ -323,19 +337,6 @@ namespace smt::noodler::ecma {
 
     // ================== ECMA REGEX AST ==================
 
-    /**
-     * The result type of ASTNode::get_subgraph(). Each AST node converts itself into
-     * one of two forms:
-     *
-     *   app_ref       -- the subtree is fully regular and collapses to a single Z3 regex expression.
-     *
-     *   GraphFragment -- the subtree contains non-regular constructs (backreferences, anchors, or lookarounds) and is
-     *                    represented as a sub-portion of the RCG. The DFS will traverse this subgraph and generate
-     *                    explicit string constraints for each path through it.
-     *
-     * The more subtrees are kept as app_refs, the smaller the RCG and the fewer constraints are generated.
-     */
-    using RegexComponent = std::variant<GraphFragment, app_ref>;
     class ASTNode;
     using ASTNodeRef = std::unique_ptr<ASTNode>;
     class ASTNodeAssertion;
@@ -804,7 +805,7 @@ namespace smt::noodler::ecma {
      * captures, not to the ones at the end of the path, which later iterations of a quantifier may reset or overwrite.
      */
     struct ActiveLookahead {
-        std::variant<app_ref, GraphFragment> subregex;
+        RegexComponent subregex;
         bool is_positive;
         std::size_t start_index;
         std::unordered_map<GroupID, expr_ref_vector> group_vars;
@@ -1043,7 +1044,7 @@ namespace smt::noodler::ecma {
          * @param subregex    The lookahead subregex.
          * @param is_positive The lookahead polarity.
          */
-        void push_lookahead(const std::variant<app_ref, GraphFragment>& subregex, bool is_positive);
+        void push_lookahead(const RegexComponent& subregex, bool is_positive);
 
         const std::vector<ActiveLookahead>& get_active_lookaheads() const;
 
