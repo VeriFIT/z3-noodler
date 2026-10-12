@@ -7,7 +7,7 @@ Eternal glory to Yu-Fang.
 #include "expr_solver.h"
 
 namespace smt::noodler {
-    lbool int_expr_solver::check_sat(expr* e) {
+    lbool int_expr_solver::check_sat(expr* e, bool compute_model, bool compute_unsat_core) {
         TRACE(str_lia, tout << "check_sat start\n";);
 
         erv.push_back(e);
@@ -16,14 +16,14 @@ namespace smt::noodler {
         erv.pop_back();
 
         reset_result();
-        if (r == lbool::l_false) {
+        if (compute_unsat_core && r == lbool::l_false) {
             expr_ref_vector raw_core(m);
             for (unsigned i = 0; i < solver.get_unsat_core_size(); ++i) {
                 raw_core.push_back(solver.get_unsat_core_expr(i));
             }
-            compute_unsat_core(raw_core);
+            this->compute_unsat_core(raw_core);
         }
-        if (r == lbool::l_true) {
+        if (compute_model && r == lbool::l_true) {
             model_ref mdl;
             solver.get_model(mdl);
             compute_model_formula(e, mdl);

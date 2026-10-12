@@ -17,7 +17,7 @@ namespace smt::noodler {
          * @param e Length formula
          * @return lbool Satisfiability check result
          */
-        lbool check_sat(expr* e) override;
+        lbool check_sat(expr* e, bool compute_model, bool compute_unsat_core) override;
     };
 }
 

@@ -18,7 +18,7 @@ namespace smt::noodler {
             this->fp.m_string_solver = symbol("none");
        }
 
-        lbool check_sat(expr* e) override;
+        lbool check_sat(expr* e, bool compute_model, bool compute_unsat_core) override;
     };
 }
 

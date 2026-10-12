@@ -6,7 +6,7 @@
 #include "smt/theory_str_noodler/quant_lia_solver.h"
 
 namespace smt::noodler {
-    lbool quant_lia_solver::check_sat(expr* e) {
+    lbool quant_lia_solver::check_sat(expr* e, bool compute_model, bool compute_unsat_core) {
         params_ref p;
 
         // parameters used by z3 for quantified LIA formulae
@@ -29,10 +29,10 @@ namespace smt::noodler {
         erv.pop_back();
 
         reset_result();
-        if (res == lbool::l_false) {
-            compute_unsat_core(raw_core);
+        if (compute_unsat_core && res == lbool::l_false) {
+            this->compute_unsat_core(raw_core);
         }
-        if (res == lbool::l_true) {
+        if (compute_model && res == lbool::l_true) {
             model_ref mdl;
             sl->get_model(mdl);
             compute_model_formula(e, mdl);

@@ -81,9 +81,11 @@ namespace smt::noodler {
          *        with any formulas previously provided via `initialize` or `assert_expr`.
          *
          * @param e The Z3 expression to check for satisfiability.
+         * @param compute_model Whether to also compute model from sat results
+         * @param compute_unsat_core Whether to also compute unsat core from unsat results
          * @return `l_true` if satisfiable, `l_false` if unsatisfiable, `l_undef` otherwise.
          */
-        virtual lbool check_sat(expr* e) = 0;
+        virtual lbool check_sat(expr* e, bool compute_model, bool compute_unsat_core) = 0;
 
         /// @brief Assert @p e for subsequent check_sat calls.
         void assert_expr(expr* e);

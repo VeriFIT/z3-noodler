@@ -864,6 +864,9 @@ namespace smt::noodler {
             return l_true;
         }
 
+        bool compute_model = (model_formula != nullptr);
+        bool compute_unsat_core = (unsat_core != nullptr);
+
         bool has_quantifier = expr_cases::has_quantifier(len_formula, m) || (check_with_context && this->input_has_quantifiers);
         m_rewrite(len_formula);
         std::unique_ptr<lia_solver> solver;
@@ -876,15 +879,15 @@ namespace smt::noodler {
         if (check_with_context) {
             solver->initialize(get_context(), true, check_with_clauses);
         }
-        lbool ret = solver->check_sat(len_formula);
+        lbool ret = solver->check_sat(len_formula, compute_model, compute_unsat_core);
         STRACE(str, tout << "ret" << (has_quantifier ? " (quant)" : "") << ": " << ret << std::endl;);
-        if (unsat_core != nullptr) {
+        if (compute_unsat_core) {
             expr_ref solver_core(m);
             solver_core = m.mk_true();
             solver->get_unsat_core(solver_core);
             *unsat_core = m.mk_and(*unsat_core, solver_core);
         }
-        if (model_formula != nullptr) {
+        if (compute_model) {
             *model_formula = filter_model_formula_to_length_vars(solver->get_model());
         }
         return ret;
