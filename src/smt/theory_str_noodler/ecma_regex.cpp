@@ -179,10 +179,6 @@ namespace smt::noodler::ecma {
 
     // =============== REGEX CONSTRAINT GRAPH ==============
 
-    void RegexConstraintGraph::add_vertex(RCGVertex vtx) {
-        vertices.push_back(std::move(vtx));
-    }
-
     VertexID RegexConstraintGraph::create_vertex() {
         VertexID new_id = vertices.size();
         vertices.emplace_back(new_id, std::vector<EdgeID> {});
@@ -192,16 +188,6 @@ namespace smt::noodler::ecma {
     VertexID RegexConstraintGraph::create_vertex(std::vector<EdgeID> edge_list) {
         VertexID new_id = vertices.size();
         vertices.emplace_back(new_id, std::move(edge_list));
-        return new_id;
-    }
-
-    void RegexConstraintGraph::add_edge(RCGEdge child) {
-        edges.push_back(std::move(child));
-    }
-
-    EdgeID RegexConstraintGraph::create_edge() {
-        EdgeID new_id = edges.size();
-        edges.emplace_back(new_id, UNKNOWN_VERTEX, BackrefEdge {0u});
         return new_id;
     }
 
@@ -947,12 +933,6 @@ namespace smt::noodler::ecma {
         return result_fragment;
     }
 
-    void ASTNodeDisjunction::strip_captures() {
-        for (const ASTNodeRef& alternative : m_alternatives) {
-            alternative->strip_captures();
-        }
-    }
-
     void ASTNodeDisjunction::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         for (const ASTNodeRef& alternative : m_alternatives) {
             alternative->collect_backrefs(refs);
@@ -976,14 +956,6 @@ namespace smt::noodler::ecma {
         for (const ASTNodeRef& alternative : m_alternatives) {
             alternative->collect_lookaround_scopes(enclosing, scopes);
         }
-    }
-
-    ASTNodeRef ASTNodeDisjunction::clone() const {
-        auto cloned = std::make_unique<ASTNodeDisjunction>();
-        for (const auto& alt : m_alternatives) {
-            cloned->add_alternative(alt->clone());
-        }
-        return cloned;
     }
 
     uint64_t ASTNodeAlternative::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1077,12 +1049,6 @@ namespace smt::noodler::ecma {
         return result;
     }
 
-    void ASTNodeAlternative::strip_captures() {
-        for (const ASTNodeRef& term : m_terms) {
-            term->strip_captures();
-        }
-    }
-
     void ASTNodeAlternative::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         for (const ASTNodeRef& term : m_terms) {
             term->collect_backrefs(refs);
@@ -1106,14 +1072,6 @@ namespace smt::noodler::ecma {
         for (const ASTNodeRef& term : m_terms) {
             term->collect_lookaround_scopes(enclosing, scopes);
         }
-    }
-
-    ASTNodeRef ASTNodeAlternative::clone() const {
-        auto cloned = std::make_unique<ASTNodeAlternative>();
-        for (const auto& term : m_terms) {
-            cloned->add_term(term->clone());
-        }
-        return cloned;
     }
 
     uint64_t ASTNodeAssertion::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1279,14 +1237,6 @@ namespace smt::noodler::ecma {
         return GraphFragment {v_in, v_out, {eid}};
     }
 
-    void ASTNodeAssertion::strip_captures() {
-        if (m_assert_type == TokenType::ASSERTION) {
-            // anchors have no capture groups to strip
-            return;
-        }
-        m_subpattern->strip_captures();
-    }
-
     void ASTNodeAssertion::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         if (m_subpattern != nullptr) {
             m_subpattern->collect_backrefs(refs);
@@ -1313,16 +1263,6 @@ namespace smt::noodler::ecma {
             m_subpattern->collect_lookaround_scopes(enclosing, scopes);
             enclosing.pop_back();
         }
-    }
-
-    ASTNodeRef ASTNodeAssertion::clone() const {
-        auto cloned = std::make_unique<ASTNodeAssertion>();
-        cloned->m_assert_type = m_assert_type;
-        cloned->m_payload = m_payload;
-        if (m_subpattern) {
-            cloned->m_subpattern = m_subpattern->clone();
-        }
-        return cloned;
     }
 
     GraphFragment ASTNodeAssertion::make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m,
@@ -1396,17 +1336,6 @@ namespace smt::noodler::ecma {
             }
         }
         m_child = std::move(term);
-    }
-
-    void ASTNodeQuantifier::strip_captures() {
-        m_child->strip_captures();
-    }
-
-    ASTNodeRef ASTNodeQuantifier::clone() const {
-        auto cloned = std::make_unique<ASTNodeQuantifier>();
-        cloned->m_range = m_range;
-        cloned->m_child = m_child->clone();
-        return cloned;
     }
 
     GraphFragment ASTNodeQuantifier::unroll(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
@@ -1587,10 +1516,6 @@ namespace smt::noodler::ecma {
         return app_ref(util_s.re.mk_to_re(str_unit), m);
     }
 
-    ASTNodeRef ASTNodeLiteral::clone() const {
-        return std::make_unique<ASTNodeLiteral>(*this);
-    }
-
     uint64_t ASTNodeDot::print_dot(std::ostream& out, uint64_t& node_count) const {
         const uint64_t id = ++node_count;
         out << "  node" << id << " [label=\"DOT\"];\n";
@@ -1603,10 +1528,6 @@ namespace smt::noodler::ecma {
 
     RegexComponent ASTNodeDot::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
         return app_ref(util_s.re.mk_full_char(nullptr), m);
-    }
-
-    ASTNodeRef ASTNodeDot::clone() const {
-        return std::make_unique<ASTNodeDot>(*this);
     }
 
     uint64_t ASTNodeBackref::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1629,10 +1550,6 @@ namespace smt::noodler::ecma {
         const EdgeID backref_eid = graph.create_edge(vout, {BackrefEdge {m_backref_id}});
         graph.vertices[vin].outgoing_edges.push_back(backref_eid);
         return GraphFragment {vin, vout, {backref_eid}};
-    }
-
-    ASTNodeRef ASTNodeBackref::clone() const {
-        return std::make_unique<ASTNodeBackref>(*this);
     }
 
     void ASTNodeBackref::collect_backrefs(std::unordered_set<GroupID>& refs) const {
@@ -1714,13 +1631,6 @@ namespace smt::noodler::ecma {
         return fragment;
     }
 
-    void ASTNodeGroup::strip_captures() {
-        if (m_type == GroupType::CAPTURE) {
-            m_type = GroupType::NONCAPTURE;
-        }
-        m_child->strip_captures();
-    }
-
     void ASTNodeGroup::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         m_child->collect_backrefs(refs);
     }
@@ -1746,14 +1656,6 @@ namespace smt::noodler::ecma {
             scopes.group_scopes[m_gid] = enclosing;
         }
         m_child->collect_lookaround_scopes(enclosing, scopes);
-    }
-
-    ASTNodeRef ASTNodeGroup::clone() const {
-        auto cloned = std::make_unique<ASTNodeGroup>();
-        cloned->m_type = m_type;
-        cloned->m_gid = m_gid;
-        cloned->m_child = m_child->clone();
-        return cloned;
     }
 
     uint64_t ASTNodeCharClass::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1895,10 +1797,6 @@ namespace smt::noodler::ecma {
         }
 
         return current_class_re;
-    }
-
-    ASTNodeRef ASTNodeCharClass::clone() const {
-        return std::make_unique<ASTNodeCharClass>(*this);
     }
 
     // =============== ECMA REGEX PARSER ===============
@@ -2891,9 +2789,5 @@ namespace smt::noodler::ecma {
             rcg_dfs_visit(edge.target, ctx);
             ctx.restore_snapshot(snapshot);
         }
-    }
-
-    bool GraphFragment::is_initialized() const {
-        return v_in == std::numeric_limits<VertexID>::max() && v_out == std::numeric_limits<VertexID>::max();
     }
 }  // namespace smt::noodler::ecma

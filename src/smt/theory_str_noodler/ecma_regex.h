@@ -91,7 +91,6 @@ namespace smt::noodler::ecma {
         VertexID v_in = std::numeric_limits<VertexID>::max();
         VertexID v_out = std::numeric_limits<VertexID>::max();
         std::vector<EdgeID> edges_pointing_to_vout;
-        bool is_initialized() const;
     };
 
     enum class LookaroundDirection {
@@ -203,11 +202,8 @@ namespace smt::noodler::ecma {
         VertexID start_vertex = UNKNOWN_VERTEX;
         VertexID end_vertex = UNKNOWN_VERTEX;
 
-        void add_vertex(RCGVertex vtx);
         VertexID create_vertex();
         VertexID create_vertex(std::vector<EdgeID> edge_list);
-        void add_edge(RCGEdge child);
-        EdgeID create_edge();
         EdgeID create_edge(VertexID target, RCGEdgePayload payload);
     };
 
@@ -375,26 +371,6 @@ namespace smt::noodler::ecma {
         virtual RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const = 0;
 
         /**
-         * @brief Return a deep copy of this node and all its children.
-         *
-         * Used by ASTNodeQuantifier::unroll() to duplicate the quantified subpattern multiple times without sharing AST
-         * nodes between copies.
-         *
-         * @return ASTNodeRef An independent copy of this node.
-         */
-        virtual ASTNodeRef clone() const = 0;
-
-        /**
-         * @brief Recursively convert all CAPTURE groups in this subtree to NONCAPTURE.
-         *
-         * Called when the subtree is under a fixed quantifier {n,m} to capture correct strings for further
-         * backreferences (the ECMAScript standard requires the last matched string in the quantifier to be captured by
-         * the group). Therefore, only the last capturing group is left as a CAPTURE group, all the preceding are marked
-         * as NONCAPTURE.
-         */
-        virtual void strip_captures() = 0;
-
-        /**
          * @brief Recursively collect IDs of all backreferences in this subtree.
          *
          * Used as a pre-pass before `build_rcg()` to determine which capture groups are actually referenced. The result
@@ -461,8 +437,6 @@ namespace smt::noodler::ecma {
          * @return RegexComponent app_ref if all alternatives are regular, GraphFragment otherwise.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
@@ -496,8 +470,6 @@ namespace smt::noodler::ecma {
          * @return RegexComponent app_ref if all terms are regular, GraphFragment otherwise.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
@@ -532,8 +504,6 @@ namespace smt::noodler::ecma {
          * @return RegexComponent Always returns a GraphFragment.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
@@ -592,8 +562,6 @@ namespace smt::noodler::ecma {
         uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         void set(const Token& t, ASTNodeRef term);
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
 
         /**
          * @brief Expand a bounded quantifier {min,max} with a non-regular child into the graph.
@@ -657,9 +625,6 @@ namespace smt::noodler::ecma {
         void set_char(Z3Char ch);
         Z3Char get_char() const;
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-
-        void strip_captures() override { }
 
     private:
         Z3Char m_char = std::numeric_limits<Z3Char>::max();
@@ -673,9 +638,6 @@ namespace smt::noodler::ecma {
         uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-
-        void strip_captures() override { }
     };
 
     /**
@@ -687,9 +649,6 @@ namespace smt::noodler::ecma {
         zstring serialize() const override;
         void set_ref(GroupID backref_number);
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-
-        void strip_captures() override { }
 
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
@@ -730,8 +689,6 @@ namespace smt::noodler::ecma {
          *                        for capture groups.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
@@ -770,9 +727,6 @@ namespace smt::noodler::ecma {
         void add_element(CharClassElement elem);
         void set_negation(bool neg);
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-
-        void strip_captures() override { }
 
     private:
         bool m_is_negated = false;
