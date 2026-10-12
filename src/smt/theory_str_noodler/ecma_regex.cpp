@@ -1636,7 +1636,8 @@ namespace smt::noodler::ecma {
     }
 
     void ASTNodeGroup::strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) {
-        if (m_type == GroupType::CAPTURE && !referenced.contains(m_gid)) {
+        bool can_be_referenced = (m_type == GroupType::CAPTURE || m_type == GroupType::NAMED);
+        if (can_be_referenced && !referenced.contains(m_gid)) {
             m_type = GroupType::NONCAPTURE;
         }
         m_child->strip_unreferenced_captures(referenced);
