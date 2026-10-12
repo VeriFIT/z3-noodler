@@ -1000,6 +1000,16 @@ namespace smt::noodler::ecma {
 
         bool has_group(GroupID gid) const;
 
+        bool is_group_active(GroupID gid) const;
+
+        /**
+         * @brief Return the variable lists of the capture groups that are closed at the current position.
+         *
+         * The capture of a group that is still open is undefined at the current position, so a backreference to it
+         * matches the empty string.
+         */
+        std::unordered_map<GroupID, expr_ref_vector> get_closed_group_vars() const;
+
         /**
          * @brief Reset the captures of the groups @p gids to undefined.
          *

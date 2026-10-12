@@ -2142,6 +2142,20 @@ namespace smt::noodler::ecma {
         return m_group_vars.contains(gid);
     }
 
+    bool DFSContext::is_group_active(GroupID gid) const {
+        return std::ranges::find(m_active_groups, gid) != m_active_groups.end();
+    }
+
+    std::unordered_map<GroupID, expr_ref_vector> DFSContext::get_closed_group_vars() const {
+        std::unordered_map<GroupID, expr_ref_vector> closed_group_vars;
+        for (const auto& [gid, vars] : m_group_vars) {
+            if (!is_group_active(gid)) {
+                closed_group_vars.emplace(gid, vars);
+            }
+        }
+        return closed_group_vars;
+    }
+
     void DFSContext::reset_groups(const std::vector<GroupID>& gids) {
         for (GroupID gid : gids) {
             m_group_vars.erase(gid);
@@ -2214,12 +2228,7 @@ namespace smt::noodler::ecma {
         // Only a non-regular lookahead can contain backreferences
         std::unordered_map<GroupID, expr_ref_vector> closed_group_vars;
         if (std::holds_alternative<GraphFragment>(subregex)) {
-            for (const auto& [gid, vars] : m_group_vars) {
-                // The capture of a group that is still open is undefined at this position
-                if (std::ranges::find(m_active_groups, gid) == m_active_groups.end()) {
-                    closed_group_vars.emplace(gid, vars);
-                }
-            }
+            closed_group_vars = get_closed_group_vars();
         }
         m_active_lookaheads.push_back(
             {subregex, is_positive, m_current_path_vars.size() - 1, std::move(closed_group_vars)});
@@ -2619,7 +2628,11 @@ namespace smt::noodler::ecma {
                 // The subregex lookbehind is evaluated in a separate run of DFS on the subgraph.
                 // We hand over x_lb which is the new global target for the inner DFS
                 // run. The constraints for x_lb are generated in the same way.
+                // Backreferences inside the lookbehind refer to the groups closed at the lookbehind position.
+                std::unordered_map<GroupID, expr_ref_vector> outer_group_vars =
+                    ctx.replace_group_vars(ctx.get_closed_group_vars());
                 const expr_ref inner_result = run_inner_rcg_dfs(subregex_fragment, subregex_lb_var, ctx);
+                ctx.replace_group_vars(std::move(outer_group_vars));
 
                 // Restore the original base prefix and suffix for the outer DFS run and add the generated constraints
                 // for the lookbehind.
@@ -2717,17 +2730,19 @@ namespace smt::noodler::ecma {
             }
         }
         // Backreference --> edge_var must be equal to the concatenation of all variables in the referenced group on the
-        // current path. If the referenced group is not active, it is a forward reference -- matches empty string.
+        // current path. If the referenced group has not been captured yet (forward reference) or is still open
+        // (backreference inside its own group), its capture is undefined -- matches empty string.
         // https://tc39.es/ecma262/2020/#sec-backreferencematcher -- "e. If `s` is undefined, return c(x)."
         else if (std::holds_alternative<BackrefEdge>(edge.payload)) {
             const GroupID ref_id = std::get<BackrefEdge>(edge.payload).backref_id;
-            if (ctx.has_group(ref_id)) {
+
+            if (ctx.has_group(ref_id) && !ctx.is_group_active(ref_id)) {
                 // Backreference -- concatenate all the variables accumulated in the capture group during the current
                 // path.
                 expr_ref captured_string = ctx.concat_group_vars(ref_id);
                 ctx.add_path_constraint({m_manager.mk_eq(edge_var, captured_string), m_manager});
             } else {
-                // Forward reference
+                // Forward reference or backreference inside its own group
                 ctx.add_path_constraint({m_manager.mk_eq(edge_var, m_util_s.str.mk_empty(m_str_sort)), m_manager});
             }
         } else {
