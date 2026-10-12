@@ -1737,14 +1737,14 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
                                                          "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
     }
 
-    SECTION("Positive lookahead with capture group followed by backreference") {
-        // (?=(a))\1 — lookahead captures group 1, then \1 references it.
-        REQUIRE(build_and_serialize_rcg("(?=(a))\\1", m) == "(RCG"
+    SECTION("Positive lookahead with capture group and backreference inside") {
+        // (?=(a)\1) — the lookahead captures group 1 and \1 inside the same lookahead references it.
+        REQUIRE(build_and_serialize_rcg("(?=(a)\\1)", m) == "(RCG"
                                                             " (EDGE *->* [MATCH re.all])"
                                                             " (EDGE *->* [LOOKAROUND ?= (FRAGMENT"
                                                             " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
-                                                            " (EDGE *->* [MATCH re.all]))])"  // <-- nová Sigma* hrana
                                                             " (EDGE *->* [BACKREF 1])"
+                                                            " (EDGE *->* [MATCH re.all]))])"
                                                             " (EDGE *->* [MATCH re.all])"
                                                             ")");
     }
@@ -1898,5 +1898,21 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
     SECTION("Zero iterations of non-regular subpattern stay regular") {
         REQUIRE(build_and_serialize_rcg("(?:(a)\\1){0}", m) ==
                 "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"\")]) (EDGE *->* [MATCH re.all]))");
+    }
+
+    // ---- Captures inside lookarounds ----
+
+    SECTION("Backreference outside the lookaround of its capture group is unsupported") {
+        REQUIRE_THROWS(build_and_serialize_rcg("^(?=(a))\\1b$", m));
+        REQUIRE_THROWS(build_and_serialize_rcg("^a(?<=(a))\\1$", m));
+        REQUIRE_THROWS(build_and_serialize_rcg("(?=(a))(?=\\1)", m));
+        REQUIRE_THROWS(build_and_serialize_rcg("(?=(?=(a))\\1)", m));
+    }
+
+    SECTION("Backreference inside the lookaround of its capture group is supported") {
+        REQUIRE_NOTHROW(build_and_serialize_rcg("(?=(a)\\1)", m));
+        REQUIRE_NOTHROW(build_and_serialize_rcg("(?=(?=(a)\\1))", m));
+        REQUIRE_NOTHROW(build_and_serialize_rcg("(a)(?=\\1)", m));
+        REQUIRE_NOTHROW(build_and_serialize_rcg("^(a)b(?<=\\1b)$", m));
     }
 }

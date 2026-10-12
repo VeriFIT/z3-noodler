@@ -971,6 +971,13 @@ namespace smt::noodler::ecma {
         }
     }
 
+    void ASTNodeDisjunction::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                       LookaroundScopes& scopes) const {
+        for (const ASTNodeRef& alternative : m_alternatives) {
+            alternative->collect_lookaround_scopes(enclosing, scopes);
+        }
+    }
+
     ASTNodeRef ASTNodeDisjunction::clone() const {
         auto cloned = std::make_unique<ASTNodeDisjunction>();
         for (const auto& alt : m_alternatives) {
@@ -1091,6 +1098,13 @@ namespace smt::noodler::ecma {
     void ASTNodeAlternative::collect_capture_groups(std::vector<GroupID>& gids) const {
         for (const ASTNodeRef& term : m_terms) {
             term->collect_capture_groups(gids);
+        }
+    }
+
+    void ASTNodeAlternative::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                       LookaroundScopes& scopes) const {
+        for (const ASTNodeRef& term : m_terms) {
+            term->collect_lookaround_scopes(enclosing, scopes);
         }
     }
 
@@ -1256,6 +1270,16 @@ namespace smt::noodler::ecma {
     void ASTNodeAssertion::collect_capture_groups(std::vector<GroupID>& gids) const {
         if (m_subpattern != nullptr) {
             m_subpattern->collect_capture_groups(gids);
+        }
+    }
+
+    void ASTNodeAssertion::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                     LookaroundScopes& scopes) const {
+        // Only lookarounds have a subpattern
+        if (m_subpattern != nullptr) {
+            enclosing.push_back(this);
+            m_subpattern->collect_lookaround_scopes(enclosing, scopes);
+            enclosing.pop_back();
         }
     }
 
@@ -1501,6 +1525,11 @@ namespace smt::noodler::ecma {
         m_child->collect_capture_groups(gids);
     }
 
+    void ASTNodeQuantifier::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                      LookaroundScopes& scopes) const {
+        m_child->collect_lookaround_scopes(enclosing, scopes);
+    }
+
     uint64_t ASTNodeLiteral::print_dot(std::ostream& out, uint64_t& node_count) const {
         const uint64_t id = ++node_count;
         out << "  node" << id << " [label=\"LITERAL ('" << static_cast<char>(m_char) << "')\"];\n";
@@ -1576,6 +1605,11 @@ namespace smt::noodler::ecma {
 
     void ASTNodeBackref::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         refs.insert(m_backref_id);
+    }
+
+    void ASTNodeBackref::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                   LookaroundScopes& scopes) const {
+        scopes.backref_scopes.emplace_back(m_backref_id, enclosing);
     }
 
     uint64_t ASTNodeGroup::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1672,6 +1706,14 @@ namespace smt::noodler::ecma {
             gids.push_back(m_gid);
         }
         m_child->collect_capture_groups(gids);
+    }
+
+    void ASTNodeGroup::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                 LookaroundScopes& scopes) const {
+        if (m_type != GroupType::NONCAPTURE) {
+            scopes.group_scopes[m_gid] = enclosing;
+        }
+        m_child->collect_lookaround_scopes(enclosing, scopes);
     }
 
     ASTNodeRef ASTNodeGroup::clone() const {
@@ -2429,6 +2471,25 @@ namespace smt::noodler::ecma {
 
     // ============= REGEX CONSTRAINT BUILDER =============
 
+    void RegexConstraintBuilder::check_lookaround_backrefs(const ASTNode& root) {
+        std::vector<const ASTNodeAssertion*> enclosing;
+        LookaroundScopes scopes;
+        root.collect_lookaround_scopes(enclosing, scopes);
+
+        for (const auto& [gid, backref_scope] : scopes.backref_scopes) {
+            if (!scopes.group_scopes.contains(gid) || scopes.group_scopes.at(gid).empty()) {
+                continue;
+            }
+            // Lookarounds enclosing the group are nested in each other, so if the innermost one encloses the
+            // backreference, all of them do
+            const ASTNodeAssertion* innermost = scopes.group_scopes.at(gid).back();
+            if (std::ranges::find(backref_scope, innermost) == backref_scope.end()) {
+                util::throw_error("Unsupported: backreference to a capture group inside a lookaround that does not "
+                                  "contain the backreference");
+            }
+        }
+    }
+
     RegexConstraintGraph RegexConstraintBuilder::build_rcg() {
         const ASTNodeRef root = m_parser.parse();
         // Get the subgraph from AST
@@ -2436,6 +2497,7 @@ namespace smt::noodler::ecma {
         std::unordered_set<GroupID> referenced_groups;
         root->collect_backrefs(referenced_groups);
         root->strip_unreferenced_captures(referenced_groups);
+        check_lookaround_backrefs(*root);
 
         const RegexComponent comp = root->get_subgraph(m_graph, m_util_s, m_manager);
 

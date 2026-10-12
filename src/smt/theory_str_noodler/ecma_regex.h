@@ -337,6 +337,17 @@ namespace smt::noodler::ecma {
     using RegexComponent = std::variant<GraphFragment, app_ref>;
     class ASTNode;
     using ASTNodeRef = std::unique_ptr<ASTNode>;
+    class ASTNodeAssertion;
+
+    /**
+     * Lookarounds enclosing the capture groups and backreferences of a regex, collected by
+     * ASTNode::collect_lookaround_scopes(). Every list holds the enclosing lookarounds from the outermost to the
+     * innermost one.
+     */
+    struct LookaroundScopes {
+        std::unordered_map<GroupID, std::vector<const ASTNodeAssertion*>> group_scopes;
+        std::vector<std::pair<GroupID, std::vector<const ASTNodeAssertion*>>> backref_scopes;
+    };
 
     class ASTNode {
     public:
@@ -404,6 +415,18 @@ namespace smt::noodler::ecma {
          * @param gids Vector to which every capture group ID found in the subtree is appended.
          */
         virtual void collect_capture_groups(std::vector<GroupID> &gids) const {}
+
+        /**
+         * @brief Recursively collect the lookarounds enclosing every capture group and backreference in this subtree.
+         *
+         * Used by RegexConstraintBuilder::check_lookaround_backrefs() to find backreferences to captures made inside
+         * a lookaround the backreference is not part of.
+         *
+         * @param enclosing The lookarounds enclosing this node, from the outermost to the innermost one.
+         * @param scopes    The collected lookaround scopes of capture groups and backreferences.
+         */
+        virtual void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                               LookaroundScopes& scopes) const { }
     };
 
     /**
@@ -438,6 +461,8 @@ namespace smt::noodler::ecma {
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         std::vector<ASTNodeRef> m_alternatives;
@@ -471,6 +496,8 @@ namespace smt::noodler::ecma {
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         std::vector<ASTNodeRef> m_terms;
@@ -504,6 +531,8 @@ namespace smt::noodler::ecma {
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         TokenType m_assert_type {};
@@ -577,6 +606,8 @@ namespace smt::noodler::ecma {
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         QuantifierRange m_range {};
@@ -646,6 +677,8 @@ namespace smt::noodler::ecma {
         void strip_captures() override { }
 
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         GroupID m_backref_id;
@@ -687,6 +720,8 @@ namespace smt::noodler::ecma {
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
         void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         GroupType m_type = GroupType::CAPTURE;
@@ -1177,6 +1212,18 @@ namespace smt::noodler::ecma {
 
         // Populated by generate_constraints(); holds every fresh Skolem constant introduced during DFS.
         app_ref_vector m_fresh_vars;
+
+        /**
+         * @brief Throw "unsupported" if a backreference refers to a capture group inside a lookaround that does not
+         * enclose the backreference.
+         *
+         * ES2020 keeps the captures made inside a successful positive lookaround, taken from its first inner match in
+         * backtracking order (lookarounds are atomic). The DFS evaluates a non-regular lookaround in a nested search
+         * and discards its captures, so such a backreference would wrongly match the empty string.
+         *
+         * @param root The root of the regex AST.
+         */
+        static void check_lookaround_backrefs(const ASTNode& root);
 
         /**
          * @brief Run an inner DFS on a subgraph to evaluate a non-regular lookaround.
