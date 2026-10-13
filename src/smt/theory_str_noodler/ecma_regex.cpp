@@ -1498,7 +1498,11 @@ namespace smt::noodler::ecma {
     }
 
     RegexComponent ASTNodeDot::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
-        return app_ref(util_s.re.mk_full_char(nullptr), m);
+        // Without the dotAll flag (flags are not supported), '.' matches any character except a line terminator
+        // https://tc39.es/ecma262/2020/#sec-atom
+        app* line_terminator = mk_char_union(util_s, LINE_TERMINATORS);
+        return app_ref(util_s.re.mk_inter(util_s.re.mk_full_char(nullptr), util_s.re.mk_complement(line_terminator)),
+                       m);
     }
 
     ASTNodeRef ASTNodeDot::clone() const {
