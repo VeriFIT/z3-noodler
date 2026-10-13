@@ -2263,7 +2263,7 @@ namespace smt::noodler::ecma {
             closed_group_vars = get_closed_group_vars();
         }
         m_active_lookaheads.push_back(
-            {subregex, is_positive, m_current_path_vars.size() - 1, std::move(closed_group_vars)});
+            {subregex, is_positive, m_current_path_vars.size(), std::move(closed_group_vars)});
     }
 
     std::unordered_map<GroupID, expr_ref_vector>
@@ -2294,28 +2294,10 @@ namespace smt::noodler::ecma {
     expr_ref DFSContext::concat_expr_vector(const expr_ref_vector& vars, const uint32_t start_idx,
                                             const uint32_t end_idx) const {
         const uint32_t actual_end = std::min(end_idx, vars.size());
-        expr* empty_str = m_util_s.str.mk_empty(m_str_sort);
-
         if (start_idx >= actual_end) {
-            return {empty_str, m_manager};
+            return {m_util_s.str.mk_empty(m_str_sort), m_manager};
         }
-
-        expr_ref_vector apps_to_concat {m_manager};
-        for (uint32_t i = start_idx; i < actual_end; i++) {
-            if (vars.get(i) != empty_str) {
-                apps_to_concat.push_back(vars.get(i));
-            }
-        }
-
-        if (apps_to_concat.empty()) {
-            return {empty_str, m_manager};
-        }
-        if (apps_to_concat.size() == 1) {
-            return {apps_to_concat.get(0), m_manager};
-        }
-
-        expr* concat = m_util_s.str.mk_concat(apps_to_concat, m_str_sort);
-        return {concat, m_manager};
+        return {m_util_s.str.mk_concat(actual_end - start_idx, vars.data() + start_idx, m_str_sort), m_manager};
     }
 
     expr_ref DFSContext::concat_vars(const uint32_t start_idx, const uint32_t end_idx) const {
@@ -2757,44 +2739,41 @@ namespace smt::noodler::ecma {
         }
     }
 
-    void RegexConstraintBuilder::generate_edge_constraints(DFSContext& ctx, const RCGEdge& edge,
-                                                           const app_ref& edge_var) {
-        // Get all the string variables preceding the currently processed edge.
+    void RegexConstraintBuilder::generate_assertion_constraints(DFSContext& ctx, const AssertionEdge& assertion) {
+        // Get all the string variables preceding the current position.
         // This is important for lookaround and anchor evaluation, since they are dependent on the absolute position in
         // the text.
         expr_ref global_prefix = ctx.get_global_prefix();
 
+        if (std::holds_alternative<Anchor>(assertion.payload)) {
+            const Z3Char anchor = std::get<Anchor>(assertion.payload);
+            // '^' anchor means 'nothing is matched before this position' --> global prefix must be empty
+            if (anchor == '^') {
+                ctx.add_path_constraint({m_manager.mk_eq(global_prefix, m_util_s.str.mk_empty(m_str_sort)), m_manager});
+            }
+            // '$' anchor means 'nothing is matched after this position' --> global prefix must be equal to the
+            // entire target string
+            else if (anchor == '$') {
+                ctx.add_path_constraint(
+                    {m_manager.mk_eq(global_prefix, app_ref(m_global_target_string, m_manager)), m_manager});
+            } else {
+                util::throw_error("Internal error: RegexConstraintBuilder::generate_assertion_constraints: anchor != "
+                                  "'$' && anchor != '^'");
+            }
+        } else if (std::holds_alternative<Lookaround>(assertion.payload)) {
+            handle_lookaround_constraints(ctx, assertion, global_prefix);
+        } else {
+            util::throw_error("Internal error: RegexConstraintBuilder::generate_assertion_constraints: Assertion is "
+                              "neither Anchor nor Lookaround");
+        }
+    }
+
+    void RegexConstraintBuilder::generate_edge_constraints(DFSContext& ctx, const RCGEdge& edge,
+                                                           const app_ref& edge_var) {
         // The edge contains regular payload --> generate str.in_re(edge_var, payload)
         if (std::holds_alternative<MatchEdge>(edge.payload)) {
             const app_ref regex = std::get<MatchEdge>(edge.payload).regex;
             ctx.add_path_constraint({m_util_s.re.mk_in_re(edge_var, regex), m_manager});
-        }
-        // Assertion (or zero-width assertion) --> no text is consumed, therefore edge_var = ""
-        else if (std::holds_alternative<AssertionEdge>(edge.payload)) {
-            const AssertionEdge& assertion = std::get<AssertionEdge>(edge.payload);
-            ctx.add_path_constraint({m_manager.mk_eq(edge_var, m_util_s.str.mk_empty(m_str_sort)), m_manager});
-            if (std::holds_alternative<Anchor>(assertion.payload)) {
-                const Z3Char anchor = std::get<Anchor>(assertion.payload);
-                // '^' anchor means 'nothing is matched before this position' --> global prefix must be empty
-                if (anchor == '^') {
-                    ctx.add_path_constraint(
-                        {m_manager.mk_eq(global_prefix, m_util_s.str.mk_empty(m_str_sort)), m_manager});
-                }
-                // '$' anchor means 'nothing is matched after this position' --> global prefix must be equal to the
-                // entire target string
-                else if (anchor == '$') {
-                    ctx.add_path_constraint(
-                        {m_manager.mk_eq(global_prefix, app_ref(m_global_target_string, m_manager)), m_manager});
-                } else {
-                    util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: anchor != "
-                                      "'$' && anchor != '^'");
-                }
-            } else if (std::holds_alternative<Lookaround>(assertion.payload)) {
-                handle_lookaround_constraints(ctx, assertion, global_prefix);
-            } else {
-                util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: Assertion is "
-                                  "neither Anchor nor Lookaround");
-            }
         }
         // Backreference --> edge_var must be equal to the concatenation of all variables in the referenced group on the
         // current path. If the referenced group has not been captured yet (forward reference) or is still open
@@ -2814,7 +2793,7 @@ namespace smt::noodler::ecma {
             }
         } else {
             util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: edge payload is "
-                              "neither BackrefEdge, AssertionEdge nor MatchEdge");
+                              "neither BackrefEdge nor MatchEdge");
         }
     }
 
@@ -2849,9 +2828,12 @@ namespace smt::noodler::ecma {
                 ctx.start_groups(m_graph.group_starts.at(eid));
             }
 
-            // Create a fresh variable (and add it to all the active capture groups) and generate constraints for the
-            // current edge. Marker edges consume nothing and only carry bookkeeping, so they get no variable.
-            if (!std::holds_alternative<MarkerEdge>(edge.payload)) {
+            // Zero-width assertions consume no text and marker edges only carry bookkeeping, therefore no variable is
+            // created for them. Other edges get a fresh variable (which is added to all the active capture groups) and
+            // constraints for the current edge.
+            if (std::holds_alternative<AssertionEdge>(edge.payload)) {
+                generate_assertion_constraints(ctx, std::get<AssertionEdge>(edge.payload));
+            } else if (!std::holds_alternative<MarkerEdge>(edge.payload)) {
                 app_ref edge_var = ctx.create_edge_var();
                 ctx.push_edge_var_to_groups(edge_var);
                 generate_edge_constraints(ctx, edge, edge_var);

@@ -184,7 +184,7 @@ namespace smt::noodler::ecma {
      *
      * Edges carry one of four payloads:
      *   - MatchEdge:      the edge variable belongs to a standard Z3 regex.
-     *   - AssertionEdge:  zero-width assertion (anchors, lookarounds); variable is "".
+     *   - AssertionEdge:  zero-width assertion (anchors, lookarounds); consumes nothing and gets no edge variable.
      *   - BackrefEdge:    the edge variable must equal the string captured by a group.
      *   - MarkerEdge:     consumes nothing and gets no edge variable, it only carries bookkeeping
      *                     (see `group_resets` and `nonempty_iterations`).
@@ -796,7 +796,7 @@ namespace smt::noodler::ecma {
      * the matched string, which is not yet known at that point. Instead, they are pushed onto a list and evaluated when
      * the graph traversal reaches the end vertex.
      *
-     * `start_index` is the index into `m_current_path_vars` at the moment the lookahead was encountered.
+     * `start_index` is the index into `m_current_path_vars` of the first variable after the position of the lookahead.
      * When the lookahead is evaluated at the end vertex, the suffix of the string is obtained by concatenating the
      * string variables from `start_index` to the end of `m_current_path_vars`.
      *
@@ -848,10 +848,11 @@ namespace smt::noodler::ecma {
     /**
      * Carries and manages all mutable state for a single DFS traversal of the RCG.
      *
-     * The DFS explores every path from start_vertex to end_vertex. Along the way, it accumulates edge variables
-     * (`m_current_path_vars`), constraints on those variables (`m_current_path_constraints`), and lists of variables
-     * for each capture group (`m_group_vars`). When a complete path is found, commit_current_path() merges all
-     * constraints into one conjunction and adds it to `m_unique_paths`.
+     * The DFS explores every path from start_vertex to end_vertex. Along the way, it accumulates variables of edges
+     * that consume text, i.e., all edges except zero-width assertions and marker edges (`m_current_path_vars`),
+     * constraints on those variables (`m_current_path_constraints`), and lists of variables for each capture group
+     * (`m_group_vars`). When a complete path is found, commit_current_path() merges all constraints into one
+     * conjunction and adds it to `m_unique_paths`.
      *
      * At vertices with multiple outgoing edges, `save_snapshot()` / `restore_snapshot()` are used to backtrack between
      * branches.
@@ -1268,7 +1269,15 @@ namespace smt::noodler::ecma {
         void generate_lookahead_constraints(DFSContext& ctx, expr_ref_vector& final_constraints);
 
         /**
-         * @brief Generate string constraints for a specific @p edge in the RCG based on the @p edge type.
+         * @brief Generate string constraints for a zero-width @p assertion (anchor or lookaround) at current position.
+         *
+         * @param ctx The DFS context containing the current path state and accumulated constraints.
+         * @param assertion The assertion for which constraints are to be generated.
+         */
+        void generate_assertion_constraints(DFSContext& ctx, const AssertionEdge& assertion);
+
+        /**
+         * @brief Generate string constraints for a match or backreference @p edge in the RCG based on the @p edge type.
          *
          * @param ctx The DFS context containing the current path state and accumulated constraints.
          * @param edge The edge for which constraints are to be generated.
