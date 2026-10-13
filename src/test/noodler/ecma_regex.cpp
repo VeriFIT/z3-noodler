@@ -1984,3 +1984,41 @@ TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
         REQUIRE(!util_s.str.is_in_re(formula));
     }
 }
+
+// Zero-width assertions consume no text, so no fresh variable is created for them (#507)
+TEST_CASE("ECMA Regex constraint generation for zero-width assertions", "[noodler][ecma]") {
+    using namespace smt::noodler::ecma;
+    using namespace smt::noodler::ecma::test;
+
+    ast_manager m;
+    reg_decl_plugins(m);
+    seq_util util_s(m);
+    const app_ref x(m.mk_const("x", util_s.mk_string_sort()), m);
+    theory_str_noodler_params params;
+
+    SECTION("Anchors do not introduce fresh variables") {
+        RegexConstraintBuilder builder(m, zstring("^(a)\\1$"), params);
+        builder.build_rcg();
+        const expr_ref formula = builder.generate_constraints(x);
+        REQUIRE(builder.get_fresh_vars().size() == 2);
+        REQUIRE(app_to_string(app_ref(to_app(formula), m), m) ==
+                "(and (= \"\" \"\")"
+                " (str.in_re ecma_re!0 (str.to_re \"a\"))"
+                " (= ecma_re!1 ecma_re!0)"
+                " (= (str.++ ecma_re!0 ecma_re!1) x)"
+                " (= x (str.++ ecma_re!0 ecma_re!1)))");
+    }
+
+    SECTION("Lookahead constrains the suffix after its position") {
+        RegexConstraintBuilder builder(m, zstring("a(?=b)c"), params);
+        builder.build_rcg();
+        const expr_ref formula = builder.generate_constraints(x);
+        REQUIRE(builder.get_fresh_vars().size() == 3);
+        REQUIRE(app_to_string(app_ref(to_app(formula), m), m) ==
+                "(and (str.in_re ecma_re!0 (str.to_re \"a\"))"
+                " (str.in_re ecma_re!1 (str.to_re \"c\"))"
+                " (= ecma_re!2 ecma_re!1)"
+                " (str.in_re ecma_re!2 (re.++ (str.to_re \"b\") re.all))"
+                " (= x (str.++ ecma_re!0 ecma_re!1)))");
+    }
+}
