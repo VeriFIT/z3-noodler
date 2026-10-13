@@ -2538,6 +2538,15 @@ namespace smt::noodler::ecma {
         // Just a little sanity check that the graph is (at least somehow) constructed
         SASSERT(m_graph.start_vertex != UNKNOWN_VERTEX);
 
+        // A graph consisting of a single path of match edges is regular --> the target string just has to belong to the
+        // regex of the whole path and no fresh variables are needed (the caller then adds a ground axiom instead of a
+        // quantified one)
+        const app_ref regular_regex = get_regular_path_regex();
+        if (regular_regex) {
+            m_fresh_vars.reset();
+            return {m_util_s.re.mk_in_re(target_string, regular_regex), m_manager};
+        }
+
         // Store the global target string in the context for access in nested DFS calls when evaluating anchors and
         // lookaheads
         m_global_target_string = target_string;
@@ -2574,6 +2583,32 @@ namespace smt::noodler::ecma {
 
     const app_ref_vector& RegexConstraintBuilder::get_fresh_vars() const {
         return m_fresh_vars;
+    }
+
+    app_ref RegexConstraintBuilder::get_regular_path_regex() {
+        std::vector<app*> regexes;
+        VertexID current_vertex = m_graph.start_vertex;
+        while (current_vertex != m_graph.end_vertex) {
+            const std::vector<EdgeID>& outgoing_edges = m_graph.vertices[current_vertex].outgoing_edges;
+            if (outgoing_edges.size() != 1) {
+                return app_ref(m_manager);
+            }
+            const RCGEdge& edge = m_graph.edges[outgoing_edges[0]];
+            if (!std::holds_alternative<MatchEdge>(edge.payload)) {
+                return app_ref(m_manager);
+            }
+            regexes.push_back(std::get<MatchEdge>(edge.payload).regex);
+            current_vertex = edge.target;
+        }
+
+        if (regexes.empty()) {
+            return {m_util_s.re.mk_epsilon(m_str_sort), m_manager};
+        }
+        app_ref result(regexes.back(), m_manager);
+        for (size_t i = regexes.size() - 1; i > 0; i--) {
+            result = m_util_s.re.mk_concat(regexes[i - 1], result);
+        }
+        return result;
     }
 
     expr_ref RegexConstraintBuilder::run_inner_rcg_dfs(const GraphFragment& fragment, app* target_string,

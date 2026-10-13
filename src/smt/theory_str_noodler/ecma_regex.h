@@ -1178,7 +1178,8 @@ namespace smt::noodler::ecma {
          * @brief Generate constraints for the given target string based on the RCG built from the regex pattern.
          *
          * Returns a ground formula whose auxiliary (fresh) string variables are Skolem constants. The list of those
-         * constants is available via get_fresh_vars() after this call returns.
+         * constants is available via get_fresh_vars() after this call returns. If the RCG is a single path of match
+         * edges, the formula is a plain regex membership of @p target_string without any fresh variables.
          *
          * @param target_string The string for which the regex constraints are to be generated.
          * @return expr_ref A ground Z3 expression that is satisfiable iff target matches the regex pattern.
@@ -1225,6 +1226,16 @@ namespace smt::noodler::ecma {
          * @param root The root of the regex AST.
          */
         static void check_lookaround_backrefs(const ASTNode& root);
+
+        /**
+         * @brief Get the regex of the whole RCG if the RCG is a single path consisting only of match edges.
+         *
+         * This is the case for regular patterns (possibly wrapped in Sigma* edges for the engine matching semantics).
+         *
+         * @return app_ref The concatenation of the regexes on the path, or null if the RCG is not a single path of
+         *                 match edges.
+         */
+        app_ref get_regular_path_regex();
 
         /**
          * @brief Run an inner DFS on a subgraph to evaluate a non-regular lookaround.

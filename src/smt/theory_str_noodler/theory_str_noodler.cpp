@@ -2296,7 +2296,10 @@ namespace smt::noodler {
             STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified) ---" << std::endl;
                    tout << mk_pp(ecma_formula.get(), m) << std::endl;
                    tout << ";; ----------------------------------" << std::endl;);
-            add_axiom(expr_ref(m.mk_iff(e, ecma_formula), m));
+            // The biconditional is added as two clauses instead of one iff: the iff would not make ¬C relevant, so
+            // a disequation in ¬C (e.g. x != "a" from x in (str.to_re "a")) would be ignored by the final check.
+            add_axiom(expr_ref(m.mk_or(m.mk_not(e), ecma_formula), m));
+            add_axiom(expr_ref(m.mk_or(e, m.mk_not(ecma_formula)), m));
         } else {
             // (1) Positive axiom: e → C_ground(x, sko1,...,skon)
             expr_ref pos_formula = ecma_formula;
