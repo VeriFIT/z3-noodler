@@ -1933,3 +1933,54 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
         REQUIRE_THROWS(build_and_serialize_rcg("(?<=(a)(?=\\1))", m));
     }
 }
+
+// =====================================================================
+// CONSTRAINT GENERATION – UNIT TESTS
+// =====================================================================
+
+TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
+    using namespace smt::noodler::ecma;
+    using namespace smt::noodler::ecma::test;
+
+    ast_manager m;
+    reg_decl_plugins(m);
+    seq_util util_s(m);
+    const app_ref x(m.mk_const("x", util_s.mk_string_sort()), m);
+    theory_str_noodler_params params;
+
+    // Regular patterns must not introduce fresh variables, otherwise the negative axiom becomes quantified (#495)
+    SECTION("Regular pattern generates a plain membership") {
+        RegexConstraintBuilder builder(m, zstring("a|b"), params);
+        builder.build_rcg();
+        const expr_ref formula = builder.generate_constraints(x);
+        REQUIRE(builder.get_fresh_vars().empty());
+        REQUIRE(app_to_string(app_ref(to_app(formula), m), m) ==
+                "(str.in_re x (re.union (str.to_re \"a\") (str.to_re \"b\")))");
+    }
+
+    SECTION("Regular pattern with engine semantics generates a membership in Sigma* R Sigma*") {
+        params.m_ecma_engine_semantics = true;
+        RegexConstraintBuilder builder(m, zstring("a"), params);
+        builder.build_rcg();
+        const expr_ref formula = builder.generate_constraints(x);
+        REQUIRE(builder.get_fresh_vars().empty());
+        REQUIRE(app_to_string(app_ref(to_app(formula), m), m) ==
+                "(str.in_re x (re.++ re.all (re.++ (str.to_re \"a\") re.all)))");
+    }
+
+    SECTION("Regular pattern with an unreferenced capture group generates a plain membership") {
+        RegexConstraintBuilder builder(m, zstring("(a)b"), params);
+        builder.build_rcg();
+        const expr_ref formula = builder.generate_constraints(x);
+        REQUIRE(builder.get_fresh_vars().empty());
+        REQUIRE(util_s.str.is_in_re(formula));
+    }
+
+    SECTION("Pattern with a backreference introduces fresh variables") {
+        RegexConstraintBuilder builder(m, zstring("(a)\\1"), params);
+        builder.build_rcg();
+        const expr_ref formula = builder.generate_constraints(x);
+        REQUIRE(!builder.get_fresh_vars().empty());
+        REQUIRE(!util_s.str.is_in_re(formula));
+    }
+}
