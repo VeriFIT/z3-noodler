@@ -8,11 +8,13 @@
 #include "util/zstring_view.h"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <ostream>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -32,11 +34,34 @@ namespace smt::noodler::ecma {
     constexpr Z3Char CH_SP = 0x0020;      // Space
     constexpr Z3Char CH_NBSP = 0x00A0;    // Non-Breaking Space
     constexpr Z3Char CH_ZWNBSP = 0xFEFF;  // Zero Width Non-Breaking Space (BOM)
-    constexpr Z3Char CH_US = 0x001F;      // Unit Separator
+    constexpr Z3Char CH_OGHAM = 0x1680;   // Ogham Space Mark
+    constexpr Z3Char CH_ENQUAD = 0x2000;  // En Quad (first of the spaces U+2000-U+200A)
+    constexpr Z3Char CH_HAIRSP = 0x200A;  // Hair Space (last of the spaces U+2000-U+200A)
+    constexpr Z3Char CH_NNBSP = 0x202F;   // Narrow No-Break Space
+    constexpr Z3Char CH_MMSP = 0x205F;    // Medium Mathematical Space
+    constexpr Z3Char CH_IDSP = 0x3000;    // Ideographic Space
     constexpr Z3Char CH_LF = 0x000A;      // Line Feed
     constexpr Z3Char CH_CR = 0x000D;      // Carriage Return
     constexpr Z3Char CH_LS = 0x2028;      // Line Separator
     constexpr Z3Char CH_PS = 0x2029;      // Paragraph Separator
+
+    // https://tc39.es/ecma262/2020/#sec-line-terminators
+    constexpr std::array<Z3Char, 4> LINE_TERMINATORS {CH_LF, CH_CR, CH_LS, CH_PS};
+    // https://tc39.es/ecma262/2020/#sec-white-space -- USP is every code point of the Unicode (13.0) category Zs, i.e.,
+    // SP, NBSP, CH_OGHAM, CH_NNBSP, CH_MMSP, CH_IDSP and the range CH_ENQUAD-CH_HAIRSP, which is not listed here
+    constexpr std::array<Z3Char, 10> WHITE_SPACES {CH_HT,     CH_VT,    CH_FF,    CH_SP,   CH_NBSP,
+                                                   CH_ZWNBSP, CH_OGHAM, CH_NNBSP, CH_MMSP, CH_IDSP};
+
+    /**
+     * @brief Make a regex matching exactly one of the characters @p chars.
+     */
+    static app* mk_char_union(seq_util& util_s, const std::span<const Z3Char> chars) {
+        app* result = util_s.re.mk_to_re(util_s.str.mk_string(chars[0]));
+        for (std::size_t i = 1; i < chars.size(); i++) {
+            result = util_s.re.mk_union(result, util_s.re.mk_to_re(util_s.str.mk_string(chars[i])));
+        }
+        return result;
+    }
 
     zstring sanitize_ecma_regex_input(const zstring& raw_input) {
         std::ostringstream sanitized;
@@ -1701,14 +1726,12 @@ namespace smt::noodler::ecma {
                     }
                     case 's':
                     case 'S': {
-                        constexpr std::array<Z3Char, 11> whitespaces {CH_HT, CH_VT, CH_FF, CH_SP, CH_NBSP, CH_ZWNBSP,
-                                                                      CH_US, CH_LF, CH_CR, CH_LS, CH_PS};
-                        // Unite all the whitespaces
-                        app* re_whitespace = util_s.re.mk_to_re(util_s.str.mk_string(whitespaces[0]));
-                        for (std::size_t i = 1; i < whitespaces.size(); i++) {
-                            app* whitespace_str = util_s.re.mk_to_re(util_s.str.mk_string(whitespaces[i]));
-                            re_whitespace = util_s.re.mk_union(re_whitespace, whitespace_str);
-                        }
+                        // Whitespace character class -- WhiteSpace or LineTerminator
+                        // https://tc39.es/ecma262/2020/#sec-characterclassescape
+                        app* space_range =
+                            util_s.re.mk_range(util_s.str.mk_string(CH_ENQUAD), util_s.str.mk_string(CH_HAIRSP));
+                        app* re_whitespace = util_s.re.mk_union(mk_char_union(util_s, WHITE_SPACES), space_range);
+                        re_whitespace = util_s.re.mk_union(re_whitespace, mk_char_union(util_s, LINE_TERMINATORS));
                         // Non-whitespace class -- Sigma* - \s
                         if (elem.lower == 'S') {
                             re_whitespace = util_s.re.mk_inter(util_s.re.mk_full_char(nullptr),
