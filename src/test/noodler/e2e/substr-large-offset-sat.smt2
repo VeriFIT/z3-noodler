@@ -1,0 +1,7 @@
+(set-info :status sat)
+(declare-fun s () String)
+(declare-fun t () String)
+(assert (<= (str.len s) 10))
+(assert (= t (str.substr s 100 2)))
+(assert (str.in_re (str.++ t "b") (re.+ (str.to_re "b"))))
+(check-sat)
