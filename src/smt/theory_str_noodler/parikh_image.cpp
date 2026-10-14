@@ -422,6 +422,7 @@ namespace smt::noodler::parikh {
         // create mapping: AtomicSymbol a -> var_a
         std::map<ca::AtomicSymbol, LenNode> sum_symb {};
         for(const ca::AtomicSymbol& as : this->atomic_symbols) {
+            if (as.type == ca::AtomicSymbol::TagType::LETTER) continue; // <A,x,symb> only distinguishes transitions, it is not counted
             this->tag_occurence_count_vars.insert({as, util::mk_noodler_var_fresh("symb")});
             sum_symb.insert( {as, LenNode(LenFormulaType::PLUS)});
         }
@@ -431,6 +432,7 @@ namespace smt::noodler::parikh {
             // set of atomic symbols
             auto symb = this->ca.alph.get_symbol(std::get<1>(trans));
             for(const ca::AtomicSymbol& as : symb) {
+                if (as.type == ca::AtomicSymbol::TagType::LETTER) continue;
                 sum_symb.at(as).succ.emplace_back(LenNode(var));
             }
         }
@@ -1236,15 +1238,28 @@ namespace smt::noodler::parikh {
         return ca.metadata.where_is_state_copied_from[state];
     }
 
-    std::unordered_map<StatePair, std::vector<LenNode>> ParikhImageNotContTag::group_isomorphic_transitions_across_copies(const std::map<Transition, BasicTerm>& parikh_image) const {
-        std::unordered_map<StatePair, std::vector<LenNode>> isomorphic_transitions;
+    mata::Symbol ParikhImageNotContTag::get_transition_letter(const mata::Symbol transition_symbol) const {
+        // Non-sampling transitions carry the letter in <A,x,symb>, sampling transitions in <R,x,i,symb>
+        for (const ca::AtomicSymbol& tag : this->ca.alph.get_symbol(transition_symbol)) {
+            if (tag.type == ca::AtomicSymbol::TagType::LETTER || tag.type == ca::AtomicSymbol::TagType::REGISTER_STORE) {
+                return tag.symbol;
+            }
+        }
+        return mata::nfa::EPSILON; // e.g., epsilon transitions connecting automata of different variables
+    }
+
+    std::map<IsomorphicTransitionKey, std::vector<LenNode>> ParikhImageNotContTag::group_isomorphic_transitions_across_copies(const std::map<Transition, BasicTerm>& parikh_image) const {
+        std::map<IsomorphicTransitionKey, std::vector<LenNode>> isomorphic_transitions;
 
         for (auto& [transition, transition_var]: parikh_image) {
-            size_t source_state = this->map_copy_state_into_its_origin(std::get<0>(transition));
-            size_t target_state = this->map_copy_state_into_its_origin(std::get<2>(transition));
+            mata::nfa::State source_state = this->map_copy_state_into_its_origin(std::get<0>(transition));
+            mata::Symbol letter = this->get_transition_letter(std::get<1>(transition));
+            mata::nfa::State target_state = this->map_copy_state_into_its_origin(std::get<2>(transition));
 
-            StatePair state_pair = {source_state, target_state};
-            std::vector<LenNode>& isomorphic_transition_vars = isomorphic_transitions[state_pair];
+            // The letter has to be a part of the key: grouping only by states would allow the runs to read
+            // different letters on a transition with multiple letters (issue #463).
+            IsomorphicTransitionKey key = {source_state, letter, target_state};
+            std::vector<LenNode>& isomorphic_transition_vars = isomorphic_transitions[key];
             isomorphic_transition_vars.push_back(transition_var);
         }
 
@@ -1252,15 +1267,15 @@ namespace smt::noodler::parikh {
     }
 
     LenNode ParikhImageNotContTag::mk_parikh_images_encode_same_word_formula(const std::map<Transition, BasicTerm>& parikh_image, const std::map<Transition, BasicTerm>& other_image) const {
-        std::unordered_map<StatePair, std::vector<LenNode>> isomorphic_transitions = group_isomorphic_transitions_across_copies(parikh_image);
-        std::unordered_map<StatePair, std::vector<LenNode>> other_isomorphic_transitions = group_isomorphic_transitions_across_copies(other_image);
+        std::map<IsomorphicTransitionKey, std::vector<LenNode>> isomorphic_transitions = group_isomorphic_transitions_across_copies(parikh_image);
+        std::map<IsomorphicTransitionKey, std::vector<LenNode>> other_isomorphic_transitions = group_isomorphic_transitions_across_copies(other_image);
 
         assert (isomorphic_transitions.size() == other_isomorphic_transitions.size()); // Sanity
 
         std::vector<LenNode> resulting_conjunction_atoms;
 
-        for (auto& [state_pair, transition_vars] : isomorphic_transitions) {
-            auto other_transition_vars_bucket = other_isomorphic_transitions.find(state_pair);
+        for (auto& [key, transition_vars] : isomorphic_transitions) {
+            auto other_transition_vars_bucket = other_isomorphic_transitions.find(key);
 
             assert (other_transition_vars_bucket != other_isomorphic_transitions.end());
 
@@ -1309,6 +1324,12 @@ namespace smt::noodler::parikh {
         LenNode top_level_parikh = compute_parikh_image();
         std::map<Transition, BasicTerm> top_level_parikh_vars = this->get_trans_vars();
 
+        // Bind the lengths |x| to the tag counters #<L,x> of the top-level run. This has to be done before
+        // the second-level Parikh image is computed, as it replaces the tag counters with fresh variables,
+        // which are existentially quantified inside the FORALL (issue #462).
+        LenNode var_lengths_from_tag_count_formula = get_var_length(not_contains.get_set());
+        STRACE(str_not_contains, tout << "* get_var_length:  " << std::endl << var_lengths_from_tag_count_formula << std::endl << std::endl;);
+
         // #Optimize(mhecko): We should just rename the variables found in the formula instead
         //                    of recomputing it from scratch.
 
@@ -1328,9 +1349,6 @@ namespace smt::noodler::parikh {
 
         LenNode mismatch = get_nt_all_mismatch_formula(not_contains);
         STRACE(str_not_contains, tout << "* get_mismatch_formula:  " << std::endl << mismatch << std::endl << std::endl;);
-
-        LenNode var_lengths_from_tag_count_formula = get_var_length(not_contains.get_set());
-        STRACE(str_not_contains, tout << "* get_var_length:  " << std::endl << var_lengths_from_tag_count_formula << std::endl << std::endl;);
 
         LenNode diff_symbol = get_diff_symbol_formula();
         STRACE(str_not_contains, tout << "* get_diff_symbol_formula:  " << std::endl << diff_symbol << std::endl << std::endl;);

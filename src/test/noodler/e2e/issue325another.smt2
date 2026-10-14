@@ -1,7 +1,0 @@
-; (set-info :status unknown)
-(set-info :status sat)
-(declare-const r Real)
-(declare-const s String)
-(assert (forall ((i Int)) (or (< i 0) (> i (to_int r)))))
-(assert (str.< "a" s))
-(check-sat)

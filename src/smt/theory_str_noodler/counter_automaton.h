@@ -95,6 +95,7 @@ namespace smt::noodler::ca {
      * <L,var> counts the length of a string assignment of variable var
      * <P,var,i> counts the i-th mismatch in variable var (i=label)
      * <R,x,i,symb> captures i-th mismatch symbol (i=label)
+     * <A,x,symb> marks the alphabet symbol read by a non-sampling transition
      */
     struct AtomicSymbol {
 
@@ -103,6 +104,7 @@ namespace smt::noodler::ca {
             MISMATCH_POS   = 1, // <P, var, mismatch_idx>
             REGISTER_STORE = 2, // <R, disequation, side, mismatch_idx, alphabet_symbol>
             COPY_PREVIOUS  = 3, // <C, var, disequation, side, mismatch_idx>
+            LETTER         = 4, // <A, var, alphabet_symbol>
         };
 
         enum class PredicateSide : uint8_t {
@@ -162,6 +164,9 @@ namespace smt::noodler::ca {
                                    << ", " << this->copy_idx << ">";
                     return string_builder.str();
                 }
+                case TagType::LETTER: { // <A, var, alphabet_symbol>
+                    return "<A, " + var_escape + ", " + std::to_string(this->symbol) + ">";
+                }
             }
             UNREACHABLE();
             return ""; // return dummy value
@@ -202,6 +207,14 @@ namespace smt::noodler::ca {
             // and it is seen when transitioning from i-th copy. The symbol is the same as the one
             // sampled in previous sampling transition.
             return AtomicSymbol{TagType::COPY_PREVIOUS, var, predicate_idx, side, copy_idx, 0};
+        }
+
+        /**
+         * Create a tag marking that a non-sampling transition reads @p symbol. The tag is used only to distinguish
+         * transitions reading different symbols (it does not affect the counting of other tags).
+         */
+        static AtomicSymbol create_a_symbol(const BasicTerm& var, mata::Symbol symbol) {
+            return AtomicSymbol{TagType::LETTER, var, 0, PredicateSide::LEFT, 0, symbol};
         }
 
     private:

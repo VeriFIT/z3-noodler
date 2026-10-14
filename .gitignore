@@ -131,3 +131,4 @@ bazel-*
 .deeptest/
 tptp_test/
 tptp_benchmarks/
+.explain/

@@ -1,4 +1,4 @@
-(set-info :status sat)
+(set-info :status unknown)
 (declare-const x Real)
 (declare-const t String)
 (assert (forall ((i Int)) (or (< i 0) (> i (to_int x)))))
