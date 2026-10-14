@@ -1,15 +1,18 @@
 name: Z3-Noodler Web (GitHub Pages)
 
-# Builds the Z3-Noodler command-line solver to WebAssembly (web/build-wasm.sh), smoke-tests it in
-# Node.js (web/smoke-test.mjs) and deploys the page in web/site to GitHub Pages
-# (https://verifit.github.io/z3-noodler/).
+# Builds the Z3-Noodler web site and deploys it to GitHub Pages
+# (https://verifit.github.io/z3-noodler/):
+# - the playground (web/site/playground): the command-line solver compiled to WebAssembly
+#   (web/build-wasm.sh) and smoke-tested in Node.js (web/smoke-test.mjs)
+# - the site itself: Jekyll sources in web/site, built by GitHub's own Pages builder
+#   (actions/jekyll-build-pages); the playground has no front matter, so Jekyll copies it unchanged
 #
-# - nightly (schedule, default branch): rebuilds and redeploys the page only if the deployed page
-#   (its version.json) was built from a different commit than the current HEAD
+# - nightly (schedule, default branch): rebuilds and redeploys the site only if the deployed
+#   playground (its version.json) was built from a different commit than the current HEAD
 # - manually (workflow_dispatch): the same; the `force` input rebuilds and redeploys even if the
-#   deployed page is up to date
-# - pull requests changing the page, this workflow or the CMake files the web build depends on:
-#   build and smoke test only, never deploy
+#   deployed site is up to date
+# - pull requests changing the site, this workflow or the CMake files the web build depends on:
+#   build and test only (WebAssembly smoke test and Jekyll build), never deploy
 
 on:
   schedule:
@@ -17,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Rebuild and redeploy even if the deployed page is built from the current commit'
+        description: 'Rebuild and redeploy even if the deployed site is built from the current commit'
         type: boolean
         default: false
   pull_request:
@@ -65,7 +68,8 @@ jobs:
 
       # github.sha is the HEAD of the default branch for scheduled runs (and the HEAD of the chosen
       # branch for manual runs); the build job checks out exactly this commit, so it is also the
-      # commit that build-wasm.sh writes to version.json.
+      # commit that build-wasm.sh writes to playground/version.json. The Jekyll sources are in the
+      # same repository, so a site built from HEAD is up to date in both parts.
       - name: Compare the deployed version with HEAD
         id: decide
         env:
@@ -77,24 +81,24 @@ jobs:
           build=true
           deploy=false
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            reason="Pull request: build and smoke test only, no deployment."
+            reason="Pull request: build and test only, no deployment."
           else
             deploy=true
-            # Commit the deployed page was built from; empty when it cannot be determined (nothing
+            # Commit the deployed site was built from; empty when it cannot be determined (nothing
             # deployed yet, network error, ...), which means rebuilding.
             deployed="$(curl --fail --silent --show-error --location --retry 3 --max-time 60 \
                           --header 'Cache-Control: no-cache' \
-                          "${PAGES_URL%/}/version.json?run=${GITHUB_RUN_ID}" \
+                          "${PAGES_URL%/}/playground/version.json?run=${GITHUB_RUN_ID}" \
                         | jq -r '.commit // empty')" || deployed=""
             [[ "$deployed" =~ ^[0-9a-f]{40}$ ]] || deployed=""
             if [[ "$FORCE" == true ]]; then
-              reason="Forced rebuild (deployed page: ${deployed:-unknown}, HEAD: $HEAD_SHA)."
+              reason="Forced rebuild (deployed site: ${deployed:-unknown}, HEAD: $HEAD_SHA)."
             elif [[ "$deployed" == "$HEAD_SHA" ]]; then
               build=false
               deploy=false
-              reason="The deployed page is already built from HEAD ($HEAD_SHA), nothing to do."
+              reason="The deployed site is already built from HEAD ($HEAD_SHA), nothing to do."
             else
-              reason="The deployed page is built from ${deployed:-an unknown commit}, HEAD is $HEAD_SHA: rebuilding."
+              reason="The deployed site is built from ${deployed:-an unknown commit}, HEAD is $HEAD_SHA: rebuilding."
             fi
           fi
           echo "$reason"
@@ -105,11 +109,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build & smoke test
+    name: Build & test
     needs: decide
     if: needs.decide.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    permissions:
+      contents: read
+      # the Jekyll build (its jekyll-github-metadata plugin) reads the repository's Pages settings,
+      # e.g. the base URL /z3-noodler under which the site is served
+      pages: read
     env:
       # Compilation results are cached with ccache between runs (see the build step), so a nightly
       # rebuild after a few commits recompiles only the changed sources. The paths are stable
@@ -155,7 +164,7 @@ jobs:
           CCACHE_COMPILERCHECK: string:emsdk-${{ env.EM_VERSION }}
         run: |
           ccache --zero-stats
-          web/build-wasm.sh web/site
+          web/build-wasm.sh web/site/playground
           ccache --show-stats
 
       # Saved also when a later step fails, so that a fixed build reuses the compiled objects.
@@ -171,10 +180,10 @@ jobs:
           {
             echo '### Z3-Noodler web build'
             echo '```json'
-            cat web/site/version.json
+            cat web/site/playground/version.json
             echo '```'
-            echo "noodler.wasm: $(stat -c %s web/site/noodler.wasm | numfmt --to=iec --suffix=B)" \
-                 "($(gzip -9 -c web/site/noodler.wasm | wc -c | numfmt --to=iec --suffix=B) gzipped)"
+            echo "noodler.wasm: $(stat -c %s web/site/playground/noodler.wasm | numfmt --to=iec --suffix=B)" \
+                 "($(gzip -9 -c web/site/playground/noodler.wasm | wc -c | numfmt --to=iec --suffix=B) gzipped)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Node.js
@@ -183,13 +192,22 @@ jobs:
           node-version: 24
 
       - name: Smoke test
-        run: node web/smoke-test.mjs web/site
+        run: node web/smoke-test.mjs web/site/playground
 
-      - name: Upload the page
+      # The same builder (github-pages gem: Jekyll 3.10, the Minimal theme, GitHub's plugins) that
+      # GitHub uses for sites deployed from a branch; also validates the site in pull requests.
+      # web/site/playground (including the files built above) is copied to _site/playground.
+      - name: Build the site with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./web/site
+          destination: ./_site
+
+      - name: Upload the site
         if: needs.decide.outputs.deploy == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
-          path: web/site
+          path: _site
 
   deploy:
     name: Deploy to GitHub Pages

@@ -1,13 +1,13 @@
-// Smoke test of the WebAssembly build used by the web page: runs a few SMT-LIB inputs through
-// noodler.js in Node.js, the same way the page's worker does (fresh instance per run, input in the
-// in-memory file system, CLI arguments through callMain), and checks the answers.
+// Smoke test of the WebAssembly build used by the playground: runs a few SMT-LIB inputs through
+// noodler.js in Node.js, the same way the playground's worker does (fresh instance per run, input
+// in the in-memory file system, CLI arguments through callMain), and checks the answers.
 //
-// Usage: node web/smoke-test.mjs [SITE_DIR]   (default: web/site)
+// Usage: node web/smoke-test.mjs [DIR]   (default: web/site/playground)
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const siteDir = path.resolve(process.argv[2] ?? path.join(import.meta.dirname, 'site'));
+const siteDir = path.resolve(process.argv[2] ?? path.join(import.meta.dirname, 'site', 'playground'));
 const require = createRequire(import.meta.url);
 const createNoodler = require(path.join(siteDir, 'noodler.js'));
 const wasmModule = await WebAssembly.compile(fs.readFileSync(path.join(siteDir, 'noodler.wasm')));
