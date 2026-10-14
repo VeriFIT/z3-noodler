@@ -812,22 +812,37 @@ namespace smt::noodler::ecma {
     };
 
     /**
+     * A single change of the capture group variables made during the DFS traversal, recorded so that
+     * restore_snapshot() can undo it when backtracking.
+     */
+    struct GroupVarsChange {
+        enum class Kind {
+            APPEND,  // an edge variable was appended to the variables of the group
+            CREATE,  // the group was started for the first time
+            RESET,   // the group was started again, its previous variables were saved for restoring
+            ERASE,   // the capture of the group was reset to undefined, its previous variables were saved for restoring
+        };
+
+        Kind kind;
+        GroupID gid;
+    };
+
+    /**
      * A snapshot of the DFS context at a concrete point in the traversal.
      *
      * Saved before entering each outgoing edge of a vertex so that, after exploring one branch of an alternation, the
      * context can be fully restored before entering the next branch.
      *
-     * Group variable vectors are deep-copied into this snapshot. This is necessary because restore_snapshot() must undo
-     * any appends that occurred during the already explored branch.
+     * The group variables are not copied into this snapshot, only the number of their changes recorded so far is
+     * saved. restore_snapshot() then undoes all the changes recorded after the snapshot was taken.
      */
     struct DFSStateSnapshot {
     public:
         unsigned num_path_vars = 0;
         unsigned num_path_constraints = 0;
         unsigned num_active_lookaheads = 0;
+        unsigned num_group_vars_changes = 0;
         std::vector<GroupID> active_groups;
-
-        std::unordered_map<GroupID, std::unique_ptr<expr_ref_vector>> group_vars;
     };
 
     /**
@@ -854,8 +869,9 @@ namespace smt::noodler::ecma {
      * (`m_group_vars`). When a complete path is found, commit_current_path() merges all constraints into one
      * conjunction and adds it to `m_unique_paths`.
      *
-     * At vertices with multiple outgoing edges, `save_snapshot()` / `restore_snapshot()` are used to backtrack between
-     * branches.
+     * Before each outgoing edge of a vertex, `save_snapshot()` / `restore_snapshot()` are used to backtrack between
+     * branches. Changes of the group variables are recorded in an undo trail (`m_group_vars_changes`), so that
+     * restoring a snapshot only undoes the changes made after it was taken.
      *
      * For non-regular lookarounds, the outer DFS state is moved into an `OuterSearchState` via
      * `suspend_for_inner_search()`, a nested DFS runs with fresh state, and then `resume_from_inner_search()` restores
@@ -895,8 +911,8 @@ namespace smt::noodler::ecma {
          * @brief Save the current DFS state before exploring one outgoing edge.
          *
          * The snapshot captures the sizes of the path variable and constraint vectors, the active lookahead count, the
-         * list of active groups, and deep copies of all group variable vectors. Used for backtracking between branches
-         * in the DFS.
+         * number of recorded changes of group variables, and the list of active groups. Used for backtracking between
+         * branches in the DFS.
          *
          * @return DFSStateSnapshot The current state snapshot.
          */
@@ -906,7 +922,8 @@ namespace smt::noodler::ecma {
          * @brief Restore the DFS state to a previously saved @p snapshot after an edge visit.
          *
          * Fully undoes everything that was changed during the edge visit, including appends to path variable and
-         * constraint vectors, modifications to active lookaheads and groups, and appends to group variable vectors.
+         * constraint vectors, modifications to active lookaheads and groups, and changes of group variables (in reverse
+         * order of the recorded changes).
          * @param snapshot The snapshot to restore from.
          */
         void restore_snapshot(const DFSStateSnapshot& snapshot);
@@ -1129,6 +1146,12 @@ namespace smt::noodler::ecma {
         // reachable through the edge starting it, so the stored index always comes from the current path.
         std::unordered_map<EdgeID, unsigned> m_iteration_starts;
 
+        // Undo trail of all the changes of `m_group_vars` on the current path, undone by restore_snapshot()
+        std::vector<GroupVarsChange> m_group_vars_changes;
+        // Previous variables of the groups reset by start_groups() or reset_groups(), one for each RESET and ERASE
+        // change in `m_group_vars_changes`
+        std::vector<expr_ref_vector> m_reset_group_vars;
+
         // Accumulates every fresh variable created via mk_fresh_string_var() across the entire DFS (including inner
         // DFS runs for lookarounds). Used to existentially quantify over auxiliary variables in the final formula.
         app_ref_vector m_all_created_vars;
@@ -1255,10 +1278,8 @@ namespace smt::noodler::ecma {
          *
          * @param ctx           The DFS context.
          * @param assertion     The lookaround assertion edge for which constraints are to be generated.
-         * @param global_prefix Current global prefix of the traversal path, used for evaluating lookbehind constraints.
          */
-        void handle_lookaround_constraints(DFSContext& ctx, const AssertionEdge& assertion,
-                                           const expr_ref& global_prefix);
+        void handle_lookaround_constraints(DFSContext& ctx, const AssertionEdge& assertion);
 
         /**
          * @brief Generate lookahead constraints for the current path.
