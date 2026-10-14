@@ -6,6 +6,18 @@
 #include "decision_procedure.h"
 
 namespace smt::noodler {
+    /// @brief Maximal length of a string that we are willing to construct in a model.
+    /// The arithmetic solver can assign huge lengths (e.g., ~2^32) to string variables; constructing
+    /// such strings would exhaust memory (or the length would get truncated), so we give up instead.
+    static const unsigned MAX_MODEL_STRING_LENGTH = 1u << 26;
+
+    /// @brief Throws an error (resulting in unknown) if @p len cannot be a length of a string in a model.
+    static void check_model_string_length(const rational& len, const std::string& var_name) {
+        if (!len.is_unsigned() || len.get_unsigned() > MAX_MODEL_STRING_LENGTH) {
+            util::throw_error("The length (" + len.to_string() + ") of string " + var_name + " in the model is too large to be constructed");
+        }
+    }
+
     /// @brief Class for model generation of string variables that are in decision procedure dec_proc
     class theory_str_noodler::noodler_var_value_proc : public model_value_proc {
         // the variable whose model we want to generate
@@ -46,6 +58,9 @@ namespace smt::noodler {
                 VERIFY(th.m_util_a.is_numeral(values[i], val, is_int) && is_int);
                 STRACE(str_model, tout << "Arith model of " << needed_vars[i] << " is " << val << std::endl;);
                 var_to_arith_model[needed_vars[i]] = val;
+                if (needed_vars[i] == str_var) {
+                    check_model_string_length(val, str_var.get_name().encode());
+                }
             }
             zstring s = th.dec_proc->get_model(str_var, var_to_arith_model);
             expr* v = th.m_util_s.str.mk_string(s);
@@ -116,6 +131,7 @@ namespace smt::noodler {
                 //   (define-fun fun0 ((x!0 String) (x!1 String) (x!2 Int)) String
                 //     (ite (and (= x!0 "\u{0}") (= x!1 ".")) "\u{0}" String!val!0))
                 // )
+                check_model_string_length(val, (std::stringstream() << mk_pp(str_var, m_util_s.get_manager())).str());
                 unsigned len = val.get_unsigned();
                 std::vector<unsigned> res(len, 'a');
                 expr* v = m_util_s.str.mk_string(zstring(res.size(), res.data()));
@@ -175,6 +191,19 @@ namespace smt::noodler {
         }
     };
 
+
+    bool theory_str_noodler::concat_has_arg_in_own_class(app* str_concat) const {
+        enode* str_concat_root = ctx.get_enode(str_concat)->get_root();
+        // the same flattening as in concat_var_value_proc
+        expr_ref_vector args(m);
+        m_util_s.str.get_concat(str_concat, args);
+        for (expr* arg : args) {
+            if (ctx.e_internalized(arg) && ctx.get_enode(arg)->get_root() == str_concat_root) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     model_value_proc* theory_str_noodler::model_of_string_var(app* str_var) {
         BasicTerm var = util::get_variable_basic_term(str_var);
@@ -246,6 +275,35 @@ namespace smt::noodler {
                 if (m_util_s.str.is_string(cur_app)) {
                     // if the class contains string literal, return it directly
                     return alloc(expr_wrapper_proc, cur_app);
+                }
+            }
+            if (concat_has_arg_in_own_class(tgt)) {
+                // tgt = u_1 ... u_n where some u_i is in the same class as tgt (e.g., x = "".x.y with y = ""),
+                // so we cannot take the model from the arguments (the model of tgt would depend on itself).
+                // We take the model from another member of the class instead, preferring
+                //   1) a string variable relevant for the decision procedure (its model is computed by the procedure),
+                //   2) a concatenation that does not have this problem,
+                //   3) any other string variable.
+                app* other_concat = nullptr;
+                app* other_var = nullptr;
+                for (auto tgt_enode_it = tgt_enode->begin(); tgt_enode_it != tgt_enode->end(); ++tgt_enode_it) {
+                    app* cur_app = (*tgt_enode_it)->get_app();
+                    if (util::is_str_variable(cur_app, m_util_s)) {
+                        if (relevant_vars.contains(util::get_variable_basic_term(cur_app))) {
+                            return model_of_string_var(cur_app);
+                        }
+                        if (other_var == nullptr) {
+                            other_var = cur_app;
+                        }
+                    } else if (other_concat == nullptr && m_util_s.str.is_concat(cur_app) && !concat_has_arg_in_own_class(cur_app)) {
+                        other_concat = cur_app;
+                    }
+                }
+                if (other_concat != nullptr) {
+                    return alloc(concat_var_value_proc, other_concat, m, ctx, m_util_s);
+                }
+                if (other_var != nullptr) {
+                    return model_of_string_var(other_var);
                 }
             }
             return alloc(concat_var_value_proc, tgt, m, ctx, m_util_s);

@@ -1,0 +1,10 @@
+; issue #487: refine_languages for disequations was never applied in DecisionProcedure::preprocess
+(set-info :status sat)
+(set-logic QF_SLIA)
+(declare-fun x () String)(declare-fun y () String)(declare-fun z () String)(declare-fun w () String)
+(assert (= (str.++ x y) (str.++ z w)))
+(assert (not (= x z)))
+(assert (str.in_re x (re.+ (str.to_re "a"))))
+(assert (str.in_re y (re.+ (str.to_re "b"))))
+(assert (> (str.len x) (str.len z)))
+(check-sat)

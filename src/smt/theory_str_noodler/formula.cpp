@@ -1,3 +1,5 @@
+#include <optional>
+
 #include "ast/ast.h"
 #include "ast/arith_decl_plugin.h"
 #include "ast/seq_decl_plugin.h"
@@ -354,21 +356,33 @@ namespace smt::noodler {
         int this_quantifier_depth = ctx.current_quantif_depth;
         ctx.current_quantif_depth += 1;
 
-        auto [dest_bucket_it, did_emplace_happen] = ctx.quantified_vars.emplace(quantif_var_name, this_quantifier_depth);
+        // bind the variable to this quantifier; if it is already bound by an outer quantifier with the same name,
+        // shadow that binding and restore it after the body is converted
+        std::optional<unsigned> shadowed_depth;
+        auto quantif_bucket_it = ctx.quantified_vars.find(quantif_var_name);
+        if (quantif_bucket_it != ctx.quantified_vars.end()) {
+            shadowed_depth = quantif_bucket_it->second;
+            quantif_bucket_it->second = this_quantifier_depth;
+        } else {
+            ctx.quantified_vars.emplace(quantif_var_name, this_quantifier_depth);
+        }
 
         // occurrences of the quantifier variable are created as z3 variable, not skolem constant
         expr_ref bodyref = convert_len_node_to_z3_formula(ctx, node.succ[1]);
 
         ctx.current_quantif_depth -= 1; // Reset it back
 
-        // @Optimize(mhecko): Is this iterator invalidated at this point? Probably.
-        auto this_quantif_bucket_it = ctx.quantified_vars.find(quantif_var_name);
-        ctx.quantified_vars.erase(this_quantif_bucket_it);
+        // the recursive call might have modified the map, so the iterator cannot be reused here
+        if (shadowed_depth.has_value()) {
+            ctx.quantified_vars[quantif_var_name] = *shadowed_depth;
+        } else {
+            ctx.quantified_vars.erase(quantif_var_name);
+        }
 
         ptr_vector<sort> sorts;
         svector<symbol> names;
         sorts.push_back(ctx.arith_utilities.mk_int());
-        names.push_back(symbol(dest_bucket_it->second));
+        names.push_back(symbol(this_quantifier_depth));
 
         expr_ref z3_quantif(ctx.manager.mk_quantifier(quantif_kind, sorts.size(), sorts.data(), names.data(), bodyref, 1), ctx.manager);
         return z3_quantif;
