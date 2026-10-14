@@ -51,6 +51,13 @@ target_include_directories(shell PRIVATE ${Z3_COMPONENT_EXTRA_INCLUDE_DIRS})
 target_link_libraries(shell PRIVATE ${Z3_DEPENDENT_LIBS})
 z3_add_component_dependencies_to_target(shell ${shell_expanded_deps})
 z3_append_linker_flag_list_to_target(shell ${Z3_DEPENDENT_EXTRA_CXX_LINK_FLAGS})
+# Extra linker flags for the z3 executable only (e.g. the Emscripten settings of the web build, see
+# web/build-wasm.sh). Unlike CMAKE_EXE_LINKER_FLAGS, they do not affect CMake's configure checks.
+set(Z3_SHELL_LINK_FLAGS "" CACHE STRING "Extra linker flags for the z3 executable")
+if (Z3_SHELL_LINK_FLAGS)
+  separate_arguments(z3_shell_link_flags UNIX_COMMAND "${Z3_SHELL_LINK_FLAGS}")
+  target_link_options(shell PRIVATE ${z3_shell_link_flags})
+endif()
 install(TARGETS shell
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
