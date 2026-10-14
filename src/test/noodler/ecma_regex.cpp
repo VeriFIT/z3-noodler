@@ -2022,3 +2022,88 @@ TEST_CASE("ECMA Regex constraint generation for zero-width assertions", "[noodle
                 " (= x (str.++ ecma_re!0 ecma_re!1)))");
     }
 }
+
+// Restoring a snapshot undoes all the changes of capture group variables made after it was taken (#506)
+TEST_CASE("ECMA Regex DFS context backtracking", "[noodler][ecma]") {
+    using namespace smt::noodler::ecma;
+    using namespace smt::noodler::ecma::test;
+
+    ast_manager m;
+    reg_decl_plugins(m);
+    seq_util util_s(m);
+    DFSContext ctx(m, util_s);
+
+    // Group 1 captures v0 and stays active
+    ctx.start_groups({1});
+    const app_ref v0 = ctx.create_edge_var();
+    ctx.push_edge_var_to_groups(v0);
+
+    SECTION("Variables appended to an active group are removed") {
+        const DFSStateSnapshot snapshot = ctx.save_snapshot();
+        const app_ref v1 = ctx.create_edge_var();
+        ctx.push_edge_var_to_groups(v1);
+        REQUIRE(app_to_string(app_ref(to_app(ctx.concat_group_vars(1)), m), m) == "(str.++ ecma_re!0 ecma_re!1)");
+
+        ctx.restore_snapshot(snapshot);
+        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
+    }
+
+    SECTION("Restarted group gets its previous variables back") {
+        ctx.end_groups({1});
+        const DFSStateSnapshot snapshot = ctx.save_snapshot();
+        ctx.start_groups({1});
+        const app_ref v1 = ctx.create_edge_var();
+        ctx.push_edge_var_to_groups(v1);
+        REQUIRE(ctx.concat_group_vars(1).get() == v1.get());
+
+        ctx.restore_snapshot(snapshot);
+        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
+    }
+
+    SECTION("Group reset to undefined gets its previous variables back") {
+        ctx.end_groups({1});
+        const DFSStateSnapshot snapshot = ctx.save_snapshot();
+        ctx.reset_groups({1});
+        REQUIRE(!ctx.has_group(1));
+        ctx.start_groups({1});
+        const app_ref v1 = ctx.create_edge_var();
+        ctx.push_edge_var_to_groups(v1);
+        REQUIRE(ctx.concat_group_vars(1).get() == v1.get());
+
+        ctx.restore_snapshot(snapshot);
+        REQUIRE(ctx.has_group(1));
+        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
+    }
+
+    SECTION("Group created after the snapshot is removed") {
+        const DFSStateSnapshot snapshot = ctx.save_snapshot();
+        ctx.start_groups({2});
+        const app_ref v1 = ctx.create_edge_var();
+        ctx.push_edge_var_to_groups(v1);
+        REQUIRE(ctx.has_group(2));
+
+        ctx.restore_snapshot(snapshot);
+        REQUIRE(!ctx.has_group(2));
+        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
+    }
+
+    SECTION("Nested snapshots are restored in reverse order") {
+        ctx.end_groups({1});
+        const DFSStateSnapshot outer_snapshot = ctx.save_snapshot();
+        ctx.start_groups({1});
+        const app_ref v1 = ctx.create_edge_var();
+        ctx.push_edge_var_to_groups(v1);
+        ctx.end_groups({1});
+
+        const DFSStateSnapshot inner_snapshot = ctx.save_snapshot();
+        ctx.start_groups({1});
+        const app_ref v2 = ctx.create_edge_var();
+        ctx.push_edge_var_to_groups(v2);
+        REQUIRE(ctx.concat_group_vars(1).get() == v2.get());
+
+        ctx.restore_snapshot(inner_snapshot);
+        REQUIRE(ctx.concat_group_vars(1).get() == v1.get());
+        ctx.restore_snapshot(outer_snapshot);
+        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
+    }
+}
