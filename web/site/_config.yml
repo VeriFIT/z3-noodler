@@ -4,6 +4,5 @@
 title: Z3-Noodler
 description: An automata-based SMT solver for string constraints
 theme: jekyll-theme-minimal
-logo: /z3-noodler-logo.svg
 show_downloads: false
 repository: VeriFIT/z3-noodler

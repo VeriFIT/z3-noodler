@@ -15,10 +15,8 @@ web/
 ├── smoke-test.mjs        tests the built solver in Node.js
 ├── Gemfile               for previewing the site locally (not used by the deployment)
 └── site/                 Jekyll source of the site
-    ├── _config.yml       title, description, theme (jekyll-theme-minimal), logo
-    ├── _includes/        head-custom.html: adds the favicon to the theme's <head>
+    ├── _config.yml       title, description, theme (jekyll-theme-minimal)
     ├── index.md, installation.md, usage.md, publications.md
-    ├── z3-noodler-logo.svg, favicon.svg
     └── playground/       index.html, style.css, app.js, worker.js, examples.js
                           + noodler.js, noodler.wasm, version.json (generated, not committed)
 ```
