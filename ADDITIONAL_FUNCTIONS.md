@@ -128,7 +128,7 @@ Semantics: `⟦str.to_rat⟧(u, v) = {(u,v)}`
 ### `(str.in_rat String String RatRel Bool)`
 Semantics: `⟦str.in_rat⟧(u, v, R) = true iff (u,v) ∈ R`
 
-### `(rat.none RatRel RatRel)`
+### `(rat.none RatRel)`
 Semantics: `⟦rat.none⟧ = ∅`
 
 ### `(rat.++ RatRel RatRel RatRel)`
@@ -144,37 +144,37 @@ Semantics: `⟦rat.*⟧(R)` is the smallest subset `K` of `UC* × UC*` such that
 
 
 ### `(rat.+ RatRel RatRel)`
-Abbreviates `(rat.++ e (rat.* e))`.
+Abbreviates `(rat.++ R (rat.* R))`.
 
 ### `(rat.opt RatRel RatRel)`
-Abbreviates `(rat.union e (str.to_rat "" ""))`.
+Abbreviates `(rat.union R (str.to_rat "" ""))`.
 
 ### `((_ rat.^ n) RatRel RatRel)`
 Assumes that `n` is a numeral.  
-Semantics: `⟦(_ re.^ n)⟧(R) = Rⁿ` where `Rⁿ` is defined inductively on `n` as follows:
+Semantics: `⟦(_ rat.^ n)⟧(R) = Rⁿ` where `Rⁿ` is defined inductively on `n` as follows:
 - `R⁰ = {(ε,ε)}`
 - `Rⁿ⁺¹ = ⟦rat.++⟧(R, Rⁿ)`
 
 ### `((_ rat.loop n1 n2) RatRel RatRel)`
-Assumes that `n` is a numeral.  
+Assumes that `n1` and `n2` are numerals.  
 Semantics:  
-&nbsp;&nbsp;&nbsp;&nbsp;For `i <= n`: `⟦(_ rat.loop i n)⟧(R) = Rⁱ ∪ ... ∪ Rⁿ`   
-&nbsp;&nbsp;&nbsp;&nbsp;Otherwise: `⟦(_ rat.loop i n)⟧(R) = ∅`
+&nbsp;&nbsp;&nbsp;&nbsp;For `n1 <= n2`: `⟦(_ rat.loop n1 n2)⟧(R) = Rⁿ¹ ∪ ... ∪ Rⁿ²`   
+&nbsp;&nbsp;&nbsp;&nbsp;Otherwise: `⟦(_ rat.loop n1 n2)⟧(R) = ∅`
 
 ### `(rat.compose RatRel RatRel RatRel)`
-Semantics: `⟦rat.compose(R1, R2) = {(u,v) | (u,x) ∈ R1 and (x,v) ∈ R2 for some x ∈ UC*}`
+Semantics: `⟦rat.compose⟧(R1, R2) = {(u,v) | (u,x) ∈ R1 and (x,v) ∈ R2 for some x ∈ UC*}`
 
 ### `(rat.invert RatRel RatRel)`
-Semantics: `⟦rat.invert(R) = {(u,v) | (v,u) ∈ R}`
+Semantics: `⟦rat.invert⟧(R) = {(u,v) | (v,u) ∈ R}`
 
 ### `(rat.identity RegLan RatRel)`
-Semantics: `⟦rat.identity(L) = {(u,u) | u ∈ L}`
+Semantics: `⟦rat.identity⟧(L) = {(u,u) | u ∈ L}`
 
 ### `(rat.left_extend RegLan RatRel)`
-Semantics: `⟦rat.left_extend(L) = {(u,ε) | u ∈ L}`
+Semantics: `⟦rat.left_extend⟧(L) = {(u,ε) | u ∈ L}`
 
 ### `(rat.right_extend RegLan RatRel)`
-Semantics: `⟦rat.right_extend(L) = {(ε,u) | u ∈ L}`
+Semantics: `⟦rat.right_extend⟧(L) = {(ε,u) | u ∈ L}`
 
 ### Examples
 Transform every "a" to "b":
@@ -186,7 +186,7 @@ Transform every "a" to "b":
 (declare-const s1 String)
 (assert (str.in_rat "asbabaa" s1 a_to_b)) ; s1 = "bsbbbbb"
 (declare-const s2 String)
-(assert (str.in_rat "dsfgb" s2 a_to_b)) ; s1 = "dsfgb"
+(assert (str.in_rat "dsfgb" s2 a_to_b)) ; s2 = "dsfgb"
 
 (check-sat)
 (get-model)
@@ -211,7 +211,7 @@ Take every second symbol from the input string:
         (rat.* (rat.++ (rat.left_extend re.allchar) (rat.identity re.allchar)))
         (rat.++
             (rat.left_extend re.allchar)
-            (rat.* (rat.++ (rat.identity re.allchar) (rat_extend re.allchar)))
+            (rat.* (rat.++ (rat.identity re.allchar) (rat.left_extend re.allchar)))
         )
     )
 ))
