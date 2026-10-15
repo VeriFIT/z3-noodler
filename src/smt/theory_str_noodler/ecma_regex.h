@@ -91,8 +91,21 @@ namespace smt::noodler::ecma {
         VertexID v_in = std::numeric_limits<VertexID>::max();
         VertexID v_out = std::numeric_limits<VertexID>::max();
         std::vector<EdgeID> edges_pointing_to_vout;
-        bool is_initialized() const;
     };
+
+    /**
+     * The result type of ASTNode::get_subgraph(). Each AST node converts itself into
+     * one of two forms:
+     *
+     *   app_ref       -- the subtree is fully regular and collapses to a single Z3 regex expression.
+     *
+     *   GraphFragment -- the subtree contains non-regular constructs (backreferences, anchors, or lookarounds) and is
+     *                    represented as a sub-portion of the RCG. The DFS will traverse this subgraph and generate
+     *                    explicit string constraints for each path through it.
+     *
+     * The more subtrees are kept as app_refs, the smaller the RCG and the fewer constraints are generated.
+     */
+    using RegexComponent = std::variant<GraphFragment, app_ref>;
 
     enum class LookaroundDirection {
         FORWARD,
@@ -106,11 +119,16 @@ namespace smt::noodler::ecma {
      * If the inner pattern is fully regular it is stored as z3 regular expression via app_ref; the DFS evaluates it
      * with `str.to_re` constraint. If the inner pattern contains non-regular constructs it is stored as a GraphFragment
      * and evaluated by running a nested DFS on the fragment.
+     *
+     * `contains_lookahead` is set for a non-regular lookbehind whose fragment contains a lookahead (also the one of
+     * a word boundary). Such a lookahead must be evaluated against the rest of the whole string, not only against the
+     * rest of the lookbehind target.
      */
     struct Lookaround {
-        std::variant<app_ref, GraphFragment> subregex;
+        RegexComponent subregex;
         LookaroundDirection direction;
         bool is_positive;
+        bool contains_lookahead = false;
     };
 
     using Anchor = uint32_t;
@@ -143,7 +161,8 @@ namespace smt::noodler::ecma {
               outgoing_edges(std::move(edges)) { }
     };
 
-    using RCGEdgePayload = std::variant<std::monostate, MatchEdge, AssertionEdge, BackrefEdge>;
+    using MarkerEdge = std::monostate;  // no payload, used for bookkeeping only
+    using RCGEdgePayload = std::variant<MarkerEdge, MatchEdge, AssertionEdge, BackrefEdge>;
 
     struct RCGEdge {
         EdgeID id;
@@ -163,32 +182,42 @@ namespace smt::noodler::ecma {
      * Vertices represent split points where the regex transitions between regular and non-regular components, or other
      * structural boundaries (such as alternations).
      *
-     * Edges carry one of three payloads:
-     *   - MatchEdge:     the edge variable belongs to a standard Z3 regex.
-     *   - AssertionEdge: zero-width assertion (anchors, lookarounds); variable is "".
-     *   - BackrefEdge:   the edge variable must equal the string captured by a group.
+     * Edges carry one of four payloads:
+     *   - MatchEdge:      the edge variable belongs to a standard Z3 regex.
+     *   - AssertionEdge:  zero-width assertion (anchors, lookarounds); variable is "".
+     *   - BackrefEdge:    the edge variable must equal the string captured by a group.
+     *   - MarkerEdge:     consumes nothing and gets no edge variable, it only carries bookkeeping
+     *                     (see `group_resets` and `nonempty_iterations`).
      *
      * A valid match corresponds to a path from start_vertex to end_vertex, where
      * the concatenated edge variables equal the target string.
      *
      * The `group_starts` and `group_ends` maps track which edges open and close
      * specific capture groups, allowing the DFS to evaluate backreferences.
+     *
+     * The `group_resets` and `nonempty_iterations` maps mark the marker edges that start and end the iterations of
+     * an unrolled bounded quantifier (see ASTNodeQuantifier::unroll()).
      */
     struct RegexConstraintGraph {
         std::vector<RCGVertex> vertices;
         std::vector<RCGEdge> edges;
 
+        //
         std::unordered_map<EdgeID, std::vector<GroupID>> group_starts;
         std::unordered_map<EdgeID, std::vector<GroupID>> group_ends;
+
+        // Edges starting an iteration of an unrolled quantifier, mapped to the capture groups inside the quantified
+        // subpattern. ES2020 resets these captures to undefined at the start of every iteration.
+        std::unordered_map<EdgeID, std::vector<GroupID>> group_resets;
+        // Edges ending an iteration beyond the quantifier minimum, mapped to the edge that started the iteration.
+        // ES2020 rejects such an iteration if it matched the empty string.
+        std::unordered_map<EdgeID, EdgeID> nonempty_iterations;
 
         VertexID start_vertex = UNKNOWN_VERTEX;
         VertexID end_vertex = UNKNOWN_VERTEX;
 
-        void add_vertex(RCGVertex vtx);
         VertexID create_vertex();
         VertexID create_vertex(std::vector<EdgeID> edge_list);
-        void add_edge(RCGEdge child);
-        EdgeID create_edge();
         EdgeID create_edge(VertexID target, RCGEdgePayload payload);
     };
 
@@ -231,6 +260,17 @@ namespace smt::noodler::ecma {
      * @return GraphFragment A two-vertex fragment with a single epsilon MatchEdge.
      */
     GraphFragment make_epsilon_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m);
+
+    /**
+     * @brief Create a fragment with a single MarkerEdge.
+     *
+     * Unlike an epsilon fragment, the marker edge gets no edge variable and no constraint during the DFS. It is used
+     * only to attach bookkeeping to a position in the graph.
+     *
+     * @param graph The RCG to add the fragment to.
+     * @return GraphFragment A two-vertex fragment with a single marker edge.
+     */
+    GraphFragment make_marker_fragment(RegexConstraintGraph& graph);
 
     // ================== ECMA REGEX LEXER ==================
 
@@ -297,21 +337,19 @@ namespace smt::noodler::ecma {
 
     // ================== ECMA REGEX AST ==================
 
-    /**
-     * The result type of ASTNode::get_subgraph(). Each AST node converts itself into
-     * one of two forms:
-     *
-     *   app_ref       -- the subtree is fully regular and collapses to a single Z3 regex expression.
-     *
-     *   GraphFragment -- the subtree contains non-regular constructs (backreferences, anchors, or lookarounds) and is
-     *                    represented as a sub-portion of the RCG. The DFS will traverse this subgraph and generate
-     *                    explicit string constraints for each path through it.
-     *
-     * The more subtrees are kept as app_refs, the smaller the RCG and the fewer constraints are generated.
-     */
-    using RegexComponent = std::variant<GraphFragment, app_ref>;
     class ASTNode;
     using ASTNodeRef = std::unique_ptr<ASTNode>;
+    class ASTNodeAssertion;
+
+    /**
+     * Lookarounds enclosing the capture groups and backreferences of a regex, collected by
+     * ASTNode::collect_lookaround_scopes(). Every list holds the enclosing lookarounds from the outermost to the
+     * innermost one.
+     */
+    struct LookaroundScopes {
+        std::unordered_map<GroupID, std::vector<const ASTNodeAssertion*>> group_scopes;
+        std::vector<std::pair<GroupID, std::vector<const ASTNodeAssertion*>>> backref_scopes;
+    };
 
     class ASTNode {
     public:
@@ -334,26 +372,6 @@ namespace smt::noodler::ecma {
         virtual RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const = 0;
 
         /**
-         * @brief Return a deep copy of this node and all its children.
-         *
-         * Used by ASTNodeQuantifier::unroll() to duplicate the quantified subpattern multiple times without sharing AST
-         * nodes between copies.
-         *
-         * @return ASTNodeRef An independent copy of this node.
-         */
-        virtual ASTNodeRef clone() const = 0;
-
-        /**
-         * @brief Recursively convert all CAPTURE groups in this subtree to NONCAPTURE.
-         *
-         * Called when the subtree is under a fixed quantifier {n,m} to capture correct strings for further
-         * backreferences (the ECMAScript standard requires the last matched string in the quantifier to be captured by
-         * the group). Therefore, only the last capturing group is left as a CAPTURE group, all the preceding are marked
-         * as NONCAPTURE.
-         */
-        virtual void strip_captures() = 0;
-
-        /**
          * @brief Recursively collect IDs of all backreferences in this subtree.
          *
          * Used as a pre-pass before `build_rcg()` to determine which capture groups are actually referenced. The result
@@ -370,6 +388,27 @@ namespace smt::noodler::ecma {
          * @param referenced 
          */
         virtual void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) { }
+
+        /**
+         * @brief Recursively collect IDs of all capture groups in this subtree.
+         *
+         * Used by ASTNodeQuantifier::unroll() to find the captures that are reset at the start of every iteration.
+         *
+         * @param gids Vector to which every capture group ID found in the subtree is appended.
+         */
+        virtual void collect_capture_groups(std::vector<GroupID> &gids) const {}
+
+        /**
+         * @brief Recursively collect the lookarounds enclosing every capture group and backreference in this subtree.
+         *
+         * Used by RegexConstraintBuilder::check_lookaround_backrefs() to find backreferences to captures made inside
+         * a lookaround the backreference is not part of.
+         *
+         * @param enclosing The lookarounds enclosing this node, from the outermost to the innermost one.
+         * @param scopes    The collected lookaround scopes of capture groups and backreferences.
+         */
+        virtual void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                               LookaroundScopes& scopes) const { }
     };
 
     /**
@@ -399,10 +438,11 @@ namespace smt::noodler::ecma {
          * @return RegexComponent app_ref if all alternatives are regular, GraphFragment otherwise.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         std::vector<ASTNodeRef> m_alternatives;
@@ -431,10 +471,11 @@ namespace smt::noodler::ecma {
          * @return RegexComponent app_ref if all terms are regular, GraphFragment otherwise.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         std::vector<ASTNodeRef> m_terms;
@@ -454,6 +495,7 @@ namespace smt::noodler::ecma {
         void set_type(TokenType type);
         void set_payload(Z3Char payload);
         void set_expr(ASTNodeRef expr);
+        bool is_lookbehind() const;
 
         /**
          * @brief Builds the constraint graph fragment for zero-width assertions.
@@ -463,10 +505,11 @@ namespace smt::noodler::ecma {
          * @return RegexComponent Always returns a GraphFragment.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         TokenType m_assert_type {};
@@ -497,6 +540,15 @@ namespace smt::noodler::ecma {
          */
         static GraphFragment make_word_boundary_fragment(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m,
                                                          bool is_word_boundary);
+
+        /**
+         * @brief Check whether the @p fragment contains a lookahead edge (nested lookarounds are not searched).
+         *
+         * @param graph    The RCG owning the fragment.
+         * @param fragment The fragment to search.
+         * @return bool True if some edge reachable from the fragment's v_in is a lookahead.
+         */
+        static bool contains_lookahead(const RegexConstraintGraph& graph, const GraphFragment& fragment);
     };
 
     /**
@@ -504,26 +556,25 @@ namespace smt::noodler::ecma {
      *
      * If the child is regular, get_subgraph() delegates to the corresponding Z3 API
      * (mk_star, mk_plus, mk_loop). If the child is non-regular and the quantifier is
-     * bounded, the quantifier is unrolled into an explicit disjunction first.
+     * bounded, the quantifier is unrolled into an explicit alternation of iteration chains.
      */
     class ASTNodeQuantifier : public ASTNode {
     public:
         uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         void set(const Token& t, ASTNodeRef term);
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
 
         /**
-         * @brief Expand a bounded quantifier {min,max} into an explicit disjunction.
+         * @brief Expand a bounded quantifier {min,max} with a non-regular child into the graph.
          *
-         * Produces an ASTNodeDisjunction equivalent to:
-         *   (epsilon | child^min | ... | child^max)
-         * where epsilon is included only when min == 0.
+         * Produces a fragment equivalent to:
+         *   (child^min | ... | child^max | epsilon)
+         * where epsilon is included only when min == 0. Every iteration is a fresh copy of the child's subgraph, see
+         * make_iteration().
          *
-         * @return ASTNodeRef A new ASTNodeDisjunction semantically equivalent to the quantifier node.
+         * @return GraphFragment The fragment of the unrolled quantifier.
          */
-        ASTNodeRef unroll() const;
+        GraphFragment unroll(RegexConstraintGraph &graph, seq_util &util_s, ast_manager &m) const;
 
         /**
          * @brief Build the regex/subgraph for a quantifier node.
@@ -538,10 +589,31 @@ namespace smt::noodler::ecma {
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         QuantifierRange m_range {};
         ASTNodeRef m_child;
+
+        /**
+         * @brief Build one iteration of the unrolled quantifier as a fresh copy of the child's subgraph.
+         *
+         * ES2020 RepeatMatcher resets the captures inside the quantified subpattern at the start of every iteration
+         * (step 4) and rejects an iteration beyond the minimum that matched the empty string (step 2.b). If the child
+         * contains capture groups, the copy is therefore wrapped in marker edges: the first one is registered in
+         * `group_resets`, and for iterations beyond the minimum, the last one is registered in `nonempty_iterations`.
+         *
+         * Without capture groups, iterations do not influence each other and an empty iteration can be left out
+         * without changing the matched string, so the copy is returned as is.
+         *
+         * @param captures  The capture groups inside the child.
+         * @param iteration 1-based number of the iteration in its chain.
+         * @return GraphFragment The fragment of a single iteration.
+         */
+        GraphFragment make_iteration(RegexConstraintGraph &graph, seq_util &util_s, ast_manager &m,
+                                     const std::vector<GroupID> &captures, uint64_t iteration) const;
     };
 
     /**
@@ -554,9 +626,6 @@ namespace smt::noodler::ecma {
         void set_char(Z3Char ch);
         Z3Char get_char() const;
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-
-        void strip_captures() override { }
 
     private:
         Z3Char m_char = std::numeric_limits<Z3Char>::max();
@@ -570,9 +639,6 @@ namespace smt::noodler::ecma {
         uint64_t print_dot(std::ostream& out, uint64_t& node_count) const override;
         zstring serialize() const override;
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-
-        void strip_captures() override { }
     };
 
     /**
@@ -584,11 +650,10 @@ namespace smt::noodler::ecma {
         zstring serialize() const override;
         void set_ref(GroupID backref_number);
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-
-        void strip_captures() override { }
 
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         GroupID m_backref_id;
@@ -625,10 +690,11 @@ namespace smt::noodler::ecma {
          *                        for capture groups.
          */
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-        void strip_captures() override;
         void collect_backrefs(std::unordered_set<GroupID>& refs) const override;
         void strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) override;
+        void collect_capture_groups(std::vector<GroupID> &gids) const override;
+        void collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                       LookaroundScopes& scopes) const override;
 
     private:
         GroupType m_type = GroupType::CAPTURE;
@@ -662,9 +728,6 @@ namespace smt::noodler::ecma {
         void add_element(CharClassElement elem);
         void set_negation(bool neg);
         RegexComponent get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const override;
-        ASTNodeRef clone() const override;
-
-        void strip_captures() override { }
 
     private:
         bool m_is_negated = false;
@@ -736,11 +799,16 @@ namespace smt::noodler::ecma {
      * `start_index` is the index into `m_current_path_vars` at the moment the lookahead was encountered.
      * When the lookahead is evaluated at the end vertex, the suffix of the string is obtained by concatenating the
      * string variables from `start_index` to the end of `m_current_path_vars`.
+     *
+     * `group_vars` holds the captures of the groups closed at the moment the lookahead was encountered (only for
+     * non-regular lookaheads, which can contain backreferences). Backreferences inside the lookahead refer to these
+     * captures, not to the ones at the end of the path, which later iterations of a quantifier may reset or overwrite.
      */
     struct ActiveLookahead {
-        std::variant<app_ref, GraphFragment> subregex;
+        RegexComponent subregex;
         bool is_positive;
         std::size_t start_index;
+        std::unordered_map<GroupID, expr_ref_vector> group_vars;
     };
 
     /**
@@ -795,6 +863,10 @@ namespace smt::noodler::ecma {
      * `m_base_prefix` holds all the string variables accumulated by outer DFS calls.
      * `get_global_prefix()` concatenates `m_base_prefix` with the current inner DFS path's variables to give the full
      * prefix at the current position in the original target string.
+     *
+     * `m_base_suffix` is the rest of the original target string after the end of the current DFS target. It is
+     * nonempty only inside a lookbehind, whose target ends at the lookbehind position. `get_global_suffix()` appends
+     * it to the current path's variables, so that lookaheads see the rest of the whole string.
      */
     class DFSContext {
     public:
@@ -803,6 +875,7 @@ namespace smt::noodler::ecma {
               m_util_s(util),
               m_str_sort(util.mk_string_sort()),
               m_base_prefix(manager),
+              m_base_suffix(manager),
               m_unique_paths(manager),
               m_current_path_vars(manager),
               m_current_path_constraints(manager),
@@ -814,6 +887,8 @@ namespace smt::noodler::ecma {
         VertexID get_end_vertex() const;
         void set_base_prefix(const expr_ref& p);
         expr_ref get_base_prefix() const;
+        void set_base_suffix(const expr_ref& s);
+        expr_ref get_base_suffix() const;
 
         /**
          * @brief Save the current DFS state before exploring one outgoing edge.
@@ -925,15 +1000,61 @@ namespace smt::noodler::ecma {
 
         bool has_group(GroupID gid) const;
 
+        bool is_group_active(GroupID gid) const;
+
+        /**
+         * @brief Return the variable lists of the capture groups that are closed at the current position.
+         *
+         * The capture of a group that is still open is undefined at the current position, so a backreference to it
+         * matches the empty string.
+         */
+        std::unordered_map<GroupID, expr_ref_vector> get_closed_group_vars() const;
+
+        /**
+         * @brief Reset the captures of the groups @p gids to undefined.
+         *
+         * A backreference to a reset group matches the empty string until the group is entered again.
+         *
+         * @param gids The group IDs to reset.
+         */
+        void reset_groups(const std::vector<GroupID> &gids);
+
+        /**
+         * @brief Remember the current position on the path as the start of the quantifier iteration that begins on
+         * the edge @p start_eid.
+         *
+         * @param start_eid The edge starting the iteration.
+         */
+        void mark_iteration_start(EdgeID start_eid);
+
+        /**
+         * @brief Concatenate the edge variables of the current path from the start of the quantifier iteration that
+         * began on the edge @p start_eid.
+         *
+         * @param start_eid The edge starting the iteration.
+         * @return expr_ref The string matched by the iteration so far.
+         */
+        expr_ref concat_iteration_vars(EdgeID start_eid) const;
+
+        /**
+         * @brief Replace the variable lists of all capture groups by @p group_vars.
+         *
+         * @param group_vars The new variable lists of capture groups.
+         * @return The previous variable lists of capture groups.
+         */
+        std::unordered_map<GroupID, expr_ref_vector>
+        replace_group_vars(std::unordered_map<GroupID, expr_ref_vector> group_vars);
+
         /**
          * @brief Postpone a lookahead assertion for evaluation at the end of the current path.
          *
-         * Saves the @p subregex, polarity and current position in the matched string.
+         * Saves the @p subregex, polarity, current position in the matched string and, for a non-regular lookahead,
+         * the captures of the currently closed groups.
          *
          * @param subregex    The lookahead subregex.
          * @param is_positive The lookahead polarity.
          */
-        void push_lookahead(const std::variant<app_ref, GraphFragment>& subregex, bool is_positive);
+        void push_lookahead(const RegexComponent& subregex, bool is_positive);
 
         const std::vector<ActiveLookahead>& get_active_lookaheads() const;
 
@@ -968,6 +1089,15 @@ namespace smt::noodler::ecma {
         expr_ref get_global_prefix() const;
 
         /**
+         * @brief Return the rest of the original target string from the edge variable at @p start_idx on the current
+         * path, across all DFS levels.
+         *
+         * @param start_idx Index of the first edge variable of the suffix.
+         * @return expr_ref The global suffix expression.
+         */
+        expr_ref get_global_suffix(uint32_t start_idx) const;
+
+        /**
          * @brief Concatenate all edge variables captured by a group @p gid on the current path.
          *
          * @param gid The capture group whose variable list to concatenate.
@@ -983,6 +1113,7 @@ namespace smt::noodler::ecma {
         app* m_target_string = nullptr;
         VertexID m_end_vertex = UNKNOWN_VERTEX;
         expr_ref m_base_prefix;
+        expr_ref m_base_suffix;
 
         expr_ref_vector m_unique_paths;
         expr_ref_vector m_current_path_vars;
@@ -991,6 +1122,11 @@ namespace smt::noodler::ecma {
         std::vector<GroupID> m_active_groups;
         std::unordered_map<GroupID, expr_ref_vector> m_group_vars;
         std::vector<ActiveLookahead> m_active_lookaheads;
+
+        // Index into `m_current_path_vars` where the quantifier iteration started by the given edge begins.
+        // It does not need to be part of the snapshot: the RCG is acyclic and the edge ending an iteration is only
+        // reachable through the edge starting it, so the stored index always comes from the current path.
+        std::unordered_map<EdgeID, unsigned> m_iteration_starts;
 
         // Accumulates every fresh variable created via mk_fresh_string_var() across the entire DFS (including inner
         // DFS runs for lookarounds). Used to existentially quantify over auxiliary variables in the final formula.
@@ -1075,6 +1211,22 @@ namespace smt::noodler::ecma {
         app_ref_vector m_fresh_vars;
 
         /**
+         * @brief Throw "unsupported" if a backreference refers to a capture group inside a lookaround that does not
+         * enclose the backreference, or to a capture group inside a lookbehind.
+         *
+         * ES2020 keeps the captures made inside a successful positive lookaround, taken from its first inner match in
+         * backtracking order (lookarounds are atomic). The DFS evaluates a non-regular lookaround in a nested search
+         * and discards its captures, so such a backreference would wrongly match the empty string.
+         *
+         * ES2020 matches a lookbehind from right to left, so captures and backreferences inside it are evaluated in
+         * the reverse order. The DFS traverses the lookbehind from left to right and would resolve such a
+         * backreference against the wrong capture.
+         *
+         * @param root The root of the regex AST.
+         */
+        static void check_lookaround_backrefs(const ASTNode& root);
+
+        /**
          * @brief Run an inner DFS on a subgraph to evaluate a non-regular lookaround.
          *
          * @param fragment      The sub-fragment whose paths are to be enumerated.
@@ -1112,6 +1264,17 @@ namespace smt::noodler::ecma {
          * @param edge_var The string variable representing the @p edge.
          */
         void generate_edge_constraints(DFSContext& ctx, const RCGEdge& edge, const app_ref& edge_var);
+
+        /**
+         * @brief Require the quantifier iteration that began on the edge @p start_eid to match a nonempty string.
+         *
+         * ES2020 RepeatMatcher (step 2.b): an iteration beyond the quantifier minimum fails if it matched the empty
+         * string.
+         *
+         * @param ctx       The DFS context.
+         * @param start_eid The edge starting the iteration.
+         */
+        void generate_nonempty_iteration_constraint(DFSContext &ctx, EdgeID start_eid);
 
         /**
          * @brief One step of the DFS traversal of RCG.

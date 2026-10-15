@@ -169,11 +169,15 @@ namespace smt::noodler::ecma {
         return GraphFragment {v_in, v_out, {eid}};
     }
 
-    // =============== REGEX CONSTRAINT GRAPH ==============
-
-    void RegexConstraintGraph::add_vertex(RCGVertex vtx) {
-        vertices.push_back(std::move(vtx));
+    GraphFragment make_marker_fragment(RegexConstraintGraph& graph) {
+        const VertexID v_in = graph.create_vertex();
+        const VertexID v_out = graph.create_vertex();
+        const EdgeID eid = graph.create_edge(v_out, RCGEdgePayload{MarkerEdge{}});
+        graph.vertices[v_in].outgoing_edges.push_back(eid);
+        return GraphFragment{v_in, v_out, {eid}};
     }
+
+    // =============== REGEX CONSTRAINT GRAPH ==============
 
     VertexID RegexConstraintGraph::create_vertex() {
         VertexID new_id = vertices.size();
@@ -184,16 +188,6 @@ namespace smt::noodler::ecma {
     VertexID RegexConstraintGraph::create_vertex(std::vector<EdgeID> edge_list) {
         VertexID new_id = vertices.size();
         vertices.emplace_back(new_id, std::move(edge_list));
-        return new_id;
-    }
-
-    void RegexConstraintGraph::add_edge(RCGEdge child) {
-        edges.push_back(std::move(child));
-    }
-
-    EdgeID RegexConstraintGraph::create_edge() {
-        EdgeID new_id = edges.size();
-        edges.emplace_back(new_id, UNKNOWN_VERTEX, BackrefEdge {0u});
         return new_id;
     }
 
@@ -939,12 +933,6 @@ namespace smt::noodler::ecma {
         return result_fragment;
     }
 
-    void ASTNodeDisjunction::strip_captures() {
-        for (const ASTNodeRef& alternative : m_alternatives) {
-            alternative->strip_captures();
-        }
-    }
-
     void ASTNodeDisjunction::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         for (const ASTNodeRef& alternative : m_alternatives) {
             alternative->collect_backrefs(refs);
@@ -957,12 +945,17 @@ namespace smt::noodler::ecma {
         }
     }
 
-    ASTNodeRef ASTNodeDisjunction::clone() const {
-        auto cloned = std::make_unique<ASTNodeDisjunction>();
-        for (const auto& alt : m_alternatives) {
-            cloned->add_alternative(alt->clone());
+    void ASTNodeDisjunction::collect_capture_groups(std::vector<GroupID>& gids) const {
+        for (const ASTNodeRef& alternative : m_alternatives) {
+            alternative->collect_capture_groups(gids);
         }
-        return cloned;
+    }
+
+    void ASTNodeDisjunction::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                       LookaroundScopes& scopes) const {
+        for (const ASTNodeRef& alternative : m_alternatives) {
+            alternative->collect_lookaround_scopes(enclosing, scopes);
+        }
     }
 
     uint64_t ASTNodeAlternative::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1056,12 +1049,6 @@ namespace smt::noodler::ecma {
         return result;
     }
 
-    void ASTNodeAlternative::strip_captures() {
-        for (const ASTNodeRef& term : m_terms) {
-            term->strip_captures();
-        }
-    }
-
     void ASTNodeAlternative::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         for (const ASTNodeRef& term : m_terms) {
             term->collect_backrefs(refs);
@@ -1074,12 +1061,17 @@ namespace smt::noodler::ecma {
         }
     }
 
-    ASTNodeRef ASTNodeAlternative::clone() const {
-        auto cloned = std::make_unique<ASTNodeAlternative>();
-        for (const auto& term : m_terms) {
-            cloned->add_term(term->clone());
+    void ASTNodeAlternative::collect_capture_groups(std::vector<GroupID>& gids) const {
+        for (const ASTNodeRef& term : m_terms) {
+            term->collect_capture_groups(gids);
         }
-        return cloned;
+    }
+
+    void ASTNodeAlternative::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                       LookaroundScopes& scopes) const {
+        for (const ASTNodeRef& term : m_terms) {
+            term->collect_lookaround_scopes(enclosing, scopes);
+        }
     }
 
     uint64_t ASTNodeAssertion::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1150,6 +1142,35 @@ namespace smt::noodler::ecma {
         m_subpattern = std::move(expr);
     }
 
+    bool ASTNodeAssertion::is_lookbehind() const {
+        return m_assert_type == TokenType::LOOKBEHIND_POS_START || m_assert_type == TokenType::LOOKBEHIND_NEG_START;
+    }
+
+    bool ASTNodeAssertion::contains_lookahead(const RegexConstraintGraph& graph, const GraphFragment& fragment) {
+        std::vector<bool> visited(graph.vertices.size(), false);
+        std::vector<VertexID> to_visit {fragment.v_in};
+        visited[fragment.v_in] = true;
+        while (!to_visit.empty()) {
+            const VertexID vertex = to_visit.back();
+            to_visit.pop_back();
+            for (const EdgeID eid : graph.vertices[vertex].outgoing_edges) {
+                const RCGEdge& edge = graph.edges[eid];
+                if (std::holds_alternative<AssertionEdge>(edge.payload)) {
+                    const AssertionEdge& assertion = std::get<AssertionEdge>(edge.payload);
+                    if (std::holds_alternative<Lookaround>(assertion.payload) &&
+                        std::get<Lookaround>(assertion.payload).direction == LookaroundDirection::FORWARD) {
+                        return true;
+                    }
+                }
+                if (!visited[edge.target]) {
+                    visited[edge.target] = true;
+                    to_visit.push_back(edge.target);
+                }
+            }
+        }
+        return false;
+    }
+
     RegexComponent ASTNodeAssertion::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
         // Anchors -- directly create AssertionEdge with the anchor as the payload
         if (m_assert_type == TokenType::ASSERTION) {
@@ -1204,21 +1225,16 @@ namespace smt::noodler::ecma {
             inner_frag = chain_fragments(graph, sigma_frag, inner_frag);
         }
 
+        // A lookahead inside a lookbehind must see the rest of the whole string (see handle_lookaround_constraints())
+        const bool has_lookahead = dir == LookaroundDirection::BACKWARD && contains_lookahead(graph, inner_frag);
+
         // Wrap the resulting fragment into an AssertionEdge
         VertexID v_in = graph.create_vertex();
         VertexID v_out = graph.create_vertex();
-        EdgeID eid =
-            graph.create_edge(v_out, RCGEdgePayload {AssertionEdge {Lookaround {std::move(inner_frag), dir, true}}});
+        EdgeID eid = graph.create_edge(
+            v_out, RCGEdgePayload {AssertionEdge {Lookaround {std::move(inner_frag), dir, true, has_lookahead}}});
         graph.vertices[v_in].outgoing_edges.push_back(eid);
         return GraphFragment {v_in, v_out, {eid}};
-    }
-
-    void ASTNodeAssertion::strip_captures() {
-        if (m_assert_type == TokenType::ASSERTION) {
-            // anchors have no capture groups to strip
-            return;
-        }
-        m_subpattern->strip_captures();
     }
 
     void ASTNodeAssertion::collect_backrefs(std::unordered_set<GroupID>& refs) const {
@@ -1233,14 +1249,20 @@ namespace smt::noodler::ecma {
         }
     }
 
-    ASTNodeRef ASTNodeAssertion::clone() const {
-        auto cloned = std::make_unique<ASTNodeAssertion>();
-        cloned->m_assert_type = m_assert_type;
-        cloned->m_payload = m_payload;
-        if (m_subpattern) {
-            cloned->m_subpattern = m_subpattern->clone();
+    void ASTNodeAssertion::collect_capture_groups(std::vector<GroupID>& gids) const {
+        if (m_subpattern != nullptr) {
+            m_subpattern->collect_capture_groups(gids);
         }
-        return cloned;
+    }
+
+    void ASTNodeAssertion::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                     LookaroundScopes& scopes) const {
+        // Only lookarounds have a subpattern
+        if (m_subpattern != nullptr) {
+            enclosing.push_back(this);
+            m_subpattern->collect_lookaround_scopes(enclosing, scopes);
+            enclosing.pop_back();
+        }
     }
 
     GraphFragment ASTNodeAssertion::make_assertion_fragment(RegexConstraintGraph& graph, ast_manager& m,
@@ -1316,35 +1338,58 @@ namespace smt::noodler::ecma {
         m_child = std::move(term);
     }
 
-    void ASTNodeQuantifier::strip_captures() {
-        m_child->strip_captures();
-    }
+    GraphFragment ASTNodeQuantifier::unroll(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
+        std::vector<GroupID> captures;
+        m_child->collect_capture_groups(captures);
 
-    ASTNodeRef ASTNodeQuantifier::clone() const {
-        auto cloned = std::make_unique<ASTNodeQuantifier>();
-        cloned->m_range = m_range;
-        cloned->m_child = m_child->clone();
-        return cloned;
-    }
-
-    ASTNodeRef ASTNodeQuantifier::unroll() const {
-        auto disj = std::make_unique<ASTNodeDisjunction>();
-
-        if (m_range.min == 0) {
-            disj->add_alternative(std::make_unique<ASTNodeAlternative>());
-        }
-
-        // Create chains with (min, min+1, ..., max) subtrees and alternate them all.
+        // Create chains with (min, min+1, ..., max) iterations and alternate them all.
+        std::vector<GraphFragment> chains;
         const uint64_t start = std::max<uint64_t>(1, m_range.min);
         for (uint64_t k = start; k <= m_range.max; ++k) {
-            auto alt = std::make_unique<ASTNodeAlternative>();
-            for (uint64_t i = 0; i < k; ++i) {
-                alt->add_term(m_child->clone());
+            GraphFragment chain = make_iteration(graph, util_s, m, captures, 1);
+            for (uint64_t i = 2; i <= k; ++i) {
+                chain = chain_fragments(graph, chain, make_iteration(graph, util_s, m, captures, i));
             }
-            disj->add_alternative(std::move(alt));
+            chains.push_back(chain);
         }
 
-        return disj;
+        // Zero iterations
+        if (m_range.min == 0) {
+            chains.push_back(make_epsilon_fragment(graph, util_s, m));
+        }
+
+        SASSERT(!chains.empty());
+        GraphFragment result = chains[0];
+        for (std::size_t i = 1; i < chains.size(); ++i) {
+            result = alternate_fragments(graph, result, chains[i]);
+        }
+        return result;
+    }
+
+    GraphFragment ASTNodeQuantifier::make_iteration(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m,
+                                                    const std::vector<GroupID>& captures,
+                                                    const uint64_t iteration) const {
+        // The child is non-regular (checked in get_subgraph()), therefore its subgraph is always a fragment
+        const RegexComponent child_subgraph = m_child->get_subgraph(graph, util_s, m);
+        SASSERT(std::holds_alternative<GraphFragment>(child_subgraph));
+        const GraphFragment body = std::get<GraphFragment>(child_subgraph);
+        if (captures.empty()) {
+            return body;
+        }
+
+        // Marker edge starting the iteration -- resets the captures inside the child
+        const GraphFragment start = make_marker_fragment(graph);
+        const EdgeID start_eid = start.edges_pointing_to_vout[0];
+        graph.group_resets[start_eid] = captures;
+        GraphFragment result = chain_fragments(graph, start, body);
+
+        // Marker edge ending an iteration beyond the minimum -- the iteration must not match the empty string
+        if (iteration > m_range.min) {
+            const GraphFragment end = make_marker_fragment(graph);
+            graph.nonempty_iterations[end.edges_pointing_to_vout[0]] = start_eid;
+            result = chain_fragments(graph, result, end);
+        }
+        return result;
     }
 
     RegexComponent ASTNodeQuantifier::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s,
@@ -1356,8 +1401,12 @@ namespace smt::noodler::ecma {
             if (m_range.max == UNBOUNDED) {
                 util::throw_error("Unsupported regex structure: Non-regular constructs under kleene star/kleene plus");
             }
-            // Nonregular fragments under bounded quantifier -- statically unroll the AST and convert to graph fragment.
-            return unroll()->get_subgraph(graph, util_s, m);
+            // Zero iterations only -- matches the empty string and leaves all captures untouched.
+            if (m_range.max == 0) {
+                return app_ref(util_s.re.mk_epsilon(util_s.mk_string_sort()), m);
+            }
+            // Nonregular fragments under bounded quantifier -- statically unroll into the graph.
+            return unroll(graph, util_s, m);
         }
 
         // Regular subregex --> directly create the corresponding regular expression
@@ -1433,6 +1482,15 @@ namespace smt::noodler::ecma {
         m_child->strip_unreferenced_captures(referenced);
     }
 
+    void ASTNodeQuantifier::collect_capture_groups(std::vector<GroupID>& gids) const {
+        m_child->collect_capture_groups(gids);
+    }
+
+    void ASTNodeQuantifier::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                      LookaroundScopes& scopes) const {
+        m_child->collect_lookaround_scopes(enclosing, scopes);
+    }
+
     uint64_t ASTNodeLiteral::print_dot(std::ostream& out, uint64_t& node_count) const {
         const uint64_t id = ++node_count;
         out << "  node" << id << " [label=\"LITERAL ('" << static_cast<char>(m_char) << "')\"];\n";
@@ -1458,10 +1516,6 @@ namespace smt::noodler::ecma {
         return app_ref(util_s.re.mk_to_re(str_unit), m);
     }
 
-    ASTNodeRef ASTNodeLiteral::clone() const {
-        return std::make_unique<ASTNodeLiteral>(*this);
-    }
-
     uint64_t ASTNodeDot::print_dot(std::ostream& out, uint64_t& node_count) const {
         const uint64_t id = ++node_count;
         out << "  node" << id << " [label=\"DOT\"];\n";
@@ -1474,10 +1528,6 @@ namespace smt::noodler::ecma {
 
     RegexComponent ASTNodeDot::get_subgraph(RegexConstraintGraph& graph, seq_util& util_s, ast_manager& m) const {
         return app_ref(util_s.re.mk_full_char(nullptr), m);
-    }
-
-    ASTNodeRef ASTNodeDot::clone() const {
-        return std::make_unique<ASTNodeDot>(*this);
     }
 
     uint64_t ASTNodeBackref::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1502,12 +1552,13 @@ namespace smt::noodler::ecma {
         return GraphFragment {vin, vout, {backref_eid}};
     }
 
-    ASTNodeRef ASTNodeBackref::clone() const {
-        return std::make_unique<ASTNodeBackref>(*this);
-    }
-
     void ASTNodeBackref::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         refs.insert(m_backref_id);
+    }
+
+    void ASTNodeBackref::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                   LookaroundScopes& scopes) const {
+        scopes.backref_scopes.emplace_back(m_backref_id, enclosing);
     }
 
     uint64_t ASTNodeGroup::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1580,30 +1631,32 @@ namespace smt::noodler::ecma {
         return fragment;
     }
 
-    void ASTNodeGroup::strip_captures() {
-        if (m_type == GroupType::CAPTURE) {
-            m_type = GroupType::NONCAPTURE;
-        }
-        m_child->strip_captures();
-    }
-
     void ASTNodeGroup::collect_backrefs(std::unordered_set<GroupID>& refs) const {
         m_child->collect_backrefs(refs);
     }
 
     void ASTNodeGroup::strip_unreferenced_captures(const std::unordered_set<GroupID>& referenced) {
-        if (m_type == GroupType::CAPTURE && !referenced.contains(m_gid)) {
+        bool can_be_referenced = (m_type == GroupType::CAPTURE || m_type == GroupType::NAMED);
+        if (can_be_referenced && !referenced.contains(m_gid)) {
             m_type = GroupType::NONCAPTURE;
         }
         m_child->strip_unreferenced_captures(referenced);
     }
 
-    ASTNodeRef ASTNodeGroup::clone() const {
-        auto cloned = std::make_unique<ASTNodeGroup>();
-        cloned->m_type = m_type;
-        cloned->m_gid = m_gid;
-        cloned->m_child = m_child->clone();
-        return cloned;
+    void ASTNodeGroup::collect_capture_groups(std::vector<GroupID>& gids) const {
+        // Same condition as in get_subgraph() -- every group that is not NONCAPTURE is tracked in the graph
+        if (m_type != GroupType::NONCAPTURE) {
+            gids.push_back(m_gid);
+        }
+        m_child->collect_capture_groups(gids);
+    }
+
+    void ASTNodeGroup::collect_lookaround_scopes(std::vector<const ASTNodeAssertion*>& enclosing,
+                                                 LookaroundScopes& scopes) const {
+        if (m_type != GroupType::NONCAPTURE) {
+            scopes.group_scopes[m_gid] = enclosing;
+        }
+        m_child->collect_lookaround_scopes(enclosing, scopes);
     }
 
     uint64_t ASTNodeCharClass::print_dot(std::ostream& out, uint64_t& node_count) const {
@@ -1745,10 +1798,6 @@ namespace smt::noodler::ecma {
         }
 
         return current_class_re;
-    }
-
-    ASTNodeRef ASTNodeCharClass::clone() const {
-        return std::make_unique<ASTNodeCharClass>(*this);
     }
 
     // =============== ECMA REGEX PARSER ===============
@@ -2082,8 +2131,44 @@ namespace smt::noodler::ecma {
         return m_base_prefix;
     }
 
+    void DFSContext::set_base_suffix(const expr_ref& s) {
+        m_base_suffix = s;
+    }
+
+    expr_ref DFSContext::get_base_suffix() const {
+        return m_base_suffix;
+    }
+
     bool DFSContext::has_group(GroupID gid) const {
         return m_group_vars.contains(gid);
+    }
+
+    bool DFSContext::is_group_active(GroupID gid) const {
+        return std::ranges::find(m_active_groups, gid) != m_active_groups.end();
+    }
+
+    std::unordered_map<GroupID, expr_ref_vector> DFSContext::get_closed_group_vars() const {
+        std::unordered_map<GroupID, expr_ref_vector> closed_group_vars;
+        for (const auto& [gid, vars] : m_group_vars) {
+            if (!is_group_active(gid)) {
+                closed_group_vars.emplace(gid, vars);
+            }
+        }
+        return closed_group_vars;
+    }
+
+    void DFSContext::reset_groups(const std::vector<GroupID>& gids) {
+        for (GroupID gid : gids) {
+            m_group_vars.erase(gid);
+        }
+    }
+
+    void DFSContext::mark_iteration_start(EdgeID start_eid) {
+        m_iteration_starts[start_eid] = m_current_path_vars.size();
+    }
+
+    expr_ref DFSContext::concat_iteration_vars(EdgeID start_eid) const {
+        return concat_vars(m_iteration_starts.at(start_eid));
     }
 
     const std::vector<ActiveLookahead>& DFSContext::get_active_lookaheads() const {
@@ -2140,8 +2225,20 @@ namespace smt::noodler::ecma {
         }
     }
 
-    void DFSContext::push_lookahead(const std::variant<app_ref, GraphFragment>& subregex, bool is_positive) {
-        m_active_lookaheads.push_back({subregex, is_positive, m_current_path_vars.size() - 1});
+    void DFSContext::push_lookahead(const RegexComponent& subregex, bool is_positive) {
+        // Only a non-regular lookahead can contain backreferences
+        std::unordered_map<GroupID, expr_ref_vector> closed_group_vars;
+        if (std::holds_alternative<GraphFragment>(subregex)) {
+            closed_group_vars = get_closed_group_vars();
+        }
+        m_active_lookaheads.push_back(
+            {subregex, is_positive, m_current_path_vars.size() - 1, std::move(closed_group_vars)});
+    }
+
+    std::unordered_map<GroupID, expr_ref_vector>
+    DFSContext::replace_group_vars(std::unordered_map<GroupID, expr_ref_vector> group_vars) {
+        std::swap(m_group_vars, group_vars);
+        return group_vars;
     }
 
     void DFSContext::commit_current_path(const expr_ref_vector& additional_constraints) {
@@ -2211,6 +2308,20 @@ namespace smt::noodler::ecma {
         }
 
         return expr_ref(m_util_s.str.mk_concat(m_base_prefix, local_prefix), m_manager);
+    }
+
+    expr_ref DFSContext::get_global_suffix(const uint32_t start_idx) const {
+        expr_ref local_suffix = concat_vars(start_idx);
+        expr* empty_str = m_util_s.str.mk_empty(m_str_sort);
+
+        if (m_base_suffix.get() == empty_str) {
+            return local_suffix;
+        }
+        if (local_suffix.get() == empty_str) {
+            return m_base_suffix;
+        }
+
+        return expr_ref(m_util_s.str.mk_concat(local_suffix, m_base_suffix), m_manager);
     }
 
     DFSStateSnapshot DFSContext::save_snapshot() const {
@@ -2322,6 +2433,29 @@ namespace smt::noodler::ecma {
 
     // ============= REGEX CONSTRAINT BUILDER =============
 
+    void RegexConstraintBuilder::check_lookaround_backrefs(const ASTNode& root) {
+        std::vector<const ASTNodeAssertion*> enclosing;
+        LookaroundScopes scopes;
+        root.collect_lookaround_scopes(enclosing, scopes);
+
+        for (const auto& [gid, backref_scope] : scopes.backref_scopes) {
+            if (!scopes.group_scopes.contains(gid) || scopes.group_scopes.at(gid).empty()) {
+                continue;
+            }
+            // Lookarounds enclosing the group are nested in each other, so if the innermost one encloses the
+            // backreference, all of them do
+            const ASTNodeAssertion* innermost = scopes.group_scopes.at(gid).back();
+            if (std::ranges::find(backref_scope, innermost) == backref_scope.end()) {
+                util::throw_error("Unsupported: backreference to a capture group inside a lookaround that does not "
+                                  "contain the backreference");
+            }
+            if (innermost->is_lookbehind()) {
+                util::throw_error("Unsupported: backreference to a capture group inside a lookbehind (lookbehinds "
+                                  "are matched from right to left)");
+            }
+        }
+    }
+
     RegexConstraintGraph RegexConstraintBuilder::build_rcg() {
         const ASTNodeRef root = m_parser.parse();
         // Get the subgraph from AST
@@ -2329,6 +2463,7 @@ namespace smt::noodler::ecma {
         std::unordered_set<GroupID> referenced_groups;
         root->collect_backrefs(referenced_groups);
         root->strip_unreferenced_captures(referenced_groups);
+        check_lookaround_backrefs(*root);
 
         const RegexComponent comp = root->get_subgraph(m_graph, m_util_s, m_manager);
 
@@ -2380,6 +2515,7 @@ namespace smt::noodler::ecma {
         DFSContext ctx {m_manager, m_util_s};
         ctx.set_target(target_string);
         ctx.set_base_prefix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
+        ctx.set_base_suffix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
         ctx.set_end_vertex(m_graph.end_vertex);
         rcg_dfs_visit(m_graph.start_vertex, ctx);
 
@@ -2480,14 +2616,29 @@ namespace smt::noodler::ecma {
                 expr_ref old_base = ctx.get_base_prefix();
                 ctx.set_base_prefix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
 
+                // The inner target ends at the lookbehind position, but a lookahead inside the lookbehind sees the rest
+                // of the whole string --> introduce x_rest such that target = global_prefix ++ x_rest.
+                expr_ref old_suffix = ctx.get_base_suffix();
+                if (lookaround.contains_lookahead) {
+                    const app_ref rest_var(ctx.mk_fresh_string_var(), m_manager);
+                    const expr_ref prefix_and_rest(m_util_s.str.mk_concat(global_prefix, rest_var), m_manager);
+                    ctx.add_path_constraint({m_manager.mk_eq(m_global_target_string, prefix_and_rest), m_manager});
+                    ctx.set_base_suffix(expr_ref(rest_var, m_manager));
+                }
+
                 // The subregex lookbehind is evaluated in a separate run of DFS on the subgraph.
                 // We hand over x_lb which is the new global target for the inner DFS
                 // run. The constraints for x_lb are generated in the same way.
+                // Backreferences inside the lookbehind refer to the groups closed at the lookbehind position.
+                std::unordered_map<GroupID, expr_ref_vector> outer_group_vars =
+                    ctx.replace_group_vars(ctx.get_closed_group_vars());
                 const expr_ref inner_result = run_inner_rcg_dfs(subregex_fragment, subregex_lb_var, ctx);
+                ctx.replace_group_vars(std::move(outer_group_vars));
 
-                // Restore the original base prefix for the outer DFS run and add the generated constraints for the
-                // lookbehind.
+                // Restore the original base prefix and suffix for the outer DFS run and add the generated constraints
+                // for the lookbehind.
                 ctx.set_base_prefix(old_base);
+                ctx.set_base_suffix(old_suffix);
                 ctx.add_path_constraint({to_app(inner_result.get()), m_manager});
             }
         }
@@ -2495,7 +2646,7 @@ namespace smt::noodler::ecma {
 
     void RegexConstraintBuilder::generate_lookahead_constraints(DFSContext& ctx, expr_ref_vector& final_constraints) {
         for (const ActiveLookahead& la : ctx.get_active_lookaheads()) {
-            expr_ref suffix = ctx.concat_vars(la.start_index);
+            expr_ref suffix = ctx.get_global_suffix(la.start_index);
 
             if (std::holds_alternative<app_ref>(la.subregex)) {
                 app_ref la_var(ctx.mk_fresh_string_var(), m_manager);
@@ -2523,10 +2674,18 @@ namespace smt::noodler::ecma {
                 expr_ref old_base = ctx.get_base_prefix();
                 expr_ref local_prefix_to_la = ctx.concat_vars(0, la.start_index);
                 ctx.set_base_prefix(expr_ref(m_util_s.str.mk_concat(old_base, local_prefix_to_la), m_manager));
+                // The inner target already reaches the end of the whole string
+                expr_ref old_suffix = ctx.get_base_suffix();
+                ctx.set_base_suffix(expr_ref(m_util_s.str.mk_empty(m_str_sort), m_manager));
 
+                // Backreferences inside the lookahead refer to the captures at the lookahead position
+                std::unordered_map<GroupID, expr_ref_vector> path_end_group_vars =
+                    ctx.replace_group_vars(la.group_vars);
                 expr_ref inner_result = run_inner_rcg_dfs(inner_frag, subregex_la_var, ctx);
+                ctx.replace_group_vars(std::move(path_end_group_vars));
 
                 ctx.set_base_prefix(old_base);
+                ctx.set_base_suffix(old_suffix);
                 final_constraints.push_back(inner_result);
             }
         }
@@ -2572,23 +2731,31 @@ namespace smt::noodler::ecma {
             }
         }
         // Backreference --> edge_var must be equal to the concatenation of all variables in the referenced group on the
-        // current path. If the referenced group is not active, it is a forward reference -- matches empty string.
+        // current path. If the referenced group has not been captured yet (forward reference) or is still open
+        // (backreference inside its own group), its capture is undefined -- matches empty string.
         // https://tc39.es/ecma262/2020/#sec-backreferencematcher -- "e. If `s` is undefined, return c(x)."
         else if (std::holds_alternative<BackrefEdge>(edge.payload)) {
             const GroupID ref_id = std::get<BackrefEdge>(edge.payload).backref_id;
-            if (ctx.has_group(ref_id)) {
+
+            if (ctx.has_group(ref_id) && !ctx.is_group_active(ref_id)) {
                 // Backreference -- concatenate all the variables accumulated in the capture group during the current
                 // path.
                 expr_ref captured_string = ctx.concat_group_vars(ref_id);
                 ctx.add_path_constraint({m_manager.mk_eq(edge_var, captured_string), m_manager});
             } else {
-                // Forward reference
+                // Forward reference or backreference inside its own group
                 ctx.add_path_constraint({m_manager.mk_eq(edge_var, m_util_s.str.mk_empty(m_str_sort)), m_manager});
             }
         } else {
             util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: edge payload is "
                               "neither BackrefEdge, AssertionEdge nor MatchEdge");
         }
+    }
+
+    void RegexConstraintBuilder::generate_nonempty_iteration_constraint(DFSContext& ctx, const EdgeID start_eid) {
+        const expr_ref iteration_string = ctx.concat_iteration_vars(start_eid);
+        const app_ref is_empty(m_manager.mk_eq(iteration_string, m_util_s.str.mk_empty(m_str_sort)), m_manager);
+        ctx.add_path_constraint({m_manager.mk_not(is_empty), m_manager});
     }
 
     void RegexConstraintBuilder::rcg_dfs_visit(const VertexID current_vertex, DFSContext& ctx) {
@@ -2605,16 +2772,29 @@ namespace smt::noodler::ecma {
             const RCGEdge& edge = m_graph.edges[eid];
             DFSStateSnapshot snapshot = ctx.save_snapshot();
 
+            // Start of a quantifier iteration -- reset the captures inside the quantified subpattern
+            if (m_graph.group_resets.contains(eid)) {
+                ctx.reset_groups(m_graph.group_resets.at(eid));
+                ctx.mark_iteration_start(eid);
+            }
+
             // Mark all groups that begin on this edge as active
             if (m_graph.group_starts.contains(eid)) {
                 ctx.start_groups(m_graph.group_starts.at(eid));
             }
 
             // Create a fresh variable (and add it to all the active capture groups) and generate constraints for the
-            // current edge
-            app_ref edge_var = ctx.create_edge_var();
-            ctx.push_edge_var_to_groups(edge_var);
-            generate_edge_constraints(ctx, edge, edge_var);
+            // current edge. Marker edges consume nothing and only carry bookkeeping, so they get no variable.
+            if (!std::holds_alternative<MarkerEdge>(edge.payload)) {
+                app_ref edge_var = ctx.create_edge_var();
+                ctx.push_edge_var_to_groups(edge_var);
+                generate_edge_constraints(ctx, edge, edge_var);
+            }
+
+            // End of a quantifier iteration beyond the minimum -- it must not match the empty string
+            if (m_graph.nonempty_iterations.contains(eid)) {
+                generate_nonempty_iteration_constraint(ctx, m_graph.nonempty_iterations.at(eid));
+            }
 
             // Mark all groups that end on this edge as inactive
             if (m_graph.group_ends.contains(eid)) {
@@ -2625,9 +2805,5 @@ namespace smt::noodler::ecma {
             rcg_dfs_visit(edge.target, ctx);
             ctx.restore_snapshot(snapshot);
         }
-    }
-
-    bool GraphFragment::is_initialized() const {
-        return v_in == std::numeric_limits<VertexID>::max() && v_out == std::numeric_limits<VertexID>::max();
     }
 }  // namespace smt::noodler::ecma
