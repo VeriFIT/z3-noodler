@@ -14,18 +14,18 @@ Every [release](https://github.com/VeriFIT/z3-noodler/releases/latest) comes wit
 
 | System | Release asset |
 |---|---|
-| Linux, x86-64 | `z3-noodler-ubuntu-24.04-x86_64-shared` |
-| macOS 26 or newer, Apple Silicon | `z3-noodler-macos-15-arm64-shared` |
-| macOS 15 or newer, Intel | `z3-noodler-macos-15-intel-x86_64-shared` |
+| Linux, x86-64 | `z3-noodler-linux-x86_64` |
+| macOS 13.3 or newer, Apple Silicon | `z3-noodler-macos-arm64` |
+| macOS 13.3 or newer, Intel | `z3-noodler-macos-x86_64` |
 
 There are no Windows binaries.
 
 ### Linux
 
-The binary needs glibc 2.38 or newer and the C++ runtime of GCC 13.2 or newer, for example Ubuntu 24.04 (Ubuntu 22.04 is too old). Download the latest release and check that it runs:
+The binary is statically linked, so it runs on any x86-64 Linux distribution without further libraries. Download the latest release and check that it runs:
 
 ```console
-$ curl -fL -o z3-noodler https://github.com/VeriFIT/z3-noodler/releases/latest/download/z3-noodler-ubuntu-24.04-x86_64-shared
+$ curl -fL -o z3-noodler https://github.com/VeriFIT/z3-noodler/releases/latest/download/z3-noodler-linux-x86_64
 $ chmod +x z3-noodler
 $ ./z3-noodler -version
 ```
@@ -41,10 +41,10 @@ $ mkdir -p ~/.local/bin && mv z3-noodler ~/.local/bin/
 ### macOS
 
 ```console
-$ # Apple Silicon (macOS 26 or newer)
-$ curl -fL -o z3-noodler https://github.com/VeriFIT/z3-noodler/releases/latest/download/z3-noodler-macos-15-arm64-shared
-$ # Intel (macOS 15 or newer)
-$ curl -fL -o z3-noodler https://github.com/VeriFIT/z3-noodler/releases/latest/download/z3-noodler-macos-15-intel-x86_64-shared
+$ # Apple Silicon
+$ curl -fL -o z3-noodler https://github.com/VeriFIT/z3-noodler/releases/latest/download/z3-noodler-macos-arm64
+$ # Intel
+$ curl -fL -o z3-noodler https://github.com/VeriFIT/z3-noodler/releases/latest/download/z3-noodler-macos-x86_64
 $ chmod +x z3-noodler
 $ ./z3-noodler -version
 ```

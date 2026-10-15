@@ -17,33 +17,30 @@ permissions:
 
 jobs:
   build-and-publish-binaries:
-    name: Build binary (${{ matrix.os }}-${{ matrix.os_version }} / ${{ matrix.arch }} / ${{ matrix.variant }})
+    name: Build binary (${{ matrix.asset }})
     runs-on: ${{ matrix.runner }}
 
     strategy:
       fail-fast: false
       matrix:
+        # Asset names do not contain OS versions, so that links to
+        # releases/latest/download/<asset> keep working when runners change.
         include:
-          - os: ubuntu
-            os_version: 24.04
-            arch: x86_64
-            variant: shared
+          # Fully static, so that it does not depend on the glibc/libstdc++ of the runner.
+          - os: linux
+            asset: z3-noodler-linux-x86_64
             runner: ubuntu-24.04
-          - os: ubuntu
-            os_version: 24.04
-            arch: x86_64
-            variant: static-libz3
-            runner: ubuntu-24.04
+            cmake_flags: -DCMAKE_EXE_LINKER_FLAGS=-static
+          # Without a deployment target, the binary requires the macOS version of the runner.
+          # 13.3 is the oldest macOS whose libc++ provides std::format (used by Mata).
           - os: macos
-            os_version: 15-intel
-            arch: x86_64
-            variant: shared
+            asset: z3-noodler-macos-x86_64
             runner: macos-15-intel
+            cmake_flags: -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3
           - os: macos
-            os_version: 15
-            arch: arm64
-            variant: shared
-            runner: macos-latest
+            asset: z3-noodler-macos-arm64
+            runner: macos-15
+            cmake_flags: -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3
 
     steps:
       - name: Checkout Z3-Noodler
@@ -52,38 +49,43 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Install dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu'
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'linux'
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
 
       - name: Install dependencies (macOS)
         if: matrix.os == 'macos'
         run: brew update && brew install cmake
 
-      - name: Configure & Build Z3-Noodler (Unix, shared)
-        if: matrix.variant == 'shared'
+      - name: Configure & Build Z3-Noodler
         run: |
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=Release ..
+          cmake -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_flags }} ..
           make -j$(nproc || sysctl -n hw.ncpu)
 
-      - name: Configure & Build Z3-Noodler (Unix, static libz3)
-        if: matrix.variant == 'static-libz3'
+      - name: Check binary (Linux)
+        if: matrix.os == 'linux'
         run: |
-          mkdir build && cd build
-          cmake -DZ3_BUILD_LIBZ3_SHARED=OFF -DZ3_BUILD_EXECUTABLE=ON -DCMAKE_BUILD_TYPE=Release ..
-          make -j$(nproc || sysctl -n hw.ncpu)
+          file build/z3
+          file build/z3 | grep -q 'statically linked'
 
-      - name: Package binary (Unix)
+      - name: Check binary (macOS)
+        if: matrix.os == 'macos'
         run: |
-          mv build/z3 build/z3-noodler-${{ matrix.os }}-${{ matrix.os_version }}-${{ matrix.arch }}-${{ matrix.variant }}
-          chmod +x build/z3-noodler-${{ matrix.os }}-${{ matrix.os_version }}-${{ matrix.arch }}-${{ matrix.variant }}
+          otool -l build/z3 | grep -A4 LC_BUILD_VERSION
+          otool -l build/z3 | grep -A4 LC_BUILD_VERSION | grep -q 'minos 13.3'
+
+      - name: Package binary
+        run: |
+          build/z3 -version
+          mv build/z3 build/${{ matrix.asset }}
+          chmod +x build/${{ matrix.asset }}
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: z3-noodler-${{ matrix.os }}-${{ matrix.os_version }}-${{ matrix.arch }}-${{ matrix.variant }}
-          path: build/z3-noodler-${{ matrix.os }}-${{ matrix.os_version }}-${{ matrix.arch }}-${{ matrix.variant }}*
+          name: ${{ matrix.asset }}
+          path: build/${{ matrix.asset }}
 
 
   release:
