@@ -943,3 +943,108 @@ TEST_CASE( "Replace not contains with untrimmed haystack automaton (issue #440)"
         CHECK(mata::nfa::are_equivalent(*prep.get_aut_assignment().at(n), regex_to_nfa("x")));
     }
 }
+
+TEST_CASE( "Infer alignment", "[noodler]" ) {
+    BasicTerm x{ BasicTermType::Variable, "x"};
+    BasicTerm w{ BasicTermType::Variable, "w"};
+    BasicTerm y1{ BasicTermType::Variable, "y_1"};
+    BasicTerm y2{ BasicTermType::Variable, "y_2"};
+    BasicTerm z1{ BasicTermType::Variable, "z_1"};
+    BasicTerm z2{ BasicTermType::Variable, "z_2"};
+    BasicTerm a{ BasicTermType::Literal, "a"};
+    BasicTerm aa{ BasicTermType::Literal, "aa"};
+    BasicTerm ab{ BasicTermType::Literal, "ab"};
+
+    auto eq = [](const BasicTerm& l, const std::vector<BasicTerm>& r) {
+        return Predicate::create_equation({l}, r);
+    };
+
+    auto infer = [](const std::vector<Predicate>& preds, const AutAssignment& aut_ass) {
+        Formula conj;
+        for (const Predicate& pr : preds) {
+            conj.add_predicate(pr);
+        }
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        prep.infer_alignment();
+        return prep.get_formula().get_predicates_set();
+    };
+
+    SECTION("literal not in prefix languages") {
+        AutAssignment aut_ass({
+            {x, regex_to_nfa("(a|b)*")}, {y1, regex_to_nfa("b*")}, {y2, regex_to_nfa("(a|b)*")},
+            {z1, regex_to_nfa("b*")}, {z2, regex_to_nfa("(a|b)*")}, {a, regex_to_nfa("a")}, {ab, regex_to_nfa("ab")},
+        });
+        std::vector<Predicate> preds = { eq(x, {y1, a, y2}), eq(x, {z1, a, z2}) };
+        std::set<Predicate> res = infer(preds, aut_ass);
+        CHECK(res.size() == 3);
+        CHECK((res.contains(eq(y1, {z1})) || res.contains(eq(z1, {y1}))));
+
+        preds = { eq(x, {y1, ab, y2}), eq(x, {z1, ab, z2}) };
+        res = infer(preds, aut_ass);
+        CHECK(res.size() == 3);
+        CHECK((res.contains(eq(y1, {z1})) || res.contains(eq(z1, {y1}))));
+    }
+
+    SECTION("propagated") {
+        AutAssignment aut_ass({
+            {x, regex_to_nfa("(a|b)*")}, {w, regex_to_nfa("(a|b)*")}, {y1, regex_to_nfa("b*")}, {y2, regex_to_nfa("(a|b)*")},
+            {z1, regex_to_nfa("b*")}, {z2, regex_to_nfa("(a|b)*")}, {a, regex_to_nfa("a")},
+        });
+        std::vector<Predicate> preds = { eq(x, {y1, a, y2}), eq(x, {w, z2}), eq(w, {z1, a}) };
+        std::set<Predicate> res = infer(preds, aut_ass);
+        CHECK(res.size() == 4);
+        CHECK((res.contains(eq(y1, {z1})) || res.contains(eq(z1, {y1}))));
+    }
+
+    // issue #439: the literal must not occur in a prefix word as a factor ...
+    SECTION("literal is a factor of prefix words") {
+        AutAssignment aut_ass({
+            {x, regex_to_nfa("a+")}, {y1, regex_to_nfa("(aa)+")}, {y2, regex_to_nfa("(a|b)*")},
+            {z1, regex_to_nfa("b*")}, {z2, regex_to_nfa("(a|b)*")}, {a, regex_to_nfa("a")},
+        });
+        std::vector<Predicate> preds = { eq(x, {y1, a, y2}), eq(x, {z1, a, z2}) };
+        CHECK(infer(preds, aut_ass) == std::set<Predicate>(preds.begin(), preds.end()));
+    }
+
+    // ... nor overlap with a suffix of a prefix word
+    SECTION("literal overlaps a suffix of prefix words") {
+        AutAssignment aut_ass({
+            {x, regex_to_nfa("a+")}, {y1, regex_to_nfa("a|aaa")}, {y2, regex_to_nfa("(a|b)*")},
+            {z1, regex_to_nfa("b*")}, {z2, regex_to_nfa("(a|b)*")}, {aa, regex_to_nfa("aa")},
+        });
+        std::vector<Predicate> preds = { eq(x, {y1, aa, y2}), eq(x, {z1, aa, z2}) };
+        CHECK(infer(preds, aut_ass) == std::set<Predicate>(preds.begin(), preds.end()));
+    }
+}
+
+// issue #442: removals justified by each other must not remove all equations sharing a side
+TEST_CASE( "Generate identities circular removal", "[noodler]" ) {
+    BasicTerm x{ BasicTermType::Variable, "x"};
+    BasicTerm y{ BasicTermType::Variable, "y"};
+    BasicTerm u{ BasicTermType::Variable, "u"};
+    BasicTerm v{ BasicTermType::Variable, "v"};
+    BasicTerm w{ BasicTermType::Variable, "w"};
+    AutAssignment aut_ass({
+        {x, regex_to_nfa("a+")}, {y, regex_to_nfa("b+")}, {u, regex_to_nfa("ab|ba")},
+        {v, regex_to_nfa("(a|b)*")}, {w, regex_to_nfa("(a|b)*")},
+    });
+
+    std::vector<Predicate> eqs = {
+        Predicate::create_equation({x}, {y, u}),
+        Predicate::create_equation({x}, {y, v}),
+        Predicate::create_equation({x}, {y, u, w}),
+    };
+    std::vector<size_t> order = {0, 1, 2};
+    do {
+        Formula conj;
+        for (size_t i : order) {
+            conj.add_predicate(eqs[i]);
+        }
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        prep.generate_identities();
+        // x and y must stay constrained by some of the original equations
+        std::set<Predicate> res = prep.get_formula().get_predicates_set();
+        INFO(prep.get_formula().to_string());
+        CHECK(std::any_of(eqs.begin(), eqs.end(), [&res](const Predicate& eq) { return res.contains(eq); }));
+    } while (std::next_permutation(order.begin(), order.end()));
+}

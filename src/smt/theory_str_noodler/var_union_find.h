@@ -247,8 +247,14 @@ namespace smt::noodler {
                         continue;
                     }
                     BasicTerm bvar = util::get_variable_basic_term(var);
+                    // the variable is not in the current instance (e.g., fresh variable from axioms
+                    // that are not asserted), hence it is irrelevant for the equivalence classes
+                    auto aut_it = aut_ass.find(bvar);
+                    if (aut_it == aut_ass.end()) {
+                        continue;
+                    }
                     if (len > 1) {
-                        std::set<std::pair<int, int>> aut_constr = mata::applications::strings::get_word_lengths(*aut_ass.at(bvar));
+                        std::set<std::pair<int, int>> aut_constr = mata::applications::strings::get_word_lengths(*aut_it->second);
                         if (aut_constr.size() > 1 || !aut_constr.contains({len, 0})) {
                             continue;
                         }
