@@ -608,7 +608,7 @@ namespace smt {
             // don't register any solver.
         }
         else {
-            throw default_exception("invalid parameter for smt.string_solver, valid options are 'seq', 'auto', 'noodler'");
+            throw default_exception("invalid parameter for smt.string_solver, valid options are 'noodler', 'seq', 'empty', 'auto', 'none'");
         }
     }
 
@@ -799,7 +799,7 @@ namespace smt {
                 setup_seq();
         }
         else {
-            throw default_exception("invalid parameter for smt.string_solver, valid options are 'seq', 'auto', 'noodler'");
+            throw default_exception("invalid parameter for smt.string_solver, valid options are 'noodler', 'seq', 'empty', 'auto', 'none'");
         }
     }
 

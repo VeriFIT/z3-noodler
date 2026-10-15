@@ -6,7 +6,7 @@
 
 Z3-Noodler is an SMT solver for string constraints such as those that occur in symbolic execution and analysis of programs, 
 reasoning about configuration files of cloud services and smart contracts, etc.
-Z3-Noodler is based on the SMT solver [Z3 v5.0.0](https://github.com/Z3Prover/z3/releases/tag/z3-5.0.0), in which it replaces the solver for the theory of strings. 
+Z3-Noodler is based on the SMT solver [Z3 v5.1.0](https://github.com/Z3Prover/z3/releases/tag/z3-5.1.0), in which it replaces the solver for the theory of strings. 
 The core of the string solver implements several decision procedures, but mainly it relies on the equation stabilization algorithm (see [Publications](#publications)).
 
 Z3-Noodler utilizes the automata library [Mata](https://github.com/VeriFIT/mata/) for efficient representation of automata and their processing.
@@ -26,9 +26,9 @@ However, if you plan to **develop or frequently rebuild Z3-Noodler**, it is reco
 
 The minimum required Mata version is `v1.32.37`.
 
-To install mata, run:
+To install the version of Mata that Z3-Noodler uses, run:
 ```shell
-git clone 'https://github.com/VeriFIT/mata.git'
+git clone --branch v1.32.37 'https://github.com/VeriFIT/mata.git'
 cd mata
 make release
 sudo make install
@@ -41,6 +41,9 @@ xcode-select --install
 ```
 
 ### Step 2: Build Z3-Noodler
+
+Building requires CMake 3.16 or newer, a C++20 compiler (GCC 13 or newer, or Apple Clang), and Python 3 (used by the build to generate source files).
+If Mata is not installed, git and network access are also needed when running `cmake`.
 
 ```shell
 git clone 'https://github.com/VeriFIT/z3-noodler.git'
@@ -55,8 +58,9 @@ See [instructions for building Z3][cmake] for more details.
 [make]: README-Z3.md#building-z3-using-make-and-gccclang
 [cmake]: README-Z3.md#building-z3-using-cmake
 
-To build tests for Z3-Noodler (assuming you have [Catch2](https://github.com/catchorg/Catch2) version 3 installed), run the following 
-command.
+To build tests for Z3-Noodler, you need [Catch2](https://github.com/catchorg/Catch2) version 3.
+Catch2 is detected when `cmake` is run, so install it **before** running `cmake` (or re-run `cmake` after installing it); otherwise, the `test-noodler` target does not exist.
+Then, run the following command in the build directory:
 ```shell
 make test-noodler
 ```
@@ -72,10 +76,11 @@ If you want to get a model for sat instances (using `get-model` or `get-value`),
 ./z3 model=true <instance_file.smt2> 
 ```
 
-To run tests for Z3-Noodler:
+To run tests for Z3-Noodler, run the following command in the build directory (the end-to-end tests use the `z3` binary from the current directory):
 ```shell
 ./test-noodler
 ```
+To use a `z3` binary from a different location, set `NOODLER_E2E_Z3=/path/to/z3`.
 
 ## Additional string functions
 Other than the constraints defined in the [SMT-LIB theory of strings](https://smt-lib.org/theories-UnicodeStrings.shtml), Z3-Noodler can handle some additional functions
@@ -91,6 +96,7 @@ Other than the constraints defined in the [SMT-LIB theory of strings](https://sm
  - functions for rational relations (finite transducers)
 
 ## Publications
+- D. Chocholatý, V. Havlena, L. Holík, J. Síč, and M. Šedý. [String Solving with Stabilization and Transducers](https://doi.org/10.1007/978-3-032-32526-6_3). In *Proc. of CAV'26*, volume 16683 of LNCS, pages 50-74, 2026. Springer.
 - Y. Chen, V. Havlena, M.Hečko, L.Holík, and O. Lengál. [A Uniform Framework for Handling Position Constraints in String Solving](https://dl.acm.org/doi/10.1145/3729273). In *Proc. of PLDI'25*, volume 9, pages 550-575, 2025. ACM.
 - D. Chocholatý, V. Havlena, L. Holík, J. Hranička, O. Lengál, and J. Síč. [Z3-Noodler 1.3: Shepherding Decision Procedures for Strings with Model Generation](https://link.springer.com/chapter/10.1007/978-3-031-90653-4_2). In *Proc. of TACAS'25*, volume 15697 of LNCS, pages 23-44, 2025. Springer.
 - V. Havlena, L. Holík, O. Lengál, and J. Síč. [Cooking String-Integer Conversions with Noodles](https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.SAT.2024.14). In *Proc. of SAT'24*, LIPIcs, Volume 305, pp. 14:1-14:19, 2024. Schloss Dagstuhl – Leibniz-Zentrum für Informatik.

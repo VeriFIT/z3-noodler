@@ -2,3 +2,5 @@
 **/*.pyc
 .git
 **/*.Dockerfile
+build
+build-*
