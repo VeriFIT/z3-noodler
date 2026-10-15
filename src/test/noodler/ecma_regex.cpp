@@ -1399,15 +1399,24 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
         REQUIRE(graph.group_ends.at(the_edge_id)[0] == 42);
     }
 
-    SECTION("ASTNodeDot creates regular app_ref with re.allchar") {
+    SECTION("ASTNodeDot creates regular app_ref with re.allchar without line terminators") {
         ASTNodeDot dot_node;
         RegexComponent comp = dot_node.get_subgraph(graph, util_s, m);
 
         REQUIRE(std::holds_alternative<app_ref>(comp));
         REQUIRE(graph.vertices.empty());
 
+        // re.inter(re.allchar, re.comp(line_terminators))
         app_ref z3_regex = std::get<app_ref>(comp);
-        REQUIRE(app_to_string(z3_regex, m) == "re.allchar");
+        expr* all_chars = nullptr;
+        expr* complement = nullptr;
+        expr* line_terminators = nullptr;
+        REQUIRE(util_s.re.is_intersection(z3_regex, all_chars, complement));
+        REQUIRE(util_s.re.is_full_char(all_chars));
+        REQUIRE(util_s.re.is_complement(complement, line_terminators));
+        REQUIRE(app_to_string(app_ref(to_app(line_terminators), m), m) ==
+                "(re.union (re.union (re.union (str.to_re \"\\u{a}\") (str.to_re \"\\u{d}\")) (str.to_re \"\\u{2028}\"))"
+                " (str.to_re \"\\u{2029}\"))");
     }
 
     SECTION("ASTNodeAssertion anchor ^ creates assertion edge") {
