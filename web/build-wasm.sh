@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Builds the Z3-Noodler command-line binary as a single-threaded WebAssembly module and copies it
-# (noodler.js + noodler.wasm + version.json) into the web page directory.
+# (noodler.js + noodler.wasm + version.json) into the playground of the web site.
 #
 # Usage: web/build-wasm.sh [OUT_DIR] [extra cmake args...]
-#   OUT_DIR    where to put the built files (default: web/site)
+#   OUT_DIR    where to put the built files (default: web/site/playground)
 #   BUILD_DIR  environment variable, CMake build directory (default: build-web)
 #   JOBS       environment variable, number of parallel build jobs (default: nproc)
 #
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT_DIR="$(realpath -m "${1:-$ROOT/web/site}")"
+OUT_DIR="$(realpath -m "${1:-$ROOT/web/site/playground}")"
 [[ $# -gt 0 ]] && shift
 BUILD_DIR="$(realpath -m "${BUILD_DIR:-$ROOT/build-web}")"
 JOBS="${JOBS:-$(nproc)}"
@@ -47,7 +47,8 @@ mkdir -p "$OUT_DIR"
 cp "$BUILD_DIR/z3.js" "$OUT_DIR/noodler.js"
 cp "$BUILD_DIR/z3.wasm" "$OUT_DIR/noodler.wasm"
 
-# Version information shown on the page (and used by the nightly deployment to skip unchanged builds).
+# Version information shown in the playground (and used by the nightly deployment to skip unchanged
+# builds).
 COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 DESCRIBE="$(git -C "$ROOT" describe --tags --always 2>/dev/null || echo unknown)"
 cat > "$OUT_DIR/version.json" <<EOF

@@ -13,7 +13,7 @@
   --line: #d0d7de;
   --line-strong: #a9b4bf;
 
-  --accent: #f2be22;          /* egg-noodle yellow: the Run action and the logo */
+  --accent: #f2be22;          /* egg-noodle yellow: the Run action */
   --accent-hover: #e2ab08;
   --accent-ink: #1f1800;
   --accent-line: #c79600;
@@ -158,11 +158,6 @@ a:hover { text-decoration-thickness: 2px; }
 .brand { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 420px; }
 .brand-text { min-width: 0; }
 
-.logo { width: 76px; height: 38px; flex: none; }
-.logo-state { stroke: var(--ink); stroke-width: 2.2; }
-.logo-inner { stroke-width: 1.7; }
-.logo-arrow { stroke: var(--ink); stroke-width: 2.2; stroke-linejoin: round; }
-.logo-noodle { stroke: var(--noodle); stroke-width: 3; }
 
 h1 {
   margin: 0;
@@ -605,8 +600,7 @@ progress:indeterminate::-moz-progress-bar { background: transparent; }
 @media (max-width: 520px) {
   .site-header { padding-top: 14px; }
   h1 { font-size: 1.4rem; }
-  .logo { width: 60px; height: 30px; margin-top: 2px; }
-  .brand { align-items: flex-start; flex-basis: 100%; }
+    .brand { align-items: flex-start; flex-basis: 100%; }
   .btn-run kbd { display: none; }
   .extra-field { flex-wrap: wrap; flex-basis: 100%; gap: 4px; }
   .extra-field label { flex-basis: 100%; }
