@@ -25,8 +25,6 @@
 
 #include "formula.h"
 
-// FIXME most if not all these functions should probably be in theory_str_noodler
-
 namespace smt::noodler::util {
     using expr_pair = std::pair<expr_ref, expr_ref>;
     using expr_pair_flag = std::tuple<expr_ref, expr_ref, bool>;
@@ -95,6 +93,20 @@ namespace smt::noodler::util {
      * @return Passed @p variable as a @c BasicTerm
      */
     BasicTerm get_variable_basic_term(expr* variable);
+
+    /**
+     * @brief Checks whether @p ex is one of the string-argument/arithmetic-result functions, that is:
+     * str.len, str.to_code str.to_int and str.to_real.
+     */
+    bool is_arith_str_func(const expr* ex, const seq_util& m_util_s);
+
+    /**
+     * @brief Returns the z3 arithmetic expr representing @p var: its mapped expr from @p known_vars
+     * (wrapped in `str.len` if that expr is string-sorted), or, if @p var has no mapping in @p known_vars,
+     * a fresh skolem constant named after @p var, of int or real sort depending on @p var's type.
+     */
+    expr_ref basic_term_to_length_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
+                                    ast_manager& m, const seq_util& m_util_s, arith_util& m_util_a);
 
     void get_len_exprs(expr* ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res);
 

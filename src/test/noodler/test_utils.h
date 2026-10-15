@@ -125,7 +125,7 @@ inline lbool check_lia_sat(const LenNode& formula) {
     cmd_ctx.set_regular_stream(trash);
     smt_params str_params{};
     int_expr_solver solver(ast_m, str_params);
-    return solver.check_sat(len_node_to_expr(ast_m, cmd_ctx, formula));
+    return solver.check_sat(len_node_to_expr(ast_m, cmd_ctx, formula), false, false);
 }
 
 #endif //Z3_TEST_UTILS_H

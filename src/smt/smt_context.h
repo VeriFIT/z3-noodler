@@ -380,6 +380,8 @@ namespace smt {
 
         clause_vector const& get_lemmas() const { return m_lemmas; }
 
+        clause_vector const& get_aux_clauses() const { return m_aux_clauses; }
+
         literal get_literal(expr * n) const;
 
         bool has_enode(bool_var v) const {

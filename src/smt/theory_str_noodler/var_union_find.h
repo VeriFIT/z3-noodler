@@ -288,7 +288,7 @@ namespace smt::noodler {
                             ast_manager& m = ctx.get_manager();
                             expr_ref neq(m.mk_not(m.mk_eq(t.m_key, len_term)), m);
                             lia_solver.initialize(ctx);
-                            lbool res = lia_solver.check_sat(neq);
+                            lbool res = lia_solver.check_sat(neq, false, false);
                             lia_implies_eq = (res == l_false);
                         }
                         if (!lia_implies_eq) {

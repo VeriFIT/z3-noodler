@@ -73,6 +73,27 @@ namespace smt::noodler::util {
         return BasicTerm{ BasicTermType::Variable, variable_app->get_decl()->get_name().str() };
     }
 
+    bool is_arith_str_func(const expr* ex, const seq_util& m_util_s) {
+        return m_util_s.str.is_length(ex) || m_util_s.str.is_to_code(ex) || m_util_s.str.is_stoi(ex) || m_util_s.str.is_stor(ex);
+    }
+
+    expr_ref basic_term_to_length_expr(const BasicTerm& var, const std::map<BasicTerm, expr_ref>& known_vars,
+                                    ast_manager& m, const seq_util& m_util_s, arith_util& m_util_a) {
+        auto known_it = known_vars.find(var);
+        if (known_it != known_vars.end()) {
+            expr_ref known_expr = known_it->second;
+            if (m_util_s.is_string(known_expr->get_sort())) {
+                // for string variables we want its length
+                return expr_ref(m_util_s.str.mk_length(known_expr), m);
+            }
+            return known_expr;
+        }
+
+        // var is not known yet -- needs to be skolem, because it seems they are not printed for models.
+        app* skolem = m.mk_skolem_const(symbol(var.get_name().encode()), var.is_real_variable() ? m_util_a.mk_real() : m_util_a.mk_int());
+        return expr_ref(skolem, m);
+    }
+
     void get_len_exprs(expr* const ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res) {
 
         if(is_quantifier(ex)) {
