@@ -1014,7 +1014,7 @@ namespace {
 
         smt_params params{};
         int_expr_solver solver(manager, params);
-        return solver.check_sat(z3_formula);
+        return solver.check_sat(z3_formula, false, false);
     }
 }
 
