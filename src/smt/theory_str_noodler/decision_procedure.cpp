@@ -429,7 +429,9 @@ namespace smt::noodler {
         //   output_vars = T(input_vars),
         // we take the language of applying automaton from input_vars on T and create a new fresh_var with this language, where we create
         //    fresh_var = T(input_vars)         and         output_vars ⊆ fresh_var
-        // where the inclusion must be processed to update the languages of output_vars.
+        // where the inclusion must be processed to update the languages of output_vars. If input_vars is more than one term, we instead introduce
+        // fresh_input_var = input_vars_automata[0] and create fresh_var = T(fresh_input_var) together with the extra inclusion fresh_input_var ⊆ input_vars,
+        // to keep the stored transducer simple (needed for model generation).
         // Note: It would seem that we could also use this optimization for when we have one input length var (that leads to one automaton). However,
         // this would not work, after processing the inclusion, the fresh_var (which would need to be length) would be substituted and then "fresh_var = T(input_vars)"
         // would be processed again, but input_vars still lead to one automaton so we would repeat this and get stuck.
@@ -444,8 +446,15 @@ namespace smt::noodler {
 
             // the language of fresh_var is the application, it is length if input_vars contain length
             BasicTerm fresh_var = solving_state.add_fresh_var(std::make_shared<mata::nfa::Nfa>(application_to_input_automaton), std::string("onevarapp_") + std::to_string(noodlification_no), false, true);
-            // we add transducer "fresh_var = T(input_vars)"
-            solving_state.add_transducer(transducer_to_process.get_transducer(), input_vars, {fresh_var}, false);
+
+            if (input_vars.size() == 1) {
+                // input_vars is already a single var, we add transducer "fresh_var = T(input_vars)" directly, it stays simple
+                solving_state.add_transducer(transducer_to_process.get_transducer(), input_vars, {fresh_var}, false);
+            } else {
+                BasicTerm fresh_input_var = solving_state.add_fresh_var(input_vars_automata[0], std::string("transducerinput_") + std::to_string(noodlification_no), false, true);
+                solving_state.add_transducer(transducer_to_process.get_transducer(), {fresh_input_var}, {fresh_var}, false);
+                solving_state.add_predicate(Predicate::create_equation({fresh_input_var}, input_vars), false);
+            }
             // we add inclusion "output_vars ⊆ fresh_var"
             Predicate new_inclusion = Predicate::create_equation(output_vars, {fresh_var});
             solving_state.add_predicate(new_inclusion, false);
@@ -1009,7 +1018,13 @@ namespace smt::noodler {
         // Refinement of languages is beneficial only for instances containing not(contains) or disequalities (it is used to reduce the number of
         // disequations/not(contains). For a strong reduction you need to have languages as precise as possible). In the case of
         // pure equalitities it could create bigger automata, which may be problem later during the noodlification.
-        if(this->formula.contains_pred_type(PredicateType::Inequation) || this->formula.contains_pred_type(PredicateType::NotContains)) {
+        // The refinement is currently DISABLED. The original condition queried this->formula, which is already moved into
+        // prep_handler at this point, so the refinement has never been applied in practice. Enabling it (by querying
+        // prep_handler.get_formula()) causes substantial slow-downs (e.g., str-term-small-rw_544 from QF_SLIA goes
+        // from 0.01s to a timeout due to automata blow-up in propagate_variables). The refinement is only an optimization,
+        // so skipping it is sound. Enable it again only after a proper benchmark evaluation.
+        constexpr bool ENABLE_REFINE_LANGUAGES = false;
+        if(ENABLE_REFINE_LANGUAGES && (prep_handler.get_formula().contains_pred_type(PredicateType::Inequation) || prep_handler.get_formula().contains_pred_type(PredicateType::NotContains))) {
             // Refine languages is applied in the order given by the predicates. Single iteration
             // might not update crucial variables that could contradict the formula.
             // Two iterations seem to be a good trade-off since the automata could explode in the fixpoint.
@@ -1025,7 +1040,7 @@ namespace smt::noodler {
         prep_handler.remove_regular();
         // Skip_len_sat is not compatible with not(contains) and conversions as the preprocessing may skip equations with variables
         // inside not(contains)/conversion.
-        if(this->not_contains.get_predicates().empty() && !conversion_handler.are_there_any_conversions()) {
+        if(!prep_handler.get_formula().contains_pred_type(PredicateType::NotContains) && !conversion_handler.are_there_any_conversions()) {
             prep_handler.skip_len_sat();
         }
         prep_handler.generate_identities();
@@ -1604,9 +1619,7 @@ namespace smt::noodler {
 
             Predicate predicate_with_var_on_right_side;
             if (solution.get_predicate_with_var_on_right_side(var, predicate_with_var_on_right_side)) {
-                // TODO check if predicate_with_var_on_right_side lays on a cycle.
-                // If it is on a cycle, then we need to use (and implement) the horrible proof.
-                // Right now if there is some cycle (checked using vars_whose_model_we_are_computing), we throw error.
+                // predicate_with_var_on_right_side cannot lay on a cycle, cyclic parts of the inclusion graph should be handled by init_model
 
                 // Transducers are simple, because we assume they are of the form
                 //      output_var = T(var)
@@ -1624,7 +1637,14 @@ namespace smt::noodler {
                     mata::nfa::Nfa possible_inputs = predicate_with_var_on_right_side.get_transducer()->apply(util::get_mata_word_zstring(output_var_model), 1, true, mata::nft::JumpMode::NoJump).to_nfa_move();
                     possible_inputs = mata::nfa::reduce(mata::nfa::remove_epsilon(possible_inputs.trim()));
                     // the model of var is then some word from possible_inputs and the langauge of var
-                    mata::Word accepted_word = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word().value();
+                    std::optional<mata::Word> accepted_word_opt = mata::nfa::intersection(possible_inputs, *solution.aut_ass.at(var)).get_word();
+                    if (!accepted_word_opt.has_value()) {
+                        // this should not happen if transducers stored in the solution are kept simple (one input
+                        // variable whose language is a superset of the possible inputs), but we harden against it
+                        // here instead of letting the uncaught std::bad_optional_access abort the process
+                        util::throw_error("Could not generate model for a transducer constraint (no valid input word found)");
+                    }
+                    mata::Word accepted_word = accepted_word_opt.value();
                     return update_model_and_aut_ass(var, alph.get_string_from_mata_word(accepted_word));
                 }
 

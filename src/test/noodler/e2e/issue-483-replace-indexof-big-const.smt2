@@ -1,0 +1,7 @@
+(set-info :status sat)
+(declare-fun x () String)
+(declare-fun v () String)
+(assert (str.in_re x (re.++ (str.to_re "ab") (re.range "d" "e"))))
+(assert (= v (str.replace (str.substr x 0 (+ 4294967297 (str.indexof x "b" 0))) "b" "c")))
+(assert (str.in_re v (re.++ (str.to_re "ac") (re.range "d" "e"))))
+(check-sat)

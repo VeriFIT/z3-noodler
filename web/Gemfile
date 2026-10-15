@@ -1,0 +1,6 @@
+# Only for previewing the web site locally with the same Jekyll version and plugins as GitHub
+# Pages (see README.md). The deployed site is built by actions/jekyll-build-pages, which does not
+# use this file.
+source "https://rubygems.org"
+
+gem "github-pages", group: :jekyll_plugins

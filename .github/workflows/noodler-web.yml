@@ -1,0 +1,231 @@
+name: Z3-Noodler Web (GitHub Pages)
+
+# Builds the Z3-Noodler web site and deploys it to GitHub Pages
+# (https://verifit.github.io/z3-noodler/):
+# - the playground (web/site/playground): the command-line solver compiled to WebAssembly
+#   (web/build-wasm.sh) and smoke-tested in Node.js (web/smoke-test.mjs)
+# - the site itself: Jekyll sources in web/site, built by GitHub's own Pages builder
+#   (actions/jekyll-build-pages); the playground has no front matter, so Jekyll copies it unchanged
+#
+# - nightly (schedule, default branch): rebuilds and redeploys the site only if the deployed
+#   playground (its version.json) was built from a different commit than the current HEAD
+# - manually (workflow_dispatch): the same; the `force` input rebuilds and redeploys even if the
+#   deployed site is up to date
+# - pull requests changing the site, this workflow or the CMake files the web build depends on:
+#   build and test only (WebAssembly smoke test and Jekyll build), never deploy
+
+on:
+  schedule:
+    - cron: '23 2 * * *' # every night at 02:23 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Rebuild and redeploy even if the deployed site is built from the current commit'
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - 'web/**'
+      - '.github/workflows/noodler-web.yml'
+      # the web build depends on these (Emscripten flags, Z3_SHELL_LINK_FLAGS, Mata version)
+      - 'CMakeLists.txt'
+      - 'src/shell/CMakeLists.txt'
+
+permissions:
+  contents: read
+
+# Nightly and manual runs are queued one after another (and the deployment itself is in the
+# 'pages' group below); a new push to a pull request cancels the older build of that pull request.
+concurrency:
+  group: noodler-web-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  EM_VERSION: 3.1.73
+
+jobs:
+  decide:
+    name: Check the deployed version
+    # do not run the nightly job in forks (they can still run it manually)
+    if: github.event_name != 'schedule' || github.repository == 'VeriFIT/z3-noodler'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: read # actions/configure-pages reads the URL of the page
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      deploy: ${{ steps.decide.outputs.deploy }}
+    steps:
+      # Also fails early (before the long build) if GitHub Pages is not enabled for the repository.
+      - name: Get the URL of the page
+        id: pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+
+      # github.sha is the HEAD of the default branch for scheduled runs (and the HEAD of the chosen
+      # branch for manual runs); the build job checks out exactly this commit, so it is also the
+      # commit that build-wasm.sh writes to playground/version.json. The Jekyll sources are in the
+      # same repository, so a site built from HEAD is up to date in both parts.
+      - name: Compare the deployed version with HEAD
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE: ${{ inputs.force }}
+          HEAD_SHA: ${{ github.sha }}
+          PAGES_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          build=true
+          deploy=false
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            reason="Pull request: build and test only, no deployment."
+          else
+            deploy=true
+            # Commit the deployed site was built from; empty when it cannot be determined (nothing
+            # deployed yet, network error, ...), which means rebuilding.
+            deployed="$(curl --fail --silent --show-error --location --retry 3 --max-time 60 \
+                          --header 'Cache-Control: no-cache' \
+                          "${PAGES_URL%/}/playground/version.json?run=${GITHUB_RUN_ID}" \
+                        | jq -r '.commit // empty')" || deployed=""
+            [[ "$deployed" =~ ^[0-9a-f]{40}$ ]] || deployed=""
+            if [[ "$FORCE" == true ]]; then
+              reason="Forced rebuild (deployed site: ${deployed:-unknown}, HEAD: $HEAD_SHA)."
+            elif [[ "$deployed" == "$HEAD_SHA" ]]; then
+              build=false
+              deploy=false
+              reason="The deployed site is already built from HEAD ($HEAD_SHA), nothing to do."
+            else
+              reason="The deployed site is built from ${deployed:-an unknown commit}, HEAD is $HEAD_SHA: rebuilding."
+            fi
+          fi
+          echo "$reason"
+          echo "$reason" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "build=$build"
+            echo "deploy=$deploy"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build & test
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      # the Jekyll build (its jekyll-github-metadata plugin) reads the repository's Pages settings,
+      # e.g. the base URL /z3-noodler under which the site is served
+      pages: read
+    env:
+      # Compilation results are cached with ccache between runs (see the build step), so a nightly
+      # rebuild after a few commits recompiles only the changed sources. The paths are stable
+      # between runs on GitHub-hosted runners.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - name: Checkout Z3-Noodler
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # all history and tags, for `git describe` in version.json
+          # if PR, checkout the PR's repo (needed for PRs coming from forks)
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install ccache
+        run: sudo apt-get update && sudo apt-get install -y ccache
+
+      - name: Setup emscripten
+        uses: mymindstorm/setup-emsdk@v16
+        with:
+          version: ${{ env.EM_VERSION }}
+          actions-cache-folder: 'emsdk-cache'
+
+      # Caches are immutable, so every run that builds saves a new one (only on the default
+      # branch, i.e. not from pull requests) and restores the most recent one.
+      - name: Restore ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: noodler-web-ccache-emsdk-${{ env.EM_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: noodler-web-ccache-emsdk-${{ env.EM_VERSION }}-
+
+      - name: Build the WebAssembly module
+        id: build
+        env:
+          # emcc runs all its internal clang invocations through ccache, including those that
+          # build Emscripten's system libraries (libc++ etc. with wasm exceptions) on first use
+          EM_COMPILER_WRAPPER: ccache
+          # clang is fully determined by the pinned emsdk version (avoids hashing the binary)
+          CCACHE_COMPILERCHECK: string:emsdk-${{ env.EM_VERSION }}
+        run: |
+          ccache --zero-stats
+          web/build-wasm.sh web/site/playground
+          ccache --show-stats
+
+      # Saved also when a later step fails, so that a fixed build reuses the compiled objects.
+      - name: Save ccache
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && github.event_name != 'pull_request' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: noodler-web-ccache-emsdk-${{ env.EM_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Summary
+        run: |
+          {
+            echo '### Z3-Noodler web build'
+            echo '```json'
+            cat web/site/playground/version.json
+            echo '```'
+            echo "noodler.wasm: $(stat -c %s web/site/playground/noodler.wasm | numfmt --to=iec --suffix=B)" \
+                 "($(gzip -9 -c web/site/playground/noodler.wasm | wc -c | numfmt --to=iec --suffix=B) gzipped)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Smoke test
+        run: node web/smoke-test.mjs web/site/playground
+
+      # The same builder (github-pages gem: Jekyll 3.10, the Minimal theme, GitHub's plugins) that
+      # GitHub uses for sites deployed from a branch; also validates the site in pull requests.
+      # web/site/playground (including the files built above) is copied to _site/playground.
+      - name: Build the site with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./web/site
+          destination: ./_site
+
+      - name: Upload the site
+        if: needs.decide.outputs.deploy == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: [decide, build]
+    if: needs.decide.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      pages: write # to deploy to GitHub Pages
+      id-token: write # to verify that the deployment originates from an appropriate source
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # never cancel a deployment in progress
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

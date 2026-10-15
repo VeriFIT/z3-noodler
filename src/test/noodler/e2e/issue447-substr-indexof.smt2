@@ -1,0 +1,5 @@
+(set-info :status unsat)
+(declare-const s String)
+(assert (not (str.contains s "a")))
+(assert (= (str.substr s 0 (+ 1 (str.indexof s "a" 0))) "zzz"))
+(check-sat)

@@ -265,6 +265,7 @@ namespace smt::noodler::regex {
         mata::nfa::Nfa prefix_automaton{1,{0}}; /// the prefix "tree" for find strings of replace_all operations
         std::map<mata::nfa::State, mata::Word> replacing_map{{0, {}}}; /// maps states of prefix_automaton that to the string that should be replaced by (for find strings it will be corresponding replace, otherwise the prefix)
         std::map<mata::Symbol, std::set<mata::nfa::State>> one_symbol_replace_to_prefix_state; /// for each symbol w (|w| = 1) and q where w = replacing_map[q], we have q \in one_symbol_replace_to_prefix_state[w]
+        bool has_empty_replace = false; /// true iff some already added find has an empty replace (i.e., it deletes); a deletion can join its neighbouring characters together and create a new occurrence of a later find, which this simultaneous-matching construction cannot detect, so once this is true, later finds of length >= 2 are rejected by add_find
 
         /**
          * @brief Get the next state of prefix tree (if exists) from state @p from trough symbol @p symbol

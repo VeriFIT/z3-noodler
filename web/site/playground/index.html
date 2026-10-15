@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Z3-Noodler in the browser</title>
+<meta name="description" content="Run Z3-Noodler, an SMT solver for string constraints, in your browser via WebAssembly. Your input never leaves your machine.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip-link" href="#editor-input">Skip to the editor</a>
+
+<header class="site-header">
+  <div class="brand">
+    <div class="brand-text">
+      <h1>Z3-Noodler</h1>
+      <p class="tagline">An SMT solver for string constraints, running entirely in your browser via WebAssembly. Nothing you type leaves your machine.</p>
+    </div>
+  </div>
+  <nav class="project" aria-label="Project">
+    <p class="build" id="build-info">Reading build information…</p>
+    <ul class="links">
+      <li><a href="../"><span aria-hidden="true">← </span>Z3-Noodler home</a></li>
+      <li><a href="https://github.com/VeriFIT/z3-noodler">Source on GitHub</a></li>
+      <li><a href="../publications.html">Publications</a></li>
+      <li><a href="https://github.com/VeriFIT/z3-noodler/issues">Report an issue</a></li>
+    </ul>
+  </nav>
+</header>
+
+<div class="notice" id="notice" role="alert" hidden></div>
+
+<main class="workspace">
+  <section class="pane editor-pane" aria-labelledby="input-heading">
+    <div class="pane-head">
+      <h2 id="input-heading" class="pane-title">Input</h2>
+      <div class="example-picker" id="example-picker">
+        <label for="example-select" class="visually-hidden">Load an example</label>
+        <select id="example-select">
+          <option value="">Load an example…</option>
+        </select>
+      </div>
+      <button type="button" id="share-btn" class="btn-quiet">Share</button>
+    </div>
+
+    <div class="editor-note" id="editor-note" hidden>
+      <p id="editor-note-text"></p>
+      <button type="button" id="restore-btn" class="btn-link" hidden>Restore my text</button>
+    </div>
+
+    <div class="share-panel" id="share-panel" hidden>
+      <label for="share-url" class="share-label">Link to this input and its options</label>
+      <div class="share-row">
+        <input type="text" id="share-url" readonly spellcheck="false">
+        <button type="button" id="share-close" class="btn-quiet" aria-label="Close the share link">Close</button>
+      </div>
+      <p class="share-msg" id="share-msg" role="status"></p>
+    </div>
+
+    <div class="editor" id="editor">
+      <div class="gutter" aria-hidden="true"><div class="gutter-lines" id="gutter"></div></div>
+      <div class="code">
+        <pre class="hl" aria-hidden="true"><code id="hl"></code></pre>
+        <textarea id="editor-input" aria-label="SMT-LIB input" aria-describedby="editor-help" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" wrap="off"></textarea>
+      </div>
+    </div>
+    <p id="editor-help" class="visually-hidden">Tab inserts two spaces. To move focus out of the editor, press Escape and then Tab. Press Control plus Enter to run the solver.</p>
+
+    <div class="runbar">
+      <fieldset class="options">
+        <legend class="visually-hidden">Solver options</legend>
+        <label class="check"><input type="checkbox" id="opt-models"> Produce models</label>
+        <label class="check"><input type="checkbox" id="opt-stats"> Statistics</label>
+        <span class="field timeout-field">
+          <label for="opt-timeout">Timeout</label>
+          <input type="number" id="opt-timeout" min="0" max="86400" step="1" inputmode="numeric" value="10" aria-describedby="timeout-help">
+          <span id="timeout-help" class="unit">s<span class="visually-hidden">econds; passed to the solver as timeout in milliseconds; 0 means no limit</span></span>
+        </span>
+        <span class="field extra-field">
+          <label for="opt-extra">Extra options</label>
+          <input type="text" id="opt-extra" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="e.g. smt.str.ecma_engine_semantics=true" aria-describedby="extra-error">
+        </span>
+        <p class="field-error" id="extra-error" hidden></p>
+      </fieldset>
+      <div class="actions">
+        <button type="button" id="run-btn" class="btn-run" disabled aria-keyshortcuts="Control+Enter Meta+Enter">
+          <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 1.8v8.4L10 6z" fill="currentColor"/></svg>
+          <span>Run</span>
+          <kbd id="run-kbd">Ctrl Enter</kbd>
+        </button>
+        <button type="button" id="stop-btn" class="btn-stop" disabled>
+          <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><rect x="2.5" y="2.5" width="7" height="7" rx="1" fill="currentColor"/></svg>
+          <span>Stop</span>
+        </button>
+        <div class="loader" id="loader">
+          <progress id="load-progress" aria-labelledby="load-text"></progress>
+          <span id="load-text" class="load-text">Loading the solver…</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pane output-pane" id="output-pane" aria-labelledby="output-heading">
+    <div class="pane-head">
+      <h2 id="output-heading" class="pane-title">Output</h2>
+      <ol class="verdicts" id="verdicts" aria-label="Results of the last run"></ol>
+      <button type="button" id="clear-btn" class="btn-quiet">Clear output</button>
+    </div>
+    <div class="status-bar">
+      <p class="status" id="status" role="status">Loading the solver…</p>
+      <span class="elapsed" id="elapsed" aria-hidden="true"></span>
+    </div>
+    <div class="output" id="output" tabindex="0" role="region" aria-label="Solver output">
+      <div class="empty" id="output-empty">
+        <p>Write SMT-LIB in the editor or load an example, then press Run. The solver's answers appear here, with <span class="tag tag-sat">sat</span> and <span class="tag tag-unsat">unsat</span> marked.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-grid">
+    <section>
+      <h2>Limitations</h2>
+      <p>The browser build is single-threaded, can use at most 4 GB of memory, is bound by the browser's stack limit (very deeply nested formulas fail), and is slower than the native solver. For benchmarks and experiments, <a href="../installation.html">install the native binary</a>.</p>
+    </section>
+    <section>
+      <h2>License</h2>
+      <p>Z3-Noodler is available under the MIT License. Using it as a participant in SMT-COMP requires a separate Competition Use License; see the <a href="https://github.com/VeriFIT/z3-noodler#licensing">README</a>.</p>
+    </section>
+    <section>
+      <h2>Found a problem?</h2>
+      <p>Open an issue on <a href="https://github.com/VeriFIT/z3-noodler/issues">GitHub</a>. Include a Share link: it contains your input and the options you used.</p>
+    </section>
+  </div>
+</footer>
+
+<script nomodule>
+  document.getElementById('notice').hidden = false;
+  document.getElementById('notice').textContent = 'This browser is too old to run the solver. Use a recent version of Firefox, Chrome, Edge or Safari.';
+</script>
+<script src="examples.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

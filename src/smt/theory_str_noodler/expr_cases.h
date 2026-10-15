@@ -7,9 +7,10 @@
 namespace smt::noodler::expr_cases {
 
 /**
- * @brief Check if the given contraint @p e is of the form 
- * (str.contains (str.substr val 0 (+ n (str.indexof val S 0))) S) where n > 0
- * 
+ * @brief Check if the given contraint @p e is of the form
+ * (str.contains (str.substr val 0 (+ n (str.indexof val S 0))) S) where S is a string
+ * literal and n >= |S|.
+ *
  * @param e Constraint to be checked
  * @param ind Extracted (str.indexof val S 0) term
  * @param m Ast manager

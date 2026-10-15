@@ -213,6 +213,8 @@ namespace smt::noodler {
         ConstraintPool block_pool;
         // set of multi vars (we assume at most one multi var)
         std::set<BasicTerm> multi_var_set{};
+        // block vars whose blocks were already processed by generate_block_models
+        std::set<BasicTerm> expanded_blocks{};
 
     protected:
        /**

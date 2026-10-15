@@ -1,0 +1,8 @@
+# Jekyll configuration of the Z3-Noodler web site (https://verifit.github.io/z3-noodler/), built by
+# GitHub's own Pages tooling (actions/jekyll-build-pages in .github/workflows/noodler-web.yml).
+# The playground in playground/ has no front matter, so Jekyll copies it unchanged.
+title: Z3-Noodler
+description: An automata-based SMT solver for string constraints
+theme: jekyll-theme-minimal
+show_downloads: false
+repository: VeriFIT/z3-noodler

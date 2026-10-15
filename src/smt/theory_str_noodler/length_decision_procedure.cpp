@@ -192,10 +192,21 @@ namespace smt::noodler {
         auto conv = pool.get_lit_conversion();
         std::vector<zstring> other_lits = this->get_lits();
 
+        // Literals of the block of multi_var (if multi_var is a block var, including nested blocks) are
+        // propagated to every block containing multi_var, always at the same offset inside multi_var. They
+        // hence agree in all blocks and are skipped both as source literals and as literals of this block
+        // (otherwise each of them collides with its own copy). A source literal overlapping one of them
+        // comes from another side of the source block, so they are already aligned there.
+        std::set<zstring> multi_var_lits {};
+        if(pool.contains(multi_var)) {
+            multi_var_lits.insert(pool.at(multi_var).get_lits().begin(), pool.at(multi_var).get_lits().end());
+        }
+
         // formula saying that inside of the interval [begin, end] there is no literal in x
         auto free_formula = [&](const BasicTerm& var, const LenNode& begin, const LenNode& end) -> LenNode {
             LenNode formula(LenFormulaType::AND);
             for(const zstring& lit : other_lits) {
+                if(multi_var_lits.contains(lit)) continue;
                 LenNode or_fle(LenFormulaType::OR);
                 // b_x(lit) + |lit| <= begin hence
                 // b_x(lit) - begin <= -|lit|
@@ -385,6 +396,7 @@ namespace smt::noodler {
 
         LenNode formula(LenFormulaType::AND);
         for(const zstring& lit : pool.at(source_var).get_lits()) {
+            if(multi_var_lits.contains(lit)) continue;
             formula.succ.push_back(in_formula_case1(multi_var, lit));
             formula.succ.push_back(in_formula_case2(multi_var, lit));
             formula.succ.push_back(in_formula_case3(multi_var, lit));
@@ -586,6 +598,23 @@ namespace smt::noodler {
                 return l_undef;	// We cannot solve this formula
             }
         }
+
+        // The multi var LIA compares occurrences of the multi var only in the coordinates of blocks containing
+        // it directly. If such a block is nested in another block, literals of the outer block lying on the
+        // nested occurrence are never compared with the other occurrences (and the model generation places the
+        // multi var only at its direct positions). Hence, we support only multi vars occurring in top-level blocks.
+        if(multi_vars.size() == 1) {
+            const BasicTerm& multi_var = *multi_vars.begin();
+            for (const auto& [var, constr] : pool) {
+                for (const BasicTerm& nested : constr.get_dependencies()) {
+                    if(pool.at(nested).get_vars().contains(multi_var)) {
+                        STRACE(str, tout << "len: multi var " << multi_var << " occurs in the nested block " << nested << std::endl;);
+                        return l_undef;
+                    }
+                }
+            }
+        }
+
         this->len_model = LengthProcModel(this->pool, this->subst_map, this->init_aut_ass, multi_vars);
         for(const BasicTerm& var : this->init_length_sensitive_vars) {
             this->len_model.add_len_var(var);
@@ -859,18 +888,22 @@ namespace smt::noodler {
         } else {
             block_model.solution = this->model[block_var];
         }
+        this->expanded_blocks.insert(block_var);
         // so-far solution_str contains solution for the block var
         for(const BasicTerm& bt : block_model.terms) {
             if(bt.is_literal()) continue;
-            if(this->model.contains(bt)) continue;
 
-            // for each variable computea the model from model of the block var
-            int var_pos = arith_model.at(begin_of(bt.get_name(), block_var.get_name())).get_int32();
-            int var_length = arith_model.at(bt).get_int32();
-            zstring var_model = block_model.solution.extract(var_pos, var_length);
-            this->model[bt] = var_model;
-            // if we set a block variable, propagate the value to all variables in the block
-            if(this->block_models.contains(bt)) {
+            if(!this->model.contains(bt)) {
+                // for each variable compute the model from model of the block var
+                int var_pos = arith_model.at(begin_of(bt.get_name(), block_var.get_name())).get_int32();
+                int var_length = arith_model.at(bt).get_int32();
+                zstring var_model = block_model.solution.extract(var_pos, var_length);
+                this->model[bt] = var_model;
+            }
+            // if bt is a block variable, propagate its value to all variables in its block. This is needed
+            // also if bt already has a model: the multi var gets its model before any block is processed
+            // and it might be a block var itself (e.g. y = u v); its block is not a root block.
+            if(this->block_models.contains(bt) && !this->expanded_blocks.contains(bt)) {
                 // in the successor block, we need to keep the model for the block var, which was set in this block
                 // we propagate values to the remaining variables in the successor block
                 generate_block_models(bt, this->block_models[bt], arith_model);
@@ -887,6 +920,7 @@ namespace smt::noodler {
      */
     void LengthProcModel::compute_model(const std::map<BasicTerm,rational>& arith_model) {
         this->model.clear();
+        this->expanded_blocks.clear();
 
         assign_multi_vars(arith_model);
 
@@ -1071,7 +1105,8 @@ namespace smt::noodler {
      * @return zstring Model of @p multi_var
      */
     zstring LengthProcModel::get_multivar_model(const BasicTerm& multi_var, const std::map<BasicTerm,rational>& arith_model) {
-        std::vector<long> res_skeleton(arith_model.at(multi_var).get_int32());
+        // positions not fixed by any block stay -1 (free) and get the filler below
+        std::vector<long> res_skeleton(arith_model.at(multi_var).get_int32(), -1);
         for(const auto& [block_var, var_constr] : this->block_pool) {
             if(var_constr.get_vars().contains(multi_var)) {
                 std::vector<long> act_skeleton = get_multivar_skeleton(block_var, multi_var, arith_model);

@@ -1186,11 +1186,10 @@ namespace smt::noodler {
                     // the right side in the model generation)
                     removed_inclusions_for_model.push_back(pr.second.get_switched_sides_predicate());
 
-                    // if we need to produce models and left side contains some length variable,
-                    // we need to make all variables on the right side length too, so that we
-                    // select the correct lengths during the model generation
-                    if (!set_disjoint(this->len_variables, pr.second.get_side_vars(Predicate::EquationSideType::Left))
-                        && m_params.m_produce_models) {
+                    // if left side contains some length variable, we need to make all variables
+                    // on the right side length too, so that the length constraints of their languages
+                    // are emitted to the LIA solver (needed for soundness, not only for model generation)
+                    if (!set_disjoint(this->len_variables, pr.second.get_side_vars(Predicate::EquationSideType::Left))) {
                         for (BasicTerm right_var : pr.second.get_side_vars(Predicate::EquationSideType::Right)) {
                             len_variables.insert(right_var);
                         }
@@ -1810,6 +1809,9 @@ namespace smt::noodler {
                 }
                 if(this->aut_ass.is_singleton(haystack[0]) && needle[0].is_variable()) {
                     mata::nfa::Nfa nfa_copy = *this->aut_ass.at(haystack[0]);
+                    // Useless states would add words that are not factors of the haystack word after marking
+                    // all states initial and final. In a trimmed NFA, each path is a part of an accepting run.
+                    nfa_copy.trim();
                     for(unsigned i = 0; i < nfa_copy.num_of_states(); i++) {
                         nfa_copy.initial.insert(i);
                         nfa_copy.final.insert(i);

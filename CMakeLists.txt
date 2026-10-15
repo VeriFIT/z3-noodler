@@ -204,10 +204,14 @@ elseif (WIN32)
   list(APPEND Z3_DEPENDENT_LIBS dbghelp)
 elseif (EMSCRIPTEN)
   message(STATUS "Platform: Emscripten")
-  z3_add_cxx_flag("-pthread" REQUIRED)
+  # A single-threaded build must not use -pthread: it makes the module use shared memory, which
+  # browsers only allow on cross-origin isolated pages (not possible e.g. on GitHub Pages).
+  if (NOT Z3_SINGLE_THREADED)
+    z3_add_cxx_flag("-pthread" REQUIRED)
+    list(APPEND Z3_DEPENDENT_EXTRA_CXX_LINK_FLAGS "-lpthread")
+  endif()
   list(APPEND Z3_DEPENDENT_EXTRA_CXX_LINK_FLAGS
     "-Os"
-    "-lpthread"
     "-s ALLOW_MEMORY_GROWTH=1"
     "-s ASSERTIONS=0"
     # Use native wasm exception handling + wasm longjmp to match the ABI of the
