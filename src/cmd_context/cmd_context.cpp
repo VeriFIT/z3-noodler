@@ -1596,6 +1596,8 @@ void cmd_context::reset(bool finalize) {
     m_rev_subst = nullptr;
     m_preferred = nullptr;
     m_var2values.reset();
+    // the input rewriter refers to the manager; it is re-created lazily by init_input_rewriter
+    m_input_rewriter = nullptr;
     if (m_manager) {
         dealloc(m_pmanager);
         m_pmanager = nullptr;

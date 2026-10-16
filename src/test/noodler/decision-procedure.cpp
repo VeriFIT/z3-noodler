@@ -432,4 +432,29 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         formula.succ.back().type = LenFormulaType::EQ;
         CHECK(check_lia_sat(formula) == l_true);
     }
+
+    // Regression tests for issue #490: compute_next_solution() without the length check callback used to call
+    // the (null) callback for postponed disequations and throw std::bad_function_call. Without the callback,
+    // postponed disequations are solved precisely; the result is a solution modulo the length formula.
+    SECTION("sat-disequation-without-len-checks", "[noodler]") {
+        REQUIRE(noodler_params.m_postpone_diseqs_stabilization);
+        Formula formula;
+        formula.add_predicate(Predicate::create_disequation({get_var('x')}, {get_var('y')}));
+        init_ass[get_var('x')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('y')] = regex_to_nfa("(a|b)*");
+        DecisionProcedureCUT proc(formula, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        CHECK(proc.compute_next_solution() == lbool::l_true);
+    }
+
+    SECTION("sat-disequation-concat-without-len-checks", "[noodler]") {
+        REQUIRE(noodler_params.m_postpone_diseqs_stabilization);
+        Formula formula;
+        formula.add_predicate(Predicate::create_disequation({get_var('x'), get_var('x')}, {get_var('y'), get_var('y')}));
+        init_ass[get_var('x')] = regex_to_nfa("a");
+        init_ass[get_var('y')] = regex_to_nfa("a|b");
+        DecisionProcedureCUT proc(formula, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        CHECK(proc.compute_next_solution() == lbool::l_true);
+    }
 }

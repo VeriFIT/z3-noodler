@@ -4513,7 +4513,7 @@ br_status seq_rewriter::mk_re_loop(func_decl* f, unsigned num_args, expr* const*
                 result = args[0];
                 return BR_DONE;
             } else if (zstr.length() > 1) {
-                result = re().mk_full_seq(a->get_sort());
+                result = re().mk_full_seq(args[0]->get_sort());
                 return BR_DONE;
             }
         }
