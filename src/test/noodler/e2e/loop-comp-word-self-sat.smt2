@@ -1,0 +1,10 @@
+; issue #466: comp(w)^2 = re.all for |w| >= 2, hence w itself is a member
+(set-logic QF_S)
+(set-info :status sat)
+(declare-const x String)
+(declare-const y String)
+(assert (= x "ab"))
+(assert (= y "abab"))
+(assert (str.in_re x ((_ re.loop 2 3) (re.comp (str.to_re "ab")))))
+(assert (str.in_re y ((_ re.^ 2) (re.comp (str.to_re "ab")))))
+(check-sat)
