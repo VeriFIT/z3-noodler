@@ -447,6 +447,57 @@ TEST_CASE("LenFormula : shadowed quantified variables are numbered correctly", "
     assert_eq_correct(to_app(conjunction)->get_arg(1), 0, 1);          // outer x=1 => (0)=1
 }
 
+// Regression test for issue #486: the name of the bound variable used to be read through a map iterator
+// whose node had already been erased (heap-use-after-free, detectable with -fsanitize=address).
+TEST_CASE("LenFormula : quantifier over free variable", "[noodler]") {
+    BasicTerm var_k (BasicTermType::Variable, "k");
+    BasicTerm var_x (BasicTermType::Variable, "x");
+
+    LenNode root = dsl_exists(var_k, LenNode(LenFormulaType::EQ, {var_x, var_k}));
+
+    ast_manager manager;
+    reg_decl_plugins(manager);
+
+    arith_util arith_util_i(manager);
+    seq_util seq_util_i(manager);
+    std::map<std::string, unsigned> quantified_vars;
+    std::map<BasicTerm, expr_ref> known_exprs;
+
+    LenFormulaContext ctx {
+        .manager = manager,
+        .arith_utilities = arith_util_i,
+        .seq_utilities = seq_util_i,
+        .quantified_vars = quantified_vars,
+        .known_z3_exprs = known_exprs,
+    };
+
+    expr_ref z3_formula = convert_len_node_to_z3_formula(ctx, root);
+    CHECK(quantified_vars.empty());
+
+    REQUIRE(z3_formula.get()->get_kind() == AST_QUANTIFIER);
+    quantifier* quantif = to_quantifier(z3_formula.get());
+    REQUIRE(quantif->get_num_decls() == 1);
+    CHECK(quantif->get_decl_name(0) == symbol(0u));
+
+    expr* eq = quantif->get_expr();
+    REQUIRE(eq->get_kind() == AST_APP);
+    REQUIRE(to_app(eq)->get_num_args() == 2);
+    CHECK(to_app(eq)->get_arg(0)->get_kind() == AST_APP); // x stays free
+    REQUIRE(to_app(eq)->get_arg(1)->get_kind() == AST_VAR);
+    CHECK(to_var(to_app(eq)->get_arg(1))->get_idx() == 0);
+}
+
+TEST_CASE("LenFormula : free variables with shadowed quantifiers", "[noodler]") {
+    BasicTerm var_x (BasicTermType::Variable, "x");
+    BasicTerm var_y (BasicTermType::Variable, "y");
+
+    // \exists x. ((\exists x. x=2) AND x=y): the second occurrence of x is bound by the outer quantifier
+    LenNode inner = dsl_exists(var_x, LenNode(LenFormulaType::EQ, {var_x, 2}));
+    LenNode root = dsl_exists(var_x, LenNode(LenFormulaType::AND, {inner, LenNode(LenFormulaType::EQ, {var_x, var_y})}));
+
+    CHECK(collect_free_vars(root) == std::set<BasicTerm>{var_y});
+}
+
 std::optional<size_t> find_mismatch_pos_tag(std::set<AtomicSymbol>& tag_set, const BasicTerm& var) {
     for (auto& tag : tag_set) {
         if (tag.type == AtomicSymbol::TagType::MISMATCH_POS && tag.var == var) return tag.copy_idx;

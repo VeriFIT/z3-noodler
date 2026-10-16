@@ -50,14 +50,16 @@ namespace smt::noodler {
                 const BasicTerm quantified_var = quantified_var_node.atom_val;
                 children_iterator++;
 
-                auto [target_bucket, did_emplace_happen] = quantified_vars.emplace(quantified_var);
-                assert (did_emplace_happen);  // We want all quantified vars to be unique, at least for now
+                // if the variable is already bound by an outer quantifier with the same name, keep that binding
+                bool did_emplace_happen = quantified_vars.emplace(quantified_var).second;
 
                 for (; children_iterator != root.succ.end(); children_iterator++) {
                     collect_free_vars_rec(*children_iterator, free_vars, quantified_vars);
                 }
 
-                quantified_vars.erase(quantified_var);
+                if (did_emplace_happen) {
+                    quantified_vars.erase(quantified_var);
+                }
 
                 return;
             }
