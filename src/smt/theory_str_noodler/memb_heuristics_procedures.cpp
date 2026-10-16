@@ -87,8 +87,16 @@ namespace smt::noodler {
     lbool MultMembHeuristicProcedure::compute_next_solution() {
         for (auto& [var, list_of_regexes] : var_to_list_of_regexes_and_complement_flag) {
             // sort the regexes using get_loop_sum, where those regexes that needs to be complemented should all be at the end
-            std::sort(list_of_regexes.begin(), list_of_regexes.end(), [this](const std::pair<bool,app*>& l, const std::pair<bool,app*>& r) {
-                return ((!l.first && r.first) | (regex::get_loop_sum(l.second, m_util_s) < regex::get_loop_sum(r.second, m_util_s)));
+            // (lexicographic order on (complement flag, loop sum), so that the comparator is a strict weak ordering)
+            std::unordered_map<app*, unsigned> loop_sum;
+            for (const auto& [is_complement, reg] : list_of_regexes) {
+                loop_sum.emplace(reg, regex::get_loop_sum(reg, m_util_s));
+            }
+            std::sort(list_of_regexes.begin(), list_of_regexes.end(), [&loop_sum](const std::pair<bool,app*>& l, const std::pair<bool,app*>& r) {
+                if (l.first != r.first) {
+                    return !l.first;
+                }
+                return loop_sum.at(l.second) < loop_sum.at(r.second);
             });
 
             std::vector<app*> list_of_normal_regs;
