@@ -2190,7 +2190,14 @@ namespace smt::noodler::ecma {
 
     void DFSContext::reset_groups(const std::vector<GroupID>& gids) {
         for (GroupID gid : gids) {
-            m_group_vars.erase(gid);
+            auto it = m_group_vars.find(gid);
+            if (it != m_group_vars.end()) {
+                // Keep the previous variables of the group, so that they can be restored when backtracking
+                m_reset_group_vars.emplace_back(m_manager);
+                m_reset_group_vars.back().swap(it->second);
+                m_group_vars.erase(it);
+                m_group_vars_changes.push_back({GroupVarsChange::Kind::ERASE, gid});
+            }
         }
     }
 
@@ -2229,6 +2236,7 @@ namespace smt::noodler::ecma {
     void DFSContext::push_edge_var_to_groups(const app_ref& edge_var) {
         for (GroupID gid : m_active_groups) {
             m_group_vars.at(gid).push_back(edge_var);
+            m_group_vars_changes.push_back({GroupVarsChange::Kind::APPEND, gid});
         }
     }
 
@@ -2239,10 +2247,16 @@ namespace smt::noodler::ecma {
     void DFSContext::start_groups(const std::vector<GroupID>& gids) {
         for (GroupID gid : gids) {
             m_active_groups.push_back(gid);
-            if (m_group_vars.contains(gid)) {
-                m_group_vars.at(gid).reset();
-            } else {
+            auto it = m_group_vars.find(gid);
+            if (it != m_group_vars.end()) {
+                // Keep the previous variables of the group, so that they can be restored when backtracking
+                m_reset_group_vars.emplace_back(m_manager);
+                m_reset_group_vars.back().swap(it->second);
+                m_group_vars_changes.push_back({GroupVarsChange::Kind::RESET, gid});
+            }
+            else {
                 m_group_vars.insert({gid, expr_ref_vector(m_manager)});
+                m_group_vars_changes.push_back({GroupVarsChange::Kind::CREATE, gid});
             }
         }
     }
@@ -2263,7 +2277,7 @@ namespace smt::noodler::ecma {
             closed_group_vars = get_closed_group_vars();
         }
         m_active_lookaheads.push_back(
-            {subregex, is_positive, m_current_path_vars.size() - 1, std::move(closed_group_vars)});
+            {subregex, is_positive, m_current_path_vars.size(), std::move(closed_group_vars)});
     }
 
     std::unordered_map<GroupID, expr_ref_vector>
@@ -2294,28 +2308,10 @@ namespace smt::noodler::ecma {
     expr_ref DFSContext::concat_expr_vector(const expr_ref_vector& vars, const uint32_t start_idx,
                                             const uint32_t end_idx) const {
         const uint32_t actual_end = std::min(end_idx, vars.size());
-        expr* empty_str = m_util_s.str.mk_empty(m_str_sort);
-
         if (start_idx >= actual_end) {
-            return {empty_str, m_manager};
+            return {m_util_s.str.mk_empty(m_str_sort), m_manager};
         }
-
-        expr_ref_vector apps_to_concat {m_manager};
-        for (uint32_t i = start_idx; i < actual_end; i++) {
-            if (vars.get(i) != empty_str) {
-                apps_to_concat.push_back(vars.get(i));
-            }
-        }
-
-        if (apps_to_concat.empty()) {
-            return {empty_str, m_manager};
-        }
-        if (apps_to_concat.size() == 1) {
-            return {apps_to_concat.get(0), m_manager};
-        }
-
-        expr* concat = m_util_s.str.mk_concat(apps_to_concat, m_str_sort);
-        return {concat, m_manager};
+        return {m_util_s.str.mk_concat(actual_end - start_idx, vars.data() + start_idx, m_str_sort), m_manager};
     }
 
     expr_ref DFSContext::concat_vars(const uint32_t start_idx, const uint32_t end_idx) const {
@@ -2360,16 +2356,8 @@ namespace smt::noodler::ecma {
         s.num_path_vars = m_current_path_vars.size();
         s.num_path_constraints = m_current_path_constraints.size();
         s.num_active_lookaheads = m_active_lookaheads.size();
+        s.num_group_vars_changes = m_group_vars_changes.size();
         s.active_groups = m_active_groups;
-
-        // Deep copy the group variables to the snapshot
-        for (const auto& [group_id, vars] : m_group_vars) {
-            auto copy = std::make_unique<expr_ref_vector>(m_manager);
-            for (unsigned i = 0; i < vars.size(); i++) {
-                copy->push_back(vars[i]);
-            }
-            s.group_vars.insert({group_id, std::move(copy)});
-        }
         return s;
     }
 
@@ -2385,18 +2373,22 @@ namespace smt::noodler::ecma {
 
         m_active_groups = s.active_groups;
 
-        // Clear existing expr_ref_vectors to remove items appended in the discarded path branch.
-        // It's perfectly safe to do so because the expressions themselves are preserved
-        // by the deep copies stored in the Snapshot object up until this point.
-        m_group_vars.clear();
-        for (const auto& kv : s.group_vars) {
-            GroupID gid = kv.first;
-            const auto& vec_ptr = kv.second;
-            expr_ref_vector vec(m_manager);
-            for (unsigned i = 0; i < vec_ptr->size(); ++i) {
-                vec.push_back(vec_ptr->get(i));
+        // Undo the changes of the group variables made in the discarded path branch, in reverse order
+        while (m_group_vars_changes.size() > s.num_group_vars_changes) {
+            const GroupVarsChange& change = m_group_vars_changes.back();
+            switch (change.kind) {
+            case GroupVarsChange::Kind::APPEND: m_group_vars.at(change.gid).pop_back(); break;
+            case GroupVarsChange::Kind::CREATE: m_group_vars.erase(change.gid); break;
+            case GroupVarsChange::Kind::RESET:
+                m_group_vars.at(change.gid).swap(m_reset_group_vars.back());
+                m_reset_group_vars.pop_back();
+                break;
+            case GroupVarsChange::Kind::ERASE:
+                m_group_vars.insert({change.gid, std::move(m_reset_group_vars.back())});
+                m_reset_group_vars.pop_back();
+                break;
             }
-            m_group_vars.insert({gid, std::move(vec)});
+            m_group_vars_changes.pop_back();
         }
     }
 
@@ -2538,6 +2530,15 @@ namespace smt::noodler::ecma {
         // Just a little sanity check that the graph is (at least somehow) constructed
         SASSERT(m_graph.start_vertex != UNKNOWN_VERTEX);
 
+        // A graph consisting of a single path of match edges is regular --> the target string just has to belong to the
+        // regex of the whole path and no fresh variables are needed (the caller then adds a ground axiom instead of a
+        // quantified one)
+        const app_ref regular_regex = get_regular_path_regex();
+        if (regular_regex) {
+            m_fresh_vars.reset();
+            return {m_util_s.re.mk_in_re(target_string, regular_regex), m_manager};
+        }
+
         // Store the global target string in the context for access in nested DFS calls when evaluating anchors and
         // lookaheads
         m_global_target_string = target_string;
@@ -2576,6 +2577,32 @@ namespace smt::noodler::ecma {
         return m_fresh_vars;
     }
 
+    app_ref RegexConstraintBuilder::get_regular_path_regex() {
+        std::vector<app*> regexes;
+        VertexID current_vertex = m_graph.start_vertex;
+        while (current_vertex != m_graph.end_vertex) {
+            const std::vector<EdgeID>& outgoing_edges = m_graph.vertices[current_vertex].outgoing_edges;
+            if (outgoing_edges.size() != 1) {
+                return app_ref(m_manager);
+            }
+            const RCGEdge& edge = m_graph.edges[outgoing_edges[0]];
+            if (!std::holds_alternative<MatchEdge>(edge.payload)) {
+                return app_ref(m_manager);
+            }
+            regexes.push_back(std::get<MatchEdge>(edge.payload).regex);
+            current_vertex = edge.target;
+        }
+
+        if (regexes.empty()) {
+            return {m_util_s.re.mk_epsilon(m_str_sort), m_manager};
+        }
+        app_ref result(regexes.back(), m_manager);
+        for (size_t i = regexes.size() - 1; i > 0; i--) {
+            result = m_util_s.re.mk_concat(regexes[i - 1], result);
+        }
+        return result;
+    }
+
     expr_ref RegexConstraintBuilder::run_inner_rcg_dfs(const GraphFragment& fragment, app* target_string,
                                                        DFSContext& ctx) {
         // Suspend the outer DFS context and save the state before proceeding with the inner DFS run
@@ -2602,8 +2629,7 @@ namespace smt::noodler::ecma {
         return inner_result;
     }
 
-    void RegexConstraintBuilder::handle_lookaround_constraints(DFSContext& ctx, const AssertionEdge& assertion,
-                                                               const expr_ref& global_prefix) {
+    void RegexConstraintBuilder::handle_lookaround_constraints(DFSContext& ctx, const AssertionEdge& assertion) {
         const auto& lookaround = std::get<Lookaround>(assertion.payload);
 
         if (lookaround.direction == LookaroundDirection::FORWARD) {
@@ -2612,7 +2638,10 @@ namespace smt::noodler::ecma {
             ctx.push_lookahead(lookaround.subregex, lookaround.is_positive);
         } else {
             // Lookbehinds are evaluated immediately since they depend on the prefix of the matched string up until the
-            // current position Lookbehinds with regular subregexes are handled via automata operations
+            // current position (i.e., all the string variables preceding the current position).
+            const expr_ref global_prefix = ctx.get_global_prefix();
+
+            // Lookbehinds with regular subregexes are handled via automata operations
             if (std::holds_alternative<app_ref>(lookaround.subregex)) {
                 // Create x = global_prefix (p1p2p3...)
                 const app_ref lb_var(ctx.mk_fresh_string_var(), m_manager);
@@ -2722,44 +2751,39 @@ namespace smt::noodler::ecma {
         }
     }
 
+    void RegexConstraintBuilder::generate_assertion_constraints(DFSContext& ctx, const AssertionEdge& assertion) {
+        if (std::holds_alternative<Anchor>(assertion.payload)) {
+            // Get all the string variables preceding the current position, since anchors are dependent on the absolute
+            // position in the text.
+            const expr_ref global_prefix = ctx.get_global_prefix();
+            const Z3Char anchor = std::get<Anchor>(assertion.payload);
+            // '^' anchor means 'nothing is matched before this position' --> global prefix must be empty
+            if (anchor == '^') {
+                ctx.add_path_constraint({m_manager.mk_eq(global_prefix, m_util_s.str.mk_empty(m_str_sort)), m_manager});
+            }
+            // '$' anchor means 'nothing is matched after this position' --> global prefix must be equal to the
+            // entire target string
+            else if (anchor == '$') {
+                ctx.add_path_constraint(
+                    {m_manager.mk_eq(global_prefix, app_ref(m_global_target_string, m_manager)), m_manager});
+            } else {
+                util::throw_error("Internal error: RegexConstraintBuilder::generate_assertion_constraints: anchor != "
+                                  "'$' && anchor != '^'");
+            }
+        } else if (std::holds_alternative<Lookaround>(assertion.payload)) {
+            handle_lookaround_constraints(ctx, assertion);
+        } else {
+            util::throw_error("Internal error: RegexConstraintBuilder::generate_assertion_constraints: Assertion is "
+                              "neither Anchor nor Lookaround");
+        }
+    }
+
     void RegexConstraintBuilder::generate_edge_constraints(DFSContext& ctx, const RCGEdge& edge,
                                                            const app_ref& edge_var) {
-        // Get all the string variables preceding the currently processed edge.
-        // This is important for lookaround and anchor evaluation, since they are dependent on the absolute position in
-        // the text.
-        expr_ref global_prefix = ctx.get_global_prefix();
-
         // The edge contains regular payload --> generate str.in_re(edge_var, payload)
         if (std::holds_alternative<MatchEdge>(edge.payload)) {
             const app_ref regex = std::get<MatchEdge>(edge.payload).regex;
             ctx.add_path_constraint({m_util_s.re.mk_in_re(edge_var, regex), m_manager});
-        }
-        // Assertion (or zero-width assertion) --> no text is consumed, therefore edge_var = ""
-        else if (std::holds_alternative<AssertionEdge>(edge.payload)) {
-            const AssertionEdge& assertion = std::get<AssertionEdge>(edge.payload);
-            ctx.add_path_constraint({m_manager.mk_eq(edge_var, m_util_s.str.mk_empty(m_str_sort)), m_manager});
-            if (std::holds_alternative<Anchor>(assertion.payload)) {
-                const Z3Char anchor = std::get<Anchor>(assertion.payload);
-                // '^' anchor means 'nothing is matched before this position' --> global prefix must be empty
-                if (anchor == '^') {
-                    ctx.add_path_constraint(
-                        {m_manager.mk_eq(global_prefix, m_util_s.str.mk_empty(m_str_sort)), m_manager});
-                }
-                // '$' anchor means 'nothing is matched after this position' --> global prefix must be equal to the
-                // entire target string
-                else if (anchor == '$') {
-                    ctx.add_path_constraint(
-                        {m_manager.mk_eq(global_prefix, app_ref(m_global_target_string, m_manager)), m_manager});
-                } else {
-                    util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: anchor != "
-                                      "'$' && anchor != '^'");
-                }
-            } else if (std::holds_alternative<Lookaround>(assertion.payload)) {
-                handle_lookaround_constraints(ctx, assertion, global_prefix);
-            } else {
-                util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: Assertion is "
-                                  "neither Anchor nor Lookaround");
-            }
         }
         // Backreference --> edge_var must be equal to the concatenation of all variables in the referenced group on the
         // current path. If the referenced group has not been captured yet (forward reference) or is still open
@@ -2779,7 +2803,7 @@ namespace smt::noodler::ecma {
             }
         } else {
             util::throw_error("Internal error: RegexConstraintBuilder::generate_edge_constraints: edge payload is "
-                              "neither BackrefEdge, AssertionEdge nor MatchEdge");
+                              "neither BackrefEdge nor MatchEdge");
         }
     }
 
@@ -2814,9 +2838,12 @@ namespace smt::noodler::ecma {
                 ctx.start_groups(m_graph.group_starts.at(eid));
             }
 
-            // Create a fresh variable (and add it to all the active capture groups) and generate constraints for the
-            // current edge. Marker edges consume nothing and only carry bookkeeping, so they get no variable.
-            if (!std::holds_alternative<MarkerEdge>(edge.payload)) {
+            // Zero-width assertions consume no text and marker edges only carry bookkeeping, therefore no variable is
+            // created for them. Other edges get a fresh variable (which is added to all the active capture groups) and
+            // constraints for the current edge.
+            if (std::holds_alternative<AssertionEdge>(edge.payload)) {
+                generate_assertion_constraints(ctx, std::get<AssertionEdge>(edge.payload));
+            } else if (!std::holds_alternative<MarkerEdge>(edge.payload)) {
                 app_ref edge_var = ctx.create_edge_var();
                 ctx.push_edge_var_to_groups(edge_var);
                 generate_edge_constraints(ctx, edge, edge_var);

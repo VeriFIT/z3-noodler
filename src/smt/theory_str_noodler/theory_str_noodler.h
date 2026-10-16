@@ -78,6 +78,15 @@ namespace smt::noodler {
             unsigned num_finish = 0; // number of times the procedure gave an answer (no undef)
         };
 
+        /**
+         * Constraints generated for an ECMAScript regex membership (str.in_re x (re.from_ecma2020 pattern)).
+         */
+        struct ecma_constraints {
+            expr_ref atom; // the membership itself (keeps the key of ecma_constraints_cache alive)
+            expr_ref formula; // generated formula over x and the fresh variables
+            app_ref_vector fresh_vars; // fresh variables introduced by the formula
+        };
+
         int m_scope_level = 0;
         const theory_str_noodler_params& m_params;
         th_rewriter m_rewrite;
@@ -108,6 +117,8 @@ namespace smt::noodler {
         std::vector<app_ref> axiomatized_len_axioms;
         obj_hashtable<expr> axiomatized_terms;
         obj_hashtable<expr> axiomatized_persist_terms;
+        // constraints generated for ECMAScript regex memberships, reused when their axioms are added again (see handle_ecma_re)
+        std::unordered_map<expr*, ecma_constraints> ecma_constraints_cache;
         obj_hashtable<expr> propagated_string_theory; // expressions that were already processed by string_theory_propagation (to avoid looping)
         obj_hashtable<expr> m_has_length;          // is length applied
         expr_ref_vector     m_length;             // length applications themselves
