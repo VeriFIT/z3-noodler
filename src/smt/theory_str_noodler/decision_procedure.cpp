@@ -62,7 +62,9 @@ namespace smt::noodler {
                 // If the length formula is unsat, we need to solve disequations precisely by translating them to equations and adding to the solving state.
                 if (this->m_params.m_postpone_diseqs_stabilization && !element_to_process.postponed_disequations.get_predicates().empty()) {
                     this->solution = element_to_process;
-                    lbool underapprox_sat = check_lens(false);
+                    // without the length check (check_lens == nullptr), the under-approximation cannot be decided,
+                    // so the disequations are solved precisely as in the l_undef case
+                    lbool underapprox_sat = (check_lens != nullptr) ? check_lens(false) : l_undef;
                     if (underapprox_sat == l_false) {
                         if (element_to_process.preprocess_disequations_for_unsat(this->m_params) == l_false) {
                             continue;
