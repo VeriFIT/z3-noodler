@@ -1,0 +1,7 @@
+(set-info :status sat)
+(set-option :encoding ascii)
+(declare-const x String)
+(assert (not (= x "a")))
+(set-option :encoding unicode)
+(assert (str.in_re x (re.diff re.allchar (str.to_re "\u{100}"))))
+(check-sat)
