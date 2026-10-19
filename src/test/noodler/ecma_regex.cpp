@@ -2175,3 +2175,49 @@ TEST_CASE("ECMA Regex DFS context backtracking", "[noodler][ecma]") {
         REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
     }
 }
+
+// Language (dis)equations compare regular patterns as classical regexes, other patterns cannot be compared (#521)
+TEST_CASE("ECMA Regex translation to classical regexes", "[noodler][ecma]") {
+    using namespace smt::noodler::ecma;
+    using namespace smt::noodler::ecma::test;
+
+    ast_manager m;
+    reg_decl_plugins(m);
+    seq_util util_s(m);
+    theory_str_noodler_params params;
+
+    SECTION("Regular pattern is replaced by its regex") {
+        const expr_ref regex = to_classical_regex(util_s.re.mk_from_ecma2020(zstring("a|b")), m, params);
+        REQUIRE(regex);
+        REQUIRE(app_to_string(app_ref(to_app(regex), m), m) == "(re.union (str.to_re \"a\") (str.to_re \"b\"))");
+    }
+
+    SECTION("Regular pattern with engine semantics is replaced by Sigma* R Sigma*") {
+        params.m_ecma_engine_semantics = true;
+        const expr_ref regex = to_classical_regex(util_s.re.mk_from_ecma2020(zstring("a")), m, params);
+        REQUIRE(regex);
+        REQUIRE(app_to_string(app_ref(to_app(regex), m), m) == "(re.++ re.all (re.++ (str.to_re \"a\") re.all))");
+    }
+
+    SECTION("Pattern with a backreference is not translated") {
+        REQUIRE(!to_classical_regex(util_s.re.mk_from_ecma2020(zstring("(a)\\1")), m, params));
+    }
+
+    SECTION("Pattern with anchors is not translated") {
+        REQUIRE(!to_classical_regex(util_s.re.mk_from_ecma2020(zstring("^a$")), m, params));
+    }
+
+    SECTION("Pattern nested in another regex operation is replaced") {
+        const app_ref nested(util_s.re.mk_union(util_s.re.mk_from_ecma2020(zstring("a")),
+                                                util_s.re.mk_to_re(util_s.str.mk_string(zstring("b")))),
+                             m);
+        const expr_ref regex = to_classical_regex(nested, m, params);
+        REQUIRE(regex);
+        REQUIRE(app_to_string(app_ref(to_app(regex), m), m) == "(re.union (str.to_re \"a\") (str.to_re \"b\"))");
+    }
+
+    SECTION("Regex without patterns is not changed") {
+        const app_ref classical(util_s.re.mk_star(util_s.re.mk_to_re(util_s.str.mk_string(zstring("a")))), m);
+        REQUIRE(to_classical_regex(classical, m, params).get() == classical.get());
+    }
+}
