@@ -79,12 +79,31 @@ namespace smt::noodler {
         };
 
         /**
-         * Constraints generated for an ECMAScript regex membership (str.in_re x (re.from_ecma2020 pattern)).
+         * Caches for (re.from_ecma2020 ...). Their content does not depend on the current assignment, so it is kept
+         * for the whole run of the solver and not restored when backtracking.
          */
-        struct ecma_constraints {
-            expr_ref atom; // the membership itself (keeps the key of ecma_constraints_cache alive)
-            expr_ref formula; // generated formula over x and the fresh variables
-            app_ref_vector fresh_vars; // fresh variables introduced by the formula
+        struct ecma_cache {
+            /**
+             * Constraints generated for an ECMAScript regex membership (str.in_re x (re.from_ecma2020 pattern)).
+             */
+            struct membership_entry {
+                expr_ref atom; // the membership itself (keeps the key of memberships alive)
+                expr_ref formula; // generated formula over x and the fresh variables
+                app_ref_vector fresh_vars; // fresh variables introduced by the formula
+            };
+
+            /**
+             * Classical regex of a side of a language (dis)equation, see ecma::to_classical_regex.
+             */
+            struct classical_regex_entry {
+                expr_ref regex; // the side itself (keeps the key of classical_regexes alive)
+                expr_ref classical_regex; // the classical regex, null if some pattern in the side is not regular
+            };
+
+            // constraints of memberships, reused when their axioms are added again (see handle_ecma_re)
+            std::unordered_map<expr*, membership_entry> memberships;
+            // classical regexes of the sides of language (dis)equations (see get_classical_regex)
+            std::unordered_map<expr*, classical_regex_entry> classical_regexes;
         };
 
         int m_scope_level = 0;
@@ -117,8 +136,7 @@ namespace smt::noodler {
         std::vector<app_ref> axiomatized_len_axioms;
         obj_hashtable<expr> axiomatized_terms;
         obj_hashtable<expr> axiomatized_persist_terms;
-        // constraints generated for ECMAScript regex memberships, reused when their axioms are added again (see handle_ecma_re)
-        std::unordered_map<expr*, ecma_constraints> ecma_constraints_cache;
+        ecma_cache m_ecma_cache;
         obj_hashtable<expr> propagated_string_theory; // expressions that were already processed by string_theory_propagation (to avoid looping)
         obj_hashtable<expr> m_has_length;          // is length applied
         expr_ref_vector     m_length;             // length applications themselves
@@ -506,6 +524,13 @@ namespace smt::noodler {
          * on one of the sides is not ground, we return unknown.
          */
         lbool solve_lang_eqs_diseqs();
+        /**
+         * Get the classical regex of a side @p regex of a language (dis)equation, see ecma::to_classical_regex. It is
+         * computed only once for each side and stored in m_ecma_cache.
+         *
+         * @return The classical regex, or null if some (re.from_ecma2020 ...) in @p regex is not regular.
+         */
+        expr_ref get_classical_regex(expr* regex);
         /**
          * Solve the problem using underapproximating decision procedure, if it returns l_true,
          * the original formula is SAT, otherwise we need to run normal decision procedure.
