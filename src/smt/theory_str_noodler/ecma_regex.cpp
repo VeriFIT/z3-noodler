@@ -1,6 +1,8 @@
 #include "ecma_regex.h"
 
 #include "ast/ast.h"
+#include "ast/for_each_expr.h"
+#include "ast/rewriter/expr_safe_replace.h"
 #include "ast/seq_decl_plugin.h"
 #include "util.h"
 #include "util/debug.h"
@@ -2919,5 +2921,29 @@ namespace smt::noodler::ecma {
             rcg_dfs_visit(edge.target, ctx);
             ctx.restore_snapshot(snapshot);
         }
+    }
+
+    expr_ref to_classical_regex(expr* regex, ast_manager& m, const theory_str_noodler_params& params) {
+        seq_util util_s(m);
+        expr_safe_replace replacer(m);
+        for (expr* subterm : subterms::all(expr_ref(regex, m))) {
+            if (!util_s.re.is_from_ecma2020(subterm)) {
+                continue;
+            }
+            zstring pattern;
+            if (!util_s.re.is_from_ecma2020(subterm, pattern)) {
+                return expr_ref(m);
+            }
+            RegexConstraintBuilder builder(m, pattern, params);
+            builder.build_rcg();
+            const app_ref classical_regex = builder.get_regular_path_regex();
+            if (!classical_regex) {
+                return expr_ref(m);
+            }
+            replacer.insert(subterm, classical_regex);
+        }
+        expr_ref result(m);
+        replacer(regex, result);
+        return result;
     }
 }  // namespace smt::noodler::ecma
