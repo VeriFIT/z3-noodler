@@ -736,15 +736,16 @@ namespace smt::noodler::regex {
             const auto child{ expression->get_arg(0) };
             SASSERT(is_app(child));
             // min_length: 0
-            // empty: universal --> true; empty --> false; min_length > 0 and !empty --> false
-            // universal: empty --> true< universal --> false
+            // empty: universal --> true; empty --> false; min_length > 0 --> false (epsilon is in the complement)
+            // universal: empty --> true; universal --> false; min_length > 0 and !empty --> false
             RegexInfo res = get_regex_info(to_app(child), m_util_s);
+            const unsigned child_min_length = res.min_length;
             res.min_length = 0;
             if(res.empty == l_true) {
                 res.empty = l_false;
                 res.universal = l_true;
-            } else if (res.min_length > 0 && res.empty == l_false) { // there is a word with length > 0
-                res.universal = l_false;
+            } else if (child_min_length > 0) { // epsilon is not in the child language, hence it is in the complement
+                res.universal = (res.empty == l_false) ? l_false : l_undef;
                 res.empty = l_false;
             } else if(res.universal == l_true) {
                 res.universal = l_false;
