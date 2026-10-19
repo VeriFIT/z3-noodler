@@ -792,6 +792,7 @@ namespace smt::noodler {
             regex::Alphabet alph;
             regex::extract_symbols(left_side, m_util_s, alph);
             regex::extract_symbols(right_side, m_util_s, alph);
+            alph.insert_dummy_if_not_full(); // dummy is needed for example for equation such as (= re.allchar (str.to_re "a"))
 
             // construct NFAs for both sides
             std::shared_ptr<const mata::nfa::Nfa> nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
