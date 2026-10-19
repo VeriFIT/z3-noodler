@@ -253,6 +253,27 @@ class seq_rewriter {
     /* same as lift_to_re_from_ite and also: r = to_re(u) ==> returns true, result = u */
     bool lift_str_from_to_re(expr * r, expr_ref & result);
 
+    /**
+     * @brief Check whether the regex @p r is (re.from_ecma2020 ...) or contains it as an operand of (nested) re.union,
+     * re.inter, re.xor or re.comp, the regex operations that mk_str_in_regexp splits into memberships.
+     *
+     * @param r [in] The regex to check.
+     * @return True if it does, false otherwise.
+     */
+    bool contains_from_ecma2020(expr* r);
+
+    /**
+     * @brief Check whether @p e is a membership (str.in_re s r) that can be merged with other memberships of @p s,
+     * i.e., @p s is not empty and contains_from_ecma2020(r) is false. Memberships with (re.from_ecma2020 ...) are not
+     * merged, since mk_str_in_regexp would split them again.
+     *
+     * @param e [in] The expression to check.
+     * @param s [out] The string argument of @p e, if @p e is a membership.
+     * @param r [out] The regex argument of @p e, if @p e is a membership.
+     * @return True if @p e can be merged, false otherwise.
+     */
+    bool is_mergeable_in_re(expr* e, expr*& s, expr*& r);
+
     br_status mk_bool_app_helper(bool is_and, unsigned n, expr* const* args, expr_ref& result);
     br_status mk_eq_helper(expr* a, expr* b, expr_ref& result);
 
