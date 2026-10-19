@@ -60,12 +60,27 @@ br_status seq_rewriter::mk_bool_app(func_decl* f, unsigned n, expr* const* args,
     }
 }
 
+bool seq_rewriter::contains_from_ecma2020(expr* r) {
+    expr* r1 = nullptr, *r2 = nullptr;
+    if (re().is_union(r, r1, r2) || re().is_intersection(r, r1, r2) || re().is_xor(r, r1, r2)) {
+        return contains_from_ecma2020(r1) || contains_from_ecma2020(r2);
+    }
+    if (re().is_complement(r, r1)) {
+        return contains_from_ecma2020(r1);
+    }
+    return re().is_from_ecma2020(r);
+}
+
+bool seq_rewriter::is_mergeable_in_re(expr* e, expr*& s, expr*& r) {
+    return str().is_in_re(e, s, r) && !str().is_empty(s) && !contains_from_ecma2020(r);
+}
+
 br_status seq_rewriter::mk_bool_app_helper(bool is_and, unsigned n, expr* const* args, expr_ref& result) {
     bool found = false;
-    expr* arg = nullptr;
-    
-    for (unsigned i = 0; i < n && !found; ++i) {        
-        found = str().is_in_re(args[i]) || (m().is_not(args[i], arg) && str().is_in_re(arg));
+    expr* arg = nullptr, *s = nullptr, *r = nullptr;
+
+    for (unsigned i = 0; i < n && !found; ++i) {
+        found = is_mergeable_in_re(args[i], s, r) || (m().is_not(args[i], arg) && is_mergeable_in_re(arg, s, r));
     }
     if (!found) return BR_FAILED;
     
@@ -76,7 +91,7 @@ br_status seq_rewriter::mk_bool_app_helper(bool is_and, unsigned n, expr* const*
     for (unsigned i = 0; i < n; ++i) {
         expr* args_i = args[i];
         expr* x = nullptr, *y = nullptr, *z = nullptr;
-        if (str().is_in_re(args_i, x, y) && !str().is_empty(x)) {
+        if (is_mergeable_in_re(args_i, x, y)) {
             if (in_re.find(x, z)) {				
                 in_re[x] = is_and ? re().mk_inter(z, y) : re().mk_union(z, y);
                 found_pair = true;
@@ -86,7 +101,7 @@ br_status seq_rewriter::mk_bool_app_helper(bool is_and, unsigned n, expr* const*
                 found_pair |= not_in_re.contains(x);
             }
         }
-        else if (m().is_not(args_i, arg) && str().is_in_re(arg, x, y) && !str().is_empty(x)) {
+        else if (m().is_not(args_i, arg) && is_mergeable_in_re(arg, x, y)) {
             if (not_in_re.find(x, z)) {
                 not_in_re[x] = is_and ? re().mk_union(z, y) : re().mk_inter(z, y);
                 found_pair = true;
@@ -3669,6 +3684,28 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
     // the ECMA regexes cannot be derived, just return fail and don't try to derive them
     if (re().is_from_ecma2020(b)) {
         return BR_FAILED;
+    }
+
+    // (re.from_ecma2020 ...) is supported only as the direct argument of str.in_re, so a membership in re.union,
+    // re.inter, re.xor or re.comp containing it is rewritten into or, and, xor or not of memberships, e.g.,
+    // (str.in_re a (re.union E1 E2)) ==> (or (str.in_re a E1) (str.in_re a E2)). Nested operations are split
+    // when the result is rewritten again (BR_REWRITE2).
+    if (contains_from_ecma2020(b)) {
+        expr* b1 = nullptr, *b2 = nullptr;
+        if (re().is_union(b, b1, b2)) {
+            result = m().mk_or(re().mk_in_re(a, b1), re().mk_in_re(a, b2));
+        }
+        else if (re().is_intersection(b, b1, b2)) {
+            result = m().mk_and(re().mk_in_re(a, b1), re().mk_in_re(a, b2));
+        }
+        else if (re().is_xor(b, b1, b2)) {
+            result = m().mk_xor(re().mk_in_re(a, b1), re().mk_in_re(a, b2));
+        }
+        else {
+            VERIFY(re().is_complement(b, b1));
+            result = m().mk_not(re().mk_in_re(a, b1));
+        }
+        return BR_REWRITE2;
     }
 
     if (re().is_empty(b)) {
