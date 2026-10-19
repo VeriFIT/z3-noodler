@@ -3,6 +3,7 @@
 #include "ast/ast_util.h"
 #include "formula.h"
 #include "smt/theory_str_noodler/theory_str_noodler.h"
+#include "smt/theory_str_noodler/ecma_regex.h"
 #include "smt/theory_str_noodler/expr_solver.h"
 #include "smt/theory_str_noodler/quant_lia_solver.h"
 #include "memb_heuristics_procedures.h"
@@ -774,6 +775,17 @@ namespace smt::noodler {
         return conversions;
     }
 
+    expr_ref theory_str_noodler::get_classical_regex(expr* regex) {
+        const auto cached = m_ecma_cache.classical_regexes.find(regex);
+        if (cached != m_ecma_cache.classical_regexes.end()) {
+            return cached->second.classical_regex;
+        }
+        expr_ref classical_regex = ecma::to_classical_regex(regex, m, m_params);
+        m_ecma_cache.classical_regexes.emplace(
+            regex, ecma_cache::classical_regex_entry{expr_ref(regex, m), classical_regex});
+        return classical_regex;
+    }
+
     lbool theory_str_noodler::solve_lang_eqs_diseqs() {
         for(const auto& item : this->m_lang_eq_or_diseq_todo_rel) {
             expr_ref left_side = std::get<0>(item);
@@ -784,18 +796,29 @@ namespace smt::noodler {
                 tout << "Checking lang (dis)eq: " << mk_pp(left_side, m) << (is_equation ? " == " : " != ") << mk_pp(right_side, m) << std::endl;
             );
 
-            if (!m_util_s.re.is_ground(left_side) || !m_util_s.re.is_ground(right_side)) {
+            // An equation whose sides are congruent (the same operator over arguments from the same equivalence
+            // classes) follows from the equations of the arguments, which are checked separately, e.g.,
+            // (re.from_ecma2020 "a") = (re.from_ecma2020 "b") after the literals "a" and "b" were merged.
+            if (is_equation && smt::congruent(ctx.get_enode(left_side), ctx.get_enode(right_side))) {
+                continue;
+            }
+
+            // (re.from_ecma2020 ...) with a regular pattern is compared as the classical regex of the pattern
+            const expr_ref left_regex = get_classical_regex(left_side);
+            const expr_ref right_regex = get_classical_regex(right_side);
+            if (!left_regex || !right_regex ||
+                !m_util_s.re.is_ground(left_regex) || !m_util_s.re.is_ground(right_regex)) {
                 return l_undef;
             }
 
             // get symbols from both sides
             regex::Alphabet alph;
-            regex::extract_symbols(left_side, m_util_s, alph);
-            regex::extract_symbols(right_side, m_util_s, alph);
+            regex::extract_symbols(left_regex, m_util_s, alph);
+            regex::extract_symbols(right_regex, m_util_s, alph);
 
             // construct NFAs for both sides
-            std::shared_ptr<const mata::nfa::Nfa> nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
-            std::shared_ptr<const mata::nfa::Nfa> nfa2 = nfa_constructor.conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
+            std::shared_ptr<const mata::nfa::Nfa> nfa1 = nfa_constructor.conv_to_nfa(to_app(left_regex), m_util_s, m, alph, false );
+            std::shared_ptr<const mata::nfa::Nfa> nfa2 = nfa_constructor.conv_to_nfa(to_app(right_regex), m_util_s, m ,alph, false );
 
             // check if NFAs are equivalent (if we have equation) or not (if we have disequation)
             bool are_equiv;

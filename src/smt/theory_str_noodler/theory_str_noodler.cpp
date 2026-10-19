@@ -2262,15 +2262,16 @@ namespace smt::noodler {
         // The axioms of e are deleted when backtracking below the level they were added at, and when e becomes relevant
         // again, they are added again. The constraints are generated only once and reused, otherwise each addition
         // would introduce new fresh variables, and the lemmas learned for the previous ones would not apply to them.
-        if (!ecma_constraints_cache.contains(e)) {
+        if (!m_ecma_cache.memberships.contains(e)) {
             ecma::RegexConstraintBuilder builder(m, pattern, m_params);
             builder.build_rcg();
 
             SASSERT(is_app(x));
             expr_ref formula = builder.generate_constraints(to_app(x));
-            ecma_constraints_cache.emplace(e, ecma_constraints{expr_ref(e, m), formula, builder.get_fresh_vars()});
+            m_ecma_cache.memberships.emplace(
+                e, ecma_cache::membership_entry{expr_ref(e, m), formula, builder.get_fresh_vars()});
         }
-        const ecma_constraints& constraints = ecma_constraints_cache.at(e);
+        const ecma_cache::membership_entry& constraints = m_ecma_cache.memberships.at(e);
         expr_ref ecma_formula = constraints.formula;
 
         STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS ---" << std::endl;
