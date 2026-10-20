@@ -1,4 +1,5 @@
-#include "smt/theory_str_noodler/ecma_regex.h"
+#include "smt/theory_str_noodler/extended_regex/ecma_regex.h"
+#include "smt/theory_str_noodler/extended_regex/extended_regex.h"
 
 #include "ast/ast.h"
 #include "ast/ast_pp.h"
@@ -16,7 +17,7 @@
 // =====================================================================
 
 TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
-    using namespace smt::noodler::ecma;
+    using namespace smt::noodler::extended_regex::ecma;
 
     SECTION("Get literal token from regex") {
         zstring regex = "a";
@@ -806,301 +807,291 @@ TEST_CASE("ECMA Regex Lexer", "[noodler][ecma]") {
 // PARSER TESTS
 // =====================================================================
 
-namespace smt::noodler::ecma::test {
-    zstring parse_and_serialize(const zstring& regex) {
-        using namespace smt::noodler::ecma;
-        ECMAParser parser(regex);
-        const ASTNodeRef root = parser.parse();
-        return root->serialize();
+namespace smt::noodler::extended_regex::ecma::test {
+    std::string parse_and_serialize(const zstring& regex) {
+        return serialize(*ECMAParser(regex).parse());
     }
-}  // namespace smt::noodler::ecma::test
+
+    // The ECMA word characters \w
+    const std::string WORD = "(SET '0'-'9' 'A'-'Z' '_' 'a'-'z')";
+    // \b = (?<=\w)(?!\w)|(?<!\w)(?=\w)
+    const std::string WORD_BOUNDARY = "(DISJ (SEQ (ASSERT ?<= " + WORD + ") (ASSERT ?! " + WORD +
+                                      "))"
+                                      " (SEQ (ASSERT ?<! " +
+                                      WORD + ") (ASSERT ?= " + WORD + ")))";
+    // \B = (?<=\w)(?=\w)|(?<!\w)(?!\w)
+    const std::string NOT_WORD_BOUNDARY = "(DISJ (SEQ (ASSERT ?<= " + WORD + ") (ASSERT ?= " + WORD +
+                                          "))"
+                                          " (SEQ (ASSERT ?<! " +
+                                          WORD + ") (ASSERT ?! " + WORD + ")))";
+    // The ECMA white space and line terminators \s
+    const std::string WHITE_SPACE = R"((SET '\u{9}'-'\u{d}' ' ' '\u{a0}' '\u{1680}' '\u{2000}'-'\u{200a}')"
+                                    R"( '\u{2028}'-'\u{2029}' '\u{202f}' '\u{205f}' '\u{3000}' '\u{feff}'))";
+    // Any character except a line terminator
+    const std::string DOT = R"((SET ^ '\u{a}' '\u{d}' '\u{2028}'-'\u{2029}'))";
+}  // namespace smt::noodler::extended_regex::ecma::test
 
 TEST_CASE("ECMA Regex Parser", "[noodler][ecma]") {
-    using namespace smt::noodler::ecma;
-    using namespace smt::noodler::ecma::test;
+    using namespace smt::noodler::extended_regex::ecma;
+    using namespace smt::noodler::extended_regex::ecma::test;
 
     SECTION("Literals and Concatenation") {
-        REQUIRE(parse_and_serialize("a") == zstring("(SEQ (LIT 'a'))"));
-        REQUIRE(parse_and_serialize("ab") == zstring("(SEQ (LIT 'a') (LIT 'b'))"));
-        REQUIRE(parse_and_serialize("abc") == zstring("(SEQ (LIT 'a') (LIT 'b') (LIT 'c'))"));
+        REQUIRE(parse_and_serialize("a") == "(SEQ (LIT 'a'))");
+        REQUIRE(parse_and_serialize("ab") == "(SEQ (LIT 'a') (LIT 'b'))");
+        REQUIRE(parse_and_serialize("abc") == "(SEQ (LIT 'a') (LIT 'b') (LIT 'c'))");
     }
 
     SECTION("Dot and Escapes") {
-        REQUIRE(parse_and_serialize(".") == zstring("(SEQ (DOT))"));
-        REQUIRE(parse_and_serialize("\\d") == zstring("(SEQ (CLASS (CHAR_CLASS 'd')))"));
-        REQUIRE(parse_and_serialize("\\s") == zstring("(SEQ (CLASS (CHAR_CLASS 's')))"));
-        REQUIRE(parse_and_serialize("\\w") == zstring("(SEQ (CLASS (CHAR_CLASS 'w')))"));
+        REQUIRE(parse_and_serialize(".") == "(SEQ " + DOT + ")");
+        REQUIRE(parse_and_serialize("\\d") == "(SEQ (SET '0'-'9'))");
+        REQUIRE(parse_and_serialize("\\D") == "(SEQ (SET ^ '0'-'9'))");
+        REQUIRE(parse_and_serialize("\\s") == "(SEQ " + WHITE_SPACE + ")");
+        REQUIRE(parse_and_serialize("\\w") == "(SEQ " + WORD + ")");
     }
 
     SECTION("Alternation (Disjunction)") {
-        REQUIRE(parse_and_serialize("a|b") == zstring("(DISJ (SEQ (LIT 'a')) (SEQ (LIT 'b')))"));
-        REQUIRE(parse_and_serialize("a|b|c") == zstring("(DISJ (SEQ (LIT 'a')) (SEQ (LIT 'b')) (SEQ (LIT 'c')))"));
-        REQUIRE(parse_and_serialize("a|") == zstring("(DISJ (SEQ (LIT 'a')) (SEQ))"));
+        REQUIRE(parse_and_serialize("a|b") == "(DISJ (SEQ (LIT 'a')) (SEQ (LIT 'b')))");
+        REQUIRE(parse_and_serialize("a|b|c") == "(DISJ (SEQ (LIT 'a')) (SEQ (LIT 'b')) (SEQ (LIT 'c')))");
+        REQUIRE(parse_and_serialize("a|") == "(DISJ (SEQ (LIT 'a')) (SEQ))");
     }
 
     SECTION("Quantifiers") {
-        REQUIRE(parse_and_serialize("a*") == zstring("(SEQ (QUANT {0,inf} (LIT 'a')))"));
-        REQUIRE(parse_and_serialize("a+") == zstring("(SEQ (QUANT {1,inf} (LIT 'a')))"));
-        REQUIRE(parse_and_serialize("a?") == zstring("(SEQ (QUANT {0,1} (LIT 'a')))"));
-        REQUIRE(parse_and_serialize("a{3}") == zstring("(SEQ (QUANT {3,3} (LIT 'a')))"));
-        REQUIRE(parse_and_serialize("a{3,}") == zstring("(SEQ (QUANT {3,inf} (LIT 'a')))"));
-        REQUIRE(parse_and_serialize("a{3,5}") == zstring("(SEQ (QUANT {3,5} (LIT 'a')))"));
+        REQUIRE(parse_and_serialize("a*") == "(SEQ (QUANT {0,inf} (LIT 'a')))");
+        REQUIRE(parse_and_serialize("a+") == "(SEQ (QUANT {1,inf} (LIT 'a')))");
+        REQUIRE(parse_and_serialize("a?") == "(SEQ (QUANT {0,1} (LIT 'a')))");
+        REQUIRE(parse_and_serialize("a{3}") == "(SEQ (QUANT {3,3} (LIT 'a')))");
+        REQUIRE(parse_and_serialize("a{3,}") == "(SEQ (QUANT {3,inf} (LIT 'a')))");
+        REQUIRE(parse_and_serialize("a{3,5}") == "(SEQ (QUANT {3,5} (LIT 'a')))");
     }
 
     SECTION("Operator Precedence") {
-        REQUIRE(parse_and_serialize("ab*") == zstring("(SEQ (LIT 'a') (QUANT {0,inf} (LIT 'b')))"));
-        REQUIRE(parse_and_serialize("a|bc") == zstring("(DISJ (SEQ (LIT 'a')) (SEQ (LIT 'b') (LIT 'c')))"));
-        REQUIRE(parse_and_serialize("a|b*") == zstring("(DISJ (SEQ (LIT 'a')) (SEQ (QUANT {0,inf} (LIT 'b'))))"));
+        REQUIRE(parse_and_serialize("ab*") == "(SEQ (LIT 'a') (QUANT {0,inf} (LIT 'b')))");
+        REQUIRE(parse_and_serialize("a|bc") == "(DISJ (SEQ (LIT 'a')) (SEQ (LIT 'b') (LIT 'c')))");
+        REQUIRE(parse_and_serialize("a|b*") == "(DISJ (SEQ (LIT 'a')) (SEQ (QUANT {0,inf} (LIT 'b'))))");
     }
 
     SECTION("Groups (Normal, Non-capturing, Named)") {
-        REQUIRE(parse_and_serialize("()") == zstring("(SEQ (GROUP #1 (SEQ)))"));
-        REQUIRE(parse_and_serialize("(a)") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))))"));
-        REQUIRE(parse_and_serialize("(ab)+") == zstring("(SEQ (QUANT {1,inf} (GROUP #1 (SEQ (LIT 'a') (LIT 'b')))))"));
-        REQUIRE(parse_and_serialize("(?:a)") == zstring("(SEQ (GROUP-NONCAP (SEQ (LIT 'a'))))"));
-        REQUIRE(parse_and_serialize("(?<foo>a)") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))))"));
+        REQUIRE(parse_and_serialize("()") == "(SEQ (GROUP #1 (SEQ)))");
+        REQUIRE(parse_and_serialize("(a)") == "(SEQ (GROUP #1 (SEQ (LIT 'a'))))");
+        REQUIRE(parse_and_serialize("(ab)+") == "(SEQ (QUANT {1,inf} (GROUP #1 (SEQ (LIT 'a') (LIT 'b')))))");
+        // Non-capturing groups are replaced by their subpatterns
+        REQUIRE(parse_and_serialize("(?:a)") == "(SEQ (SEQ (LIT 'a')))");
+        REQUIRE(parse_and_serialize("(?<foo>a)") == "(SEQ (GROUP #1 (SEQ (LIT 'a'))))");
     }
 
     SECTION("Assertions and Lookarounds") {
-        REQUIRE(parse_and_serialize("^a$") == zstring("(SEQ (ASSERT '^') (LIT 'a') (ASSERT '$'))"));
-        REQUIRE(parse_and_serialize("\\b") == zstring("(SEQ (ASSERT 'b'))"));
-        REQUIRE(parse_and_serialize("\\B") == zstring("(SEQ (ASSERT 'B'))"));
-        REQUIRE(parse_and_serialize("(?=a)") == zstring("(SEQ (ASSERT ?= (SEQ (LIT 'a'))))"));
-        REQUIRE(parse_and_serialize("(?!a)") == zstring("(SEQ (ASSERT ?! (SEQ (LIT 'a'))))"));
-        REQUIRE(parse_and_serialize("(?<=a)") == zstring("(SEQ (ASSERT ?<= (SEQ (LIT 'a'))))"));
-        REQUIRE(parse_and_serialize("(?<!a)") == zstring("(SEQ (ASSERT ?<! (SEQ (LIT 'a'))))"));
+        REQUIRE(parse_and_serialize("^a$") == "(SEQ (ASSERT '^') (LIT 'a') (ASSERT '$'))");
+        // Word boundaries are translated into lookarounds
+        REQUIRE(parse_and_serialize("\\b") == "(SEQ " + WORD_BOUNDARY + ")");
+        REQUIRE(parse_and_serialize("\\B") == "(SEQ " + NOT_WORD_BOUNDARY + ")");
+        REQUIRE(parse_and_serialize("(?=a)") == "(SEQ (ASSERT ?= (SEQ (LIT 'a'))))");
+        REQUIRE(parse_and_serialize("(?!a)") == "(SEQ (ASSERT ?! (SEQ (LIT 'a'))))");
+        REQUIRE(parse_and_serialize("(?<=a)") == "(SEQ (ASSERT ?<= (SEQ (LIT 'a'))))");
+        REQUIRE(parse_and_serialize("(?<!a)") == "(SEQ (ASSERT ?<! (SEQ (LIT 'a'))))");
     }
 
     SECTION("Character Classes") {
-        REQUIRE(parse_and_serialize("[a]") == zstring("(SEQ (CLASS (LIT 'a')))"));
-        REQUIRE(parse_and_serialize("[^a]") == zstring("(SEQ (CLASS ^ (LIT 'a')))"));
-        REQUIRE(parse_and_serialize("[a-z]") == zstring("(SEQ (CLASS (RANGE 'a' 'z')))"));
-        REQUIRE(parse_and_serialize("[a-zA-Z]") == zstring("(SEQ (CLASS (RANGE 'a' 'z') (RANGE 'A' 'Z')))"));
-        REQUIRE(parse_and_serialize("[\\d\\s]") == zstring("(SEQ (CLASS (CHAR_CLASS 'd') (CHAR_CLASS 's')))"));
-        REQUIRE(parse_and_serialize("[^a-z\\d_]") ==
-                zstring("(SEQ (CLASS ^ (RANGE 'a' 'z') (CHAR_CLASS 'd') (LIT '_')))"));
+        REQUIRE(parse_and_serialize("[a]") == "(SEQ (LIT 'a'))");
+        REQUIRE(parse_and_serialize("[^a]") == "(SEQ (SET ^ 'a'))");
+        REQUIRE(parse_and_serialize("[a-z]") == "(SEQ (SET 'a'-'z'))");
+        REQUIRE(parse_and_serialize("[a-zA-Z]") == "(SEQ (SET 'A'-'Z' 'a'-'z'))");
+        REQUIRE(parse_and_serialize("[\\d\\s]") ==
+                R"((SEQ (SET '\u{9}'-'\u{d}' ' ' '0'-'9' '\u{a0}' '\u{1680}' '\u{2000}'-'\u{200a}')"
+                R"( '\u{2028}'-'\u{2029}' '\u{202f}' '\u{205f}' '\u{3000}' '\u{feff}')))");
+        REQUIRE(parse_and_serialize("[^a-z\\d_]") == "(SEQ (SET ^ '0'-'9' '_' 'a'-'z'))");
+        // Empty class matches nothing, negated empty class matches any character
+        REQUIRE(parse_and_serialize("[]") == "(SEQ (SET))");
+        REQUIRE(parse_and_serialize("[^]") == "(SEQ (SET ^))");
     }
 
     SECTION("Backreferences") {
-        REQUIRE(parse_and_serialize("(a)\\1") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))) (BACKREF 1))"));
-        REQUIRE(parse_and_serialize("(?<name>a)\\k<name>") == zstring("(SEQ (GROUP #1 (SEQ (LIT 'a'))) (BACKREF 1))"));
+        REQUIRE(parse_and_serialize("(a)\\1") == "(SEQ (GROUP #1 (SEQ (LIT 'a'))) (BACKREF 1))");
+        REQUIRE(parse_and_serialize("(?<name>a)\\k<name>") == "(SEQ (GROUP #1 (SEQ (LIT 'a'))) (BACKREF 1))");
     }
 
     SECTION("Nested capturing groups") {
-        REQUIRE(parse_and_serialize("((a))") == zstring("(SEQ (GROUP #1 (SEQ (GROUP #2 (SEQ (LIT 'a'))))))"));
+        REQUIRE(parse_and_serialize("((a))") == "(SEQ (GROUP #1 (SEQ (GROUP #2 (SEQ (LIT 'a'))))))");
     }
 
     SECTION("Nested non-capturing groups") {
-        REQUIRE(parse_and_serialize("(?:(?:a))") ==
-                zstring("(SEQ (GROUP-NONCAP (SEQ (GROUP-NONCAP (SEQ (LIT 'a'))))))"));
+        REQUIRE(parse_and_serialize("(?:(?:a))") == "(SEQ (SEQ (SEQ (LIT 'a'))))");
     }
 
     SECTION("Mixed nested groups with quantifiers") {
-        REQUIRE(parse_and_serialize("(a(b+)c)*") == zstring("(SEQ (QUANT {0,inf} (GROUP #1 (SEQ"
-                                                            " (LIT 'a')"
-                                                            " (GROUP #2 (SEQ (QUANT {1,inf} (LIT 'b'))))"
-                                                            " (LIT 'c')"
-                                                            "))))"));
+        REQUIRE(parse_and_serialize("(a(b+)c)*") == "(SEQ (QUANT {0,inf} (GROUP #1 (SEQ"
+                                                    " (LIT 'a')"
+                                                    " (GROUP #2 (SEQ (QUANT {1,inf} (LIT 'b'))))"
+                                                    " (LIT 'c')"
+                                                    "))))");
     }
 
     SECTION("Named group inside non-capturing group") {
-        REQUIRE(parse_and_serialize("(?:(?<foo>a))") ==
-                zstring("(SEQ (GROUP-NONCAP (SEQ (GROUP #1 (SEQ (LIT 'a'))))))"));
+        REQUIRE(parse_and_serialize("(?:(?<foo>a))") == "(SEQ (SEQ (GROUP #1 (SEQ (LIT 'a')))))");
     }
 
     SECTION("Quantifier on group with alternation inside") {
-        REQUIRE(parse_and_serialize("(a|b)+") == zstring("(SEQ (QUANT {1,inf} (GROUP #1 (DISJ"
-                                                         " (SEQ (LIT 'a'))"
-                                                         " (SEQ (LIT 'b'))"
-                                                         "))))"));
+        REQUIRE(parse_and_serialize("(a|b)+") == "(SEQ (QUANT {1,inf} (GROUP #1 (DISJ"
+                                                 " (SEQ (LIT 'a'))"
+                                                 " (SEQ (LIT 'b'))"
+                                                 "))))");
     }
 
     SECTION("Quantifier {n,m} on group") {
-        REQUIRE(parse_and_serialize("(ab){2,4}") ==
-                zstring("(SEQ (QUANT {2,4} (GROUP #1 (SEQ (LIT 'a') (LIT 'b')))))"));
+        REQUIRE(parse_and_serialize("(ab){2,4}") == "(SEQ (QUANT {2,4} (GROUP #1 (SEQ (LIT 'a') (LIT 'b')))))");
     }
 
     SECTION("Quantifier on character class") {
-        REQUIRE(parse_and_serialize("[a-z]+") == zstring("(SEQ (QUANT {1,inf} (CLASS (RANGE 'a' 'z'))))"));
+        REQUIRE(parse_and_serialize("[a-z]+") == "(SEQ (QUANT {1,inf} (SET 'a'-'z')))");
     }
 
     SECTION("Quantifier on dot") {
-        REQUIRE(parse_and_serialize(".*") == zstring("(SEQ (QUANT {0,inf} (DOT)))"));
+        REQUIRE(parse_and_serialize(".*") == "(SEQ (QUANT {0,inf} " + DOT + "))");
     }
 
     SECTION("Alternation with empty right branch") {
-        REQUIRE(parse_and_serialize("a|") == zstring("(DISJ (SEQ (LIT 'a')) (SEQ))"));
+        REQUIRE(parse_and_serialize("a|") == "(DISJ (SEQ (LIT 'a')) (SEQ))");
     }
 
     SECTION("Alternation with empty left branch") {
-        REQUIRE(parse_and_serialize("|a") == zstring("(DISJ (SEQ) (SEQ (LIT 'a')))"));
+        REQUIRE(parse_and_serialize("|a") == "(DISJ (SEQ) (SEQ (LIT 'a')))");
     }
 
     SECTION("Alternation inside a group") {
-        REQUIRE(parse_and_serialize("(a|b|c)") == zstring("(SEQ"
-                                                          " (GROUP #1 (DISJ"
-                                                          " (SEQ (LIT 'a'))"
-                                                          " (SEQ (LIT 'b'))"
-                                                          " (SEQ (LIT 'c'))"
-                                                          "))"
-                                                          ")"));
+        REQUIRE(parse_and_serialize("(a|b|c)") == "(SEQ"
+                                                  " (GROUP #1 (DISJ"
+                                                  " (SEQ (LIT 'a'))"
+                                                  " (SEQ (LIT 'b'))"
+                                                  " (SEQ (LIT 'c'))"
+                                                  "))"
+                                                  ")");
     }
 
     SECTION("Nested alternation") {
-        REQUIRE(parse_and_serialize("(a|b)|(c|d)") == zstring("(DISJ"
-                                                              " (SEQ (GROUP #1 (DISJ"
-                                                              " (SEQ (LIT 'a'))"
-                                                              " (SEQ (LIT 'b'))"
-                                                              ")))"
-                                                              " (SEQ (GROUP #2 (DISJ"
-                                                              " (SEQ (LIT 'c'))"
-                                                              " (SEQ (LIT 'd'))"
-                                                              ")))"
-                                                              ")"));
+        REQUIRE(parse_and_serialize("(a|b)|(c|d)") == "(DISJ"
+                                                      " (SEQ (GROUP #1 (DISJ"
+                                                      " (SEQ (LIT 'a'))"
+                                                      " (SEQ (LIT 'b'))"
+                                                      ")))"
+                                                      " (SEQ (GROUP #2 (DISJ"
+                                                      " (SEQ (LIT 'c'))"
+                                                      " (SEQ (LIT 'd'))"
+                                                      ")))"
+                                                      ")");
     }
 
     SECTION("Word boundary in the middle of pattern") {
-        REQUIRE(parse_and_serialize("a\\bb") == zstring("(SEQ"
-                                                        " (LIT 'a')"
-                                                        " (ASSERT 'b')"
-                                                        " (LIT 'b')"
-                                                        ")"));
+        REQUIRE(parse_and_serialize("a\\bb") == "(SEQ (LIT 'a') " + WORD_BOUNDARY + " (LIT 'b'))");
     }
 
     SECTION("Lookahead with quantified subpattern") {
-        REQUIRE(parse_and_serialize("(?=a+)") == zstring("(SEQ"
-                                                         " (ASSERT ?= (SEQ"
-                                                         " (QUANT {1,inf} (LIT 'a'))"
-                                                         "))"
-                                                         ")"));
+        REQUIRE(parse_and_serialize("(?=a+)") == "(SEQ"
+                                                 " (ASSERT ?= (SEQ"
+                                                 " (QUANT {1,inf} (LIT 'a'))"
+                                                 "))"
+                                                 ")");
     }
 
     SECTION("Negative lookbehind with char class") {
-        REQUIRE(parse_and_serialize("(?<![0-9])a") == zstring("(SEQ"
-                                                              " (ASSERT ?<! (SEQ"
-                                                              " (CLASS (RANGE '0' '9'))"
-                                                              "))"
-                                                              " (LIT 'a')"
-                                                              ")"));
+        REQUIRE(parse_and_serialize("(?<![0-9])a") == "(SEQ"
+                                                      " (ASSERT ?<! (SEQ"
+                                                      " (SET '0'-'9')"
+                                                      "))"
+                                                      " (LIT 'a')"
+                                                      ")");
     }
 
     SECTION("Lookahead followed by group") {
-        REQUIRE(parse_and_serialize("(?=a)(b)") == zstring("(SEQ"
-                                                           " (ASSERT ?= (SEQ (LIT 'a')))"
-                                                           " (GROUP #1 (SEQ (LIT 'b')))"
-                                                           ")"));
+        REQUIRE(parse_and_serialize("(?=a)(b)") == "(SEQ"
+                                                   " (ASSERT ?= (SEQ (LIT 'a')))"
+                                                   " (GROUP #1 (SEQ (LIT 'b')))"
+                                                   ")");
     }
 
     SECTION("Multiple assertions in sequence") {
-        REQUIRE(parse_and_serialize("^\\ba$") == zstring("(SEQ"
-                                                         " (ASSERT '^')"
-                                                         " (ASSERT 'b')"
-                                                         " (LIT 'a')"
-                                                         " (ASSERT '$')"
-                                                         ")"));
+        REQUIRE(parse_and_serialize("^\\ba$") == "(SEQ (ASSERT '^') " + WORD_BOUNDARY + " (LIT 'a') (ASSERT '$'))");
     }
 
     SECTION("Character class with multiple ranges") {
-        REQUIRE(parse_and_serialize("[a-zA-Z0-9]") == zstring("(SEQ"
-                                                              " (CLASS"
-                                                              " (RANGE 'a' 'z')"
-                                                              " (RANGE 'A' 'Z')"
-                                                              " (RANGE '0' '9')"
-                                                              ")"
-                                                              ")"));
+        REQUIRE(parse_and_serialize("[a-zA-Z0-9]") == "(SEQ (SET '0'-'9' 'A'-'Z' 'a'-'z'))");
     }
 
     SECTION("Negated class with escape and range") {
-        REQUIRE(parse_and_serialize("[^\\w0-9]") == zstring("(SEQ"
-                                                            " (CLASS ^"
-                                                            " (CHAR_CLASS 'w')"
-                                                            " (RANGE '0' '9')"
-                                                            ")"
-                                                            ")"));
+        REQUIRE(parse_and_serialize("[^\\w0-9]") == "(SEQ (SET ^ '0'-'9' 'A'-'Z' '_' 'a'-'z'))");
     }
 
     SECTION("Character class with single char and range") {
-        REQUIRE(parse_and_serialize("[_a-z]") == zstring("(SEQ"
-                                                         " (CLASS"
-                                                         " (LIT '_')"
-                                                         " (RANGE 'a' 'z')"
-                                                         ")"
-                                                         ")"));
+        REQUIRE(parse_and_serialize("[_a-z]") == "(SEQ (SET '_' 'a'-'z'))");
     }
 
     SECTION("Multiple numeric backreferences") {
-        REQUIRE(parse_and_serialize("(a)(b)\\1\\2") == zstring("(SEQ"
-                                                               " (GROUP #1 (SEQ (LIT 'a')))"
-                                                               " (GROUP #2 (SEQ (LIT 'b')))"
-                                                               " (BACKREF 1)"
-                                                               " (BACKREF 2)"
-                                                               ")"));
+        REQUIRE(parse_and_serialize("(a)(b)\\1\\2") == "(SEQ"
+                                                       " (GROUP #1 (SEQ (LIT 'a')))"
+                                                       " (GROUP #2 (SEQ (LIT 'b')))"
+                                                       " (BACKREF 1)"
+                                                       " (BACKREF 2)"
+                                                       ")");
     }
 
     SECTION("Named backreference after named group") {
-        REQUIRE(parse_and_serialize("(?<word>[a-z]+)\\k<word>") ==
-                zstring("(SEQ"
-                        " (GROUP #1 (SEQ (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))))"
-                        " (BACKREF 1)"
-                        ")"));
+        REQUIRE(parse_and_serialize("(?<word>[a-z]+)\\k<word>") == "(SEQ"
+                                                                   " (GROUP #1 (SEQ (QUANT {1,inf} (SET 'a'-'z'))))"
+                                                                   " (BACKREF 1)"
+                                                                   ")");
     }
 
     SECTION("Simple email-like pattern") {
-        REQUIRE(parse_and_serialize("[a-z]+@[a-z]+\\.[a-z]+") == zstring("(SEQ"
-                                                                         " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
-                                                                         " (LIT '@')"
-                                                                         " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
-                                                                         " (LIT '.')"
-                                                                         " (QUANT {1,inf} (CLASS (RANGE 'a' 'z')))"
-                                                                         ")"));
+        REQUIRE(parse_and_serialize("[a-z]+@[a-z]+\\.[a-z]+") == "(SEQ"
+                                                                 " (QUANT {1,inf} (SET 'a'-'z'))"
+                                                                 " (LIT '@')"
+                                                                 " (QUANT {1,inf} (SET 'a'-'z'))"
+                                                                 " (LIT '.')"
+                                                                 " (QUANT {1,inf} (SET 'a'-'z'))"
+                                                                 ")");
     }
 
     SECTION("IP address octet pattern") {
         REQUIRE(parse_and_serialize("(25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})") ==
-                zstring("(SEQ"
-                        " (GROUP #1 (DISJ"
-                        " (SEQ (LIT '2') (LIT '5') (CLASS (RANGE '0' '5')))"
-                        " (SEQ (LIT '2') (CLASS (RANGE '0' '4')) (CLASS (RANGE '0' '9')))"
-                        " (SEQ"
-                        " (QUANT {0,1} (CLASS (LIT '0') (LIT '1')))"
-                        " (QUANT {1,2} (CLASS (RANGE '0' '9')))"
-                        ")"
-                        "))"
-                        ")"));
+                "(SEQ"
+                " (GROUP #1 (DISJ"
+                " (SEQ (LIT '2') (LIT '5') (SET '0'-'5'))"
+                " (SEQ (LIT '2') (SET '0'-'4') (SET '0'-'9'))"
+                " (SEQ"
+                " (QUANT {0,1} (SET '0'-'1'))"
+                " (QUANT {1,2} (SET '0'-'9'))"
+                ")"
+                "))"
+                ")");
     }
 
     SECTION("Hex color pattern") {
         REQUIRE(parse_and_serialize("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})") ==
-                zstring("(SEQ"
-                        " (LIT '#')"
-                        " (GROUP #1 (DISJ"
-                        " (SEQ (QUANT {3,3} (CLASS (RANGE '0' '9') (RANGE 'a' 'f') (RANGE 'A' 'F'))))"
-                        " (SEQ (QUANT {6,6} (CLASS (RANGE '0' '9') (RANGE 'a' 'f') (RANGE 'A' 'F'))))"
-                        "))"
-                        ")"));
+                "(SEQ"
+                " (LIT '#')"
+                " (GROUP #1 (DISJ"
+                " (SEQ (QUANT {3,3} (SET '0'-'9' 'A'-'F' 'a'-'f')))"
+                " (SEQ (QUANT {6,6} (SET '0'-'9' 'A'-'F' 'a'-'f')))"
+                "))"
+                ")");
     }
 
     SECTION("Date pattern with named groups") {
         REQUIRE(parse_and_serialize("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})") ==
-                zstring("(SEQ"
-                        " (GROUP #1 (SEQ (QUANT {4,4} (CLASS (CHAR_CLASS 'd')))))"
-                        " (LIT '-')"
-                        " (GROUP #2 (SEQ (QUANT {2,2} (CLASS (CHAR_CLASS 'd')))))"
-                        " (LIT '-')"
-                        " (GROUP #3 (SEQ (QUANT {2,2} (CLASS (CHAR_CLASS 'd')))))"
-                        ")"));
+                "(SEQ"
+                " (GROUP #1 (SEQ (QUANT {4,4} (SET '0'-'9'))))"
+                " (LIT '-')"
+                " (GROUP #2 (SEQ (QUANT {2,2} (SET '0'-'9'))))"
+                " (LIT '-')"
+                " (GROUP #3 (SEQ (QUANT {2,2} (SET '0'-'9'))))"
+                ")");
     }
 
     SECTION("URL path segment with lookahead") {
-        REQUIRE(parse_and_serialize("(?<=/)([a-z0-9\\-]+)(?=/)") == zstring("(SEQ"
-                                                                            " (ASSERT ?<= (SEQ (LIT '/')))"
-                                                                            " (GROUP #1 (SEQ (QUANT {1,inf} (CLASS"
-                                                                            " (RANGE 'a' 'z')"
-                                                                            " (RANGE '0' '9')"
-                                                                            " (LIT '-')"
-                                                                            "))))"
-                                                                            " (ASSERT ?= (SEQ (LIT '/')))"
-                                                                            ")"));
+        REQUIRE(parse_and_serialize("(?<=/)([a-z0-9\\-]+)(?=/)") ==
+                "(SEQ"
+                " (ASSERT ?<= (SEQ (LIT '/')))"
+                " (GROUP #1 (SEQ (QUANT {1,inf} (SET '-' '0'-'9' 'a'-'z'))))"
+                " (ASSERT ?= (SEQ (LIT '/')))"
+                ")");
     }
 
     SECTION("Quantifier without preceding atom throws") {
@@ -1127,24 +1118,13 @@ TEST_CASE("ECMA Regex Parser", "[noodler][ecma]") {
     SECTION("Character class as range bound throws") {
         REQUIRE_THROWS(parse_and_serialize("[\\w-z]"));
         REQUIRE_THROWS(parse_and_serialize("[a-\\d]"));
+        REQUIRE_THROWS(parse_and_serialize("[\\d--]"));
     }
 
     SECTION("Crazy character class") {
-        std::string regex_input = R"([^\]\--/a-z^\b--\0-\37\cZ])";
-
-        zstring expected = zstring("(SEQ (CLASS ^"
-                                   " (LIT ']')"
-                                   " (RANGE '-' '/')"
-                                   " (RANGE 'a' 'z')"
-                                   " (LIT '^')"
-                                   " (RANGE '\x08' '-')"
-                                   " (RANGE '") +
-                           zstring(static_cast<uint32_t>('\0')) +
-                           zstring("' '\x1f')"
-                                   " (LIT '\x1a')"
-                                   "))");
-
-        REQUIRE(parse_and_serialize(regex_input) == expected);
+        // The class consists of ']', '-'-'/', 'a'-'z', '^', '\b'-'-', '\0'-'\37' and '\cZ'
+        REQUIRE(parse_and_serialize(R"([^\]\--/a-z^\b--\0-\37\cZ])") ==
+                R"((SEQ (SET ^ '\u{0}'-'/' ']'-'^' 'a'-'z')))");
     }
 }
 
@@ -1152,551 +1132,19 @@ TEST_CASE("ECMA Regex Parser", "[noodler][ecma]") {
 // RCG SERIALIZATION HELPERS
 // =====================================================================
 
-namespace smt::noodler::ecma::test {
-
+namespace smt::noodler::extended_regex::ecma::test {
     // Converts a Z3 app_ref to a normalized string (collapses whitespace, removes newlines).
     std::string app_to_string(const app_ref& app, ast_manager& m) {
-        std::stringstream ss;
-        ss << mk_pp(app.get(), m);
-        std::string res = ss.str();
-        std::erase(res, '\n');
-        res.erase(std::ranges::unique(res,
-                                      [](const char a, const char b) {
-                                          return a == ' ' && b == ' ';
-                                      })
-                      .begin(),
-                  res.end());
-        return res;
-    }
-
-    // Normalizes a raw pretty-printer string (same as above but takes std::string).
-    static std::string normalize_pp(std::string s) {
-        std::erase(s, '\n');
-        s.erase(std::ranges::unique(s,
-                                    [](char a, char b) {
-                                        return a == ' ' && b == ' ';
-                                    })
-                    .begin(),
-                s.end());
-        return s;
-    }
-
-    // Builds the marker string for a single edge, e.g. " STARTS {1,2} ENDS {1}" or " RESETS {1}" or " NONEMPTY".
-    static std::string serialize_edge_markers(const RegexConstraintGraph& graph, EdgeID eid) {
-        std::string res;
-        if (graph.group_resets.contains(eid)) {
-            res += " RESETS {";
-            for (const uint32_t gid : graph.group_resets.at(eid)) {
-                res += std::to_string(gid) + ",";
-            }
-            res.pop_back();
-            res += "}";
-        }
-        if (graph.nonempty_iterations.contains(eid)) {
-            res += " NONEMPTY";
-        }
-        if (graph.group_starts.contains(eid) && !graph.group_starts.at(eid).empty()) {
-            res += " STARTS {";
-            for (const uint32_t gid : graph.group_starts.at(eid)) {
-                res += std::to_string(gid) + ",";
-            }
-            res.pop_back();
-            res += "}";
-        }
-        if (graph.group_ends.contains(eid) && !graph.group_ends.at(eid).empty()) {
-            res += " ENDS {";
-            for (const uint32_t gid : graph.group_ends.at(eid)) {
-                res += std::to_string(gid) + ",";
-            }
-            res.pop_back();
-            res += "}";
-        }
-        return res;
-    }
-
-    // Forward declaration – serialize_payload and serialize_fragment are mutually recursive
-    // (a lookaround can contain a non-regular GraphFragment that itself has edges).
-    std::string serialize_fragment(const RegexConstraintGraph& graph, const GraphFragment& frag, ast_manager& m);
-
-    // Serializes a single RCG edge payload.
-    // Takes the full graph so it can recursively serialize non-regular lookaround fragments.
-    std::string serialize_payload(const RegexConstraintGraph& graph, const RCGEdgePayload& payload, ast_manager& m) {
-        if (std::holds_alternative<std::monostate>(payload)) {
-            return "EPSILON";
-        }
-
-        if (std::holds_alternative<MatchEdge>(payload)) {
-            const MatchEdge& match = std::get<MatchEdge>(payload);
-            std::stringstream ss;
-            ss << mk_pp(match.regex.get(), m);
-            return "MATCH " + normalize_pp(ss.str());
-        }
-
-        if (std::holds_alternative<AssertionEdge>(payload)) {
-            const AssertionEdge& assertion = std::get<AssertionEdge>(payload);
-
-            if (std::holds_alternative<Anchor>(assertion.payload)) {
-                const uint32_t anchor_char = std::get<Anchor>(assertion.payload);
-                return std::string("ANCHOR '") + static_cast<char>(anchor_char) + "'";
-            }
-
-            const Lookaround& la = std::get<Lookaround>(assertion.payload);
-
-            std::string type_str;
-            if (la.direction == LookaroundDirection::FORWARD) {
-                type_str = la.is_positive ? "?=" : "?!";
-            } else {
-                type_str = la.is_positive ? "?<=" : "?<!";
-            }
-
-            std::string inner_str;
-            if (std::holds_alternative<app_ref>(la.subregex)) {
-                // Regular lookaround: serialize the Z3 regex expression directly.
-                std::stringstream ss;
-                ss << mk_pp(std::get<app_ref>(la.subregex).get(), m);
-                inner_str = normalize_pp(ss.str());
-            } else {
-                // Non-regular lookaround: recursively serialize the embedded graph fragment.
-                inner_str = serialize_fragment(graph, std::get<GraphFragment>(la.subregex), m);
-            }
-
-            return "LOOKAROUND " + type_str + " " + inner_str;
-        }
-
-        if (std::holds_alternative<BackrefEdge>(payload)) {
-            return "BACKREF " + std::to_string(std::get<BackrefEdge>(payload).backref_id);
-        }
-
-        return "UNKNOWN";
-    }
-
-    // BFS over the graph starting from start_vertex; appends edge IDs (in BFS order) to ordered_edges.
-    void rcg_bfs(const RegexConstraintGraph& graph, VertexID start_vertex, std::vector<bool>& visited_edges,
-                 std::vector<EdgeID>& ordered_edges) {
-        if (start_vertex == UNKNOWN_VERTEX || start_vertex >= graph.vertices.size()) {
-            return;
-        }
-
-        std::queue<VertexID> q;
-        std::vector<bool> visited_vertices(graph.vertices.size(), false);
-        q.push(start_vertex);
-        visited_vertices[start_vertex] = true;
-
-        while (!q.empty()) {
-            const VertexID curr = q.front();
-            q.pop();
-
-            for (EdgeID eid : graph.vertices[curr].outgoing_edges) {
-                if (!visited_edges[eid]) {
-                    visited_edges[eid] = true;
-                    ordered_edges.push_back(eid);
-                }
-                const VertexID target = graph.edges[eid].target;
-                if (!visited_vertices[target]) {
-                    visited_vertices[target] = true;
-                    q.push(target);
-                }
-            }
-        }
-    }
-
-    // Serializes the graph fragment reachable from frag.v_in up to (but not beyond) frag.v_out.
-    // Used to serialize non-regular lookaround subgraphs stored inline in edge payloads.
-    //
-    // The BFS stops exploring outgoing edges of frag.v_out, which correctly bounds the traversal
-    // to the inner sub-graph (frag.v_out has no outgoing edges in the outer graph because it was
-    // created as an isolated end-vertex of the inner pattern before being moved into the payload).
-    std::string serialize_fragment(const RegexConstraintGraph& graph, const GraphFragment& frag, ast_manager& m) {
-        std::queue<VertexID> q;
-        std::vector<bool> visited_vertices(graph.vertices.size(), false);
-        std::vector<bool> visited_edges(graph.edges.size(), false);
-        std::vector<EdgeID> ordered_edges;
-
-        q.push(frag.v_in);
-        visited_vertices[frag.v_in] = true;
-
-        while (!q.empty()) {
-            const VertexID curr = q.front();
-            q.pop();
-
-            // Do not follow edges out of the fragment's output vertex.
-            if (curr == frag.v_out) {
-                continue;
-            }
-
-            for (EdgeID eid : graph.vertices[curr].outgoing_edges) {
-                if (!visited_edges[eid]) {
-                    visited_edges[eid] = true;
-                    ordered_edges.push_back(eid);
-                }
-                const VertexID target = graph.edges[eid].target;
-                if (!visited_vertices[target]) {
-                    visited_vertices[target] = true;
-                    q.push(target);
-                }
-            }
-        }
-
-        std::string res = "(FRAGMENT";
-        for (EdgeID eid : ordered_edges) {
-            const RCGEdge& edge = graph.edges[eid];
-            res += " (EDGE *->* [";
-            res += serialize_payload(graph, edge.payload, m) + "]";
-            res += serialize_edge_markers(graph, eid);
-            res += ")";
-        }
-        res += ")";
-        return res;
-    }
-
-    // Full RCG serialization: BFS from start_vertex, emit one token per edge.
-    std::string serialize_rcg(const RegexConstraintGraph& graph, ast_manager& m) {
-        std::string res = "(RCG";
-
-        if (graph.start_vertex == UNKNOWN_VERTEX) {
-            return "(RCG INVALID_START_VERTEX)";
-        }
-
-        std::vector<bool> visited_edges(graph.edges.size(), false);
-        std::vector<EdgeID> ordered_edges;
-        rcg_bfs(graph, graph.start_vertex, visited_edges, ordered_edges);
-
-        for (EdgeID eid : ordered_edges) {
-            const RCGEdge& edge = graph.edges[eid];
-            res += " (EDGE *->* [";
-            res += serialize_payload(graph, edge.payload, m) + "]";
-            res += serialize_edge_markers(graph, eid);
-            res += ")";
-        }
-        res += ")";
-        return res;
+        return to_single_line_string(app.get(), m);
     }
 
     std::string build_and_serialize_rcg(const zstring& regex, ast_manager& m) {
         theory_str_noodler_params params;
         params.m_ecma_engine_semantics = true;
-        RegexConstraintBuilder builder(m, regex, params);
-        const RegexConstraintGraph& rcg = builder.build_rcg();
-        return serialize_rcg(rcg, m);
+        RegexConstraintBuilder builder(m, symbol("ecma2020"), regex, params);
+        return serialize_rcg(builder.build_rcg(), m);
     }
-
-}  // namespace smt::noodler::ecma::test
-
-// =====================================================================
-// RCG GENERATION FROM AST – UNIT TESTS
-// =====================================================================
-
-TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
-    using Catch::Matchers::ContainsSubstring;
-    using namespace smt::noodler::ecma;
-    using namespace smt::noodler::ecma::test;
-
-    ast_manager m;
-    reg_decl_plugins(m);
-    seq_util util_s(m);
-    RegexConstraintGraph graph;
-
-    SECTION("ASTNodeLiteral returns regular app_ref") {
-        ASTNodeLiteral literal_node;
-        literal_node.set_char('x');
-
-        RegexComponent comp = literal_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<app_ref>(comp));
-        REQUIRE(graph.vertices.empty());
-
-        app_ref z3_regex = std::get<app_ref>(comp);
-        REQUIRE(app_to_string(z3_regex, m) == "(str.to_re \"x\")");
-    }
-
-    SECTION("ASTNodeQuantifier wraps the child node in a quantifier") {
-        auto literal_node = std::make_unique<ASTNodeLiteral>();
-        literal_node->set_char('x');
-
-        ASTNodeQuantifier quant_node;
-        Token dummy_token = {TokenType::QUANTIFIER, static_cast<uint32_t>('*'), zstring("*")};
-        quant_node.set(dummy_token, std::move(literal_node));
-
-        RegexComponent comp = quant_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<app_ref>(comp));
-        REQUIRE(graph.vertices.empty());
-
-        app_ref z3_regex = std::get<app_ref>(comp);
-        REQUIRE(app_to_string(z3_regex, m) == "(re.* (str.to_re \"x\"))");
-    }
-
-    SECTION("ASTNodeBackref mutates graph and returns GraphFragment") {
-        ASTNodeBackref backref_node;
-        backref_node.set_ref(1);
-
-        RegexComponent comp = backref_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<GraphFragment>(comp));
-
-        GraphFragment frag = std::get<GraphFragment>(comp);
-        REQUIRE(graph.vertices.size() == 2);
-        REQUIRE(graph.edges.size() == 1);
-        REQUIRE(frag.v_in == 0);
-        REQUIRE(frag.v_out == 1);
-        REQUIRE(frag.edges_pointing_to_vout.size() == 1);
-
-        const RCGEdge& edge = graph.edges[frag.edges_pointing_to_vout[0]];
-        REQUIRE(std::holds_alternative<BackrefEdge>(edge.payload));
-        REQUIRE(std::get<BackrefEdge>(edge.payload).backref_id == 1);
-    }
-
-    SECTION("ASTNodeGroup tags edges correctly") {
-        auto literal_node = std::make_unique<ASTNodeLiteral>();
-        literal_node->set_char('a');
-
-        ASTNodeGroup group_node;
-        group_node.set_type(GroupType::CAPTURE);
-        group_node.set_id(42);
-        group_node.set_expr(std::move(literal_node));
-
-        RegexComponent comp = group_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<GraphFragment>(comp));
-
-        GraphFragment frag = std::get<GraphFragment>(comp);
-        EdgeID the_edge_id = frag.edges_pointing_to_vout[0];
-
-        REQUIRE(graph.group_starts.count(the_edge_id) > 0);
-        REQUIRE(graph.group_starts.at(the_edge_id).size() == 1);
-        REQUIRE(graph.group_starts.at(the_edge_id)[0] == 42);
-
-        REQUIRE(graph.group_ends.count(the_edge_id) > 0);
-        REQUIRE(graph.group_ends.at(the_edge_id).size() == 1);
-        REQUIRE(graph.group_ends.at(the_edge_id)[0] == 42);
-    }
-
-    SECTION("ASTNodeDot creates regular app_ref with re.allchar without line terminators") {
-        ASTNodeDot dot_node;
-        RegexComponent comp = dot_node.get_subgraph(graph, util_s, m);
-
-        REQUIRE(std::holds_alternative<app_ref>(comp));
-        REQUIRE(graph.vertices.empty());
-
-        // re.inter(re.allchar, re.comp(line_terminators))
-        app_ref z3_regex = std::get<app_ref>(comp);
-        expr* all_chars = nullptr;
-        expr* complement = nullptr;
-        expr* line_terminators = nullptr;
-        REQUIRE(util_s.re.is_intersection(z3_regex, all_chars, complement));
-        REQUIRE(util_s.re.is_full_char(all_chars));
-        REQUIRE(util_s.re.is_complement(complement, line_terminators));
-        REQUIRE(app_to_string(app_ref(to_app(line_terminators), m), m) ==
-                "(re.union (re.union (re.union (str.to_re \"\\u{a}\") (str.to_re \"\\u{d}\")) (str.to_re \"\\u{2028}\"))"
-                " (str.to_re \"\\u{2029}\"))");
-    }
-
-    SECTION("ASTNodeAssertion anchor ^ creates assertion edge") {
-        ASTNodeAssertion assert_node;
-        assert_node.set_type(TokenType::ASSERTION);
-        assert_node.set_payload('^');
-
-        RegexComponent comp = assert_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<GraphFragment>(comp));
-
-        GraphFragment frag = std::get<GraphFragment>(comp);
-        REQUIRE(graph.vertices.size() == 2);
-        REQUIRE(graph.edges.size() == 1);
-
-        const RCGEdge& edge = graph.edges[frag.edges_pointing_to_vout[0]];
-        REQUIRE(std::holds_alternative<AssertionEdge>(edge.payload));
-        const AssertionEdge& ae = std::get<AssertionEdge>(edge.payload);
-        REQUIRE(std::holds_alternative<Anchor>(ae.payload));
-        REQUIRE(std::get<Anchor>(ae.payload) == '^');
-    }
-
-    SECTION("ASTNodeQuantifier throws on unbounded non-regular subregex") {
-        // Kleene star/plus over backreferences would create a dynamic number of string variables.
-        auto backref_node = std::make_unique<ASTNodeBackref>();
-        backref_node->set_ref(1);
-
-        ASTNodeQuantifier quant_node;
-        Token dummy_token = {TokenType::QUANTIFIER, static_cast<uint32_t>('*'), zstring("*")};
-        quant_node.set(dummy_token, std::move(backref_node));
-
-        REQUIRE_THROWS(quant_node.get_subgraph(graph, util_s, m));
-    }
-
-    SECTION("ASTNodeQuantifier with finite bounds on non-regular subregex creates fragment") {
-        // {n,m} quantifier over a backreference expands into m copies of the sub-graph.
-        auto backref_node = std::make_unique<ASTNodeBackref>();
-        backref_node->set_ref(1);
-
-        ASTNodeQuantifier quant_node;
-        Token dummy_token = {TokenType::QUANTIFIER, QuantifierRange {1, 2}, zstring("{1,2}")};
-        quant_node.set(dummy_token, std::move(backref_node));
-
-        RegexComponent comp = quant_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<GraphFragment>(comp));
-        // Two copies of the backref fragment plus epsilon alternations are created.
-        REQUIRE(!graph.vertices.empty());
-        REQUIRE(!graph.edges.empty());
-    }
-
-    SECTION("ASTNodeAlternative merges two regular literals into one app_ref") {
-        auto lit_a = std::make_unique<ASTNodeLiteral>();
-        lit_a->set_char('a');
-        auto lit_b = std::make_unique<ASTNodeLiteral>();
-        lit_b->set_char('b');
-
-        ASTNodeAlternative concat_node;
-        concat_node.add_term(std::move(lit_a));
-        concat_node.add_term(std::move(lit_b));
-
-        RegexComponent comp = concat_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<app_ref>(comp));
-        REQUIRE(graph.vertices.empty());
-
-        app_ref z3_regex = std::get<app_ref>(comp);
-        REQUIRE(app_to_string(z3_regex, m) == "(str.to_re \"ab\")");
-    }
-
-    SECTION("ASTNodeAlternative creates graph fragment when mixing literal and backref") {
-        auto lit = std::make_unique<ASTNodeLiteral>();
-        lit->set_char('a');
-        auto backref = std::make_unique<ASTNodeBackref>();
-        backref->set_ref(1);
-
-        ASTNodeAlternative concat_node;
-        concat_node.add_term(std::move(lit));
-        concat_node.add_term(std::move(backref));
-
-        RegexComponent comp = concat_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<GraphFragment>(comp));
-
-        // Backref creates {v0,v1,e_br}, literal is lifted to {v2,v3,e_match}.
-        // chain_fragments orphans v3 (retargets e_match to v0) → 4 vertices, 2 edges.
-        REQUIRE(graph.vertices.size() == 4);
-        REQUIRE(graph.edges.size() == 2);
-    }
-
-    SECTION("ASTNodeAlternative chains adjacent regular subregexes into one") {
-        // "ab\1cd" – 'ab' and 'cd' are each merged into a single MATCH edge.
-        auto lit_a = std::make_unique<ASTNodeLiteral>();
-        lit_a->set_char('a');
-        auto lit_b = std::make_unique<ASTNodeLiteral>();
-        lit_b->set_char('b');
-        auto backref = std::make_unique<ASTNodeBackref>();
-        backref->set_ref(1);
-        auto lit_c = std::make_unique<ASTNodeLiteral>();
-        lit_c->set_char('c');
-        auto lit_d = std::make_unique<ASTNodeLiteral>();
-        lit_d->set_char('d');
-
-        ASTNodeAlternative concat_node;
-        concat_node.add_term(std::move(lit_a));
-        concat_node.add_term(std::move(lit_b));
-        concat_node.add_term(std::move(backref));
-        concat_node.add_term(std::move(lit_c));
-        concat_node.add_term(std::move(lit_d));
-
-        RegexComponent comp = concat_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<GraphFragment>(comp));
-
-        // Expected: MATCH('ab'), BACKREF(1), MATCH('cd') — 3 edges total.
-        REQUIRE(graph.edges.size() == 3);
-
-        bool has_match_ab = false, has_match_cd = false, has_backref = false;
-        for (const RCGEdge& edge : graph.edges) {
-            if (std::holds_alternative<MatchEdge>(edge.payload)) {
-                std::string s = app_to_string(std::get<MatchEdge>(edge.payload).regex, m);
-                if (s.find("str.to_re \"ab\"") != std::string::npos) {
-                    has_match_ab = true;
-                }
-                if (s.find("str.to_re \"cd\"") != std::string::npos) {
-                    has_match_cd = true;
-                }
-            } else if (std::holds_alternative<BackrefEdge>(edge.payload)) {
-                has_backref = true;
-            }
-        }
-        REQUIRE((has_match_ab && has_match_cd && has_backref));
-    }
-
-    // ---- Lookaround tests ----
-
-    SECTION("ASTNodeAssertion: regular lookahead creates assertion edge with app_ref subregex") {
-        ASTNodeAssertion assert_node;
-        assert_node.set_type(TokenType::LOOKAHEAD_POS_START);
-
-        auto lit = std::make_unique<ASTNodeLiteral>();
-        lit->set_char('a');
-        assert_node.set_expr(std::move(lit));
-
-        RegexComponent comp = assert_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<GraphFragment>(comp));
-
-        GraphFragment frag = std::get<GraphFragment>(comp);
-        const RCGEdge& edge = graph.edges[frag.edges_pointing_to_vout[0]];
-        REQUIRE(std::holds_alternative<AssertionEdge>(edge.payload));
-        const Lookaround& la = std::get<Lookaround>(std::get<AssertionEdge>(edge.payload).payload);
-        REQUIRE(std::holds_alternative<app_ref>(la.subregex));
-        REQUIRE(la.is_positive == true);
-        REQUIRE(la.direction == LookaroundDirection::FORWARD);
-    }
-
-    SECTION("ASTNodeAssertion: positive lookaround with non-regular subregex creates fragment") {
-        // A positive lookahead whose inner pattern is non-regular (backreference) is now supported.
-        // The subregex in the Lookaround is stored as a GraphFragment instead of an app_ref.
-        auto backref = std::make_unique<ASTNodeBackref>();
-        backref->set_ref(1);
-
-        ASTNodeAssertion assert_node;
-        assert_node.set_type(TokenType::LOOKAHEAD_POS_START);
-        assert_node.set_expr(std::move(backref));
-
-        RegexComponent comp = assert_node.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<GraphFragment>(comp));
-
-        GraphFragment frag = std::get<GraphFragment>(comp);
-        REQUIRE(graph.edges.size() >= 1);
-
-        const RCGEdge& outer_edge = graph.edges[frag.edges_pointing_to_vout[0]];
-        REQUIRE(std::holds_alternative<AssertionEdge>(outer_edge.payload));
-        const Lookaround& la = std::get<Lookaround>(std::get<AssertionEdge>(outer_edge.payload).payload);
-
-        // The subregex must be a GraphFragment (non-regular).
-        REQUIRE(std::holds_alternative<GraphFragment>(la.subregex));
-        REQUIRE(la.is_positive == true);
-        REQUIRE(la.direction == LookaroundDirection::FORWARD);
-
-        // The inner fragment must contain exactly one BackrefEdge.
-        const GraphFragment& inner = std::get<GraphFragment>(la.subregex);
-        REQUIRE(graph.vertices[inner.v_in].outgoing_edges.size() == 1);
-        EdgeID inner_eid = graph.vertices[inner.v_in].outgoing_edges[0];
-        REQUIRE(std::holds_alternative<BackrefEdge>(graph.edges[inner_eid].payload));
-        REQUIRE(std::get<BackrefEdge>(graph.edges[inner_eid].payload).backref_id == 1);
-    }
-
-    SECTION("ASTNodeAssertion: negative lookaround with non-regular subregex throws") {
-        // A negative non-regular lookaround would require universal quantifiers — not supported.
-        auto backref = std::make_unique<ASTNodeBackref>();
-        backref->set_ref(1);
-
-        ASTNodeAssertion assert_node;
-        assert_node.set_type(TokenType::LOOKAHEAD_NEG_START);
-        assert_node.set_expr(std::move(backref));
-
-        REQUIRE_THROWS(assert_node.get_subgraph(graph, util_s, m));
-    }
-
-    SECTION("ASTNodeCharClass negates correctly") {
-        ASTNodeCharClass char_class;
-        char_class.set_negation(true);
-        char_class.add_element({ElementType::SINGLE, 'a', 0});
-
-        RegexComponent comp = char_class.get_subgraph(graph, util_s, m);
-        REQUIRE(std::holds_alternative<app_ref>(comp));
-
-        app_ref z3_regex = std::get<app_ref>(comp);
-        std::string s = app_to_string(z3_regex, m);
-        // Z3 may represent the negation as re.diff or re.inter + re.complement,
-        // but either way the universe regex and the complement must be present.
-        REQUIRE((s.find("re.diff") != std::string::npos || s.find("re.comp") != std::string::npos));
-        REQUIRE((s.find("re.all") != std::string::npos));  // covers both re.all and re.allchar
-    }
-}
+}  // namespace smt::noodler::extended_regex::ecma::test
 
 // =====================================================================
 // SERIALIZED RCG TESTS  (end-to-end: regex string -> RCG -> serialized string)
@@ -1704,8 +1152,9 @@ TEST_CASE("ECMA Regex RCG generation from AST", "[noodler][ecma]") {
 
 TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
     using Catch::Matchers::ContainsSubstring;
-    using namespace smt::noodler::ecma;
-    using namespace smt::noodler::ecma::test;
+    using namespace smt::noodler::extended_regex;
+    using namespace smt::noodler::extended_regex::ecma;
+    using namespace smt::noodler::extended_regex::ecma::test;
 
     ast_manager m;
     reg_decl_plugins(m);
@@ -2007,8 +1456,9 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 // =====================================================================
 
 TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
-    using namespace smt::noodler::ecma;
-    using namespace smt::noodler::ecma::test;
+    using namespace smt::noodler::extended_regex;
+    using namespace smt::noodler::extended_regex::ecma;
+    using namespace smt::noodler::extended_regex::ecma::test;
 
     ast_manager m;
     reg_decl_plugins(m);
@@ -2018,7 +1468,7 @@ TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
 
     // Regular patterns must not introduce fresh variables, otherwise the negative axiom becomes quantified (#495)
     SECTION("Regular pattern generates a plain membership") {
-        RegexConstraintBuilder builder(m, zstring("a|b"), params);
+        RegexConstraintBuilder builder(m, symbol("ecma2020"), zstring("a|b"), params);
         builder.build_rcg();
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(builder.get_fresh_vars().empty());
@@ -2028,7 +1478,7 @@ TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
 
     SECTION("Regular pattern with engine semantics generates a membership in Sigma* R Sigma*") {
         params.m_ecma_engine_semantics = true;
-        RegexConstraintBuilder builder(m, zstring("a"), params);
+        RegexConstraintBuilder builder(m, symbol("ecma2020"), zstring("a"), params);
         builder.build_rcg();
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(builder.get_fresh_vars().empty());
@@ -2037,7 +1487,7 @@ TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
     }
 
     SECTION("Regular pattern with an unreferenced capture group generates a plain membership") {
-        RegexConstraintBuilder builder(m, zstring("(a)b"), params);
+        RegexConstraintBuilder builder(m, symbol("ecma2020"), zstring("(a)b"), params);
         builder.build_rcg();
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(builder.get_fresh_vars().empty());
@@ -2045,7 +1495,7 @@ TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
     }
 
     SECTION("Pattern with a backreference introduces fresh variables") {
-        RegexConstraintBuilder builder(m, zstring("(a)\\1"), params);
+        RegexConstraintBuilder builder(m, symbol("ecma2020"), zstring("(a)\\1"), params);
         builder.build_rcg();
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(!builder.get_fresh_vars().empty());
@@ -2055,8 +1505,9 @@ TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
 
 // Zero-width assertions consume no text, so no fresh variable is created for them (#507)
 TEST_CASE("ECMA Regex constraint generation for zero-width assertions", "[noodler][ecma]") {
-    using namespace smt::noodler::ecma;
-    using namespace smt::noodler::ecma::test;
+    using namespace smt::noodler::extended_regex;
+    using namespace smt::noodler::extended_regex::ecma;
+    using namespace smt::noodler::extended_regex::ecma::test;
 
     ast_manager m;
     reg_decl_plugins(m);
@@ -2065,121 +1516,37 @@ TEST_CASE("ECMA Regex constraint generation for zero-width assertions", "[noodle
     theory_str_noodler_params params;
 
     SECTION("Anchors do not introduce fresh variables") {
-        RegexConstraintBuilder builder(m, zstring("^(a)\\1$"), params);
+        RegexConstraintBuilder builder(m, symbol("ecma2020"), zstring("^(a)\\1$"), params);
         builder.build_rcg();
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(builder.get_fresh_vars().size() == 2);
         REQUIRE(app_to_string(app_ref(to_app(formula), m), m) ==
                 "(and (= \"\" \"\")"
-                " (str.in_re ecma_re!0 (str.to_re \"a\"))"
-                " (= ecma_re!1 ecma_re!0)"
-                " (= (str.++ ecma_re!0 ecma_re!1) x)"
-                " (= x (str.++ ecma_re!0 ecma_re!1)))");
+                " (str.in_re regex!0 (str.to_re \"a\"))"
+                " (= regex!1 regex!0)"
+                " (= (str.++ regex!0 regex!1) x)"
+                " (= x (str.++ regex!0 regex!1)))");
     }
 
     SECTION("Lookahead constrains the suffix after its position") {
-        RegexConstraintBuilder builder(m, zstring("a(?=b)c"), params);
+        RegexConstraintBuilder builder(m, symbol("ecma2020"), zstring("a(?=b)c"), params);
         builder.build_rcg();
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(builder.get_fresh_vars().size() == 3);
         REQUIRE(app_to_string(app_ref(to_app(formula), m), m) ==
-                "(and (str.in_re ecma_re!0 (str.to_re \"a\"))"
-                " (str.in_re ecma_re!1 (str.to_re \"c\"))"
-                " (= ecma_re!2 ecma_re!1)"
-                " (str.in_re ecma_re!2 (re.++ (str.to_re \"b\") re.all))"
-                " (= x (str.++ ecma_re!0 ecma_re!1)))");
-    }
-}
-
-// Restoring a snapshot undoes all the changes of capture group variables made after it was taken (#506)
-TEST_CASE("ECMA Regex DFS context backtracking", "[noodler][ecma]") {
-    using namespace smt::noodler::ecma;
-    using namespace smt::noodler::ecma::test;
-
-    ast_manager m;
-    reg_decl_plugins(m);
-    seq_util util_s(m);
-    DFSContext ctx(m, util_s);
-
-    // Group 1 captures v0 and stays active
-    ctx.start_groups({1});
-    const app_ref v0 = ctx.create_edge_var();
-    ctx.push_edge_var_to_groups(v0);
-
-    SECTION("Variables appended to an active group are removed") {
-        const DFSStateSnapshot snapshot = ctx.save_snapshot();
-        const app_ref v1 = ctx.create_edge_var();
-        ctx.push_edge_var_to_groups(v1);
-        REQUIRE(app_to_string(app_ref(to_app(ctx.concat_group_vars(1)), m), m) == "(str.++ ecma_re!0 ecma_re!1)");
-
-        ctx.restore_snapshot(snapshot);
-        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
-    }
-
-    SECTION("Restarted group gets its previous variables back") {
-        ctx.end_groups({1});
-        const DFSStateSnapshot snapshot = ctx.save_snapshot();
-        ctx.start_groups({1});
-        const app_ref v1 = ctx.create_edge_var();
-        ctx.push_edge_var_to_groups(v1);
-        REQUIRE(ctx.concat_group_vars(1).get() == v1.get());
-
-        ctx.restore_snapshot(snapshot);
-        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
-    }
-
-    SECTION("Group reset to undefined gets its previous variables back") {
-        ctx.end_groups({1});
-        const DFSStateSnapshot snapshot = ctx.save_snapshot();
-        ctx.reset_groups({1});
-        REQUIRE(!ctx.has_group(1));
-        ctx.start_groups({1});
-        const app_ref v1 = ctx.create_edge_var();
-        ctx.push_edge_var_to_groups(v1);
-        REQUIRE(ctx.concat_group_vars(1).get() == v1.get());
-
-        ctx.restore_snapshot(snapshot);
-        REQUIRE(ctx.has_group(1));
-        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
-    }
-
-    SECTION("Group created after the snapshot is removed") {
-        const DFSStateSnapshot snapshot = ctx.save_snapshot();
-        ctx.start_groups({2});
-        const app_ref v1 = ctx.create_edge_var();
-        ctx.push_edge_var_to_groups(v1);
-        REQUIRE(ctx.has_group(2));
-
-        ctx.restore_snapshot(snapshot);
-        REQUIRE(!ctx.has_group(2));
-        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
-    }
-
-    SECTION("Nested snapshots are restored in reverse order") {
-        ctx.end_groups({1});
-        const DFSStateSnapshot outer_snapshot = ctx.save_snapshot();
-        ctx.start_groups({1});
-        const app_ref v1 = ctx.create_edge_var();
-        ctx.push_edge_var_to_groups(v1);
-        ctx.end_groups({1});
-
-        const DFSStateSnapshot inner_snapshot = ctx.save_snapshot();
-        ctx.start_groups({1});
-        const app_ref v2 = ctx.create_edge_var();
-        ctx.push_edge_var_to_groups(v2);
-        REQUIRE(ctx.concat_group_vars(1).get() == v2.get());
-
-        ctx.restore_snapshot(inner_snapshot);
-        REQUIRE(ctx.concat_group_vars(1).get() == v1.get());
-        ctx.restore_snapshot(outer_snapshot);
-        REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
+                "(and (str.in_re regex!0 (str.to_re \"a\"))"
+                " (str.in_re regex!1 (str.to_re \"c\"))"
+                " (= regex!2 regex!1)"
+                " (str.in_re regex!2 (re.++ (str.to_re \"b\") re.all))"
+                " (= x (str.++ regex!0 regex!1)))");
     }
 }
 
 // Language (dis)equations compare regular patterns as classical regexes, other patterns cannot be compared (#521)
 TEST_CASE("ECMA Regex translation to classical regexes", "[noodler][ecma]") {
-    using namespace smt::noodler::ecma;
-    using namespace smt::noodler::ecma::test;
+    using namespace smt::noodler::extended_regex;
+    using namespace smt::noodler::extended_regex::ecma;
+    using namespace smt::noodler::extended_regex::ecma::test;
 
     ast_manager m;
     reg_decl_plugins(m);

@@ -92,7 +92,13 @@ z3_add_component(smt
     theory_str_noodler/ca_str_constr.cpp
     theory_str_noodler/unary_decision_procedure.cpp
     theory_str_noodler/conversion_handler.cpp
-    theory_str_noodler/ecma_regex.cpp
+    theory_str_noodler/extended_regex/char_set.cpp
+    theory_str_noodler/extended_regex/regex_ast.cpp
+    theory_str_noodler/extended_regex/regex_constraint_graph.cpp
+    theory_str_noodler/extended_regex/constraint_generator.cpp
+    theory_str_noodler/extended_regex/ecma_regex.cpp
+    theory_str_noodler/extended_regex/re2_regex.cpp
+    theory_str_noodler/extended_regex/extended_regex.cpp
     theory_special_relations.cpp    
     theory_user_propagator.cpp
     theory_utvpi.cpp
