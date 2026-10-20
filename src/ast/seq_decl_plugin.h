@@ -82,7 +82,7 @@ enum seq_op_kind {
     OP_RE_OF_PRED,
     OP_RE_REVERSE,
     OP_RE_DERIVATIVE, // Char -> RegEx -> RegEx
-    OP_RE_FROM_ECMA2020,
+    OP_RE_FROM_REGEX, // ((_ re.from_regex flavor) pattern), the flavor is a symbol parameter
 
     // string specific operators.
     OP_STRING_CONST,
@@ -118,6 +118,7 @@ enum seq_op_kind {
     _OP_STRING_STRIDOF,
     _OP_REGEXP_EMPTY,
     _OP_REGEXP_FULL_CHAR,
+    _OP_RE_FROM_ECMA2020, // (re.from_ecma2020 pattern), converted to ((_ re.from_regex ecma2020) pattern)
     _OP_RE_IS_NULLABLE,
     _OP_SEQ_SKOLEM,
 
@@ -429,10 +430,10 @@ public:
         bool is_to_code(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_TO_CODE); }
         bool is_in_rat(expr const* n) const { return is_app_of(n, m_fid, OP_STRING_IN_RAT); }
 
-        // Convenience matcher for (str.in_re ... (re.from_ecma2020 ...))
-        bool is_in_re_from_ecma2020(expr const* n) const { expr *r = nullptr, *s = nullptr; return is_in_re(n, s, r) && u.re.is_from_ecma2020(r); }
-        // Convenience matcher for (str.in_re s (re.from_ecma2020 pattern)) where pattern is a string constant
-        bool is_in_re_from_ecma2020(expr const* n, expr*& s, zstring& pattern) const { expr* r = nullptr; return is_in_re(n, s, r) && u.re.is_from_ecma2020(r, pattern); }
+        // Convenience matcher for (str.in_re ... ((_ re.from_regex flavor) ...))
+        bool is_in_re_from_regex(expr const* n) const { expr *r = nullptr, *s = nullptr; return is_in_re(n, s, r) && u.re.is_from_regex(r); }
+        // Convenience matcher for (str.in_re s ((_ re.from_regex flavor) pattern)) where pattern is a string constant
+        bool is_in_re_from_regex(expr const* n, expr*& s, symbol& flavor, zstring& pattern) const { expr* r = nullptr; return is_in_re(n, s, r) && u.re.is_from_regex(r, flavor, pattern); }
 
         bool is_len_sub(expr const* n, expr*& l, expr*& u, rational& k) const;
         bool is_concat_of_units(expr* n) const;
@@ -657,8 +658,8 @@ public:
         expr* mk_loop_proper(expr* r, unsigned lo, unsigned hi);
         app* mk_loop(expr* r, expr* lo);
         app* mk_loop(expr* r, expr* lo, expr* hi);
-        app* mk_from_ecma2020(expr* s) { return m.mk_app(m_fid, OP_RE_FROM_ECMA2020, s); }
-        app* mk_from_ecma2020(const zstring &s) { return mk_from_ecma2020(u.str.mk_string(s)); }
+        app* mk_from_regex(symbol const& flavor, expr* s) { parameter p(flavor); return m.mk_app(m_fid, OP_RE_FROM_REGEX, 1, &p, 1, &s); }
+        app* mk_from_regex(symbol const& flavor, const zstring &s) { return mk_from_regex(flavor, u.str.mk_string(s)); }
         app* mk_full_char(sort* s);
         app* mk_word_char(); // regex representing [0-9a-zA-Z_]
         app* mk_full_seq(sort* s);
@@ -681,7 +682,7 @@ public:
         bool is_range(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_RANGE); }
         bool is_range(expr const* n, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n)    const { return is_app_of(n, m_fid, OP_RE_LOOP); }
-        bool is_from_ecma2020(expr const* n) const { return is_app_of(n, m_fid, OP_RE_FROM_ECMA2020); }
+        bool is_from_regex(expr const* n) const { return is_app_of(n, m_fid, OP_RE_FROM_REGEX); }
         bool is_empty(expr const* n)  const { return is_app_of(n, m_fid, OP_RE_EMPTY_SET); }
         bool is_full_char(expr const* n)  const { return is_app_of(n, m_fid, OP_RE_FULL_CHAR_SET); }
         bool is_full_seq(expr const* n)  const {
@@ -720,13 +721,19 @@ public:
         MATCH_UNARY(is_of_pred);
         MATCH_UNARY(is_reverse);
         MATCH_BINARY(is_derivative);
-        MATCH_UNARY(is_from_ecma2020);
+        MATCH_UNARY(is_from_regex);
         END_DISABLE_WARNING;
         bool is_loop(expr const* n, expr*& body, unsigned& lo, unsigned& hi) const;
         bool is_loop(expr const* n, expr*& body, unsigned& lo) const;
         bool is_loop(expr const* n, expr*& body, expr*& lo, expr*& hi) const;
         bool is_loop(expr const* n, expr*& body, expr*& lo) const;
-        bool is_from_ecma2020(expr const* n, zstring& pattern) const { expr *s; return is_from_ecma2020(n, s) && u.str.is_string(s, pattern); } 
+        bool is_from_regex(expr const* n, symbol& flavor, zstring& pattern) const {
+            expr* s;
+            if (!is_from_regex(n, s) || !u.str.is_string(s, pattern))
+                return false;
+            flavor = to_app(n)->get_decl()->get_parameter(0).get_symbol();
+            return true;
+        }
         unsigned min_length(expr* r) const;
         unsigned max_length(expr* r) const;
         bool is_epsilon(expr const* r) const;
