@@ -23,6 +23,7 @@ if (Catch2_FOUND)
             util.cc
             formula.cpp
             ecma_regex.cpp
+            extended_regex.cpp
             from_regex.cpp
     )
 
