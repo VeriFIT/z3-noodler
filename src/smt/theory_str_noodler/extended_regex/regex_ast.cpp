@@ -26,6 +26,18 @@ namespace smt::noodler::extended_regex {
         return make_node(std::move(boundary));
     }
 
+    NodeRef make_line_start(const CharSet& line_terminators) {
+        // The start of the text or the position after a line terminator, i.e., the position not preceded by any
+        // other character
+        return make_node(Lookaround {make_node(line_terminators.complement()), LookaroundDirection::BACKWARD, false});
+    }
+
+    NodeRef make_line_end(const CharSet& line_terminators) {
+        // The end of the text or the position before a line terminator, i.e., the position not followed by any other
+        // character
+        return make_node(Lookaround {make_node(line_terminators.complement()), LookaroundDirection::FORWARD, false});
+    }
+
     std::string serialize(const Node& node) {
         return std::visit(overloaded {
                               [](const CharSet& chars) -> std::string {
