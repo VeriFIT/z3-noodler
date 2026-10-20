@@ -30,8 +30,8 @@ Examples:
 ### `(str.in_re String ((_ re.from_regex flavor) String) Bool)`
 Tests whether a string belongs to the language described by a regular expression pattern written in the syntax of the given regex flavor.
 The flavor is a symbol given as the index of `re.from_regex`, the pattern is given as a string literal.
-You can use (nonstandard) single-quote string notation (`''`) to represent the pattern.
-In this notation, every character (even Unicode) is represented as is, so you write a string such as `'[0-9\ы═ы║ы╒ыёыєы╔ыіыїы╗ы╘]'`.
+You can use (nonstandard) single-quote string notation (`''`) to represent the pattern, in which `"` is written as is instead of `""`.
+As in other string literals, non-ASCII characters are written using the escape sequences `\u{...}` (or `\uXXXX`), such as in `'[0-9\u{6f0}-\u{6f9}]'`, and the pattern is the resulting sequence of characters (code points).
 Supported flavors:
  - `ecma2020` — ECMAScript 2020 regular expressions, see below.
 

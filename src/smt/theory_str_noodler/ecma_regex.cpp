@@ -68,69 +68,6 @@ namespace smt::noodler::ecma {
         return result;
     }
 
-    zstring sanitize_ecma_regex_input(const zstring &raw_input) {
-        std::vector<Z3Char> sanitized;
-        sanitized.reserve(raw_input.length());
-
-        auto is_continuation = [&](uint32_t idx) -> bool {
-            if (idx >= raw_input.length()) {
-                return false;
-            }
-            bool is_raw_byte = raw_input[idx] <= 0xFF;
-            bool is_continuation_byte = (raw_input[idx] & 0xC0) == 0x80;  // top two bits must be 10xxxxxx
-            return is_raw_byte && is_continuation_byte;
-        };
-
-        uint32_t i = 0;
-        while (i < raw_input.length()) {
-            const Z3Char raw_char = raw_input[i];
-
-            uint32_t seq_len = 0;   // length of the UTF-8 sequence started by raw_char (0 if raw_char is no lead byte)
-            Z3Char code_point = 0;
-            Z3Char min_code_point = 0;  // smallest code point that is not an overlong encoding
-            if (raw_char >= 0x80 && raw_char <= 0xFF) {
-                if ((raw_char & 0xE0) == 0xC0) {
-                    // 110xxxxx 10xxxxxx (2 bytes)
-                    seq_len = 2;
-                    code_point = raw_char & 0x1F;
-                    min_code_point = 0x80;
-                } else if ((raw_char & 0xF0) == 0xE0) {
-                    // 1110xxxx 10xxxxxx 10xxxxxx (3 bytes)
-                    seq_len = 3;
-                    code_point = raw_char & 0x0F;
-                    min_code_point = 0x800;
-                } else if ((raw_char & 0xF8) == 0xF0) {
-                    // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx (4 bytes)
-                    seq_len = 4;
-                    code_point = raw_char & 0x07;
-                    min_code_point = 0x10000;
-                }
-            }
-
-            bool is_valid_utf8 = seq_len > 0;
-            for (uint32_t j = 1; j < seq_len; j++) {
-                if (!is_continuation(i + j)) {
-                    is_valid_utf8 = false;
-                    break;
-                }
-                code_point = (code_point << 6) | (raw_input[i + j] & 0x3F);
-            }
-            // reject overlong encodings, surrogates, and code points that cannot be represented
-            is_valid_utf8 = is_valid_utf8 && code_point >= min_code_point &&
-                            !(code_point >= 0xD800 && code_point <= 0xDFFF) && code_point <= zstring::max_char();
-
-            if (is_valid_utf8) {
-                sanitized.push_back(code_point);
-                i += seq_len;
-            } else {
-                sanitized.push_back(raw_char);
-                i++;
-            }
-        }
-
-        return zstring(static_cast<unsigned>(sanitized.size()), sanitized.data());
-    }
-
     GraphFragment chain_fragments(RegexConstraintGraph& graph, const GraphFragment& first,
                                   const GraphFragment& second) {
         for (const EdgeID id : first.edges_pointing_to_vout) {
