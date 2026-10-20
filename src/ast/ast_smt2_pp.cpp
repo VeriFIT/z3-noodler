@@ -86,6 +86,10 @@ bool smt2_pp_environment::is_indexed_fdecl(func_decl * f) const {
             continue;
         if (f->get_parameter(i).is_ast() && is_func_decl(f->get_parameter(i).get_ast()))
             continue;
+        // the regex flavor of re.from_regex is a symbol index (other symbol parameters, e.g., names of datatype
+        // constructors, are not indices)
+        if (f->get_parameter(i).is_symbol() && is_decl_of(f, get_manager().get_family_id("seq"), OP_RE_FROM_REGEX))
+            continue;
         break;
     }
     return i == num && num > 0;
@@ -114,6 +118,7 @@ format * smt2_pp_environment::pp_fdecl_params(format * fname, func_decl * f) {
     for (unsigned i = 0; i < num; ++i) {
         SASSERT(f->get_parameter(i).is_int() ||
                 f->get_parameter(i).is_rational() ||
+                f->get_parameter(i).is_symbol() ||
                 (f->get_parameter(i).is_ast() && is_func_decl(f->get_parameter(i).get_ast())));
         if (f->get_parameter(i).is_int())
             fs.push_back(mk_int(get_manager(), f->get_parameter(i).get_int()));
@@ -121,6 +126,8 @@ format * smt2_pp_environment::pp_fdecl_params(format * fname, func_decl * f) {
             std::string str = f->get_parameter(i).get_rational().to_string();
             fs.push_back(mk_string(get_manager(), str));
         }
+        else if (f->get_parameter(i).is_symbol())
+            fs.push_back(mk_string(get_manager(), ensure_quote(f->get_parameter(i).get_symbol())));
         else {
             unsigned len;
             fs.push_back(pp_fdecl_name(to_func_decl(f->get_parameter(i).get_ast()), len));
