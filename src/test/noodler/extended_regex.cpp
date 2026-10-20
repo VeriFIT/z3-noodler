@@ -350,3 +350,218 @@ TEST_CASE("Extended regex DFS context backtracking", "[noodler][extended_regex]"
         REQUIRE(ctx.concat_group_vars(1).get() == v0.get());
     }
 }
+
+// =====================================================================
+// CHARACTER SETS
+// =====================================================================
+
+TEST_CASE("Extended regex character sets", "[noodler][extended_regex]") {
+    ast_manager m;
+    reg_decl_plugins(m);
+    seq_util util_s(m);
+    const Z3Char max_char = zstring::max_char();
+    using Intervals = std::vector<CharSet::Interval>;
+
+    SECTION("Overlapping and adjacent intervals are merged") {
+        CharSet chars = CharSet::range('a', 'c');
+        chars.add('e', 'g');
+        REQUIRE(chars.get_intervals() == Intervals {{'a', 'c'}, {'e', 'g'}});
+        chars.add('d');
+        REQUIRE(chars.get_intervals() == Intervals {{'a', 'g'}});
+        chars.add('0', 'b');
+        REQUIRE(chars.get_intervals() == Intervals {{'0', 'g'}});
+        REQUIRE(chars.size() == 'g' - '0' + 1);
+    }
+
+    SECTION("Intervals are sorted") {
+        CharSet chars = CharSet::single('z');
+        chars.add('a');
+        chars.add(CharSet::range('m', 'n'));
+        REQUIRE(chars.get_intervals() == Intervals {{'a', 'a'}, {'m', 'n'}, {'z', 'z'}});
+    }
+
+    SECTION("Complement") {
+        REQUIRE(CharSet().complement() == CharSet::all());
+        REQUIRE(CharSet::all().complement().is_empty());
+        const CharSet chars = CharSet::range('b', 'c');
+        REQUIRE(chars.complement().get_intervals() == Intervals {{0, 'a'}, {'d', max_char}});
+        REQUIRE(chars.complement().complement() == chars);
+    }
+
+    SECTION("Characters beyond the maximal character are left out") {
+        REQUIRE(CharSet::single(max_char + 1).is_empty());
+        REQUIRE(CharSet::range('a', max_char + 100) == CharSet::range('a', max_char));
+    }
+
+    SECTION("Single character") {
+        Z3Char ch = 0;
+        REQUIRE(CharSet::single('a').is_single(ch));
+        REQUIRE(ch == 'a');
+        REQUIRE(!CharSet::range('a', 'b').is_single(ch));
+        REQUIRE(!CharSet().is_single(ch));
+    }
+
+    SECTION("Serialization") {
+        REQUIRE(CharSet().serialize().empty());
+        REQUIRE(CharSet::range('a', 'z').serialize() == "'a'-'z'");
+        const std::vector<Z3Char> chars {'_', '\n', 0x3000};
+        REQUIRE(CharSet::of(chars).serialize() == R"('\u{a}' '_' '\u{3000}')");
+        // A set whose complement is smaller is serialized by the complement
+        REQUIRE(CharSet::single('a').complement().serialize() == "^ 'a'");
+        REQUIRE(CharSet::all().serialize() == "^");
+    }
+
+    SECTION("Conversion to regex") {
+        auto regex_of = [&](const CharSet& chars) {
+            return to_single_line_string(chars.to_regex(util_s, m).get(), m);
+        };
+        REQUIRE(util_s.re.is_empty(CharSet().to_regex(util_s, m)));
+        REQUIRE(util_s.re.is_full_char(CharSet::all().to_regex(util_s, m)));
+        REQUIRE(regex_of(CharSet::single('a')) == "(str.to_re \"a\")");
+        const std::vector<Z3Char> chars {'a', 'c', 'd'};
+        REQUIRE(regex_of(CharSet::of(chars)) == "(re.union (str.to_re \"a\") (re.range \"c\" \"d\"))");
+        // A set whose complement is smaller is given by the complement, so that its regex adds only few characters
+        // to the alphabet of automata
+        REQUIRE(regex_of(CharSet::range('b', 'c').complement()) ==
+                "(re.inter re.allchar (re.comp (re.range \"b\" \"c\")))");
+    }
+}
+
+// =====================================================================
+// COMMON AST
+// =====================================================================
+
+TEST_CASE("Extended regex common AST", "[noodler][extended_regex]") {
+    SECTION("Serialization") {
+        const NodeRef root = make_concatenation(
+            nodes(make_node(Anchor::START_OF_TEXT),
+                  make_node(Capture {1, make_node(Repetition {.child = make_char('a'), .min = 2, .max = UNBOUNDED})}),
+                  make_node(Lookaround {make_char('b'), LookaroundDirection::BACKWARD, false}),
+                  make_node(Backreference {1}), make_node(CharSet::range('0', '9')), make_node(Anchor::END_OF_TEXT)));
+        REQUIRE(serialize(*root) == "(SEQ (ASSERT '^') (GROUP #1 (QUANT {2,inf} (LIT 'a'))) (ASSERT ?<! (LIT 'b'))"
+                                    " (BACKREF 1) (SET '0'-'9') (ASSERT '$'))");
+    }
+
+    SECTION("Word boundary is made of lookarounds") {
+        REQUIRE(serialize(*make_word_boundary(CharSet::range('a', 'z'), false)) ==
+                "(DISJ (SEQ (ASSERT ?<= (SET 'a'-'z')) (ASSERT ?! (SET 'a'-'z')))"
+                " (SEQ (ASSERT ?<! (SET 'a'-'z')) (ASSERT ?= (SET 'a'-'z'))))");
+        REQUIRE(serialize(*make_word_boundary(CharSet::range('a', 'z'), true)) ==
+                "(DISJ (SEQ (ASSERT ?<= (SET 'a'-'z')) (ASSERT ?= (SET 'a'-'z')))"
+                " (SEQ (ASSERT ?<! (SET 'a'-'z')) (ASSERT ?! (SET 'a'-'z'))))");
+    }
+
+    // ((a)\2)(b)\1
+    auto make_groups = []() {
+        return make_concatenation(nodes(make_node(Capture {
+                                            1, make_concatenation(nodes(make_node(Capture {2, make_char('a')}),
+                                                                        make_node(Backreference {2})))}),
+                                        make_node(Capture {3, make_char('b')}), make_node(Backreference {1})));
+    };
+
+    SECTION("Collecting capture groups and backreferences") {
+        const NodeRef root = make_groups();
+        std::vector<GroupID> gids;
+        collect_capture_groups(*root, gids);
+        REQUIRE(gids == std::vector<GroupID> {1, 2, 3});
+        std::unordered_set<GroupID> refs;
+        collect_backrefs(*root, refs);
+        REQUIRE(refs == std::unordered_set<GroupID> {1, 2});
+    }
+
+    SECTION("Unreferenced capture groups are removed") {
+        NodeRef root = make_groups();
+        strip_unreferenced_captures(root, {2});
+        REQUIRE(serialize(*root) == "(SEQ (SEQ (GROUP #2 (LIT 'a')) (BACKREF 2)) (LIT 'b') (BACKREF 1))");
+    }
+
+    SECTION("Nested unreferenced capture groups are removed") {
+        NodeRef root = make_node(Capture {1, make_node(Capture {2, make_char('a')})});
+        strip_unreferenced_captures(root, {});
+        REQUIRE(serialize(*root) == "(LIT 'a')");
+    }
+
+    SECTION("Backreference to a capture group inside a lookaround that does not contain it is unsupported") {
+        // (?=(a))\1
+        const NodeRef outside = make_concatenation(nodes(make_node(Lookaround {make_node(Capture {1, make_char('a')}),
+                                                                               LookaroundDirection::FORWARD, true}),
+                                                         make_node(Backreference {1})));
+        REQUIRE_THROWS(check_lookaround_backrefs(*outside));
+        // (?=(a)\1)
+        const NodeRef inside = make_node(Lookaround {
+            make_concatenation(nodes(make_node(Capture {1, make_char('a')}), make_node(Backreference {1}))),
+            LookaroundDirection::FORWARD, true});
+        REQUIRE_NOTHROW(check_lookaround_backrefs(*inside));
+    }
+}
+
+// =====================================================================
+// SEMANTICS PARAMETERS OF THE COMMON AST
+// =====================================================================
+
+TEST_CASE("Extended regex semantics parameters", "[noodler][extended_regex]") {
+    ast_manager m;
+    reg_decl_plugins(m);
+    seq_util util_s(m);
+    const app_ref x(m.mk_const("x", util_s.mk_string_sort()), m);
+
+    // (?:(a))?\1 with the given semantics of the repetition
+    auto build_repeated_capture = [&](const bool resets_captures, const bool rejects_empty_iterations) {
+        const NodeRef root =
+            make_concatenation(nodes(make_node(Repetition {.child = make_node(Capture {1, make_char('a')}),
+                                                           .min = 0,
+                                                           .max = 1,
+                                                           .resets_captures = resets_captures,
+                                                           .rejects_empty_iterations = rejects_empty_iterations}),
+                                     make_node(Backreference {1, true})));
+        return serialize_rcg(build_rcg(*root, false, util_s, m), m);
+    };
+
+    SECTION("Iterations without capture resets and empty iteration checks are not marked") {
+        REQUIRE(build_repeated_capture(false, false) == "(RCG"
+                                                        " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                                                        " (EDGE *->* [MATCH (str.to_re \"\")])"
+                                                        " (EDGE *->* [BACKREF 1])"
+                                                        ")");
+    }
+
+    SECTION("Iterations resetting captures start with a reset") {
+        REQUIRE(build_repeated_capture(true, false) == "(RCG"
+                                                       " (EDGE *->* [EPSILON] RESETS {1})"
+                                                       " (EDGE *->* [MATCH (str.to_re \"\")])"
+                                                       " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                                                       " (EDGE *->* [BACKREF 1])"
+                                                       ")");
+    }
+
+    SECTION("Iterations rejected if empty are checked without resetting captures") {
+        REQUIRE(build_repeated_capture(false, true) == "(RCG"
+                                                       " (EDGE *->* [EPSILON] RESETS {})"
+                                                       " (EDGE *->* [MATCH (str.to_re \"\")])"
+                                                       " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                                                       " (EDGE *->* [BACKREF 1])"
+                                                       " (EDGE *->* [EPSILON] NONEMPTY)"
+                                                       ")");
+    }
+
+    // \1(a) with the given semantics of the backreference to the unset group
+    auto generate_forward_reference = [&](const bool unset_matches_empty) {
+        const NodeRef root = make_concatenation(nodes(make_node(Backreference {1, unset_matches_empty}),
+                                                      make_node(Capture {1, make_char('a')})));
+        const RegexConstraintGraph graph = build_rcg(*root, false, util_s, m);
+        ConstraintGenerator generator(m, graph);
+        return to_single_line_string(generator.generate_constraints(x).get(), m);
+    };
+
+    SECTION("Backreference to an unset group matches the empty string") {
+        REQUIRE(generate_forward_reference(true) == "(and (= regex!0 \"\")"
+                                                    " (str.in_re regex!1 (str.to_re \"a\"))"
+                                                    " (= x (str.++ regex!0 regex!1)))");
+    }
+
+    SECTION("Backreference to an unset group fails") {
+        REQUIRE(generate_forward_reference(false) == "(and false"
+                                                     " (str.in_re regex!1 (str.to_re \"a\"))"
+                                                     " (= x (str.++ regex!0 regex!1)))");
+    }
+}
