@@ -3,7 +3,7 @@
 #include "ast/ast_util.h"
 #include "formula.h"
 #include "smt/theory_str_noodler/theory_str_noodler.h"
-#include "smt/theory_str_noodler/ecma_regex.h"
+#include "smt/theory_str_noodler/extended_regex/extended_regex.h"
 #include "smt/theory_str_noodler/expr_solver.h"
 #include "smt/theory_str_noodler/quant_lia_solver.h"
 #include "memb_heuristics_procedures.h"
@@ -776,13 +776,13 @@ namespace smt::noodler {
     }
 
     expr_ref theory_str_noodler::get_classical_regex(expr* regex) {
-        const auto cached = m_ecma_cache.classical_regexes.find(regex);
-        if (cached != m_ecma_cache.classical_regexes.end()) {
+        const auto cached = m_extended_regex_cache.classical_regexes.find(regex);
+        if (cached != m_extended_regex_cache.classical_regexes.end()) {
             return cached->second.classical_regex;
         }
-        expr_ref classical_regex = ecma::to_classical_regex(regex, m, m_params);
-        m_ecma_cache.classical_regexes.emplace(
-            regex, ecma_cache::classical_regex_entry{expr_ref(regex, m), classical_regex});
+        expr_ref classical_regex = extended_regex::to_classical_regex(regex, m, m_params);
+        m_extended_regex_cache.classical_regexes.emplace(
+            regex, extended_regex_cache::classical_regex_entry{expr_ref(regex, m), classical_regex});
         return classical_regex;
     }
 
