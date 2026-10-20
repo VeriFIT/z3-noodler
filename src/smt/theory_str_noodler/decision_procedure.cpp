@@ -1173,7 +1173,7 @@ namespace smt::noodler {
         for (auto& [var, nfa] : solution.aut_ass) {
             if (var.is_literal() || !conversion_handler.is_var_code_subst_var(var)) { continue; }
             rational len = arith_model.at(var);
-            rational to_code_value = arith_model.at(conversion_handler.code_version_of(var));
+            rational to_code_value = arith_model.at(conversion_handler.code_var_of(var));
             if (to_code_value != -1) {
                 mata::Symbol to_code_value_as_symbol = to_code_value.get_unsigned();
                 if (!solution.aut_ass.get_alphabet().contains(to_code_value_as_symbol)) {
@@ -1255,7 +1255,7 @@ namespace smt::noodler {
 
             // Restrict int-conversion var
             if (conversion_handler.is_var_int_subst_var(var) && !conversion_handler.is_var_real_subst_var(var)) {
-                rational to_int_value = arith_model.at(conversion_handler.int_version_of(var));
+                rational to_int_value = arith_model.at(conversion_handler.int_var_of(var));
                 if (to_int_value == -1) {
                     // the language of var should contain only words containing some non-digit
                     mata::nfa::Nfa only_digits = AutAssignment::digit_automaton_with_epsilon();
@@ -1267,8 +1267,8 @@ namespace smt::noodler {
 
             // Restrict real-conversion var
             if (conversion_handler.is_var_real_subst_var(var)) {
-                rational to_int_value = arith_model.at(conversion_handler.int_version_of(var));
-                rational dot_position = arith_model.at(conversion_handler.dot_position_of(var));
+                rational to_int_value = arith_model.at(conversion_handler.int_var_of(var));
+                rational dot_position = arith_model.at(conversion_handler.dot_position_var_of(var));
                 if (to_int_value == -1 && dot_position == -1) {
                     // the language of var should contain only words containing some non-number
                     const mata::nfa::Nfa non_number = solution.aut_ass.complement_aut(mata::nfa::union_nondet(AutAssignment::digit_automaton_with_epsilon(), AutAssignment::decimal_automaton()));
@@ -1276,8 +1276,8 @@ namespace smt::noodler {
                 } else if (to_int_value != -1) {
                     update_model_and_aut_ass(var, get_string_from_integer(len, to_int_value));
                 } else {
-                    zstring whole_string = get_string_from_integer(dot_position, arith_model.at(conversion_handler.whole_part_of(var)));
-                    zstring decimal_string = get_string_from_integer(len-dot_position-1, arith_model.at(conversion_handler.decimal_part_of(var)));
+                    zstring whole_string = get_string_from_integer(dot_position, arith_model.at(conversion_handler.whole_part_var_of(var)));
+                    zstring decimal_string = get_string_from_integer(len-dot_position-1, arith_model.at(conversion_handler.decimal_part_var_of(var)));
                     update_model_and_aut_ass(var, whole_string + zstring(".") + decimal_string);
                 }
             }

@@ -6,6 +6,31 @@
 namespace smt::noodler {
 
 namespace {
+    /// Returns the integer represented by @p word if it contains only digits (the empty word represents 0), std::nullopt otherwise
+    std::optional<rational> integer_value_of_word(const zstring& word) {
+        rational value(0);
+        for (unsigned i = 0; i < word.length(); ++i) {
+            if (word[i] < AutAssignment::DIGIT_SYMBOL_START || AutAssignment::DIGIT_SYMBOL_END < word[i]) {
+                return std::nullopt;
+            }
+            value = value*10 + rational(word[i] - AutAssignment::DIGIT_SYMBOL_START);
+        }
+        return value;
+    }
+
+    /// Returns the position of the decimal separator in @p word if it represents a real number with a decimal separator ([0-9]*.[0-9]*), std::nullopt otherwise
+    std::optional<unsigned> dot_position_of_word(const zstring& word) {
+        int dot_position = word.indexofu(zstring(AutAssignment::REAL_NUMBER_DELIMITER), 0);
+        if (dot_position < 0) {
+            return std::nullopt;
+        }
+        unsigned dot_pos = static_cast<unsigned>(dot_position);
+        if (!integer_value_of_word(word.extract(0, dot_pos)).has_value() || !integer_value_of_word(word.extract(dot_pos+1, word.length()-dot_pos-1)).has_value()) {
+            return std::nullopt;
+        }
+        return dot_pos;
+    }
+
     /**
      * @brief Compute the (min,max) numeric value achievable by words accepted by @p aut, where @p aut is a
      * (trimmed) automaton accepting a finite, non-empty language of digit-only words that all have the same length
@@ -166,6 +191,68 @@ LenNode ConversionHandler::get_to_int_bounds_formula(const AutAssignment& aut_as
     return LenNode(LenFormulaType::AND, to_int_bounds);
 }
 
+LenNode ConversionHandler::code_version_of(const BasicTerm& var) {
+    if (var.is_literal()) {
+        // code point of the only char of the literal, or -1 if the literal does not have length 1
+        const zstring& word = var.get_name();
+        return (word.length() == 1) ? LenNode(word[0]) : LenNode(-1);
+    }
+    return code_var_of(var);
+}
+
+LenNode ConversionHandler::int_version_of(const BasicTerm& var) {
+    if (var.is_literal()) {
+        // integer represented by the literal, or -1 if it contains some non-digit
+        return LenNode(integer_value_of_word(var.get_name()).value_or(rational(-1)));
+    }
+    return int_var_of(var);
+}
+
+LenNode ConversionHandler::dot_position_of(const BasicTerm& var) {
+    if (var.is_literal()) {
+        std::optional<unsigned> dot_position = dot_position_of_word(var.get_name());
+        return dot_position.has_value() ? LenNode(dot_position.value()) : LenNode(-1);
+    }
+    return dot_position_var_of(var);
+}
+
+LenNode ConversionHandler::whole_part_of(const BasicTerm& var) {
+    if (var.is_literal()) {
+        const zstring& word = var.get_name();
+        std::optional<unsigned> dot_position = dot_position_of_word(word);
+        return dot_position.has_value() ? LenNode(integer_value_of_word(word.extract(0, dot_position.value())).value()) : LenNode(-1);
+    }
+    return whole_part_var_of(var);
+}
+
+LenNode ConversionHandler::decimal_part_of(const BasicTerm& var) {
+    if (var.is_literal()) {
+        const zstring& word = var.get_name();
+        std::optional<unsigned> dot_position = dot_position_of_word(word);
+        return dot_position.has_value() ? LenNode(integer_value_of_word(word.extract(dot_position.value()+1, word.length()-dot_position.value()-1)).value()) : LenNode(-1);
+    }
+    return decimal_part_var_of(var);
+}
+
+void ConversionHandler::compute_valid_lengths_of_literal(const BasicTerm& int_real_subst_lit) {
+    SASSERT(int_real_subst_lit.is_literal());
+    SASSERT(is_var_int_subst_var(int_real_subst_lit) || is_var_real_subst_var(int_real_subst_lit));
+
+    const zstring& word = int_real_subst_lit.get_name();
+    int_subst_vars_to_possible_valid_lengths[int_real_subst_lit] = {};
+    if (integer_value_of_word(word).has_value()) {
+        int_subst_vars_to_possible_valid_lengths[int_real_subst_lit].push_back(word.length());
+    }
+
+    if (is_var_real_subst_var(int_real_subst_lit)) {
+        real_subst_vars_to_possible_valid_lengths_and_dot_positions[int_real_subst_lit] = {};
+        std::optional<unsigned> dot_position = dot_position_of_word(word);
+        if (dot_position.has_value()) {
+            real_subst_vars_to_possible_valid_lengths_and_dot_positions[int_real_subst_lit].emplace_back(word.length(), dot_position.value());
+        }
+    }
+}
+
 void ConversionHandler::initialize_solution(SolvingState solution) {
     conversions = solution.conversions;
     this->solution = std::move(solution);
@@ -218,10 +305,10 @@ LenNode ConversionHandler::get_formula_for_code_subst_var(const BasicTerm& code_
     //   (|c| != 1 && code_version_of(c) == -1) || (|c| == 1 && code_version_of(c) is code point of one of the chars in the language of automaton for c)
 
     // non_char_case = (|c| != 1 && code_version_of(c) == -1)
-    LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{code_subst_var, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_version_of(code_subst_var),-1}} });
+    LenNode non_char_case(LenFormulaType::AND, { {LenFormulaType::NEQ, std::vector<LenNode>{code_subst_var, 1}}, {LenFormulaType::EQ, std::vector<LenNode>{code_var_of(code_subst_var),-1}} });
 
     // char_case = (|c| == 1 && code_version_of(c) is code point of one of the chars in the language of automaton for c)
-    LenNode char_case(LenFormulaType::AND, { {LenFormulaType::EQ, std::vector<LenNode>{code_subst_var, 1}}, /* code_version_of(c) is code point of one of the chars in the language of automaton for c */ });
+    LenNode char_case(LenFormulaType::AND, { {LenFormulaType::EQ, std::vector<LenNode>{code_subst_var, 1}}, /* code_var_of(c) is code point of one of the chars in the language of automaton for c */ });
 
     // the rest is just computing 'code_version_of(c) is code point of one of the chars in the language of automaton for c'
 
@@ -240,20 +327,20 @@ LenNode ConversionHandler::get_formula_for_code_subst_var(const BasicTerm& code_
         // if there is no dummy symbol, we can just create disjunction that code_version_of(c) is equal to one of the symbols in real_symbols_of_code_var
         std::vector<LenNode> equal_to_one_of_symbols;
         for (mata::Symbol s : real_symbols_of_code_var) {
-            equal_to_one_of_symbols.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_version_of(code_subst_var), s});
+            equal_to_one_of_symbols.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_var_of(code_subst_var), s});
         }
         char_case.succ.emplace_back(LenFormulaType::OR, equal_to_one_of_symbols);
     } else {
         // if there is dummy symbol, then code_version_of(c) can be code point of any char, except those in the alphabet but not in real_symbols_of_code_var
 
         // code_version_of(c) is valid code_point: (0 <= code_version_of(c) <= max_char)
-        char_case.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{0, code_version_of(code_subst_var)});
-        char_case.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{code_version_of(code_subst_var), zstring::max_char()});
+        char_case.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{0, code_var_of(code_subst_var)});
+        char_case.succ.emplace_back(LenFormulaType::LEQ, std::vector<LenNode>{code_var_of(code_subst_var), zstring::max_char()});
 
         // code_version_of(c) is not equal to code point of some symbol in the alphabet that is not in real_symbols_of_code_var
         for (mata::Symbol s : solution.aut_ass.get_alphabet()) {
             if (!util::is_dummy_symbol(s) && !real_symbols_of_code_var.contains(s)) {
-                char_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{code_version_of(code_subst_var), s});
+                char_case.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{code_var_of(code_subst_var), s});
             }
         }
     }
@@ -364,21 +451,21 @@ LenNode ConversionHandler::get_formula_for_invalid_case(const BasicTerm& int_rea
     // where the part in parentheses is done only for real vars
     LenNode formula_for_non_valid_part(LenFormulaType::AND);
     formula_for_non_valid_part.succ.push_back(solution.aut_ass.get_lengths(aut_non_valid_part, int_real_subst_var)); // |int_real_subst_var| is length of some word from aut_non_valid_part
-    formula_for_non_valid_part.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ int_version_of(int_real_subst_var), -1 }); // int_version_of(int_real_subst_var) = -1
-    if (is_var_real_subst_var(int_real_subst_var)) { formula_for_non_valid_part.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ dot_position_of(int_real_subst_var), -1 }); } // dot_position(int_real_subst_var) = -1
+    formula_for_non_valid_part.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ int_var_of(int_real_subst_var), -1 }); // int_version_of(int_real_subst_var) = -1
+    if (is_var_real_subst_var(int_real_subst_var)) { formula_for_non_valid_part.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ dot_position_var_of(int_real_subst_var), -1 }); } // dot_position(int_real_subst_var) = -1
 
     // if int_real_subst_var is used in some to_code/from_code, we also need to encode that the code_value must be non_valid number
     if (is_var_code_subst_var(int_real_subst_var)) {
         // => we need to add the fact, that int_real_subst_var cannot encode code point of a digit
         //      .. && (code_version_of(int_real_subst_var) < AutAssignment::DIGIT_SYMBOL_START || AutAssignment::DIGIT_SYMBOL_END < code_version_of(int_real_subst_var))
         formula_for_non_valid_part.succ.emplace_back(LenFormulaType::OR, std::vector<LenNode>{
-            LenNode(LenFormulaType::LT, { code_version_of(int_real_subst_var), AutAssignment::DIGIT_SYMBOL_START }),
-            LenNode(LenFormulaType::LT, { AutAssignment::DIGIT_SYMBOL_END, code_version_of(int_real_subst_var) })
+            LenNode(LenFormulaType::LT, { code_var_of(int_real_subst_var), AutAssignment::DIGIT_SYMBOL_START }),
+            LenNode(LenFormulaType::LT, { AutAssignment::DIGIT_SYMBOL_END, code_var_of(int_real_subst_var) })
         });
         if (real_subst_vars.contains(int_real_subst_var)) {
             // and for real subst vars, it also cannot encode '.', as for us, this is valid real number (for substituting variable)
             //      .. && code_version_of(int_real_subst_var) != AutAssignment::REAL_NUMBER_DELIMITER
-            formula_for_non_valid_part.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{ code_version_of(int_real_subst_var), AutAssignment::REAL_NUMBER_DELIMITER });
+            formula_for_non_valid_part.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{ code_var_of(int_real_subst_var), AutAssignment::REAL_NUMBER_DELIMITER });
         }
     }
     return formula_for_non_valid_part;
@@ -423,21 +510,21 @@ LenNode ConversionHandler::get_formula_for_valid_int_case(const BasicTerm& int_r
 
         // |int_real_subst_var| = l && encode that int_version_of(int_real_subst_var) is a numeral represented by some interval word accepted by aut_valid_of_length
         formula_for_length_l.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ int_real_subst_var, l });
-        formula_for_length_l.succ.push_back(encode_interval_words(int_version_of(int_real_subst_var), AutAssignment::get_interval_words(aut_valid_of_length)));
+        formula_for_length_l.succ.push_back(encode_interval_words(int_var_of(int_real_subst_var), AutAssignment::get_interval_words(aut_valid_of_length)));
 
         if (code_subst_vars.contains(int_real_subst_var) && l == 1) {
             // int_real_subst_var is used in some to_code/from_code AND we are handling the case of l==1 (for other lengths, the formula from get_formula_for_code_subst_vars should force that code_version_of(int_real_subst_var) is -1)
             // => we need to connect code_version_of(int_real_subst_var) and int_version_of(int_real_subst_var)
             //      code_version_of(int_real_subst_var) = int_version_of(int_real_subst_var) + AutAssignment::DIGIT_SYMBOL_START
             formula_for_length_l.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{
-                code_version_of(int_real_subst_var),
-                LenNode(LenFormulaType::PLUS, std::vector<LenNode>{int_version_of(int_real_subst_var), AutAssignment::DIGIT_SYMBOL_START })
+                code_var_of(int_real_subst_var),
+                LenNode(LenFormulaType::PLUS, std::vector<LenNode>{int_var_of(int_real_subst_var), AutAssignment::DIGIT_SYMBOL_START })
             });
         }
 
         if (is_var_real_subst_var(int_real_subst_var)) {
             // if int_real_subst_var represents integer, then there is no decimal separator => dot_position_of(int_real_subst_var) = -1
-            formula_for_length_l.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ dot_position_of(int_real_subst_var), -1 });
+            formula_for_length_l.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ dot_position_var_of(int_real_subst_var), -1 });
         }
 
         result.succ.push_back(formula_for_length_l);
@@ -514,8 +601,8 @@ LenNode ConversionHandler::get_formula_for_valid_real_case(const BasicTerm& int_
 
             // |int_real_subst_var| = length_of_number && dot_position_of(int_real_subst_var) is the position of decimal separator && int_version_of(int_real_subst_var) = -1 && whole_part_of(int_real_subst_var) and decimal_part_of(int_real_subst_var) are numerals represented by some interval word accepted by corresponding part of aut_valid_of_length
             formula_for_cur_lengths.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ int_real_subst_var, length_of_number }); // |int_real_subst_var| = length_of_number
-            formula_for_cur_lengths.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ dot_position_of(int_real_subst_var), whole_length }); // dot_position_of(int_real_subst_var) is the position of decimal separator
-            formula_for_cur_lengths.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ int_version_of(int_real_subst_var), -1 }); // int_version_of(int_real_subst_var) = -1, because we have '.', so we cannot have integer number
+            formula_for_cur_lengths.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ dot_position_var_of(int_real_subst_var), whole_length }); // dot_position_of(int_real_subst_var) is the position of decimal separator
+            formula_for_cur_lengths.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ int_var_of(int_real_subst_var), -1 }); // int_version_of(int_real_subst_var) = -1, because we have '.', so we cannot have integer number
 
             LenNode formula_for_interval_words(LenFormulaType::OR);
             for (const IntervalWord& interval_word : AutAssignment::get_interval_words(aut_valid_of_length)) {
@@ -524,8 +611,8 @@ LenNode ConversionHandler::get_formula_for_valid_real_case(const BasicTerm& int_
                 IntervalWord whole_part_interval_word(interval_word.begin(), interval_word.begin()+whole_length); // the interval word before the separator
                 IntervalWord decimal_part_interval_word(interval_word.begin()+whole_length+1, interval_word.end()); // the interval word after the separator
                 formula_for_interval_words.succ.emplace_back(LenFormulaType::AND, std::vector<LenNode>{
-                    encode_interval_words(whole_part_of(int_real_subst_var), { whole_part_interval_word }),
-                    encode_interval_words(decimal_part_of(int_real_subst_var), { decimal_part_interval_word })
+                    encode_interval_words(whole_part_var_of(int_real_subst_var), { whole_part_interval_word }),
+                    encode_interval_words(decimal_part_var_of(int_real_subst_var), { decimal_part_interval_word })
                 });
             }
             formula_for_cur_lengths.succ.push_back(formula_for_interval_words);
@@ -533,7 +620,7 @@ LenNode ConversionHandler::get_formula_for_valid_real_case(const BasicTerm& int_
             if (is_var_code_subst_var(int_real_subst_var) && length_of_number == 1) {
                 // int_real_subst_var is used in some to_code/from_code AND because we have both whole and decimal parts empty, we are handling the case where we have the only word "."
                 // => we need to put code_version_of(int_real_subst_var) == code point of '.'
-                formula_for_cur_lengths.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ code_version_of(int_real_subst_var), AutAssignment::REAL_NUMBER_DELIMITER });
+                formula_for_cur_lengths.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ code_var_of(int_real_subst_var), AutAssignment::REAL_NUMBER_DELIMITER });
             }
 
             result.succ.push_back(formula_for_cur_lengths);
@@ -571,10 +658,10 @@ std::pair<LenNode, LenNodePrecision> ConversionHandler::get_formula_for_int_real
         formula_for_int_real_subst_var = LenNode(LenFormulaType::AND, {
             formula_for_int_real_subst_var,
             LenNode(LenFormulaType::OR, {
-                LenNode(LenFormulaType::NEQ, { dot_position_of(int_real_subst_var), -1 }),
+                LenNode(LenFormulaType::NEQ, { dot_position_var_of(int_real_subst_var), -1 }),
                 LenNode(LenFormulaType::AND, {
-                    LenNode(LenFormulaType::EQ, { whole_part_of(int_real_subst_var), -1 }),
-                    LenNode(LenFormulaType::EQ, { decimal_part_of(int_real_subst_var), -1 }),
+                    LenNode(LenFormulaType::EQ, { whole_part_var_of(int_real_subst_var), -1 }),
+                    LenNode(LenFormulaType::EQ, { decimal_part_var_of(int_real_subst_var), -1 }),
                 })
             })
         });
@@ -934,7 +1021,8 @@ std::pair<LenNode, LenNodePrecision> ConversionHandler::get_formula_encoding_con
 
     // create formula for each variable substituting some string_var in some code conversion
     for (const BasicTerm& code_subst_var : code_subst_vars) {
-        if (!subst_vars_not_needed_to_be_handled.contains(code_subst_var)) {
+        // the code point of a literal is encoded directly as a constant (see code_version_of), so it needs no formula
+        if (!code_subst_var.is_literal() && !subst_vars_not_needed_to_be_handled.contains(code_subst_var)) {
             result.succ.push_back(get_formula_for_code_subst_var(code_subst_var));
         }
     }
@@ -945,7 +1033,10 @@ std::pair<LenNode, LenNodePrecision> ConversionHandler::get_formula_encoding_con
     std::set<BasicTerm> int_real_subst_vars = int_subst_vars;
     int_real_subst_vars.insert(real_subst_vars.begin(), real_subst_vars.end());
     for (const BasicTerm& int_real_subst_var : int_real_subst_vars) {
-        if (!subst_vars_not_needed_to_be_handled.contains(int_real_subst_var)) {
+        if (int_real_subst_var.is_literal()) {
+            // the values of a literal are encoded directly as constants (see int_version_of etc.), we only need its valid lengths
+            compute_valid_lengths_of_literal(int_real_subst_var);
+        } else if (!subst_vars_not_needed_to_be_handled.contains(int_real_subst_var)) {
             auto [int_real_subst_formula, int_real_subst_formula_precision] = get_formula_for_int_real_subst_var(int_real_subst_var);
             result.succ.push_back(int_real_subst_formula);
             res_precision = get_resulting_precision_for_conjunction(res_precision, int_real_subst_formula_precision);
@@ -988,18 +1079,22 @@ std::pair<LenNode, LenNodePrecision> ConversionHandler::get_formula_encoding_con
 
 std::vector<BasicTerm> ConversionHandler::get_arith_vars_needed_for_model() {
     std::vector<BasicTerm> needed_vars;
+    // literals are encoded by constants, so they do not have any variables
     for (const BasicTerm& code_subst_var : code_subst_vars) {
-        needed_vars.push_back(code_version_of(code_subst_var));
+        if (code_subst_var.is_literal()) { continue; }
+        needed_vars.push_back(code_var_of(code_subst_var));
     }
     for (const BasicTerm& int_subst_var : int_subst_vars) {
-        needed_vars.push_back(int_version_of(int_subst_var));
+        if (int_subst_var.is_literal()) { continue; }
+        needed_vars.push_back(int_var_of(int_subst_var));
     }
     for (const BasicTerm& real_subst_var : real_subst_vars) {
-        needed_vars.push_back(dot_position_of(real_subst_var));
-        needed_vars.push_back(whole_part_of(real_subst_var));
-        needed_vars.push_back(decimal_part_of(real_subst_var));
-        if (!int_subst_vars.contains(real_subst_var)) { //do not add int_version_of twice
-            needed_vars.push_back(int_version_of(real_subst_var));
+        if (real_subst_var.is_literal()) { continue; }
+        needed_vars.push_back(dot_position_var_of(real_subst_var));
+        needed_vars.push_back(whole_part_var_of(real_subst_var));
+        needed_vars.push_back(decimal_part_var_of(real_subst_var));
+        if (!int_subst_vars.contains(real_subst_var)) { //do not add int_var_of twice
+            needed_vars.push_back(int_var_of(real_subst_var));
         }
     }
     return needed_vars;
