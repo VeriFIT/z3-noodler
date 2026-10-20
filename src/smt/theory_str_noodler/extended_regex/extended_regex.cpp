@@ -1,6 +1,7 @@
 #include "extended_regex.h"
 
 #include "ecma_regex.h"
+#include "re2_regex.h"
 
 #include "smt/theory_str_noodler/util.h"
 
@@ -13,6 +14,9 @@ namespace smt::noodler::extended_regex {
     NodeRef parse(const symbol& flavor, const zstring& pattern) {
         if (flavor == "ecma2020") {
             return ecma::ECMAParser(pattern).parse();
+        }
+        if (flavor == "re2") {
+            return re2::RE2Parser(pattern).parse();
         }
         util::throw_error("Unsupported regex flavor " + flavor.str());
         return nullptr;

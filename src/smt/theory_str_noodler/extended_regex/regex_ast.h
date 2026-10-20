@@ -137,6 +137,24 @@ namespace smt::noodler::extended_regex {
     NodeRef make_word_boundary(const CharSet& word_chars, bool is_negated);
 
     /**
+     * @brief Make the assertion of the start of a line, i.e., of the start of the text or of the position after a line
+     * terminator: (?<![^line_terminators]).
+     *
+     * @param line_terminators The characters terminating lines in the flavor.
+     * @return NodeRef The AST of the assertion.
+     */
+    NodeRef make_line_start(const CharSet& line_terminators);
+
+    /**
+     * @brief Make the assertion of the end of a line, i.e., of the end of the text or of the position before a line
+     * terminator: (?![^line_terminators]).
+     *
+     * @param line_terminators The characters terminating lines in the flavor.
+     * @return NodeRef The AST of the assertion.
+     */
+    NodeRef make_line_end(const CharSet& line_terminators);
+
+    /**
      * @brief Call @p f on the reference (NodeRef) to every child of @p node.
      */
     template<typename NodeT, typename F>
