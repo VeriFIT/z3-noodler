@@ -254,18 +254,18 @@ class seq_rewriter {
     bool lift_str_from_to_re(expr * r, expr_ref & result);
 
     /**
-     * @brief Check whether the regex @p r is (re.from_ecma2020 ...) or contains it as an operand of (nested) re.union,
-     * re.inter, re.xor or re.comp, the regex operations that mk_str_in_regexp splits into memberships.
+     * @brief Check whether the regex @p r is ((_ re.from_regex flavor) ...) or contains it as an operand of (nested)
+     * re.union, re.inter, re.xor or re.comp, the regex operations that mk_str_in_regexp splits into memberships.
      *
      * @param r [in] The regex to check.
      * @return True if it does, false otherwise.
      */
-    bool contains_from_ecma2020(expr* r);
+    bool contains_from_regex(expr* r);
 
     /**
      * @brief Check whether @p e is a membership (str.in_re s r) that can be merged with other memberships of @p s,
-     * i.e., @p s is not empty and contains_from_ecma2020(r) is false. Memberships with (re.from_ecma2020 ...) are not
-     * merged, since mk_str_in_regexp would split them again.
+     * i.e., @p s is not empty and contains_from_regex(r) is false. Memberships with ((_ re.from_regex flavor) ...) are
+     * not merged, since mk_str_in_regexp would split them again.
      *
      * @param e [in] The expression to check.
      * @param s [out] The string argument of @p e, if @p e is a membership.

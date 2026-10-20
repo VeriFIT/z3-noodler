@@ -26,12 +26,18 @@ Examples:
  - `(str.from_real -4.56 5)` → `""`
  - `(str.from_real 4.56 -5)` → `""`
 
-## 2. ECMAScript regular expressions
-### `(str.in_re String (re.from_ecma2020 String) Bool)`
-Tests whether a string belongs to the language described by an ECMAScript 2020 regular expression pattern.
-The pattern is given as a string literal and is interpreted according to the [ECMAScript 2020 RegExp specification](https://262.ecma-international.org/11.0/#sec-patterns).
+## 2. Extended regular expressions
+### `(str.in_re String ((_ re.from_regex flavor) String) Bool)`
+Tests whether a string belongs to the language described by a regular expression pattern written in the syntax of the given regex flavor.
+The flavor is a symbol given as the index of `re.from_regex`, the pattern is given as a string literal.
 You can use (nonstandard) single-quote string notation (`''`) to represent the pattern.
 In this notation, every character (even Unicode) is represented as is, so you write a string such as `'[0-9\ы═ы║ы╒ыёыєы╔ыіыїы╗ы╘]'`.
+Supported flavors:
+ - `ecma2020` — ECMAScript 2020 regular expressions, see below.
+
+### ECMAScript 2020 flavor
+The pattern of `((_ re.from_regex ecma2020) String)` is interpreted according to the [ECMAScript 2020 RegExp specification](https://262.ecma-international.org/11.0/#sec-patterns).
+`(re.from_ecma2020 String)` is a synonym of `((_ re.from_regex ecma2020) String)`.
 Furthermore, you can use the option/parameter `str.ecma_engine_semantics=true` to mimic ecma regex engine semantics by implicitly wrapping regex in Σ*, by default this is turned off.
 The default behaviour is equivalent to [Ostrich's `re.from_ecma2020`](https://github.com/uuverifiers/ostrich/#additional-regular-expression-constructors).
 
@@ -57,10 +63,10 @@ Limitations:
 
 Examples:
 
-- `(str.in_re x (re.from_ecma2020 'a'))` — `x` equals `"a"`
-- `(str.in_re x (re.from_ecma2020 '(a)\1'))` — `x` equals `"aa"` (backreference: group 1 captures `"a"`, then repeats it)
-- `(str.in_re x (re.from_ecma2020 '(a*b)\1'))` — `x` is in `{ww | w in a*b}`, e.g. `"bb"`, `"abab"`
-- `(str.in_re x (re.from_ecma2020 '(ab)\1'))` — `x` equals `"abab"`
+- `(str.in_re x ((_ re.from_regex ecma2020) 'a'))` — `x` equals `"a"`
+- `(str.in_re x ((_ re.from_regex ecma2020) '(a)\1'))` — `x` equals `"aa"` (backreference: group 1 captures `"a"`, then repeats it)
+- `(str.in_re x ((_ re.from_regex ecma2020) '(a*b)\1'))` — `x` is in `{ww | w in a*b}`, e.g. `"bb"`, `"abab"`
+- `(str.in_re x ((_ re.from_regex ecma2020) '(ab)\1'))` — `x` equals `"abab"`
 
 ## 3. Special string functions
 ### `(str.to_lower String String)`
