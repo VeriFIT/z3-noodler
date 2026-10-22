@@ -1830,6 +1830,9 @@ namespace smt::noodler {
 
         expr_ref fresh = mk_str_var_fresh("prefix");
         expr_ref xs(m_util_s.str.mk_concat(x, fresh), m);
+        // normalize the concatenation in the same way as mk_eq does for the equation below; otherwise both the original
+        // and the normalized term become terms of the context and z3 can assign different values to equations with them
+        m_rewrite(xs);
         string_theory_propagation(xs);
         literal not_e = mk_literal(e);
         add_axiom({~not_e, mk_eq(y, xs, false)});
@@ -1964,6 +1967,8 @@ namespace smt::noodler {
 
         expr_ref fresh = mk_str_var_fresh("suffix");
         expr_ref px(m_util_s.str.mk_concat(fresh, x), m);
+        // normalize the concatenation (see handle_prefix)
+        m_rewrite(px);
         string_theory_propagation(px);
         literal not_e = mk_literal(e);
         add_axiom({~not_e, mk_eq(y, px, false)});
@@ -2619,10 +2624,13 @@ namespace smt::noodler {
                 //      argument < 10^m_underapprox_length => result \in .{0,m_underapprox_length}
                 // This will force for the case that "argument < 10^m_underapprox_length", that we will not have to do any underapproximation and hopefully,
                 // the case "argument >= 10^m_underapprox_length" will not happen .
-                add_axiom({
-                    ~mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(rational(10).expt(m_params.m_underapprox_length)-1))), // I rather use <= instead of <, LIA solver can have problems with that
-                    mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(m_params.m_underapprox_length))))
-                });
+                literal arg_is_small = mk_literal(m_util_a.mk_le(arg, m_util_a.mk_int(rational(10).expt(m_params.m_underapprox_length)-1))); // I rather use <= instead of <, LIA solver can have problems with that
+                literal result_is_short = mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(m_params.m_underapprox_length))));
+                add_axiom({ ~arg_is_small, result_is_short });
+                // z3 decides atoms to be false by default, i.e., it would first try "argument >= 10^m_underapprox_length"
+                // (directly, or by deciding that the result is long), which we want to avoid
+                ctx.force_phase(arg_is_small);
+                ctx.force_phase(result_is_short);
             }
 
             if (type == ConversionType::FROM_REAL) {
@@ -2646,10 +2654,13 @@ namespace smt::noodler {
                 // where we also add space for decimal dot (the +1) and decimal part (whose length is fixed by width)
                 // This will force for the case that "argument < 10^m_underapprox_length", that we will not have to do any underapproximation and hopefully,
                 // the case "argument >= 10^m_underapprox_length" will not happen .
-                add_axiom({
-                    ~mk_literal(m_util_a.mk_le(arg, m_util_a.mk_real(rational(10).expt(m_params.m_underapprox_length)-1))), // I rather use <= instead of <, LIA solver can have problems with that
-                    mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(rational(m_params.m_underapprox_length+1)+width_for_rtos))))
-                });
+                literal arg_is_small = mk_literal(m_util_a.mk_le(arg, m_util_a.mk_real(rational(10).expt(m_params.m_underapprox_length)-1))); // I rather use <= instead of <, LIA solver can have problems with that
+                literal result_is_short = mk_literal(m_util_s.re.mk_in_re(z3_var_for_conversion, m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(rational(m_params.m_underapprox_length+1)+width_for_rtos))));
+                add_axiom({ ~arg_is_small, result_is_short });
+                // z3 decides atoms to be false by default, i.e., it would first try "argument >= 10^m_underapprox_length"
+                // (directly, or by deciding that the result is long), which we want to avoid
+                ctx.force_phase(arg_is_small);
+                ctx.force_phase(result_is_short);
             }
         } else {
             // we create new fresh noodler var for the integer/real result which we save into var_name so that
