@@ -168,6 +168,35 @@ namespace smt::noodler {
 
     }
 
+    /**
+     * @brief Mark (not (= l r)) as relevant for each string equation (= l r) occurring in the boolean structure of @p ex.
+     *
+     * Used for expressions that occur both positively and negatively (sides of a boolean equality), as
+     * string_theory_propagation tracks only a single polarity.
+     */
+    void theory_str_noodler::mark_nested_str_diseqs_as_relevant(expr *ex) {
+        ptr_vector<expr> todo;
+        obj_hashtable<expr> visited;
+        todo.push_back(ex);
+        while (!todo.empty()) {
+            expr* e = todo.back();
+            todo.pop_back();
+            if (visited.contains(e) || !is_app(e) || to_app(e)->get_family_id() != m.get_basic_family_id()) {
+                continue;
+            }
+            visited.insert(e);
+            if (m.is_eq(e) && m_util_s.is_string(to_app(e)->get_arg(0)->get_sort())) {
+                ctx.mark_as_relevant(m.mk_not(e));
+                continue;
+            }
+            for (expr* arg : *to_app(e)) {
+                if (m.is_bool(arg)) {
+                    todo.push_back(arg);
+                }
+            }
+        }
+    }
+
     void theory_str_noodler::string_theory_propagation(expr *ex, bool init, bool neg, bool var_lengths) {
         STRACE(str, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
         STRACE(str_propagation, tout << mk_pp(ex, get_manager()) << std::endl;);
@@ -198,6 +227,13 @@ namespace smt::noodler {
             ctx.mark_as_relevant(rhs); // just to be safe, we mark also non negated sides as relevant
             ctx.mark_as_relevant(m.mk_not(lhs));
             ctx.mark_as_relevant(m.mk_not(rhs));
+            // both sides occur positively and negatively, so do all string equations nested in them (see issue #538)
+            mark_nested_str_diseqs_as_relevant(lhs);
+            mark_nested_str_diseqs_as_relevant(rhs);
+        }
+        if (init && m.is_ite(ex)) {
+            // the condition of ite occurs both positively and negatively
+            mark_nested_str_diseqs_as_relevant(to_app(ex)->get_arg(0));
         }
 
         // we need to propagate all string predicates (including their negated forms) before the actual solve (in init_search), because we need to ensure these axioms are 

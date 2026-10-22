@@ -1,0 +1,10 @@
+(set-info :status unsat)
+; xor is rewritten to nested boolean equalities
+(declare-const x String)
+(declare-const y String)
+(declare-const z String)
+(declare-const b Bool)
+(define-fun g () Bool (str.in_re x (re.++ (str.to_re "a") re.all (str.to_re "a"))))
+(define-fun P () Bool (and (str.prefixof "a" x) (str.suffixof "a" x) (not g)))
+(assert (xor (= x "a") (= y "bbb") (= z "c"))) (assert (= (str.len z) 2)) (assert (= (str.len y) 3)) (assert (str.in_re y (re.+ (str.to_re "b")))) (assert P)
+(check-sat)
