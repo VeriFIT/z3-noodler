@@ -1,0 +1,5 @@
+(set-logic ALL)
+(set-info :status sat)
+(declare-const x String)
+(assert (str.in_re x (re.comp (str.to_re "ab"))))
+(check-sat)

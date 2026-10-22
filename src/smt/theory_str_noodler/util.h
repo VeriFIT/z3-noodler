@@ -39,7 +39,7 @@ namespace smt::noodler::util {
      * symbol however needs to have special semantics, for example to_code should
      * interpret is as anything but used symbols.
      */
-    inline mata::Symbol get_dummy_symbol() { static const mata::Symbol DUMMY_SYMBOL = zstring::max_char() + 1; return DUMMY_SYMBOL; }
+    inline mata::Symbol get_dummy_symbol() { static const mata::Symbol DUMMY_SYMBOL = zstring::unicode_max_char() + 1; return DUMMY_SYMBOL; }
     inline bool is_dummy_symbol(mata::Symbol sym) { return sym == get_dummy_symbol(); }
 
     /**

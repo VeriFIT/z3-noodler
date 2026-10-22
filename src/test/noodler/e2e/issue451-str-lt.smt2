@@ -1,0 +1,6 @@
+(set-logic ALL)
+(set-info :status sat)
+(declare-const a String)
+(assert (= (str.len a) 1))
+(assert (not (str.< a "aa")))
+(check-sat)

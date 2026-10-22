@@ -92,6 +92,17 @@ namespace smt::noodler {
          */
         LenNode get_formula_for_valid_real_case(const BasicTerm& int_real_subst_var, LenNodePrecision& precision);
 
+        /**
+         * @brief Computes the possible valid lengths (see int_subst_vars_to_possible_valid_lengths and real_subst_vars_to_possible_valid_lengths_and_dot_positions)
+         * of the literal @p int_real_subst_lit
+         *
+         * The values of literals are encoded directly as constants (see int_version_of, dot_position_of, whole_part_of, and decimal_part_of),
+         * so no formula is needed for them.
+         *
+         * @param int_real_subst_lit int or real substituting literal
+         */
+        void compute_valid_lengths_of_literal(const BasicTerm& int_real_subst_lit);
+
 
         /**
          * @brief Get the formula encoding that arithmetic variable @p var is any of the numbers encoded by some interval word from @p interval_words
@@ -180,20 +191,35 @@ namespace smt::noodler {
         /// Are there any conversions this ConversionHandler is handling?
         bool are_there_any_conversions() const { return !conversions.empty(); }
 
-        /// Returns the code var version of @p var used to encode code-string conversions
-        BasicTerm code_version_of(const BasicTerm& var) { return util::mk_internal_noodler_var(var.get_name() + zstring("!to_code")); }
+        /// Returns the int variable used to encode the code point of the substituting variable @p var in code-string conversions (@p var cannot be a literal)
+        static BasicTerm code_var_of(const BasicTerm& var) { SASSERT(!var.is_literal()); return util::mk_internal_noodler_var(var.get_name() + zstring("!to_code")); }
 
-        /// Returns the int var version of @p var used to encode int-string conversions
-        BasicTerm int_version_of(const BasicTerm& var) { return util::mk_internal_noodler_var(var.get_name() + zstring("!to_int")); }
+        /// Returns the int variable used to encode the integer value of the substituting variable @p var in int-string conversions (@p var cannot be a literal)
+        static BasicTerm int_var_of(const BasicTerm& var) { SASSERT(!var.is_literal()); return util::mk_internal_noodler_var(var.get_name() + zstring("!to_int")); }
 
-        /// Returns the variable for @p var encoding the decimal separator position in @p var
-        BasicTerm dot_position_of(const BasicTerm& var) { return util::mk_internal_noodler_var(var.get_name() + zstring("!dot_position")); }
+        /// Returns the int variable encoding the decimal separator position in the substituting variable @p var (@p var cannot be a literal)
+        static BasicTerm dot_position_var_of(const BasicTerm& var) { SASSERT(!var.is_literal()); return util::mk_internal_noodler_var(var.get_name() + zstring("!dot_position")); }
 
-        /// Returns the variable for @p var encoding the whole part before the decimal separator in @p var
-        BasicTerm whole_part_of(const BasicTerm& var) { return util::mk_internal_noodler_var(var.get_name() + zstring("!whole_part")); }
+        /// Returns the int variable encoding the whole part before the decimal separator in the substituting variable @p var (@p var cannot be a literal)
+        static BasicTerm whole_part_var_of(const BasicTerm& var) { SASSERT(!var.is_literal()); return util::mk_internal_noodler_var(var.get_name() + zstring("!whole_part")); }
 
-        /// Returns the variable for @p var encoding the decimal part after the decimal separator in @p var
-        BasicTerm decimal_part_of(const BasicTerm& var) { return util::mk_internal_noodler_var(var.get_name() + zstring("!decimal_part")); }
+        /// Returns the int variable encoding the decimal part after the decimal separator in the substituting variable @p var (@p var cannot be a literal)
+        static BasicTerm decimal_part_var_of(const BasicTerm& var) { SASSERT(!var.is_literal()); return util::mk_internal_noodler_var(var.get_name() + zstring("!decimal_part")); }
+
+        /// Returns the code version of @p var used to encode code-string conversions (the constant code point for a literal, code_var_of(var) otherwise)
+        static LenNode code_version_of(const BasicTerm& var);
+
+        /// Returns the int version of @p var used to encode int-string conversions (the constant integer value for a literal, int_var_of(var) otherwise)
+        static LenNode int_version_of(const BasicTerm& var);
+
+        /// Returns the decimal separator position in @p var (a constant for a literal, dot_position_var_of(var) otherwise)
+        static LenNode dot_position_of(const BasicTerm& var);
+
+        /// Returns the whole part before the decimal separator in @p var (a constant for a literal, whole_part_var_of(var) otherwise)
+        static LenNode whole_part_of(const BasicTerm& var);
+
+        /// Returns the decimal part after the decimal separator in @p var (a constant for a literal, decimal_part_var_of(var) otherwise)
+        static LenNode decimal_part_of(const BasicTerm& var);
 
         /// Get all variables needed to generate model for conversions
         std::vector<BasicTerm> get_arith_vars_needed_for_model();
