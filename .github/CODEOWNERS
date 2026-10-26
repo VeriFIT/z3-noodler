@@ -1,0 +1,9 @@
+# Nix-related
+/nix/ @adda0
+*.nix @adda0
+flake.lock @adda0
+.envrc @adda0
+
+# Just
+justfile @adda0
+*.just @adda0
