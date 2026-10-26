@@ -132,3 +132,6 @@ bazel-*
 tptp_test/
 tptp_benchmarks/
 .explain/
+# Nix
+.direnv/
+/result*

@@ -65,6 +65,17 @@ Then, run the following command in the build directory:
 make test-noodler
 ```
 
+### Alternative: Build with Nix
+
+The repository is a Nix flake, which provides Mata, Catch2, and all build tools:
+```shell
+nix build                 # Builds and tests Z3-Noodler with GCC; the binary is 'result/bin/z3'.
+nix build '.#noodlerClang' # The same with Clang.
+nix develop               # Development shell with GCC ('.#clang' for Clang); 'direnv allow' enters it automatically.
+nix fmt                   # Formats the Nix files.
+```
+Inside the development shell, `just` builds and runs the tests in `build/<mode>/<compiler>`, e.g. `just test release`; run `just help` to list all recipes.
+
 ### Step 3: Run Z3-Noodler
 To run Z3-Noodler on an SMT-LIB instance:
 ```shell
@@ -75,6 +86,13 @@ If you want to get a model for sat instances (using `get-model` or `get-value`),
 ```shell
 ./z3 model=true <instance_file.smt2> 
 ```
+
+With Nix, `nix run` builds Z3-Noodler and runs it, with no clone or manual build needed:
+```shell
+nix run 'github:VeriFIT/z3-noodler' -- <instance_file.smt2>
+nix run 'github:VeriFIT/z3-noodler' -- model=true <instance_file.smt2>
+```
+In a clone of the repository, use `nix run . -- <instance_file.smt2>`.
 
 To run tests for Z3-Noodler, run the following command in the build directory (the end-to-end tests use the `z3` binary from the current directory):
 ```shell
