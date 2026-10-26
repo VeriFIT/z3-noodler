@@ -7,7 +7,7 @@
       url = "github:fzakaria/omniflake";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Keep in sync with the Mata 'GIT_TAG' in CMakeLists.txt.
+    # Must match the Mata 'GIT_TAG' in CMakeLists.txt; evaluation fails otherwise (see nix/noodler.nix).
     mata = {
       url = "github:VeriFIT/mata/v1.32.37";
       inputs.nixpkgs.follows = "nixpkgs";
