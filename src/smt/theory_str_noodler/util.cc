@@ -195,7 +195,7 @@ namespace smt::noodler::util {
                 auto transitions_from_current_symbol_it = transitions_from_s.find(current_symbol);
                 if (transitions_from_current_symbol_it != transitions_from_s.end()) {
                     SASSERT(transitions_from_current_symbol_it->symbol == current_symbol);
-                    new_current_states = mata::nfa::StateSet::set_union(new_current_states, transitions_from_current_symbol_it->targets);
+                    new_current_states.insert(transitions_from_current_symbol_it->targets.span());
                 }
             }
 
@@ -255,7 +255,7 @@ namespace smt::noodler::util {
                 mata::nfa::StatePost& delta_from_state = transducer.delta.mutable_state_post(state); // then we can for sure get mutable transitions from state without side effect
                 for (auto iter = delta_from_state.begin(); iter != delta_from_state.end(); ++iter) {
                     if (iter->symbol == util::get_dummy_symbol()) {
-                        mata::nfa::StateSet targets = iter->targets;
+                        mata::nfa::SmallStateSet targets = iter->targets;
                         delta_from_state.erase(iter);
                         for (mata::Symbol replacement : symbols_to_replace_with) {
                             transducer.delta.add(state, replacement, targets); // this invalidates iter, but we are breaking from the loop anyway
@@ -454,7 +454,7 @@ namespace smt::noodler::util {
             std::vector<mata::Word> result(lengths.size());
             std::map<mata::nft::Transition,std::shared_ptr<unsigned>> cur_num_of_transitions_passes = num_of_transitions_passes;
             /// Current state, its state post iterator, its end iterator, and iterator in the current symbol post to target states.
-            std::vector<std::tuple<mata::nft::State, mata::nft::StatePost::const_iterator, mata::nft::StatePost::const_iterator, mata::nft::StateSet::const_iterator>> worklist{};
+            std::vector<std::tuple<mata::nft::State, mata::nft::StatePost::const_iterator, mata::nft::StatePost::const_iterator, mata::nft::SmallStateSet::const_iterator>> worklist{};
             auto is_result_correct = [&result, &lengths]() {
                 for (size_t i = 0; i < lengths.size(); ++i) {
                     if (result[i].size() != lengths[i]) {

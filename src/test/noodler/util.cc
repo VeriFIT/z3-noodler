@@ -76,7 +76,7 @@ TEST_CASE("theory_str_noodler::util") {
             for (unsigned i = 0; i < length; ++i) {
                 for (auto sym : alphabet) {
                     // Identity: input symbol == output symbol
-                    transducer.add_transition(i, {sym, sym}, i + 1);
+                    transducer.add_transition_by_levels(i, {sym, sym}, i + 1);
                 }
             }
             return transducer;
@@ -97,7 +97,7 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(1);
             // Only non-identity transition
-            transducer.add_transition(0, {'a', 'b'}, 1);
+            transducer.add_transition_by_levels(0, {'a', 'b'}, 1);
             CHECK(util::contains_trans_identity(transducer, 1) == l_false);
         }
 
@@ -124,9 +124,9 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(1);
             // Self-loop on initial state (identity)
-            transducer.add_transition(0, {'a', 'a'}, 0);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 0);
             // Proper transition to final
-            transducer.add_transition(0, {'a', 'a'}, 1);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 1);
             CHECK(util::contains_trans_identity(transducer, 1) == l_true);
         }
 
@@ -137,8 +137,8 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(1);
             // Only self-loop, no transition to final
-            transducer.add_transition(0, {'a', 'b'}, 0);
-            transducer.add_transition(0, {'a', 'b'}, 1);
+            transducer.add_transition_by_levels(0, {'a', 'b'}, 0);
+            transducer.add_transition_by_levels(0, {'a', 'b'}, 1);
             CHECK(util::contains_trans_identity(transducer, 1) == l_false);
         }
 
@@ -149,7 +149,7 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(0);
             // Self-loop
-            transducer.add_transition(0, {'a', 'a'}, 0);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 0);
             CHECK(util::contains_trans_identity(transducer, 0) == l_true);
             CHECK(util::contains_trans_identity(transducer, 1) == l_true);
         }
@@ -161,16 +161,16 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(1);
             // Self-loop with non-identity
-            transducer.add_transition(0, {'a', 'b'}, 0);
+            transducer.add_transition_by_levels(0, {'a', 'b'}, 0);
             // Proper transition to final with identity
-            transducer.add_transition(0, {'a', 'a'}, 1);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 1);
             CHECK(util::contains_trans_identity(transducer, 1));
             // If only non-identity self-loop, should not accept
             mata::nft::Nft t2 {2};
             t2.levels.num_of_levels = 2;
             t2.initial.insert(0);
             t2.final.insert(1);
-            t2.add_transition(0, {'a', 'b'}, 0);
+            t2.add_transition_by_levels(0, {'a', 'b'}, 0);
             CHECK(util::contains_trans_identity(t2, 1) == l_false);
         }
 
@@ -181,10 +181,10 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(2);
             // Self-loop on 0
-            transducer.add_transition(0, {'a', 'a'}, 0);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 0);
             // Path: 0 --('a','a')--> 1 --('b','b')--> 2
-            transducer.add_transition(0, {'a', 'a'}, 1);
-            transducer.add_transition(1, {'b', 'b'}, 2);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 1);
+            transducer.add_transition_by_levels(1, {'b', 'b'}, 2);
             CHECK(util::contains_trans_identity(transducer, 2) == l_true);
         }
 
@@ -195,11 +195,11 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(1);
             // Self-loop with identity symbol
-            transducer.add_transition(0, {'a', 'a'}, 0);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 0);
             // Self-loop with non-identity symbol (causes is_not_prefix to fail, so not l_undef)
-            // transducer.add_transition(0, {'a', 'b'}, 0);
+            // transducer.add_transition_by_levels(0, {'a', 'b'}, 0);
             // Transition to final
-            transducer.add_transition(0, {'a', 'a'}, 1);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 1);
             // If we check for length 10, but only have one transition, the self-loop can be taken indefinitely
             CHECK(util::contains_trans_identity(transducer, 10) == l_true);
         }
@@ -211,7 +211,7 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(1);
             // Only self-loop with identity
-            transducer.add_transition(0, {'a', 'a'}, 1);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 1);
             // For length 5, the self-loop can be taken indefinitely, so l_undef
             CHECK(util::contains_trans_identity(transducer, 0) == l_undef);
         }
@@ -223,8 +223,8 @@ TEST_CASE("theory_str_noodler::util") {
             transducer.initial.insert(0);
             transducer.final.insert(2);
             // Cycle: 0 -> 1 -> 0 with identity transitions
-            transducer.add_transition(0, {'a', 'a'}, 1);
-            transducer.add_transition(1, {'b', 'b'}, 0);
+            transducer.add_transition_by_levels(0, {'a', 'a'}, 1);
+            transducer.add_transition_by_levels(1, {'b', 'b'}, 0);
             // No path to final state 2
             CHECK(util::contains_trans_identity(transducer, 10) == l_undef);
         }

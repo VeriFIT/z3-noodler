@@ -22,12 +22,12 @@ TEST_CASE("Decision Procedure", "[noodler]") {
     auto& m{ noodler.m };
 
     mata::nft::Nft identity{1, {0}, {0}};
-    identity.add_transition(0, {'a', 'a'}, 0);
-    identity.add_transition(0, {'b', 'b'}, 0);
+    identity.add_transition_by_levels(0, {'a', 'a'}, 0);
+    identity.add_transition_by_levels(0, {'b', 'b'}, 0);
 
     mata::nft::Nft transform_to_empty{1, {0}, {0}};
-    transform_to_empty.add_transition(0, {'a', mata::nft::EPSILON}, 0);
-    transform_to_empty.add_transition(0, {'b', mata::nft::EPSILON}, 0);
+    transform_to_empty.add_transition_by_levels(0, {'a', mata::nft::EPSILON}, 0);
+    transform_to_empty.add_transition_by_levels(0, {'b', mata::nft::EPSILON}, 0);
 
     AutAssignment init_ass;
     init_ass.set_alphabet({'a', 'b'});

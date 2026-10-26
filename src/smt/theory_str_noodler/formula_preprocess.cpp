@@ -1939,9 +1939,9 @@ namespace smt::noodler {
                         // add the inclusion u1.u2.u3...uN.'a' ⊆ x to removed_inclusions_for_model
                         this->removed_inclusions_for_model.push_back(Predicate::create_equation(haystacks, {needle_var}));
                         // update also the language of x, to accept anything containing 'a' ('a' might not be in the alphabet of aut_ass)
-                        mata::EnumAlphabet alph = aut_ass.get_alphabet().get_mata_alphabet();
-                        alph.add_new_symbol(mata::Symbol('a'));
-                        mata::nfa::Nfa sigma_star_with_a = mata::nfa::builder::create_sigma_star_nfa(&alph);
+                        auto alph = std::make_shared<mata::EnumAlphabet>(aut_ass.get_alphabet().get_mata_alphabet());
+                        alph->add_new_symbol(mata::Symbol('a'));
+                        mata::nfa::Nfa sigma_star_with_a = mata::nfa::builder::create_sigma_star_nfa(alph);
                         sigma_star_with_a.alphabet = nullptr; // remove alphabet because otherwise mata will start to make problems
                         aut_ass[needle_var] = std::make_shared<mata::nfa::Nfa>(sigma_star_with_a);
                         something_changed = true;
