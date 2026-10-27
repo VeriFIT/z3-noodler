@@ -87,7 +87,7 @@ namespace smt::noodler {
         [[nodiscard]] bool is_literal() const { return type == BasicTermType::Literal; }
         [[nodiscard]] bool is(BasicTermType term_type) const { return type == term_type; }
 
-        [[nodiscard]] zstring get_name() const { return name; }
+        [[nodiscard]] const zstring& get_name() const { return name; }
         void set_name(zstring new_name) { name = std::move(new_name); }
 
         [[nodiscard]] bool equals(const BasicTerm& other) const {
