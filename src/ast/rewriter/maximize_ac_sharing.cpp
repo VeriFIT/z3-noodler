@@ -21,8 +21,8 @@ Revision History:
 #include "ast/ast_pp.h"
 
 
-void maximize_ac_sharing::register_kind(decl_kind k) {
-    m_kinds.push_back(k);
+void maximize_ac_sharing::register_kind(family_id fid, decl_kind k) {
+    m_kinds.push_back({fid, k});
 }
 
 
@@ -32,7 +32,8 @@ br_status maximize_ac_sharing::reduce_app(func_decl * f, unsigned num_args, expr
         return BR_FAILED;
     if (num_args <= 2)
         return BR_FAILED;
-    if (std::find(m_kinds.begin(), m_kinds.end(), k) == m_kinds.end())
+    // Kinds are numbered per family: OP_BMUL is also OP_OR and arithmetic OP_ADD.
+    if (std::find(m_kinds.begin(), m_kinds.end(), std::make_pair(f->get_family_id(), k)) == m_kinds.end())
         return BR_FAILED;
     ptr_buffer<expr, 128> _args;
     expr * numeral = nullptr;
@@ -156,10 +157,10 @@ void maximize_ac_sharing::reset() {
 }
 
 void maximize_bv_sharing::init_core() {
-    register_kind(OP_BADD);
-    register_kind(OP_BMUL);
-    register_kind(OP_BOR);
-    register_kind(OP_BAND);
+    register_kind(m_util.get_fid(), OP_BADD);
+    register_kind(m_util.get_fid(), OP_BMUL);
+    register_kind(m_util.get_fid(), OP_BOR);
+    register_kind(m_util.get_fid(), OP_BAND);
 }
 
 bool maximize_bv_sharing::is_numeral(expr * n) const {

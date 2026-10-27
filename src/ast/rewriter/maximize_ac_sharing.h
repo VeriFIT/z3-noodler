@@ -66,7 +66,7 @@ class maximize_ac_sharing : public default_rewriter_cfg {
     typedef ptr_hashtable<entry, obj_ptr_hash<entry>, deref_eq<entry> > cache;
 
 protected:
-    void register_kind(decl_kind k);
+    void register_kind(family_id fid, decl_kind k);
 
 private:
     ast_manager &     m;
@@ -75,7 +75,7 @@ private:
     cache             m_cache;
     ptr_vector<entry> m_entries;
     unsigned_vector   m_scopes;
-    svector<decl_kind>    m_kinds; //!< kinds to be processed
+    svector<std::pair<family_id, decl_kind>> m_kinds; //!< kinds to be processed, with their family
 
     bool contains(func_decl * f, expr * arg1, expr * arg2);
     void insert(func_decl * f, expr * arg1, expr * arg2);
