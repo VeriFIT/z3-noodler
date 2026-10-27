@@ -183,16 +183,7 @@ bool zstring::prefixof(zstring const& other) const {
 }
 
 bool zstring::contains(zstring const& other) const {
-    if (other.length() > length()) return false;
-    unsigned last = length() - other.length();
-    bool cont = false;
-    for (unsigned i = 0; !cont && i <= last; ++i) {
-        cont = true;
-        for (unsigned j = 0; cont && j < other.length(); ++j) {
-            cont = other[j] == m_buffer[j+i];
-        }
-    }
-    return cont;
+    return indexofu(other, 0) >= 0;
 }
 
 int zstring::indexofu(zstring const& other, unsigned offset) const {
@@ -200,14 +191,22 @@ int zstring::indexofu(zstring const& other, unsigned offset) const {
     if (offset == length()) return -1;
     if (offset > other.length() + offset) return -1;
     if (other.length() + offset > length()) return -1;
-    unsigned last = length() - other.length();
-    for (unsigned i = offset; i <= last; ++i) {
-        bool prefix = true;
-        for (unsigned j = 0; prefix && j < other.length(); ++j) {
-            prefix = m_buffer[i + j] == other[j];
-        }
-        if (prefix) {
-            return static_cast<int>(i);
+    // Knuth-Morris-Pratt: comparing other at every position takes length() * other.length() steps on strings
+    // repeating a few characters, which the rewriter meets on literals of thousands of characters.
+    const unsigned other_length = other.length();
+    // border[j] is the length of the longest proper prefix of other[0..j] that is also its suffix
+    buffer<unsigned, false, 32> border;
+    border.resize(other_length, 0);
+    for (unsigned j = 1, k = 0; j < other_length; ++j) {
+        while (k > 0 && other[j] != other[k]) k = border[k - 1];
+        if (other[j] == other[k]) ++k;
+        border[j] = k;
+    }
+    for (unsigned i = offset, k = 0; i < length(); ++i) {
+        while (k > 0 && m_buffer[i] != other[k]) k = border[k - 1];
+        if (m_buffer[i] == other[k]) ++k;
+        if (k == other_length) {
+            return static_cast<int>(i + 1 - other_length);
         }
     }
     return -1;
