@@ -993,7 +993,10 @@ class ast_translation;
 
 class ast_table : public chashtable<ast*, obj_ptr_hash<ast>, ast_eq_proc> {
 public:
-    ast_table() : chashtable({}, {}, 512 * 1024, 8 * 1024) {}
+    // The table grows on demand. Filling 512K slots up front took 4 ms, a third of the run of a small input, and
+    // the format manager only holds the objects of pretty printing.
+    explicit ast_table(bool for_format_manager = false) :
+        chashtable({}, {}, for_format_manager ? 1024 : 64 * 1024, for_format_manager ? 256 : 1024) {}
     void push_erase(ast * n);
     ast* pop_erase();
 };

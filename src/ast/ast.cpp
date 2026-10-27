@@ -1253,7 +1253,8 @@ ast_manager::ast_manager(proof_gen_mode m, char const * trace_file, bool is_form
     m_expr_array_manager(*this, m_alloc),
     m_expr_dependency_manager(*this, m_alloc),
     m_expr_dependency_array_manager(*this, m_alloc),
-    m_proof_mode(m) {
+    m_proof_mode(m),
+    m_ast_table(is_format_manager) {
 
     if (trace_file) {
         m_trace_stream       = alloc(std::fstream, trace_file, std::ios_base::out);
@@ -1274,6 +1275,7 @@ ast_manager::ast_manager(proof_gen_mode m, std::fstream * trace_stream, bool is_
     m_expr_dependency_manager(*this, m_alloc),
     m_expr_dependency_array_manager(*this, m_alloc),
     m_proof_mode(m),
+    m_ast_table(is_format_manager),
     m_trace_stream(trace_stream) {
 
     if (!is_format_manager)
