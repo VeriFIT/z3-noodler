@@ -110,16 +110,16 @@
         "omniflake": "omniflake"
       },
       "locked": {
-        "lastModified": 1793098580,
-        "narHash": "sha256-sA8kfrTSDW85C6wR0vNJeA9sjMinSXcJzSVqzFpGa9I=",
+        "lastModified": 1793269767,
+        "narHash": "sha256-2MhybULNRd5MuBatk6ogoISC/pZuacjIi7nkfB3FOXE=",
         "owner": "VeriFIT",
         "repo": "mata",
-        "rev": "0420c8b47617db448655f75c128536d565e3e319",
+        "rev": "34ea3e6c77a5a36cfad3037991d92422048cfb09",
         "type": "github"
       },
       "original": {
         "owner": "VeriFIT",
-        "ref": "v1.32.45-dev.151",
+        "ref": "issue-972-shared-segments",
         "repo": "mata",
         "type": "github"
       }

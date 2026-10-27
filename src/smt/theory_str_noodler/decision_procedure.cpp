@@ -256,6 +256,14 @@ namespace smt::noodler {
                                                                     false,
                                                                     {{"reduce", "forward"}});
         bool more_than_one_noodle = noodles.size() > 1;
+        // Segments of one final state share their automaton in Mata; each segment becomes an automaton of its own here,
+        // once for all noodles it occurs in, as the noodles shared their segment automata before.
+        std::map<std::pair<const mata::nfa::Nfa*, mata::nfa::State>, std::shared_ptr<mata::nfa::Nfa>> segment_automata;
+        const auto segment_automaton = [&](const mata::applications::strings::seg_nfa::NoodleSegment& segment) {
+            auto [iter, inserted] = segment_automata.try_emplace({segment.automaton.get(), segment.initial});
+            if (inserted) { iter->second = std::make_shared<mata::nfa::Nfa>(segment.to_nfa()); }
+            return iter->second;
+        };
 
         for (const auto &noodle : noodles) {
             util::check_limit(m);
@@ -278,9 +286,10 @@ namespace smt::noodler {
             std::vector<std::vector<BasicTerm>> left_side_vars_to_new_vars(left_side_vars.size());
             std::vector<std::vector<BasicTerm>> right_side_divisions_to_new_vars(right_side_division.size());
             for (unsigned i = 0; i < noodle.size(); ++i) {
+                const std::shared_ptr<mata::nfa::Nfa> segment_aut = segment_automaton(noodle[i].first);
                 // we add a fresh var for each segment of noodle (TODO: do not make new var if we can replace it from one side by one var)
                 BasicTerm new_var = new_element.add_fresh_var(
-                                                        noodle[i].first, // we assign to it the automaton from the segment
+                                                        segment_aut, // we assign to it the automaton from the segment
                                                         std::string("align_") + std::to_string(noodlification_no), // the prefix of the new var
                                                         // the var is length if the corresponding variable on the left or right is length too
                                                         new_element.length_sensitive_vars.contains(left_side_vars[noodle[i].second[0]])
@@ -288,7 +297,7 @@ namespace smt::noodler {
                                                         true);
                 left_side_vars_to_new_vars[noodle[i].second[0]].push_back(new_var);
                 right_side_divisions_to_new_vars[noodle[i].second[1]].push_back(new_var);
-                STRACE(str_nfa, tout << new_var << std::endl << *noodle[i].first;);
+                STRACE(str_nfa, tout << new_var << std::endl << *segment_aut;);
             }
 
             /* Following the example from before, the following will create these inclusions from the right side divisions:
