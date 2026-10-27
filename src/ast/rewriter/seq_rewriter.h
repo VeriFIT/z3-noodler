@@ -154,6 +154,7 @@ class seq_rewriter {
 
     br_status mk_seq_unit(expr* e, expr_ref& result);
     br_status mk_seq_concat(expr* a, expr* b, expr_ref& result);
+    br_status mk_seq_concat(func_decl* f, unsigned num_args, expr* const* args, expr_ref& result);
     br_status mk_seq_length(expr* a, expr_ref& result);
     expr_ref mk_len(rational const& offset, expr_ref_vector const& xs);
     bool extract_pop_suffix(expr_ref_vector const& as, expr* b, expr* c, expr_ref& result);

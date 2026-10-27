@@ -126,6 +126,8 @@ struct th_rewriter_cfg : public default_rewriter_cfg {
             return k == OP_ADD;
         if (fid == m_bv_rw.get_fid())
             return k == OP_BADD || k == OP_BOR || k == OP_BAND || k == OP_BXOR;
+        if (fid == m_seq_rw.get_fid())
+            return k == OP_SEQ_CONCAT;
         return false;
     }
 

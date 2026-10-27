@@ -501,3 +501,52 @@ void tst_seq_rewriter() {
 
     std::cout << "tst_seq_rewriter: all tests passed\n";
 }
+
+// Nested concatenations get the normal form of the binary rules, also on a long run of literals, which
+// folding two at a time merges in quadratic time.
+void tst_seq_rewriter_concat() {
+    ast_manager m;
+    reg_decl_plugins(m);
+    th_rewriter rw(m);
+    seq_util su(m);
+    sort* str_sort = su.str.mk_string_sort();
+    app_ref x(m.mk_fresh_const("x", str_sort), m);
+    app_ref y(m.mk_fresh_const("y", str_sort), m);
+    app_ref c(m.mk_fresh_const("c", m.mk_bool_sort()), m);
+    auto lit = [&](char const* s) { return expr_ref(su.str.mk_string(zstring(s)), m); };
+
+    expr_ref e(su.str.mk_concat(lit("a"), su.str.mk_concat(x, su.str.mk_concat(lit(""),
+               su.str.mk_concat(lit("b"), su.str.mk_concat(su.str.mk_empty(str_sort), su.str.mk_concat(lit("c"), y)))))), m);
+    rw(e);
+    expr_ref expected(su.str.mk_concat(lit("a"), su.str.mk_concat(x, su.str.mk_concat(lit("bc"), y))), m);
+    std::cout << "concat: " << mk_pp(e, m) << "\n";
+    ENSURE(e == expected);
+
+    expr_ref left(su.str.mk_concat(su.str.mk_concat(lit("a"), x), su.str.mk_concat(su.str.mk_concat(lit("b"), lit("c")), y)), m);
+    rw(left);
+    std::cout << "left-nested concat: " << mk_pp(left, m) << "\n";
+    ENSURE(left == expected);
+
+    expr_ref with_ite(su.str.mk_concat(lit("a"), su.str.mk_concat(m.mk_ite(c, x, y), su.str.mk_concat(lit("b"), lit("c")))), m);
+    rw(with_ite);
+    std::cout << "concat with ite: " << mk_pp(with_ite, m) << "\n";
+    expr* cond = nullptr, * th = nullptr, * el = nullptr;
+    ENSURE(m.is_ite(with_ite, cond, th, el) && cond == c.get());
+    ENSURE(th == su.str.mk_concat(lit("a"), su.str.mk_concat(x, lit("bc"))));
+    ENSURE(el == su.str.mk_concat(lit("a"), su.str.mk_concat(y, lit("bc"))));
+
+    expr_ref all_empty(su.str.mk_concat(lit(""), su.str.mk_concat(su.str.mk_empty(str_sort), lit(""))), m);
+    rw(all_empty);
+    std::cout << "concat of empty strings: " << mk_pp(all_empty, m) << "\n";
+    ENSURE(all_empty == lit(""));
+
+    std::string piece(50, ':');
+    expr_ref chain(lit(piece.c_str()), m);
+    for (unsigned i = 0; i < 3000; ++i)
+        chain = su.str.mk_concat(lit(piece.c_str()), chain);
+    rw(chain);
+    zstring folded;
+    ENSURE(su.str.is_string(chain, folded) && folded.length() == 3001 * 50);
+
+    std::cout << "tst_seq_rewriter_concat: all tests passed\n";
+}

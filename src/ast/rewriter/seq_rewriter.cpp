@@ -258,9 +258,11 @@ br_status seq_rewriter::mk_app_core(func_decl * f, unsigned num_args, expr * con
             result = args[0];
             st = BR_DONE;
         }
-        else {
-            SASSERT(num_args == 2);
+        else if (num_args == 2) {
             st = mk_seq_concat(args[0], args[1], result);
+        }
+        else {
+            st = mk_seq_concat(f, num_args, args, result);
         }
         break;
     case OP_SEQ_LENGTH:
@@ -554,6 +556,72 @@ br_status seq_rewriter::mk_seq_concat(expr* a, expr* b, expr_ref& result) {
         return BR_DONE;
     }
     return BR_FAILED;
+}
+
+/*
+   a1 + ... + an with n > 2, collected by the rewriter from nested concatenations (see flat_assoc in
+   th_rewriter). The arguments get the normal form the binary rules give the nested concatenations, but in
+   one pass: applied to the nested ones bottom-up, the binary rules copy the literal merged so far at every
+   step, which takes quadratic time on a long run of literals.
+*/
+br_status seq_rewriter::mk_seq_concat(func_decl* f, unsigned num_args, expr* const* args, expr_ref& result) {
+    ptr_buffer<expr> todo;
+    for (unsigned i = num_args; i-- > 0; )
+        todo.push_back(args[i]);
+    expr_ref_vector parts(m());
+    zstring run, s;
+    bool has_run = false;
+    auto end_run = [&]() {
+        if (has_run) {
+            parts.push_back(str().mk_string(run));
+            run = zstring();
+            has_run = false;
+        }
+    };
+    // the last empty argument, which the binary rules give for a concatenation of empty arguments only
+    expr* last_empty = nullptr;
+    while (!todo.empty()) {
+        expr* e = todo.back();
+        todo.pop_back();
+        if (str().is_concat(e)) {
+            for (unsigned i = to_app(e)->get_num_args(); i-- > 0; )
+                todo.push_back(to_app(e)->get_arg(i));
+        }
+        else if (str().is_string(e, s)) {
+            if (s.empty()) {
+                last_empty = e;
+                continue;
+            }
+            if (m_coalesce_chars) {
+                run += s;
+                has_run = true;
+                continue;
+            }
+            end_run();
+            parts.push_back(e);
+        }
+        else if (str().is_empty(e)) {
+            last_empty = e;
+        }
+        else {
+            end_run();
+            parts.push_back(e);
+        }
+    }
+    end_run();
+    if (parts.empty()) {
+        SASSERT(last_empty);
+        result = last_empty;
+        return BR_DONE;
+    }
+    // as the binary rules, lift an ite out of the normal form
+    if (parts.size() > 1) {
+        br_status st = lift_ites_throttled(f, parts.size(), parts.data(), result);
+        if (st != BR_FAILED)
+            return st;
+    }
+    result = str().mk_concat(parts, args[0]->get_sort());
+    return BR_DONE;
 }
 
 expr_ref seq_rewriter::mk_seq_reverse(expr* s) {
