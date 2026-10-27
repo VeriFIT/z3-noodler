@@ -1,3 +1,5 @@
+#include <mutex>
+#include <unordered_set>
 #include <optional>
 
 #include "ast/ast.h"
@@ -335,16 +337,49 @@ namespace smt::noodler {
         return occurr;
     }
 
+    namespace {
+        // Lookups and the removal of the last reference of a name hold this lock; copies only count.
+        std::mutex& names_mutex() {
+            static std::mutex mutex;
+            return mutex;
+        }
+    } // Anonymous namespace.
+
+    std::unordered_set<BasicTerm::Name, BasicTerm::NameHash, BasicTerm::NameEqual>& BasicTerm::names() {
+        // Never destroyed: terms in static storage may outlive it.
+        static auto* names = new std::unordered_set<Name, NameHash, NameEqual>();
+        return *names;
+    }
+
+    const BasicTerm::Name* BasicTerm::acquire(zstring name) {
+        const size_t hash{name.hash()};
+        std::lock_guard<std::mutex> lock{names_mutex()};
+        const Name& entry{*names().emplace(std::move(name), hash, 0).first};
+        entry.refs.fetch_add(1, std::memory_order_relaxed);
+        return &entry;
+    }
+
+    void BasicTerm::release(const Name* name) noexcept {
+        // Above one reference, no other thread can be dropping the last one: count down without the lock.
+        size_t refs{name->refs.load(std::memory_order_relaxed)};
+        while (refs > 1) {
+            if (name->refs.compare_exchange_weak(refs, refs - 1, std::memory_order_acq_rel, std::memory_order_relaxed)) { return; }
+        }
+        // The last reference: acquire() can hand the name out again until it is removed under the lock.
+        std::lock_guard<std::mutex> lock{names_mutex()};
+        if (name->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) { names().erase(*name); }
+    }
+
     std::string BasicTerm::to_string() const {
         switch (type) {
             case BasicTermType::Literal: {
-                return ("\"" + name.encode() + "\"");
+                return ("\"" + name->value.encode() + "\"");
             }
             case BasicTermType::Variable:
             case BasicTermType::RealVariable:
-                return name.encode();
+                return name->value.encode();
             case BasicTermType::Length:
-                return name.encode() + " (" + noodler::to_string(type) + ")";
+                return name->value.encode() + " (" + noodler::to_string(type) + ")";
                 // TODO: Decide what will have names and when to use them.
         }
 

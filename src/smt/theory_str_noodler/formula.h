@@ -12,6 +12,7 @@
 #ifndef Z3_NOODLER_FORMULA_H
 #define Z3_NOODLER_FORMULA_H
 
+#include <atomic>
 #include <utility>
 #include <vector>
 #include <stdexcept>
@@ -77,9 +78,41 @@ namespace smt::noodler {
     }
 
     class BasicTerm {
+        /// A name shared by every live term that has it, with its hash and the number of terms that hold it: terms
+        ///  are copied, compared for equality and hashed without touching the characters, and a name is freed with
+        ///  its last term.
+        struct Name {
+            zstring value;
+            size_t hash;
+            mutable std::atomic<size_t> refs;
+        };
+        struct NameHash {
+            size_t operator()(const Name& n) const { return n.hash; }
+        };
+        struct NameEqual {
+            bool operator()(const Name& a, const Name& b) const { return a.value == b.value; }
+        };
+        /// The live names. Node-based, so names keep their addresses when it grows.
+        static std::unordered_set<Name, NameHash, NameEqual>& names();
+        /// The name equal to @p name, with one more reference.
+        static const Name* acquire(zstring name);
+        /// Drops a reference to @p name; the last one removes it.
+        static void release(const Name* name) noexcept;
+
     public:
-        explicit BasicTerm(BasicTermType type): type(type) {}
-        BasicTerm(BasicTermType type, zstring name): type(type), name(std::move(name)) {}
+        explicit BasicTerm(BasicTermType type): type(type), name(acquire(zstring())) {}
+        BasicTerm(BasicTermType type, zstring name): type(type), name(acquire(std::move(name))) {}
+        BasicTerm(const BasicTerm& other) noexcept: type(other.type), name(other.name) {
+            name->refs.fetch_add(1, std::memory_order_relaxed);
+        }
+        BasicTerm& operator=(const BasicTerm& other) noexcept {
+            other.name->refs.fetch_add(1, std::memory_order_relaxed);
+            release(name);
+            type = other.type;
+            name = other.name;
+            return *this;
+        }
+        ~BasicTerm() { release(name); }
 
         [[nodiscard]] BasicTermType get_type() const { return type; }
         [[nodiscard]] bool is_variable() const { return (type == BasicTermType::Variable || type == BasicTermType::RealVariable); }
@@ -87,12 +120,15 @@ namespace smt::noodler {
         [[nodiscard]] bool is_literal() const { return type == BasicTermType::Literal; }
         [[nodiscard]] bool is(BasicTermType term_type) const { return type == term_type; }
 
-        // By reference: comparing terms, e.g. as the keys of the predicate and term sets, would copy both names.
-        [[nodiscard]] const zstring& get_name() const { return name; }
-        void set_name(zstring new_name) { name = std::move(new_name); }
+        [[nodiscard]] const zstring& get_name() const { return name->value; }
+        void set_name(zstring new_name) {
+            const Name* old{name};
+            name = acquire(std::move(new_name));
+            release(old);
+        }
 
         [[nodiscard]] bool equals(const BasicTerm& other) const {
-            return type == other.get_type() && name == other.get_name();
+            return type == other.type && name == other.name;
         }
 
         [[nodiscard]] std::string to_string() const;
@@ -100,7 +136,7 @@ namespace smt::noodler {
         struct HashFunction {
             size_t operator() (const BasicTerm& basic_term) const {
                 size_t row_hash = std::hash<BasicTermType>()(basic_term.type);
-                size_t col_hash = basic_term.name.hash() << 1;
+                size_t col_hash = basic_term.name->hash << 1;
                 return row_hash ^ col_hash;
             }
         };
@@ -108,7 +144,7 @@ namespace smt::noodler {
     private:
         BasicTermType type;
         // name of the variable, or the given literal
-        zstring name;
+        const Name* name;
     }; // Class BasicTerm.
 
     [[nodiscard, maybe_unused]] static inline std::string to_string(const BasicTerm& basic_term) {
@@ -129,8 +165,8 @@ namespace smt::noodler {
         } else if (lhs.get_type() > rhs.get_type()) {
             return false;
         }
-        // Types are equal. Compare names.
-        if (lhs.get_name() < rhs.get_name()) {
+        // Types are equal. Compare names; equal names are one shared object.
+        if (&lhs.get_name() != &rhs.get_name() && lhs.get_name() < rhs.get_name()) {
             return true;
         }
         return false;
