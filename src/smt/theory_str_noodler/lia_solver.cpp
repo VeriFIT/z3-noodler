@@ -81,15 +81,19 @@ namespace smt::noodler {
         }
     }
 
+    void lia_solver::add_asserted_formulas(context& ctx) {
+        for (unsigned i = 0; i < ctx.get_num_asserted_formulas(); ++i) {
+            STRACE(str_lia, tout << "check_sat context from asserted: " << mk_pp(ctx.get_asserted_formula(i), m) << std::endl);
+            assert_expr(ctx.get_asserted_formula(i));
+        }
+    }
+
     void lia_solver::initialize(context& ctx, bool include_assignment, bool include_clauses) {
         if (!initialized) {
             initialized = true;
             expr_ref_vector Assigns(m);
             ctx.get_assignments(Assigns);
-            for (unsigned i = 0; i < ctx.get_num_asserted_formulas(); ++i) {
-                STRACE(str_lia, tout << "check_sat context from asserted: " << mk_pp(ctx.get_asserted_formula(i), m) << std::endl);
-                assert_expr(ctx.get_asserted_formula(i));
-            }
+            add_asserted_formulas(ctx);
             if (include_assignment) {
                 for (auto& e : Assigns) {
                     if (ctx.is_relevant(e)) {

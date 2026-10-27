@@ -27,6 +27,7 @@ namespace smt::noodler {
         m_rewrite(m),
         m_util_a(m),
         m_util_s(m),
+        asserted_kernel(m),
         var_eqs(m_util_a),
         m_length(m),
         axiomatized_instances() {

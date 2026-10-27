@@ -64,6 +64,9 @@ namespace smt::noodler {
         /// eval_arith_str_func) occurring in @p e.
         void compute_model_formula(expr* e, model_ref& mdl);
 
+        /// Add the formulas asserted in @p ctx, as initialize() does.
+        virtual void add_asserted_formulas(context& ctx);
+
     public:
         virtual ~lia_solver() = default;
 

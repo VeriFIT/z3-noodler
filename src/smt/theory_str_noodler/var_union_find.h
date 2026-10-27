@@ -224,11 +224,12 @@ namespace smt::noodler {
          * @brief Get the equivalence classes where each z3 term is replaced with the 
          * equivalent BasicTerm object.
          * 
+         * @param asserted_kernel The kernel holding the formulas asserted in @p ctx, for the LIA fallback.
          * @return Equivalence classes consisting of BasicTerms
          */
-        BasicTermEqiv get_equivalence_bt(const AutAssignment& aut_ass, smt::context& ctx, seq_util& m_util_s) const {
+        BasicTermEqiv get_equivalence_bt(const AutAssignment& aut_ass, smt::context& ctx, seq_util& m_util_s, asserted_formulas_kernel& asserted_kernel) const {
             std::vector<std::set<BasicTerm>> ret;
-            int_expr_solver lia_solver(ctx.get_manager(), ctx.get_fparams());
+            int_expr_solver lia_solver(ctx.get_manager(), ctx.get_fparams(), &asserted_kernel);
 
             for (const auto& t : this->un_find) {
                 int len = key_to_value.at(t.m_key);

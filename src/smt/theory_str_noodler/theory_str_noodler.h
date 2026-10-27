@@ -98,6 +98,9 @@ namespace smt::noodler {
         // has input formula quantifiers? we set it to true even if we push into the internal solver something with quantifiers
         bool input_has_quantifiers = false;
 
+        // the formulas asserted in the context, kept for the length checks against it
+        asserted_formulas_kernel asserted_kernel;
+
         // equivalence of z3 terms based on their length (terms are equiv if their length is for sure the same)
         var_union_find var_eqs;
 
