@@ -17,7 +17,7 @@ class LibError(Exception):
 
 build_env = dict(os.environ)
 build_env['PYTHON'] = sys.executable
-build_env['CXXFLAGS'] = build_env.get('CXXFLAGS', '') + " -std=c++20"
+build_env['CXXFLAGS'] = build_env.get('CXXFLAGS', '') + " -std=c++23"
 
 # determine where we're building and where sources are
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))

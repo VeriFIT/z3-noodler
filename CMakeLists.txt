@@ -183,7 +183,8 @@ include(${PROJECT_SOURCE_DIR}/cmake/z3_add_cxx_flag.cmake)
 ################################################################################
 # C++ language version
 ################################################################################
-set(CMAKE_CXX_STANDARD 20)
+# C++23 for std::generator, through which Mata emits the noodles one at a time
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ################################################################################
