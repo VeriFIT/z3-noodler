@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "solving_state.h"
 #include "formula_preprocess.h"
 #include "inclusion_graph.h"
@@ -7,6 +9,13 @@ namespace smt::noodler {
 
 
     void SolvingState::substitute_vars(const std::set<BasicTerm>& vars_to_substitute) {
+        // true if a variable of @p vector is substituted; the other vectors, and the predicates made of them only,
+        // stay as they are instead of being rebuilt
+        auto is_affected = [&vars_to_substitute](const std::vector<BasicTerm>& vector) {
+            return std::ranges::any_of(vector, [&vars_to_substitute](const BasicTerm& var) { return vars_to_substitute.contains(var); });
+        };
+        auto is_predicate_affected = [&is_affected](const Predicate& pred) { return std::ranges::any_of(pred.get_params(), is_affected); };
+
         // substitutes variables in a vector using substitution_map
         auto substitute_vector = [this, &vars_to_substitute](const std::vector<BasicTerm> &vector) {
             std::vector<BasicTerm> result;
@@ -27,46 +36,50 @@ namespace smt::noodler {
             for (const auto& param : pred.get_params()) {
                 new_params.push_back(substitute_vector(param));
             }
-            if (pred.is_transducer()) return Predicate{pred.get_type(), new_params, pred.get_transducer()};
-            else return Predicate{pred.get_type(), new_params};
+            if (pred.is_transducer()) return Predicate{pred.get_type(), std::move(new_params), pred.get_transducer()};
+            else return Predicate{pred.get_type(), std::move(new_params)};
         };
 
         // returns true if the inclusion has the same thing on both sides
         auto inclusion_has_same_sides = [](const Predicate &inclusion) { return (inclusion.is_equation() && inclusion.get_left_side() == inclusion.get_right_side()); };
 
-        // substitutes variables of inclusions in a vector using substitute_map, but does not keep the ones that have the same sides after substitution
-        auto substitute_set = [&substitute_predicate, &inclusion_has_same_sides](const std::set<Predicate> predicates) {
-            std::set<Predicate> new_predicates;
-            for (const auto &old_pred : predicates) {
-                auto new_pred = substitute_predicate(old_pred);
-                if (!inclusion_has_same_sides(new_pred)) { // skip inclusions that have both sides equal
-                    new_predicates.insert(new_pred);
+        // substitutes variables of predicates in a set using substitute_map, but does not keep the ones that have the same sides after substitution
+        auto substitute_set = [&](std::set<Predicate>& predicates) {
+            std::vector<Predicate> substituted;
+            for (auto it = predicates.begin(); it != predicates.end();) {
+                if (is_predicate_affected(*it)) {
+                    substituted.push_back(substitute_predicate(*it));
+                    it = predicates.erase(it);
+                } else if (inclusion_has_same_sides(*it)) {
+                    it = predicates.erase(it);
+                } else {
+                    ++it;
                 }
             }
-            return new_predicates;
+            for (Predicate& pred : substituted) {
+                if (!inclusion_has_same_sides(pred)) { // skip inclusions that have both sides equal
+                    predicates.insert(std::move(pred));
+                }
+            }
         };
 
-        inclusions = substitute_set(inclusions);
-        transducers = substitute_set(transducers);
-        predicates_not_on_cycle = substitute_set(predicates_not_on_cycle);
+        substitute_set(inclusions);
+        substitute_set(transducers);
+        substitute_set(predicates_not_on_cycle);
 
-        // substituting predicates to process is bit harder, it is possible that two predicates that were supposed to
-        // be processed become same after substituting, so we do not want to keep both in predicates to process
-        std::set<Predicate> substituted_predicates_to_process;
         std::deque<Predicate> new_predicates_to_process;
-        while (!predicates_to_process.empty()) {
-            Predicate substituted_inclusion = substitute_predicate(predicates_to_process.front());
-            predicates_to_process.pop_front();
-
-            if (!inclusion_has_same_sides(substituted_inclusion)
-                && !substituted_predicates_to_process.contains(substituted_inclusion)) { // we do not want to add predicates that are already in predicates_to_process
-                new_predicates_to_process.push_back(substituted_inclusion);
+        for (Predicate& pred : predicates_to_process) {
+            Predicate substituted_inclusion = is_predicate_affected(pred) ? substitute_predicate(pred) : std::move(pred);
+            if (!inclusion_has_same_sides(substituted_inclusion)) {
+                new_predicates_to_process.push_back(std::move(substituted_inclusion));
             }
         }
-        predicates_to_process = new_predicates_to_process;
+        predicates_to_process = std::move(new_predicates_to_process);
 
         for (auto& [subst_var, substitution] : substitution_map) {
-            substitution = substitute_vector(substitution);
+            if (is_affected(substitution)) {
+                substitution = substitute_vector(substitution);
+            }
         }
 
         apply_substitutions_to_disequations();

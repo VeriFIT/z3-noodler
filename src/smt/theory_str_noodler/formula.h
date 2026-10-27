@@ -322,16 +322,16 @@ namespace smt::noodler {
             }
         }
 
-        explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par): type(type), params(par), transducer() {
+        explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par): type(type), params(std::move(par)), transducer() {
             assert(!is_two_sided() || params.size() == 2);
         }
 
         explicit Predicate(const PredicateType type, std::vector<std::vector<BasicTerm>> par, std::shared_ptr<mata::nft::Nft> trans) : 
             type(type),
-            params(par),
-            transducer(trans) {
+            params(std::move(par)),
+            transducer(std::move(trans)) {
             assert(type == PredicateType::Transducer);
-            assert(trans->levels.num_of_levels == 2);
+            assert(transducer->levels.num_of_levels == 2);
         }
 
 
