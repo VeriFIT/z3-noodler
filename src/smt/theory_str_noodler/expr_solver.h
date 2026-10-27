@@ -17,7 +17,8 @@ namespace smt::noodler {
      * A fresh kernel preprocesses and internalizes every formula and assumption given to it, which costs far
      * more than the length check itself. The kernel is therefore kept and reused by the checks against the
      * same context while the formulas asserted in it stay the same, and each assumption is internalized once,
-     * as an implication from a fresh constant that is assumed instead.
+     * as an implication from a fresh constant that is assumed instead. A kernel without any formula is kept
+     * for the checks without the context, as creating one costs as much as a small check.
      */
     class asserted_formulas_kernel {
         ast_manager& m;
@@ -28,6 +29,8 @@ namespace smt::noodler {
         // the assumptions given to mk_assumption() and the constants implying them in solver
         obj_map<expr, expr*> proxies;
         expr_ref_vector pinned;
+        smt_params empty_fp;
+        scoped_ptr<kernel> empty_solver;
     public:
         explicit asserted_formulas_kernel(ast_manager& m): m(m), fmls(m), pinned(m) {}
 
@@ -38,6 +41,9 @@ namespace smt::noodler {
          * @brief An assumption for the kernel returned by the last get() that is equivalent to assuming @p e.
          */
         expr* mk_assumption(expr* e);
+
+        /// The kernel without any formula, created with @p fp by the first call.
+        kernel& get_empty(const smt_params& fp);
     };
 
     class int_expr_solver : public lia_solver {

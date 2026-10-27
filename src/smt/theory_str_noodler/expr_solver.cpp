@@ -45,6 +45,14 @@ namespace smt::noodler {
         return proxy;
     }
 
+    kernel& asserted_formulas_kernel::get_empty(const smt_params& fp) {
+        if (!empty_solver) {
+            empty_fp = fp;
+            empty_solver = alloc(kernel, m, empty_fp);
+        }
+        return *empty_solver;
+    }
+
     void int_expr_solver::add_asserted_formulas(context& ctx) {
         if (asserted_kernel == nullptr) {
             lia_solver::add_asserted_formulas(ctx);
@@ -67,8 +75,12 @@ namespace smt::noodler {
             assumptions.push_back(e);
             r = solver->check(assumptions);
         } else {
-            fresh_solver = alloc(kernel, m, fp);
-            solver = fresh_solver.get();
+            if (asserted_kernel != nullptr) {
+                solver = &asserted_kernel->get_empty(fp);
+            } else {
+                fresh_solver = alloc(kernel, m, fp);
+                solver = fresh_solver.get();
+            }
             erv.push_back(e);
             r = solver->check(erv);
             erv.pop_back();
