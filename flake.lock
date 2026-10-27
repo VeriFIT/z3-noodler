@@ -111,15 +111,15 @@
       },
       "locked": {
         "lastModified": 1793269767,
-        "narHash": "sha256-2MhybULNRd5MuBatk6ogoISC/pZuacjIi7nkfB3FOXE=",
+        "narHash": "sha256-kx1tDlcdn4b9oZuH/pNIoPI69FJRZ46OUnhpQ90FHZk=",
         "owner": "VeriFIT",
         "repo": "mata",
-        "rev": "34ea3e6c77a5a36cfad3037991d92422048cfb09",
+        "rev": "e4d6313153f3699a02892eba77fee712bc58c801",
         "type": "github"
       },
       "original": {
         "owner": "VeriFIT",
-        "ref": "issue-972-shared-segments",
+        "ref": "issue-972-lazy-noodles",
         "repo": "mata",
         "type": "github"
       }

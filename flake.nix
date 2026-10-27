@@ -9,7 +9,7 @@
     };
     # Must match the Mata 'GIT_TAG' in CMakeLists.txt; evaluation fails otherwise (see nix/noodler.nix).
     mata = {
-      url = "github:VeriFIT/mata/issue-972-shared-segments";
+      url = "github:VeriFIT/mata/issue-972-lazy-noodles";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

@@ -5,6 +5,8 @@
 #include <deque>
 #include <algorithm>
 #include <functional>
+#include <optional>
+#include <variant>
 
 #include "params/theory_str_noodler_params.h"
 #include "formula.h"
@@ -99,13 +101,40 @@ namespace smt::noodler {
         virtual ~AbstractDecisionProcedure()=default;
     };
 
+    /**
+     * @brief The noodles of one processed predicate, which become solving states one at a time, when they are popped
+     * from the worklist, instead of all at once when the predicate is processed.
+     *
+     * The solving state of the next noodle is built ahead, so that the worklist knows whether one is left.
+     */
+    class PendingNoodles {
+    public:
+        /// @p next_state builds the solving state of the next noodle, or returns std::nullopt if none is left.
+        explicit PendingNoodles(std::move_only_function<std::optional<SolvingState>()> next_state)
+            : next_state(std::move(next_state)), next(this->next_state()) {}
+
+        bool empty() const { return !next.has_value(); }
+
+        /// The solving state of the next noodle; requires !empty().
+        SolvingState pop() {
+            SolvingState state = std::move(*next);
+            next = next_state();
+            return state;
+        }
+
+    private:
+        std::move_only_function<std::optional<SolvingState>()> next_state;
+        std::optional<SolvingState> next;
+    };
+
     class DecisionProcedure : public AbstractDecisionProcedure {
     protected:
         // counter of noodlifications
         unsigned noodlification_no = 0;
 
-        // a deque containing states of decision procedure, each of them can lead to a solution
-        std::deque<SolvingState> worklist;
+        // a deque containing states of decision procedure, each of them can lead to a solution; the states of the
+        // noodles of one predicate wait in their PendingNoodles until it reaches the front
+        std::deque<std::variant<SolvingState, std::unique_ptr<PendingNoodles>>> worklist;
         // if a solving state has nothing to process, it can lead to solution, we keep these solving states here instead of worklist so we can process them immediately
         std::vector<SolvingState> possible_solutions;
 
@@ -155,10 +184,14 @@ namespace smt::noodler {
             return (worklist.empty() && possible_solutions.empty());
         }
 
-        void push_to_worklist(SolvingState solving_state, bool to_back) {
+        void name_in_DOT(SolvingState& solving_state) {
             std::string old_DOT_name = solving_state.DOT_name;
             solving_state.set_new_DOT_name();
             STRACE(str_noodle_dot, tout << solving_state.print_to_DOT() << std::endl << old_DOT_name << " -> " << solving_state.DOT_name << ";\n");
+        }
+
+        void push_to_worklist(SolvingState solving_state, bool to_back) {
+            name_in_DOT(solving_state);
             if (solving_state.predicates_to_process.empty()) {
                 possible_solutions.push_back(std::move(solving_state));
             } else {
@@ -170,15 +203,40 @@ namespace smt::noodler {
             }
         }
 
+        /**
+         * Pushes the state @p first of the first noodle of a predicate and the pending states @p rest of the others, so
+         * that they are popped in the order in which push_to_worklist() of each state on its own would put them (as
+         * long as the states have predicates to process): @p rest follows @p first, at the back or at the front.
+         */
+        void push_to_worklist(SolvingState first, std::unique_ptr<PendingNoodles> rest, bool to_back) {
+            if (rest->empty()) {
+                push_to_worklist(std::move(first), to_back);
+            } else if (to_back) {
+                push_to_worklist(std::move(first), true);
+                worklist.push_back(std::move(rest));
+            } else {
+                worklist.push_front(std::move(rest));
+                push_to_worklist(std::move(first), false);
+            }
+        }
+
         unsigned num_of_popped_elements = 0;
         SolvingState pop_from_worklist() {
             SolvingState element_to_process;
             if (!possible_solutions.empty()) {
                 element_to_process = std::move(possible_solutions.back());
                 possible_solutions.pop_back();
-            } else {
-                element_to_process = std::move(worklist.front());
+            } else if (SolvingState* state = std::get_if<SolvingState>(&worklist.front())) {
+                element_to_process = std::move(*state);
                 worklist.pop_front();
+            } else {
+                // The next noodle takes the position of the pending noodles, which keep it while any are left.
+                PendingNoodles& noodles = *std::get<std::unique_ptr<PendingNoodles>>(worklist.front());
+                element_to_process = noodles.pop();
+                if (noodles.empty()) {
+                    worklist.pop_front();
+                }
+                name_in_DOT(element_to_process);
             }
             STRACE(str_noodle_dot, tout << element_to_process.DOT_name << " -> " << element_to_process.DOT_name << " [penwidth=0,dir=none,label=" << num_of_popped_elements << "];\n";);
             ++num_of_popped_elements;

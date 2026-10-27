@@ -2,6 +2,9 @@
 #include <utility>
 #include <algorithm>
 #include <functional>
+#include <generator>
+#include <map>
+#include <optional>
 #include <ranges>
 #include <numeric> 
 
@@ -13,6 +16,52 @@
 #include "conversion_handler.h"
 
 namespace smt::noodler {
+    namespace {
+        /// The noodles of a generator of Mata, taken one at a time; a noodle is computed when it is taken.
+        template<class Noodle>
+        class NoodleStream {
+        public:
+            explicit NoodleStream(std::generator<Noodle> noodles) : noodles(std::move(noodles)) {}
+
+            std::optional<Noodle> next() {
+                if (!position.has_value()) {
+                    position.emplace(noodles.begin());
+                } else {
+                    ++*position;
+                }
+                if (*position == std::default_sentinel) {
+                    return std::nullopt;
+                }
+                return std::move(**position);
+            }
+
+        private:
+            std::generator<Noodle> noodles;
+            std::optional<std::ranges::iterator_t<std::generator<Noodle>>> position{};
+        };
+
+        /**
+         * The automata of noodle segments. Segments of one final state share their automaton in Mata; each segment
+         * becomes an automaton of its own once, shared by all solving states that hold it, and again only if it is
+         * reached after they are all gone.
+         */
+        class SegmentAutomata {
+        public:
+            std::shared_ptr<mata::nfa::Nfa> get(const mata::applications::strings::seg_nfa::NoodleSegment& segment) {
+                std::weak_ptr<mata::nfa::Nfa>& cached = automata[{segment.automaton.get(), segment.initial}];
+                std::shared_ptr<mata::nfa::Nfa> automaton = cached.lock();
+                if (automaton == nullptr) {
+                    automaton = std::make_shared<mata::nfa::Nfa>(segment.to_nfa());
+                    cached = automaton;
+                }
+                return automaton;
+            }
+
+        private:
+            std::map<std::pair<const mata::nfa::Nfa*, mata::nfa::State>, std::weak_ptr<mata::nfa::Nfa>> automata;
+        };
+    }
+
     lbool DecisionProcedure::compute_next_solution() {
         // We call the one with length checks but don't check them
         return compute_next_solution_with_len_checks(nullptr);
@@ -251,21 +300,31 @@ namespace smt::noodler {
          * i_l-th left var (i.e. left_side_vars[i_l]) and the second element i_r = noodle[i].second[1] tell us that
          * it belongs to the i_r-th division of the right side (i.e. right_side_division[i_r])
          **/
-        auto noodles = mata::applications::strings::seg_nfa::noodlify_for_equation(left_side_automata,
+        // The noodles become solving states one at a time. Pushed to the back, the states of all noodles were processed
+        // from the first noodle, pushed to the front from the last one, so the noodles come in that order.
+        auto noodles = std::make_unique<NoodleStream<mata::applications::strings::seg_nfa::NoodleWithEpsilonsCounter>>(
+            mata::applications::strings::seg_nfa::noodlify_for_equation_lazy(left_side_automata,
                                                                     right_side_automata,
                                                                     false,
-                                                                    {{"reduce", "forward"}});
-        bool more_than_one_noodle = noodles.size() > 1;
-        // Segments of one final state share their automaton in Mata; each segment becomes an automaton of its own here,
-        // once for all noodles it occurs in, as the noodles shared their segment automata before.
-        std::map<std::pair<const mata::nfa::Nfa*, mata::nfa::State>, std::shared_ptr<mata::nfa::Nfa>> segment_automata;
-        const auto segment_automaton = [&](const mata::applications::strings::seg_nfa::NoodleSegment& segment) {
-            auto [iter, inserted] = segment_automata.try_emplace({segment.automaton.get(), segment.initial});
-            if (inserted) { iter->second = std::make_shared<mata::nfa::Nfa>(segment.to_nfa()); }
-            return iter->second;
-        };
+                                                                    {{"reduce", "forward"}},
+                                                                    is_inclusion_to_process_on_cycle
+                                                                        ? mata::applications::strings::seg_nfa::NoodleOrder::Forward
+                                                                        : mata::applications::strings::seg_nfa::NoodleOrder::Reverse));
 
-        for (const auto &noodle : noodles) {
+        auto next_state = [this,
+                           noodles = std::move(noodles),
+                           segment_automata = SegmentAutomata{},
+                           solving_state = std::move(solving_state),
+                           left_side_vars = std::vector<BasicTerm>(left_side_vars),
+                           left_side_division = std::move(left_side_division),
+                           right_side_division = std::move(right_side_division),
+                           is_inclusion_to_process_on_cycle,
+                           var_prefix = std::string("align_") + std::to_string(noodlification_no)]() mutable -> std::optional<SolvingState> {
+            std::optional<mata::applications::strings::seg_nfa::NoodleWithEpsilonsCounter> next_noodle = noodles->next();
+            if (!next_noodle.has_value()) {
+                return std::nullopt;
+            }
+            const auto& noodle = *next_noodle;
             util::check_limit(m);
             STRACE(str, tout << "Processing noodle" << (is_trace_enabled(TraceTag::str_nfa) ? " with automata:" : "") << std::endl;);
             SolvingState new_element = solving_state;
@@ -286,11 +345,11 @@ namespace smt::noodler {
             std::vector<std::vector<BasicTerm>> left_side_vars_to_new_vars(left_side_vars.size());
             std::vector<std::vector<BasicTerm>> right_side_divisions_to_new_vars(right_side_division.size());
             for (unsigned i = 0; i < noodle.size(); ++i) {
-                const std::shared_ptr<mata::nfa::Nfa> segment_aut = segment_automaton(noodle[i].first);
+                const std::shared_ptr<mata::nfa::Nfa> segment_aut = segment_automata.get(noodle[i].first);
                 // we add a fresh var for each segment of noodle (TODO: do not make new var if we can replace it from one side by one var)
                 BasicTerm new_var = new_element.add_fresh_var(
                                                         segment_aut, // we assign to it the automaton from the segment
-                                                        std::string("align_") + std::to_string(noodlification_no), // the prefix of the new var
+                                                        var_prefix, // the prefix of the new var
                                                         // the var is length if the corresponding variable on the left or right is length too
                                                         new_element.length_sensitive_vars.contains(left_side_vars[noodle[i].second[0]])
                                                             || new_element.contains_length_var(right_side_division[noodle[i].second[1]]),
@@ -337,13 +396,21 @@ namespace smt::noodler {
             new_element.remove_vars(newly_substituted_vars_from_right, initial_variables); // remove unneccesary variables that were substituted
             new_element.remove_vars(newly_substituted_vars_from_left, initial_variables); // remove unneccesary variables that were substituted
 
-            // we push to front when the inclusion is not on cycle, because we want to get to the result as fast as possible
-            // and if there is no cycle, we do not need to do BFS, the algorithm should end
-            new_element.has_siblings = more_than_one_noodle;
-            push_to_worklist(std::move(new_element), is_inclusion_to_process_on_cycle);
-        }
+            // a later noodle has a sibling: the first one, or the one before it
+            new_element.has_siblings = true;
+            return new_element;
+        };
 
+        auto pending = std::make_unique<PendingNoodles>(std::move(next_state));
         ++noodlification_no; // TODO: when to do this increment?? maybe noodlification_no should be part of SolvingState?
+        if (pending->empty()) {
+            return;
+        }
+        SolvingState first = pending->pop();
+        first.has_siblings = !pending->empty(); // whether there is a second noodle
+        // we push to front when the inclusion is not on cycle, because we want to get to the result as fast as possible
+        // and if there is no cycle, we do not need to do BFS, the algorithm should end
+        push_to_worklist(std::move(first), std::move(pending), is_inclusion_to_process_on_cycle);
         /********************************************************************************************************/
         /*************************************** End of noodlification ******************************************/
         /********************************************************************************************************/
@@ -479,8 +546,23 @@ namespace smt::noodler {
         SASSERT(output_vars_automata.size() == output_vars_divisions.size());
         SASSERT(output_vars_divisions.size() == output_vars.size());
 
-        std::vector<mata::applications::strings::seg_nfa::TransducerNoodle> noodles = mata::applications::strings::seg_nfa::noodlify_for_transducer(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true, m_params.m_homomorphism_heuristic);
-        for (const auto& noodle : noodles) {
+        // The noodles become solving states one at a time, from the last one, as the states of all noodles pushed to the
+        // front were processed.
+        auto noodles = std::make_unique<NoodleStream<mata::applications::strings::seg_nfa::TransducerNoodle>>(
+            mata::applications::strings::seg_nfa::noodlify_for_transducer_lazy(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true, m_params.m_homomorphism_heuristic, mata::applications::strings::seg_nfa::NoodleOrder::Reverse));
+        auto next_state = [this,
+                           noodles = std::move(noodles),
+                           solving_state = std::move(solving_state),
+                           output_vars = std::vector<BasicTerm>(output_vars),
+                           input_vars_divisions = std::move(input_vars_divisions),
+                           output_vars_divisions = std::move(output_vars_divisions),
+                           input_var_prefix = std::string("input_") + std::to_string(noodlification_no),
+                           output_var_prefix = std::string("output_") + std::to_string(noodlification_no)]() -> std::optional<SolvingState> {
+            std::optional<mata::applications::strings::seg_nfa::TransducerNoodle> next_noodle = noodles->next();
+            if (!next_noodle.has_value()) {
+                return std::nullopt;
+            }
+            const auto& noodle = *next_noodle;
             util::check_limit(m);
             // each noodle is a vector of tuples (T,i,Ai,o,Ao) where
             //      - T is a transducer, which will take one input and one output var: xo = T(xi)
@@ -502,7 +584,7 @@ namespace smt::noodler {
 
                 BasicTerm new_input_var = new_element.add_fresh_var(
                                                             noodle[i].input_aut, // we assign Ai to new_input_var
-                                                            std::string("input_") + std::to_string(noodlification_no),
+                                                            input_var_prefix,
                                                             new_element.contains_length_var(input_vars_divisions[noodle[i].input_index]),
                                                             true
                                                         ); // xi
@@ -510,7 +592,7 @@ namespace smt::noodler {
 
                 BasicTerm new_output_var = new_element.add_fresh_var(
                                                             noodle[i].output_aut, // we assign Ao to new_output_var
-                                                            std::string("output_") + std::to_string(noodlification_no),
+                                                            output_var_prefix,
                                                             // lengthness must be propagated from input to output too
                                                             new_element.contains_length_var(input_vars_divisions[noodle[i].input_index])
                                                                 || new_element.length_sensitive_vars.contains(output_vars[noodle[i].output_index]),
@@ -540,9 +622,16 @@ namespace smt::noodler {
             new_element.remove_vars(newly_substituted_vars_from_right, initial_variables);
             new_element.remove_vars(newly_substituted_vars_from_left, initial_variables);
 
-            push_to_worklist(std::move(new_element), false);
-        }
+            return new_element;
+        };
+
+        auto pending = std::make_unique<PendingNoodles>(std::move(next_state));
         ++noodlification_no; // TODO: when to do this increment?? maybe noodlification_no should be part of SolvingState?
+        if (pending->empty()) {
+            return;
+        }
+        SolvingState first = pending->pop();
+        push_to_worklist(std::move(first), std::move(pending), false);
     }
 
     LenNode DecisionProcedure::get_initial_lengths(bool all_vars) {

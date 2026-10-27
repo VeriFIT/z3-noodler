@@ -24,11 +24,11 @@ If Mata is not found on your system, it will be **automatically fetched and buil
 
 However, if you plan to **develop or frequently rebuild Z3-Noodler**, it is recommended to install Mata manually. This avoids repeatedly downloading and rebuilding Mata and significantly speeds up development workflows.
 
-Z3-Noodler needs Mata from the branch `issue-972-shared-segments`, which is not in a released version of Mata yet.
+Z3-Noodler needs Mata from the branch `issue-972-lazy-noodles`, which is not in a released version of Mata yet.
 
 To install the version of Mata that Z3-Noodler uses, run:
 ```shell
-git clone --branch issue-972-shared-segments 'https://github.com/VeriFIT/mata.git'
+git clone --branch issue-972-lazy-noodles 'https://github.com/VeriFIT/mata.git'
 cd mata
 make release
 sudo make install
