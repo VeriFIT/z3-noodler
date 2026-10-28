@@ -390,6 +390,7 @@ namespace smt::noodler {
          * @param var_lengths Introduce lengths axioms for variables of the form x = eps -> |x| = 0? 
          */
         void string_theory_propagation(expr * ex, bool init = false, bool neg = false, bool var_lengths = false);
+        void mark_nested_str_diseqs_as_relevant(expr * ex);
         void propagate_concat_axiom(enode * cat);
         void propagate_basic_string_axioms(enode * str, bool var_lengths = false);
 
