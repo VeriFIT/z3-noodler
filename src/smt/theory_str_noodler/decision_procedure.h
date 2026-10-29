@@ -248,8 +248,11 @@ namespace smt::noodler {
          * 
          * Assumes that code_subst_vars and int_subst_vars are computed already.
          * It also updates length_vars_with_transducers and code_subst_vars_handled_by_parikh
+         *
+         * @param overapprox Only over-approximate the lengths, for an unfinished solving state: its transducers that
+         * are not simple or close a cycle are left out, and code-point conversions and model information are skipped
          */
-        LenNode get_formula_for_transducers();
+        LenNode get_formula_for_transducers(bool overapprox);
 
         /**
          * @brief Get the formula encoding lengths of variables based on solution

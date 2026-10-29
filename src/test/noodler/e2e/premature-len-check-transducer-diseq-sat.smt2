@@ -1,0 +1,12 @@
+; The satisfiable counterpart of premature-len-check-transducer-diseq-unsat.smt2.
+(set-info :status sat)
+(declare-fun x () String)
+(declare-fun y () String)
+(declare-fun u () String)
+(declare-fun v () String)
+(assert (= y (str.replace_all x "ab" "c")))
+(assert (= x (str.++ u "a" v)))
+(assert (not (= u v)))
+(assert (= (str.len y) (- (str.len x) 1)))
+(assert (str.in_re v (re.+ (str.to_re "b"))))
+(check-sat)

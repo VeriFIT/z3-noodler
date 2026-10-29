@@ -119,18 +119,16 @@ namespace smt::noodler {
         bool len_checks_enabled = check_lens != nullptr &&
                                   m_params.m_try_premature_len_checks &&
                                   !conversion_handler.are_there_any_conversions() &&
-                                  not_contains.get_predicates().empty() &&
-                                  (!this->m_params.m_postpone_diseqs_stabilization || !this->input_contains_disequations);
+                                  not_contains.get_predicates().empty();
         while (!is_worklist_empty()) {
             util::check_limit(m);
             SolvingState element_to_process = pop_from_worklist();
 
             if (len_checks_enabled &&
                 !element_to_process.predicates_to_process.empty() &&
-                element_to_process.transducers.empty() &&
                 element_to_process.has_siblings) {
-                // Before processing this solving state, we check the
-                // length constraints first to potentionally save some time if it is unsat
+                // Before processing this solving state, we check the length constraints first to potentionally save
+                // some time if it is unsat (get_lengths() over-approximates the lengths of all solutions below it)
                 this->solution = element_to_process;
                 auto lens_sat = check_lens(true);
 
@@ -669,6 +667,8 @@ namespace smt::noodler {
             new_element.remove_vars(newly_substituted_vars_from_right, initial_variables);
             new_element.remove_vars(newly_substituted_vars_from_left, initial_variables);
 
+            // a later noodle has a sibling: the first one, or the one before it
+            new_element.has_siblings = true;
             return new_element;
         };
 
@@ -678,6 +678,7 @@ namespace smt::noodler {
             return;
         }
         SolvingState first = pending->pop();
+        first.has_siblings = !pending->empty(); // whether there is a second noodle
         push_to_worklist(std::move(first), std::move(pending), false);
     }
 
@@ -730,8 +731,29 @@ namespace smt::noodler {
         // add length formula from preprocessing
         conjuncts.push_back(preprocessing_len_formula);
 
+        if (!solution.predicates_to_process.empty()) {
+            // A premature length check of an unfinished solving state. Every solution below it is a solution of this
+            // state: each variable is in the language of its automaton, substituted variables are the concatenations
+            // of their substitutions, the transducers hold. Each conjunct below holds for the lengths of every such
+            // solution, so the formula over-approximates the lengths of all solutions below.
+            conjuncts.push_back(get_formula_for_transducers(true));
+            util::check_limit(m);
+            conjuncts.push_back(get_formula_for_len_vars());
+            util::check_limit(m);
+            auto [conversion_formula, conversion_precision] = conversion_handler.get_formula_encoding_conversions({});
+            if (conversion_precision != LenNodePrecision::UNDERAPPROX) {
+                conjuncts.push_back(conversion_formula);
+            }
+            if (this->m_params.m_ca_constr) {
+                conjuncts.push_back(get_formula_for_ca_diseqs());
+            }
+            // not the length under-approximation of the postponed disequations, only its exact part
+            conjuncts.push_back(solution.get_disequations_overapprox_length_formula());
+            return {LenNode(LenFormulaType::AND, conjuncts), LenNodePrecision::OVERAPPROX};
+        }
+
         // compute formula for vars in transducers (lengths and code-point conversions)
-        conjuncts.push_back(get_formula_for_transducers());
+        conjuncts.push_back(get_formula_for_transducers(false));
         util::check_limit(m);
 
         // formula for encoding lengths
@@ -763,7 +785,7 @@ namespace smt::noodler {
         return {result, precision};
     }
 
-    LenNode DecisionProcedure::get_formula_for_transducers() {
+    LenNode DecisionProcedure::get_formula_for_transducers(bool overapprox) {
         LenNode result(LenFormulaType::AND);
 
         length_vars_with_transducers = {};
@@ -779,9 +801,14 @@ namespace smt::noodler {
         std::set<BasicTerm> length_input_vars;
         for (auto trans_iter = solution.transducers.begin(); trans_iter != solution.transducers.end();) {
             if (solution.contains_length_var(trans_iter->get_input())) {
-                // transducers in solution should be in simple form (one input, one output var)
-                SASSERT(trans_iter->get_input().size() == 1);
-                SASSERT(trans_iter->get_output().size() == 1);
+                // transducers in solution should be in simple form (one input, one output var), only an unfinished
+                // state can have the others, leaving them out keeps its formula an over-approximation
+                if (trans_iter->get_input().size() != 1 || trans_iter->get_output().size() != 1
+                    || !solution.aut_ass.contains(trans_iter->get_input()[0]) || !solution.aut_ass.contains(trans_iter->get_output()[0])) {
+                    SASSERT(overapprox);
+                    ++trans_iter;
+                    continue;
+                }
                 BasicTerm input_var = trans_iter->get_input()[0];
                 BasicTerm output_var = trans_iter->get_output()[0];
                 SASSERT(solution.length_sensitive_vars.contains(input_var));
@@ -801,14 +828,22 @@ namespace smt::noodler {
         // get a transducer x = T(y,z,v,w) that composes all these 4 transducers together.
         // The second item of the pair gives us the vector of tapes, for the example is it {x,y,z,v,w}.
         std::function<std::pair<mata::nft::Nft,std::vector<BasicTerm>>(BasicTerm)> get_composed_trans_with_tapes;
-        get_composed_trans_with_tapes = [&output_var_to_its_transducers, &get_composed_trans_with_tapes, this](BasicTerm output_var) {
+        std::set<BasicTerm> output_vars_being_composed; // the output vars on the current path of the recursion
+        get_composed_trans_with_tapes = [&output_var_to_its_transducers, &get_composed_trans_with_tapes, &output_vars_being_composed, overapprox, this](BasicTerm output_var) {
             // we start with a simple transducer representing the NFA for output_var (one tape with output_var)
             mata::nft::Nft final_trans{*this->solution.aut_ass.at(output_var)};
             std::vector<BasicTerm> vars_on_tapes{output_var};
 
             if (output_var_to_its_transducers.contains(output_var)) {
+                output_vars_being_composed.insert(output_var);
                 const auto& transducers = output_var_to_its_transducers.at(output_var);
                 for (std::vector<Predicate>::size_type i = 0; i < transducers.size(); ++i) {
+                    if (output_vars_being_composed.contains(transducers[i].get_input()[0])) {
+                        // the transducers of an unfinished state can form a cycle, leaving out the one closing it
+                        // keeps the formula an over-approximation
+                        SASSERT(overapprox);
+                        continue;
+                    }
                     // we get transducer output_var = Ti(input_var)
                     mata::nft::Nft invert_trans = mata::nft::invert_levels(*transducers[i].get_transducer()); // after inverting output var is level 0, input var is level 1
                     // we get recursively transducer input_var = Ti'(x1, x2, ...., xn) with vector vars_on_tapes_of_input_trans = {input_var, x1, x2, ..., xn}
@@ -827,6 +862,7 @@ namespace smt::noodler {
                     //   {output_var, y1, y2, ..., ym, input_var, x1, x2, ..., xn}
                     vars_on_tapes.insert(vars_on_tapes.end(), vars_on_tapes_of_input_trans.begin(), vars_on_tapes_of_input_trans.end());
                 }
+                output_vars_being_composed.erase(output_var);
             }
             return std::make_pair(final_trans, vars_on_tapes);
         };
@@ -846,7 +882,7 @@ namespace smt::noodler {
             
             // we build a parikh image for the transducer (first we collect all levels of code_vars)
             std::set<mata::nft::Level> levels_of_code_subst_vars;
-            std::set<BasicTerm> code_subst_vars = conversion_handler.get_code_subst_vars();
+            std::set<BasicTerm> code_subst_vars = overapprox ? std::set<BasicTerm>{} : conversion_handler.get_code_subst_vars();
             for (size_t i = 0; i < vars_on_tapes.size(); ++i) {
                 const BasicTerm& var = vars_on_tapes[i];
                 length_vars_with_transducers.insert(var);
@@ -854,7 +890,7 @@ namespace smt::noodler {
                     code_subst_vars_handled_by_parikh.insert(var);
                     levels_of_code_subst_vars.insert(i);
                 }
-                if (conversion_handler.get_int_subst_vars().contains(var) || conversion_handler.get_real_subst_vars().contains(var)) {
+                if (!overapprox && (conversion_handler.get_int_subst_vars().contains(var) || conversion_handler.get_real_subst_vars().contains(var))) {
                     // TODO add support (pretty hard, we need to remember the order of selected transitions by parikh)
                     util::throw_error("Integer/real conversions with transducers are not supported yet");
                 }
@@ -879,7 +915,7 @@ namespace smt::noodler {
                 }
             };
 
-            if (m_params.m_produce_models) { // model generation is enabled, we need to compute state renaming
+            if (m_params.m_produce_models && !overapprox) { // model generation is enabled, we need to compute state renaming
                 // we do not do removing epsilons, as this operation can add new transitions which we cannot map to from the original transducer transitions
                 one_symbol_transducer = mata::nft::reduce(one_symbol_transducer, &state_renaming);
                 mata::nft::StateRenaming other_state_renaming;
@@ -896,7 +932,7 @@ namespace smt::noodler {
             STRACE(str_parikh, tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer); // add it to the LIA formula
 
-            if (m_params.m_produce_models) { // models are enabled, we need to compute the mapping from combined_transducer transitions and states to parikh variables
+            if (m_params.m_produce_models && !overapprox) { // models are enabled, we need to compute the mapping from combined_transducer transitions and states to parikh variables
                 TransducerParikhInformation transducer_with_parikh_information {
                     .nft = std::move(combined_transducer),
                     .vars_on_tapes = vars_on_tapes,

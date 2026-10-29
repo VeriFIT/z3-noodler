@@ -280,6 +280,13 @@ namespace smt::noodler {
         LenNode get_disequations_underapprox_length_formula() const;
 
         /**
+         * @brief Formula |L| != |R| for the postponed disequations L != R with an empty side, where it is exact.
+         *
+         * The other postponed disequations do not restrict lengths, so this over-approximates them.
+         */
+        LenNode get_disequations_overapprox_length_formula() const;
+
+        /**
          * @brief Collect vars that are referenced by constraints stored directly in this state
          *        (e.g., postponed disequality-length conjuncts and conversions) and therefore
          *        must not be fully removed from substitution-related structures.

@@ -93,6 +93,16 @@ namespace smt::noodler {
         return result;
     }
 
+    LenNode SolvingState::get_disequations_overapprox_length_formula() const {
+        LenNode result{LenFormulaType::AND};
+        for(const Predicate& diseq : postponed_disequations.get_predicates()) {
+            if (diseq.get_left_side().empty() || diseq.get_right_side().empty()) {
+                result.succ.push_back(diseq.get_formula_eq());
+            }
+        }
+        return result;
+    }
+
     std::set<BasicTerm> SolvingState::get_vars_referenced_by_state_constraints() const {
         std::set<BasicTerm> referenced_vars;
 
