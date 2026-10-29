@@ -96,9 +96,37 @@ static void tst_indexof_repetitive() {
     ENSURE(!text.contains(tst_mk_zstring(std::string(50000, ':') + "y")));
 }
 
+// Compare replace, which replaces the first occurrence, with std::string on all strings over {a, b} up to length 6.
+static void tst_replace_exhaustive() {
+    std::vector<std::string> words{""};
+    for (size_t first = 0; first < words.size(); ++first) {
+        if (words[first].size() < 6) {
+            words.push_back(words[first] + "a");
+            words.push_back(words[first] + "b");
+        }
+    }
+    for (std::string const& text : words) {
+        for (std::string const& src : words) {
+            if (src.size() > 3) continue;
+            std::string expected = text;
+            size_t pos = text.find(src);
+            if (pos != std::string::npos) expected.replace(pos, src.size(), "ba");
+            ENSURE(tst_mk_zstring(text).replace(tst_mk_zstring(src), tst_mk_zstring("ba")) == tst_mk_zstring(expected));
+        }
+    }
+}
+
+// A long text and pattern repeating one character, where comparing at every position is quadratic.
+static void tst_replace_repetitive() {
+    zstring text = tst_mk_zstring(std::string(200000, ':') + "x");
+    ENSURE(text.replace(tst_mk_zstring(std::string(50000, ':') + "x"), tst_mk_zstring("y")) == tst_mk_zstring(std::string(150000, ':') + "y"));
+}
+
 void tst_zstring() {
     tst_ascii_roundtrip();
     tst_control_chars_escaped();
     tst_indexof_exhaustive();
     tst_indexof_repetitive();
+    tst_replace_exhaustive();
+    tst_replace_repetitive();
 }

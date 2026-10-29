@@ -118,28 +118,19 @@ zstring zstring::reverse() const {
 }
 
 zstring zstring::replace(zstring const& src, zstring const& dst) const {
-    zstring result;
     if (length() < src.length()) {
         return zstring(*this);
     }
     if (src.length() == 0) {
         return dst + zstring(*this);
     }
-    bool found = false;
-    for (unsigned i = 0; i < length(); ++i) {
-        bool eq = !found && i + src.length() <= length();
-        for (unsigned j = 0; eq && j < src.length(); ++j) {
-            eq = m_buffer[i+j] == src[j];
-        }
-        if (eq) {
-            result.m_buffer.append(dst.m_buffer);
-            found = true;
-            i += src.length() - 1;
-        }
-        else {
-            result.m_buffer.push_back(m_buffer[i]);
-        }
+    int const pos = indexofu(src, 0);
+    if (pos < 0) {
+        return zstring(*this);
     }
+    zstring result(pos, m_buffer.data());
+    result.m_buffer.append(dst.m_buffer);
+    result.m_buffer.append(length() - pos - src.length(), m_buffer.data() + pos + src.length());
     return result;
 }
 
