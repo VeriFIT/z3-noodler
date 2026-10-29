@@ -98,6 +98,11 @@ namespace smt::noodler {
         static const Name* acquire(zstring name);
         /// Drops a reference to @p name; the last one removes it.
         static void release(const Name* name) noexcept;
+        /// The empty name, which is never removed: a moved-from term holds it, so moves touch no counter.
+        static const Name* empty_name() noexcept {
+            static const Name* const empty{acquire(zstring())};
+            return empty;
+        }
 
     public:
         explicit BasicTerm(BasicTermType type): type(type), name(acquire(zstring())) {}
@@ -105,11 +110,17 @@ namespace smt::noodler {
         BasicTerm(const BasicTerm& other) noexcept: type(other.type), name(other.name) {
             name->refs.fetch_add(1, std::memory_order_relaxed);
         }
+        BasicTerm(BasicTerm&& other) noexcept: type(other.type), name(std::exchange(other.name, empty_name())) {}
         BasicTerm& operator=(const BasicTerm& other) noexcept {
             other.name->refs.fetch_add(1, std::memory_order_relaxed);
             release(name);
             type = other.type;
             name = other.name;
+            return *this;
+        }
+        BasicTerm& operator=(BasicTerm&& other) noexcept {
+            std::swap(type, other.type);
+            std::swap(name, other.name);
             return *this;
         }
         ~BasicTerm() { release(name); }

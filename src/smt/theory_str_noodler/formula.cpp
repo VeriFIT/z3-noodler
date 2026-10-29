@@ -360,6 +360,8 @@ namespace smt::noodler {
     }
 
     void BasicTerm::release(const Name* name) noexcept {
+        // Moved-from terms hold the empty name; it keeps the reference empty_name() took.
+        if (name == empty_name()) { return; }
         // Above one reference, no other thread can be dropping the last one: count down without the lock.
         size_t refs{name->refs.load(std::memory_order_relaxed)};
         while (refs > 1) {
