@@ -22,6 +22,8 @@ Revision History:
 #pragma once
 
 #include <cstddef>
+#include <memory>
+#include <type_traits>
 #include <span>
 #include "util/memory_manager.h"
 #include "debug.h"
@@ -40,9 +42,8 @@ protected:
         }
     }
 
-    void expand() {
+    void expand(unsigned new_capacity) {
         static_assert(std::is_nothrow_move_constructible<T>::value);
-        unsigned new_capacity = m_capacity << 1;
         T * new_buffer        = reinterpret_cast<T*>(memory::allocate(sizeof(T) * new_capacity));
         for (unsigned i = 0; i < m_pos; ++i) {
             new (&new_buffer[i]) T(std::move(m_buffer[i]));
@@ -78,9 +79,7 @@ public:
     buffer() = default;
     
     buffer(const buffer & source) {
-        for (unsigned i = 0, sz = source.size(); i < sz; ++i) {
-            push_back(source.m_buffer[i]);
-        }
+        append(source);
     }
 
     buffer(buffer && source) noexcept {
@@ -159,14 +158,14 @@ public:
     
     void push_back(const T & elem) {
         if (m_pos >= m_capacity)
-            expand();
+            expand(m_capacity << 1);
         new (m_buffer + m_pos) T(elem);
         m_pos++;
     }
 
     void push_back(T && elem) {
         if (m_pos >= m_capacity)
-            expand();
+            expand(m_capacity << 1);
         new (m_buffer + m_pos) T(std::move(elem));
         m_pos++;
     }
@@ -192,9 +191,26 @@ public:
         return m_buffer;
     }
 
+    // Grows once and copies the elements as a block: a string literal is copied this way on every
+    // access, and growing one element at a time doubled the buffer and moved it log(n) times.
     void append(std::span<T const> elems) {
-        for (auto const& elem : elems) {
-            push_back(elem);
+        unsigned n = static_cast<unsigned>(elems.size());
+        if (n > m_capacity - m_pos) {
+            unsigned new_capacity = m_capacity;
+            while (new_capacity - m_pos < n)
+                new_capacity <<= 1;
+            expand(new_capacity);
+        }
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::uninitialized_copy(elems.begin(), elems.end(), m_buffer + m_pos);
+            m_pos += n;
+        }
+        else {
+            // One at a time, so that a throwing copy leaves only constructed elements counted.
+            for (auto const& elem : elems) {
+                new (m_buffer + m_pos) T(elem);
+                m_pos++;
+            }
         }
     }
 
