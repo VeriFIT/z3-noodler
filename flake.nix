@@ -9,7 +9,7 @@
     };
     # Must match the Mata 'GIT_TAG' in CMakeLists.txt; evaluation fails otherwise (see nix/noodler.nix).
     mata = {
-      url = "github:VeriFIT/mata/issue-975-noodle-order";
+      url = "github:VeriFIT/mata/v1.32.45-dev.160";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

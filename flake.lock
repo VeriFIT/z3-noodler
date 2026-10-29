@@ -110,16 +110,16 @@
         "omniflake": "omniflake"
       },
       "locked": {
-        "lastModified": 1793269767,
-        "narHash": "sha256-vTRitlXOPN0TFt70/klkFQ0hNRACyFZiuOGRCuN7TVM=",
+        "lastModified": 1793281648,
+        "narHash": "sha256-TCHUepolnYZxWMkdtbXq9vKLpsalJjZ80AeLzOUz6WA=",
         "owner": "VeriFIT",
         "repo": "mata",
-        "rev": "253d7734cdcdcad0c98434daae357b2e0edaeece",
+        "rev": "851c64023568cafc1a338f0d4b2502db8e5e9260",
         "type": "github"
       },
       "original": {
         "owner": "VeriFIT",
-        "ref": "issue-975-noodle-order",
+        "ref": "v1.32.45-dev.160",
         "repo": "mata",
         "type": "github"
       }
