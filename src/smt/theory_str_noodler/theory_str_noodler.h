@@ -522,11 +522,12 @@ namespace smt::noodler {
          * @brief Check if the length formula @p len_formula is satisfiable with the existing length constraints (the context).
          *
          * @param check_with_context If false, checks only if the length formula @p len_formula is satisfiable
-         * @param[out] unsat_core If this parameter is NOT nullptr, the LIA solver stores here unsat core of the current @p len_formula.
+         * @param[out] unsat_core If this parameter is NOT nullptr, the LIA solver appends here the formulas of an unsat core of the
+         * current @p len_formula (rewritten) and the context.
          * @param[out] model_formula If this parameter is NOT nullptr, the LIA solver stores here equations of variables from @p len_formula and their models
          * (if it is sat), restricted to variables that dec_proc actually needs for model construction -- see filter_model_formula_to_length_vars.
          */
-        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr, expr_ref* model_formula=nullptr, bool check_with_clauses = false);
+        lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref_vector* unsat_core=nullptr, expr_ref* model_formula=nullptr, bool check_with_clauses = false);
 
         /**
          * @brief Restrict @p model_formula (a conjunction of equations "variable = value" produced by check_len_sat) to only those

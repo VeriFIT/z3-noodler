@@ -10,14 +10,12 @@ namespace smt::noodler {
 
     void lia_solver::reset_result() {
         model_formula = expr_ref(m.mk_true(), m);
-        unsat_core = expr_ref(m.mk_true(), m);
+        unsat_core.reset();
     }
 
     void lia_solver::compute_unsat_core(const expr_ref_vector& raw_core) {
-        for (expr* c : raw_core) {
-            unsat_core = m.mk_and(unsat_core, c);
-        }
-        STRACE(str_lia, tout << "UNSAT core:" << std::endl << mk_pp(unsat_core, m));
+        unsat_core.append(raw_core);
+        STRACE(str_lia, tout << "UNSAT core:" << std::endl << unsat_core);
     }
 
     expr_ref lia_solver::eval_arith_str_func(app* a, model_ref& mdl) {
@@ -136,8 +134,8 @@ namespace smt::noodler {
         erv.push_back(e);
     }
 
-    void lia_solver::get_unsat_core(expr_ref& dst) {
-        dst = unsat_core;
+    void lia_solver::get_unsat_core(expr_ref_vector& dst) {
+        dst.append(unsat_core);
     }
 
     expr_ref lia_solver::get_model() {

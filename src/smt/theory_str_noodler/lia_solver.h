@@ -27,15 +27,15 @@ namespace smt::noodler {
         bool initialized;
         expr_ref_vector erv;
         expr_ref model_formula;
-        expr_ref unsat_core;
+        expr_ref_vector unsat_core;
 
         lia_solver(ast_manager& m);
 
-        /// Reset model_formula/unsat_core to `true`; call at the start of check_sat before (re)computing
-        /// them.
+        /// Reset model_formula to `true` and unsat_core to empty; call at the start of check_sat before
+        /// (re)computing them.
         void reset_result();
 
-        /// Aggregate (conjunction) @p raw_core, straight out of the sub-solver, into `unsat_core`.
+        /// Store @p raw_core, straight out of the sub-solver, in `unsat_core`.
         void compute_unsat_core(const expr_ref_vector& raw_core);
 
         /**
@@ -94,18 +94,12 @@ namespace smt::noodler {
         void assert_expr(expr* e);
 
         /**
-         * @brief Populate `dst` with an expression representing the unsat core.
+         * @brief Append the formulas of the unsat core to @p dst.
          *
-         * If the underlying solver can provide an unsat core, this method should
-         * append or set `dst` to a conjunction of core formulas. If no core is
-         * available, implementations should set `dst` to `m.mk_true()` or an empty
-         * conjunction as appropriate.
-         *
-         * @param dst Output reference where the constructed unsat-core expression
-         *            will be stored. The caller provides an `expr_ref` associated
-         *            with the current `ast_manager`.
+         * The core is a subset of the formulas checked by the last check_sat (asserted ones and @p e), whose
+         * conjunction is unsat. Nothing is appended if no core is available.
          */
-        virtual void get_unsat_core(expr_ref& dst);
+        virtual void get_unsat_core(expr_ref_vector& dst);
 
         /// @brief Get the formula encoding model of arith vars/length constraints
         virtual expr_ref get_model();

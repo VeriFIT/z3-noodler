@@ -856,7 +856,7 @@ namespace smt::noodler {
         return l_undef;
     }
 
-    lbool theory_str_noodler::check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core, expr_ref* model_formula, bool check_with_clauses) {
+    lbool theory_str_noodler::check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref_vector* unsat_core, expr_ref* model_formula, bool check_with_clauses) {
         if (!check_with_context && len_formula == m.mk_true()) {
             if (model_formula != nullptr) {
                 *model_formula = expr_ref(m.mk_true(), m);
@@ -883,10 +883,7 @@ namespace smt::noodler {
         lbool ret = solver->check_sat(len_formula, compute_model, compute_unsat_core);
         STRACE(str, tout << "ret" << (has_quantifier ? " (quant)" : "") << ": " << ret << std::endl;);
         if (compute_unsat_core) {
-            expr_ref solver_core(m);
-            solver_core = m.mk_true();
-            solver->get_unsat_core(solver_core);
-            *unsat_core = m.mk_and(*unsat_core, solver_core);
+            solver->get_unsat_core(*unsat_core);
         }
         if (compute_model) {
             *model_formula = filter_model_formula_to_length_vars(solver->get_model());
@@ -1292,9 +1289,22 @@ namespace smt::noodler {
                         return l_false;
                     } else {
                         // otherwise we find unsat core of the current assignment with the len_formula and add this unsat core as a theory lemma.
-                        expr_ref unsat_core(m.mk_true(), m);
-                        if (check_len_sat(len_formula, true, &unsat_core) == l_false) {
-                            unsat_core = m.mk_not(unsat_core);
+                        // check_len_sat rewrites len_formula, rewriting it here lets us recognize it in the core.
+                        expr_ref checked_len_formula = len_formula;
+                        m_rewrite(checked_len_formula);
+                        expr_ref_vector core(m);
+                        if (check_len_sat(checked_len_formula, true, &core) == l_false) {
+                            // The refinement implies len_formula (the axiom of block_curr_len), so the core with the
+                            // refinement in place of len_formula is unsat as well. Blocking it, rather than the core
+                            // itself, does not let the SAT solver satisfy the lemma by falsifying this copy of
+                            // len_formula (which differs from the blocked one by rewriting) with its auxiliary
+                            // variables, and come back with the same refinement and the same literals of the core.
+                            for (unsigned i = 0; i < core.size(); ++i) {
+                                if (core.get(i) == checked_len_formula.get()) {
+                                    core.set(i, refine);
+                                }
+                            }
+                            expr_ref unsat_core(m.mk_not(mk_and(core)), m);
                             set_input_has_quantifiers(expr_cases::has_quantifier(unsat_core, m));
                             ctx.internalize(unsat_core.get(), true);
                             add_axiom({mk_literal(unsat_core)});
