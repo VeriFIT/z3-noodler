@@ -386,8 +386,9 @@ public:
         bool is_string(expr const* n, zstring& s) const;
         bool is_string(func_decl const* f, zstring& s) const;
         bool is_empty(expr const* n) const {
-            zstring s;
-            return is_app_of(n, m_fid, OP_SEQ_EMPTY) || (is_string(n, s) && s.empty());
+            // Read the literal in place: copying it costs its length on every call.
+            return is_app_of(n, m_fid, OP_SEQ_EMPTY) ||
+                (is_string(n) && to_app(n)->get_decl()->get_parameter(0).get_zstring().empty());
         }
         bool is_concat(expr const* n)   const { return is_app_of(n, m_fid, OP_SEQ_CONCAT); }
         bool is_length(expr const* n)   const { return is_app_of(n, m_fid, OP_SEQ_LENGTH); }

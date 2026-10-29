@@ -5532,7 +5532,7 @@ std::pair<bool, unsigned> seq_rewriter::min_length(unsigned sz, expr* const* ss)
         es.push_back(ss[i]);
     obj_map<expr, std::pair<bool, unsigned>> cache;
     
-    zstring s;
+    auto string_length = [](expr* e) { return to_app(e)->get_decl()->get_parameter(0).get_zstring().length(); };
     unsigned len = 0;
     bool bounded = true;
 
@@ -5550,8 +5550,8 @@ std::pair<bool, unsigned> seq_rewriter::min_length(unsigned sz, expr* const* ss)
             cache.insert(e, { true, 0u });
             return true;
         }
-        else if (str().is_string(e, s)) {
-            cache.insert(e, { true, s.length() });
+        else if (str().is_string(e)) {
+            cache.insert(e, { true, string_length(e) });
             return true;
         }
         else if (str().is_concat(e)) {
@@ -5601,8 +5601,8 @@ std::pair<bool, unsigned> seq_rewriter::min_length(unsigned sz, expr* const* ss)
             len += 1;
         else if (str().is_empty(e)) 
             continue;
-        else if (str().is_string(e, s)) 
-            len += s.length();
+        else if (str().is_string(e)) 
+            len += string_length(e);
         else if (str().is_concat(e)) 
             for (expr* arg : *to_app(e))
                 es.push_back(arg);
