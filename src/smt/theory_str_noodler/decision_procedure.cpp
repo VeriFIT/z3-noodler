@@ -124,11 +124,11 @@ namespace smt::noodler {
 
     lbool DecisionProcedure::compute_next_solution() {
         // We call the one with length checks but don't check them
-        return compute_next_solution_with_len_checks(nullptr);
+        return compute_next_solution_with_len_checks(nullptr, nullptr);
     }
 
     lbool DecisionProcedure::compute_next_solution_with_len_checks(
-        std::function<lbool(bool)> check_lens
+        std::function<lbool()> check_lens, std::function<void()> block_checked_lens
     ) {
         // iteratively select next state of solving that can lead to solution and
         // process one of the unprocessed nodes (or possibly find solution)
@@ -155,15 +155,21 @@ namespace smt::noodler {
                 // Before processing this solving state, we check the length constraints first to potentionally save
                 // some time if it is unsat (get_lengths() over-approximates the lengths of all solutions below it)
                 this->solution = element_to_process;
-                auto lens_sat = check_lens(true);
+                auto lens_sat = check_lens();
 
                 STRACE(str_noodle_dot,
                     tout << element_to_process.DOT_name << " [style=filled,fillcolor=\"" << ((lens_sat == l_true) ? "springGreen" : "salmon") << "\"];\n";
                 );
 
                 if (lens_sat == l_false) {
-                    // Lengths were unsat, we don't have to process this solving state
-                    this->skipped_some_with_len_checks = true;
+                    // Lengths were unsat, we don't have to process this solving state. Its over-approximation of the
+                    // lengths below it is blocked unless a short exploration finds that no solution is below it, then
+                    // the subtree adds nothing to the blocked formula, as it would if it was processed.
+                    if (block_checked_lens != nullptr &&
+                        has_finished_state_below(std::move(element_to_process), LEN_CHECK_EXPLORATION_LIMIT) != l_false) {
+                        block_checked_lens();
+                        this->skipped_some_with_len_checks = true;
+                    }
                     continue;
                 }
             }
@@ -176,7 +182,7 @@ namespace smt::noodler {
                     this->solution = element_to_process;
                     // without the length check (check_lens == nullptr), the under-approximation cannot be decided,
                     // so the disequations are solved precisely as in the l_undef case
-                    lbool underapprox_sat = (check_lens != nullptr) ? check_lens(false) : l_undef;
+                    lbool underapprox_sat = (check_lens != nullptr) ? check_lens() : l_undef;
                     if (underapprox_sat == l_false) {
                         if (element_to_process.preprocess_disequations_for_unsat(this->m_params) == l_false) {
                             continue;
@@ -221,31 +227,75 @@ namespace smt::noodler {
                 return l_true;
             }
 
-            // we will now process one inclusion from the inclusion graph which is at front
-            // i.e. we will update automata assignments and substitutions so that this inclusion is fulfilled; an
-            // inclusion that only forces variables to be empty goes first: it needs no noodlification and prunes
-            // the state if a forced variable cannot be empty
-            auto& to_process = element_to_process.predicates_to_process;
-            auto next_predicate = std::ranges::find_if(to_process, [](const Predicate& predicate) {
-                return predicate.is_equation() && vars_forced_empty(predicate).has_value();
-            });
-            if (next_predicate == to_process.end()) {
-                next_predicate = to_process.begin();
-            }
-            Predicate predicate_to_process = *next_predicate;
-            to_process.erase(next_predicate);
-
-            if (predicate_to_process.is_equation()) { // inclusion
-                process_inclusion(predicate_to_process, element_to_process);
-            } else {
-                SASSERT(predicate_to_process.is_transducer());
-                process_transducer(predicate_to_process, element_to_process);
-            }
+            process_next_predicate(element_to_process);
         }
 
         // there are no solving states left, which means nothing led to solution -> it must be unsatisfiable
         STRACE(str_noodle_dot, tout << "}\n";);
         return l_false;
+    }
+
+    void DecisionProcedure::process_next_predicate(SolvingState& element_to_process) {
+        // we will now process one inclusion from the inclusion graph which is at front
+        // i.e. we will update automata assignments and substitutions so that this inclusion is fulfilled; an
+        // inclusion that only forces variables to be empty goes first: it needs no noodlification and prunes
+        // the state if a forced variable cannot be empty
+        auto& to_process = element_to_process.predicates_to_process;
+        auto next_predicate = std::ranges::find_if(to_process, [](const Predicate& predicate) {
+            return predicate.is_equation() && vars_forced_empty(predicate).has_value();
+        });
+        if (next_predicate == to_process.end()) {
+            next_predicate = to_process.begin();
+        }
+        Predicate predicate_to_process = *next_predicate;
+        to_process.erase(next_predicate);
+
+        if (predicate_to_process.is_equation()) { // inclusion
+            process_inclusion(predicate_to_process, element_to_process);
+        } else {
+            SASSERT(predicate_to_process.is_transducer());
+            process_transducer(predicate_to_process, element_to_process);
+        }
+    }
+
+    lbool DecisionProcedure::has_finished_state_below(SolvingState state, unsigned max_processed) {
+        // Noodlification unifies the initial and final states of the automata in place (keeping their languages), which
+        // must not show in the states outside of this exploration, as neither must its fresh variables: both would make
+        // the rest of the main search differ from the one without the exploration.
+        std::unordered_map<const mata::nfa::Nfa*, std::shared_ptr<mata::nfa::Nfa>> copies;
+        for (auto& [var, nfa] : state.aut_ass) {
+            auto [copy, inserted] = copies.try_emplace(nfa.get());
+            if (inserted) { copy->second = std::make_shared<mata::nfa::Nfa>(*nfa); }
+            nfa = copy->second;
+        }
+        auto outer_fresh_var_ids = util::next_id_of_fresh_noodler_var_name();
+        unsigned outer_noodlification_no = noodlification_no;
+        auto outer_worklist = std::exchange(worklist, {});
+        auto outer_possible_solutions = std::exchange(possible_solutions, {});
+
+        push_to_worklist(std::move(state), false);
+        lbool result = l_false;
+        unsigned processed = 0;
+        while (!is_worklist_empty()) {
+            util::check_limit(m);
+            SolvingState element_to_process = pop_from_worklist();
+            if (element_to_process.predicates_to_process.empty()) {
+                result = l_true;
+                break;
+            }
+            if (processed == max_processed) {
+                result = l_undef;
+                break;
+            }
+            ++processed;
+            process_next_predicate(element_to_process);
+        }
+
+        worklist = std::move(outer_worklist);
+        possible_solutions = std::move(outer_possible_solutions);
+        util::next_id_of_fresh_noodler_var_name() = std::move(outer_fresh_var_ids);
+        noodlification_no = outer_noodlification_no;
+        return result;
     }
 
     void DecisionProcedure::process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state) {

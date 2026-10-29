@@ -282,6 +282,26 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         CHECK(proc.solution.substitution_map.at(get_var('y')).empty());
     }
 
+    SECTION("premature-length-checks-block-only-states-with-solutions-below", "[noodler]") {
+        // the noodles of xy = r are x = ε & y = ab, x = a & y = b, x = ab & y = ε, only the second can satisfy y = w
+        Formula equalities;
+        equalities.add_predicate(create_equality("xy", "r"));
+        equalities.add_predicate(create_equality("y", "w"));
+        init_ass[get_var('x')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('y')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('r')] = regex_to_nfa("ab");
+        init_ass[get_var('w')] = regex_to_nfa("b");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        unsigned checks = 0;
+        unsigned blocks = 0;
+        // every premature length check is unsat
+        CHECK(proc.compute_next_solution_with_len_checks([&checks]() { ++checks; return l_false; }, [&blocks]() { ++blocks; }) == l_false);
+        CHECK(checks == 3);
+        CHECK(blocks == 1);
+        CHECK(proc.get_skipped_some_with_len_checks());
+    }
+
     SECTION("unsat-simple-transducer", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_transducer(identity, "xy", "zu"));

@@ -116,6 +116,14 @@ namespace smt::noodler::util {
         return BasicTerm{BasicTermType::Variable, zstring("@") + name};
     }
 
+    /// The suffix number of the next fresh variable of each name given to mk_noodler_var_fresh()
+    inline std::map<zstring,unsigned>& next_id_of_fresh_noodler_var_name() {
+        // TODO kinda ugly, function is defined in header and have static variable
+        // so it needs to be inline, maybe we should define some variable handler class
+        static std::map<zstring,unsigned> next_id_of_name;
+        return next_id_of_name;
+    }
+
     /**
      * @brief Create a fresh noodler (BasicTerm) variable with a given @p name followed by a unique suffix.
      *
@@ -124,10 +132,7 @@ namespace smt::noodler::util {
      * @param name Infix of the name (rest is added to get a unique name)
      */
     inline BasicTerm mk_noodler_var_fresh(const zstring& name) {
-        // TODO kinda ugly, function is defined in header and have static variable
-        // so it needs to be inline, maybe we should define some variable handler class
-        static std::map<zstring,unsigned> next_id_of_name;
-        return mk_internal_noodler_var(name + std::string("!n") + std::to_string((next_id_of_name[name])++));
+        return mk_internal_noodler_var(name + std::string("!n") + std::to_string((next_id_of_fresh_noodler_var_name()[name])++));
     }
 
     /**

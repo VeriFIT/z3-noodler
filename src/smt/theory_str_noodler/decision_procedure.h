@@ -170,7 +170,8 @@ namespace smt::noodler {
         // remembers whether the input formula passed to init_computation() contained any disequation
         bool input_contains_disequations = false;
 
-        // Becomes true if some solving states get skipped because their premature length checks are unsat
+        // Becomes true if the over-approximation of lengths of a solving state skipped because its premature length
+        // check is unsat gets blocked
         bool skipped_some_with_len_checks = false;
 
         std::set<BasicTerm> code_subst_vars_handled_by_parikh;
@@ -185,6 +186,22 @@ namespace smt::noodler {
 
         void process_inclusion(const Predicate& inclusion_to_process, SolvingState& solving_state);
         void process_transducer(const Predicate& transducer_to_process, SolvingState& solving_state);
+        /// Processes the next predicate to process of @p solving_state, pushing the resulting states to the worklist.
+        void process_next_predicate(SolvingState& solving_state);
+
+        /// The number of predicates has_finished_state_below() processes before a premature length check at most.
+        static constexpr unsigned LEN_CHECK_EXPLORATION_LIMIT = 50;
+
+        /**
+         * @brief Explores the solving states below @p state, as the main search does but without length checks, until
+         * it finds a finished one (with nothing to process) or processes @p max_processed predicates.
+         *
+         * The worklist, the fresh variable names and the automata of the other states are left as they were.
+         *
+         * @return l_true if a finished state is below, l_false if none is (no solution is below @p state), l_undef if
+         * the limit was reached first
+         */
+        lbool has_finished_state_below(SolvingState state, unsigned max_processed);
 
         bool is_worklist_empty() {
             return (worklist.empty() && possible_solutions.empty());
@@ -545,16 +562,16 @@ namespace smt::noodler {
          * Same as compute_next_solution, but checks length constraints while running
          * to potentionally skip processing some noodles which are found unsat.
          *
-         * NOTE: If some noodles get skipped, will set skipped_some_with_len_checks
+         * NOTE: If the length formula of a skipped noodle gets blocked, will set skipped_some_with_len_checks
          *
-         * @param check_lens length check function; the boolean argument indicates whether
-         *                   the formula should be added to the blocking formula (true) or
-         *                   only satisfiability should be checked without blocking (false).
+         * @param check_lens length check function, checks the length formula of the solution
+         * @param block_checked_lens adds the length formula of the last unsat check_lens() to the blocking formula, or
+         *                           nullptr if the caller blocks nothing
          *
          * @return True if there is a satisfiable element in the worklist.
          */
         lbool compute_next_solution_with_len_checks(
-            std::function<lbool(bool)> check_lens
+            std::function<lbool()> check_lens, std::function<void()> block_checked_lens
         );
 
         inline bool get_skipped_some_with_len_checks() const {

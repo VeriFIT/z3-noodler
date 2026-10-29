@@ -324,17 +324,16 @@ namespace smt::noodler {
             lbool sat = check_len_sat(lengths, check_len_sat_with_context);
             return std::pair<lbool, LenNodePrecision>(sat, precision);
         };
-        auto check_lens = [&check_lens_with_precision, this, &lengths, &block_len, &check_len_sat_with_context](bool add_to_block) -> lbool {
-            auto [is_lengths_sat, precision] = check_lens_with_precision();
-            if (add_to_block && is_lengths_sat == l_false) {
-                block_len = m.mk_or(block_len, lengths);
-            }
-            return is_lengths_sat;
+        auto check_lens = [&check_lens_with_precision]() -> lbool {
+            return check_lens_with_precision().first;
+        };
+        auto block_checked_lens = [this, &lengths, &block_len]() {
+            block_len = m.mk_or(block_len, lengths);
         };
 
         while (true) {
             util::check_limit(m);
-            result = main_dec_proc->compute_next_solution_with_len_checks(check_lens);
+            result = main_dec_proc->compute_next_solution_with_len_checks(check_lens, block_checked_lens);
             if (result == l_true) {
                 auto [is_lengths_sat, precision] = check_lens_with_precision();
 
@@ -840,12 +839,12 @@ namespace smt::noodler {
         this->statistics.at("underapprox").num_start++;
 
         bool check_with_context = !init_length_sensitive_vars.empty();
-        auto check_lens = [this, &check_with_context](bool) {
+        auto check_lens = [this, &check_with_context]() {
             expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
             return check_len_sat(lengths, check_with_context);
         };
 
-        while (main_dec_proc->compute_next_solution_with_len_checks(check_lens) == l_true) {
+        while (main_dec_proc->compute_next_solution_with_len_checks(check_lens, nullptr) == l_true) {
             expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
             if (check_len_sat(lengths, check_with_context) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
                 if (sat_handling(lengths) == l_true) {
