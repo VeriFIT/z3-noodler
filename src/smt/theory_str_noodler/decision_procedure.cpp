@@ -41,6 +41,30 @@ namespace smt::noodler {
         };
 
         /**
+         * The variables of the side of @p equation that remain after cancelling the common prefix and suffix of both
+         * sides (P L S = P R S iff L = R holds for words), if the other side has no variables left; these variables
+         * must then be the empty word. Returns std::nullopt if both sides have variables left.
+         */
+        std::optional<std::set<BasicTerm>> vars_forced_empty(const Predicate& equation) {
+            const auto& left = equation.get_left_side();
+            const auto& right = equation.get_right_side();
+            const size_t shorter_side_size = std::min(left.size(), right.size());
+            size_t prefix = 0;
+            while (prefix < shorter_side_size && left[prefix] == right[prefix]) {
+                ++prefix;
+            }
+            size_t suffix = 0;
+            while (prefix + suffix < shorter_side_size && left[left.size() - 1 - suffix] == right[right.size() - 1 - suffix]) {
+                ++suffix;
+            }
+            if (prefix + suffix < shorter_side_size) {
+                return std::nullopt;
+            }
+            const auto& longer = (left.size() > right.size()) ? left : right;
+            return std::set<BasicTerm>(longer.begin() + prefix, longer.end() - suffix);
+        }
+
+        /**
          * The automata of noodle segments. Segments of one final state share their automaton in Mata; each segment
          * becomes an automaton of its own once, shared by all solving states that hold it, and again only if it is
          * reached after they are all gone.
@@ -175,9 +199,18 @@ namespace smt::noodler {
             }
 
             // we will now process one inclusion from the inclusion graph which is at front
-            // i.e. we will update automata assignments and substitutions so that this inclusion is fulfilled
-            Predicate predicate_to_process = element_to_process.predicates_to_process.front();
-            element_to_process.predicates_to_process.pop_front();
+            // i.e. we will update automata assignments and substitutions so that this inclusion is fulfilled; an
+            // inclusion that only forces variables to be empty goes first: it needs no noodlification and prunes
+            // the state if a forced variable cannot be empty
+            auto& to_process = element_to_process.predicates_to_process;
+            auto next_predicate = std::ranges::find_if(to_process, [](const Predicate& predicate) {
+                return predicate.is_equation() && vars_forced_empty(predicate).has_value();
+            });
+            if (next_predicate == to_process.end()) {
+                next_predicate = to_process.begin();
+            }
+            Predicate predicate_to_process = *next_predicate;
+            to_process.erase(next_predicate);
 
             if (predicate_to_process.is_equation()) { // inclusion
                 process_inclusion(predicate_to_process, element_to_process);
@@ -216,10 +249,10 @@ namespace smt::noodler {
         // As kinda optimization step, we do "noodlification" for empty sides separately (i.e. sides that
         // represent empty string). This is because it is simpler, we would get only one noodle so we just need to
         // check that the non-empty side actually contains empty string and replace the vars on that side by epsilon.
-        if (right_side_vars.empty() || left_side_vars.empty()) {
-            auto const non_empty_side_vars = right_side_vars.empty() ?
-                                                    inclusion_to_process.get_left_set()
-                                                    : inclusion_to_process.get_right_set();
+        // The same holds for the sides without their common prefix and suffix, e.g., x = x y sets y to epsilon instead
+        // of noodlifying it, which on a cycle creates a copy of the equation with fresh variables again and again.
+        if (const std::optional<std::set<BasicTerm>> forced_empty = vars_forced_empty(inclusion_to_process)) {
+            const std::set<BasicTerm>& non_empty_side_vars = *forced_empty;
             bool non_empty_side_contains_empty_word = true;
             for (const auto &var : non_empty_side_vars) {
                 if (solving_state.aut_ass.contains_epsilon(var)) {
@@ -238,7 +271,7 @@ namespace smt::noodler {
             }
 
             solving_state.remove_predicate(inclusion_to_process); // we processed the inclusion
-            if (right_side_vars.empty()) {
+            if (right_side_vars.size() < left_side_vars.size()) {
                 // if we are updating vars on the left side, we need to add dependent predicates for processing
                 solving_state.push_dependent_predicates(non_empty_side_vars, is_inclusion_to_process_on_cycle);
             }

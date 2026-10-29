@@ -260,6 +260,28 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         CHECK(proc.compute_next_solution() == lbool::l_true);
     }
 
+    SECTION("unsat-non-chain-free-forced-empty", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_equality("x", "xy"));
+        init_ass[get_var('x')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('y')] = regex_to_nfa("a(a|b)*");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        CHECK(proc.compute_next_solution() == lbool::l_false);
+    }
+
+    SECTION("sat-non-chain-free-forced-empty", "[nooodler]") {
+        Formula equalities;
+        equalities.add_predicate(create_equality("xyz", "xz"));
+        init_ass[get_var('x')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('y')] = regex_to_nfa("a*");
+        init_ass[get_var('z')] = regex_to_nfa("b*");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        REQUIRE(proc.compute_next_solution() == lbool::l_true);
+        CHECK(proc.solution.substitution_map.at(get_var('y')).empty());
+    }
+
     SECTION("unsat-simple-transducer", "[nooodler]") {
         Formula equalities;
         equalities.add_predicate(create_transducer(identity, "xy", "zu"));
