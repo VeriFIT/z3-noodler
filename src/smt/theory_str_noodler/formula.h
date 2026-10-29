@@ -171,6 +171,13 @@ namespace smt::noodler {
         }
         return false;
     }
+    // One pass for the containers comparing through `<=>`, which would otherwise call `<` twice per term.
+    static inline std::strong_ordering operator<=>(const BasicTerm& lhs, const BasicTerm& rhs) {
+        if (const auto by_type{lhs.get_type() <=> rhs.get_type()}; by_type != 0) { return by_type; }
+        // Equal names are one shared object, and distinct names have distinct values.
+        if (&lhs.get_name() == &rhs.get_name()) { return std::strong_ordering::equal; }
+        return lhs.get_name() < rhs.get_name() ? std::strong_ordering::less : std::strong_ordering::greater;
+    }
     static inline bool operator>(const BasicTerm& lhs, const BasicTerm& rhs) { return !(lhs < rhs); }
 
     [[nodiscard]] static std::string to_string(const std::vector<BasicTerm>& vec, const std::string& delimiter = " ") {
@@ -781,11 +788,7 @@ namespace smt::noodler {
             }
     
             // Types are equal. Compare data.
-            if (params < other.params) {
-                return std::strong_ordering::less;
-            } else if (params > other.params) {
-                return std::strong_ordering::greater;
-            }
+            if (const auto by_params{params <=> other.params}; by_params != 0) { return by_params; }
 
             if (transducer < other.transducer) {
                 return std::strong_ordering::less;
