@@ -102,6 +102,26 @@ namespace smt::noodler {
         }
     }
 
+    bool DecisionProcedure::violates_not_contains(const SolvingState& solving_state) const {
+        auto substitute = [&solving_state](const Concat& concat) {
+            Concat result;
+            auto append = [&](this const auto& self, const BasicTerm& var) -> void {
+                if (auto substituted = solving_state.substitution_map.find(var); substituted != solving_state.substitution_map.end()) {
+                    std::ranges::for_each(substituted->second, self);
+                } else {
+                    result.push_back(var);
+                }
+            };
+            std::ranges::for_each(concat, append);
+            return result;
+        };
+        return std::ranges::any_of(not_contains.get_predicates(), [&substitute](const Predicate& not_cont) {
+            const Concat needle = substitute(not_cont.get_needle());
+            const Concat haystack = substitute(not_cont.get_haystack());
+            return needle.empty() || std::ranges::search(haystack, needle).begin() != haystack.end();
+        });
+    }
+
     lbool DecisionProcedure::compute_next_solution() {
         // We call the one with length checks but don't check them
         return compute_next_solution_with_len_checks(nullptr);
@@ -123,6 +143,11 @@ namespace smt::noodler {
         while (!is_worklist_empty()) {
             util::check_limit(m);
             SolvingState element_to_process = pop_from_worklist();
+            if (violates_not_contains(element_to_process)) {
+                // every solution of this solving state, and so of each state that would follow it, makes the needle of
+                // some not-contains predicate a factor of its haystack
+                continue;
+            }
 
             if (len_checks_enabled &&
                 !element_to_process.predicates_to_process.empty() &&

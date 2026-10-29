@@ -138,6 +138,12 @@ namespace smt::noodler {
         // if a solving state has nothing to process, it can lead to solution, we keep these solving states here instead of worklist so we can process them immediately
         std::vector<SolvingState> possible_solutions;
 
+        /**
+         * Whether the needle of some not-contains predicate is, after the substitutions of @p solving_state, a sequence
+         * of variables (or the empty one) that occurs in its haystack; then no solution of @p solving_state satisfies it.
+         */
+        bool violates_not_contains(const SolvingState& solving_state) const;
+
         /// State of a found satisfiable solution set when one is computed using
         ///  compute_next_solution() or after preprocess()
         SolvingState solution;
