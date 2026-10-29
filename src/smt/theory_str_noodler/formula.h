@@ -725,10 +725,10 @@ namespace smt::noodler {
             for(const std::vector<BasicTerm>& p : this->params) {
                 std::vector<BasicTerm> res_vec;
                 bool r = Predicate::replace_concat(p, find, replace, res_vec);
-                new_params.push_back(res_vec);
+                new_params.push_back(std::move(res_vec));
                 modif = modif || r;
             }
-            res = Predicate(this->type, new_params);
+            res = Predicate(this->type, std::move(new_params));
             res.transducer = this->transducer;
             return modif;
         }
@@ -963,7 +963,7 @@ namespace smt::noodler {
             for(const Predicate& pred : this->predicates) {
                 Predicate res;
                 pred.replace(find, replace, res);
-                ret.add_predicate(res);
+                ret.add_predicate(std::move(res));
             }
             return ret;
         }

@@ -10,6 +10,24 @@
 
 namespace smt::noodler {
 
+namespace {
+    /// Hash of a formula that depends on the order of its predicates and of the terms on each side.
+    struct OrderedFormulaHash {
+        size_t operator()(const Formula& formula) const {
+            size_t accum{0};
+            const auto step = [&accum](size_t value) { accum ^= value + 0x9e3779b97f4a7c15ULL + (accum << 6) + (accum >> 2); };
+            for (const Predicate& predicate : formula.get_predicates()) {
+                step(static_cast<size_t>(predicate.get_type()));
+                for (const std::vector<BasicTerm>& side : predicate.get_params()) {
+                    step(side.size());
+                    for (const BasicTerm& term : side) { step(BasicTerm::HashFunction()(term)); }
+                }
+            }
+            return accum;
+        }
+    };
+} // namespace
+
     std::pair<LenNode, LenNodePrecision> NielsenDecisionProcedure::get_lengths() {
         STRACE(str, tout << "Nielsen lengths: " << length_formula_for_solution << std::endl;);
         return {std::move(length_formula_for_solution), LenNodePrecision::PRECISE};
@@ -213,8 +231,8 @@ namespace smt::noodler {
      * @return std::set<NielsenLabel> All possible Nielsen rewriting rules
      */
     std::set<NielsenLabel> NielsenDecisionProcedure::get_rules_from_pred(const Predicate& pred) const {
-        Concat left = pred.get_left_side();
-        Concat right = pred.get_right_side();
+        const Concat& left = pred.get_left_side();
+        const Concat& right = pred.get_right_side();
         std::set<NielsenLabel> ret;
 
         if(left.size() > 0 && left[0].is_variable() && right.size() > 0) {
@@ -244,27 +262,30 @@ namespace smt::noodler {
      */
     NielsenGraph NielsenDecisionProcedure::generate_from_formula(const Formula& init, bool early_termination, bool add_edges, bool & is_sat) const {
         NielsenGraph graph;
-        std::set<Formula> generated;
+        // Only membership is asked, and comparing two formulae in order walks their common prefix.
+        std::unordered_set<Formula, OrderedFormulaHash> generated;
 
         // use priority queue to prefer smaller formulae (higher probability to reach a final node)
         auto cmp = [](const auto& pr1, const auto& pr2) { return NielsenDecisionProcedure::get_formula_cost(pr1.second) > NielsenDecisionProcedure::get_formula_cost(pr2.second); };
-        // priority queue sorted by the cost of formula
-        std::priority_queue<std::pair<size_t, Formula>, std::vector<std::pair<size_t, Formula>>, decltype(cmp)> worklist(cmp);
-        worklist.push({0, trim_formula(init)}); 
+        // A heap sorted by the cost of formula, popped in the order of std::priority_queue, but the popped formula
+        //  can be moved into `generated`.
+        std::vector<std::pair<size_t, Formula>> worklist;
+        worklist.emplace_back(0, trim_formula(init));
         graph.set_init(init);
 
         is_sat = false;
         while(!worklist.empty()) {
-            std::pair<size_t, Formula> pr = worklist.top();
-            size_t index = pr.first;
-            if(generated.find(pr.second) != generated.end()) {
-                worklist.pop();
+            std::pop_heap(worklist.begin(), worklist.end(), cmp);
+            size_t index = worklist.back().first;
+            // One lookup; the formula in `generated` is the node from here on, element references are stable.
+            const auto [node, inserted] = generated.insert(std::move(worklist.back().second));
+            worklist.pop_back();
+            if(!inserted) {
                 continue;
             }
-            generated.insert(pr.second);
-            worklist.pop();
+            const Formula& current = *node;
 
-            std::vector<Predicate> predicates = pr.second.get_predicates();
+            const std::vector<Predicate>& predicates = current.get_predicates();
             if(is_pred_unsat(predicates[index]) || is_length_unsat(predicates[index])) {
                 continue;
             }
@@ -275,7 +296,7 @@ namespace smt::noodler {
             }
             if(index >= predicates.size()) {
                 is_sat = true;
-                graph.add_fin(pr.second);
+                graph.add_fin(current);
                 if(early_termination) {
                     return graph;
                 }
@@ -284,12 +305,13 @@ namespace smt::noodler {
 
             std::set<NielsenLabel> rules = get_rules_from_pred(predicates[index]);
             for(const auto& label : rules) {
-                Formula rpl = trim_formula(pr.second.replace(Concat({label.first}), label.second));
+                Formula rpl = trim_formula(current.replace(Concat({label.first}), label.second));
                 if(add_edges) {
-                    graph.add_edge(pr.second, rpl, label);
+                    graph.add_edge(current, rpl, label);
                 }
                 if(generated.find(rpl) == generated.end()) {
-                    worklist.push({index, rpl});
+                    worklist.emplace_back(index, std::move(rpl));
+                    std::push_heap(worklist.begin(), worklist.end(), cmp);
                 }
             }
         }
@@ -304,31 +326,30 @@ namespace smt::noodler {
      * @param formula Formula
      * @return Formula Trimmed formula
      */
-    Formula NielsenDecisionProcedure::trim_formula(const Formula& formula) const {
-        Formula ret;
-
-        for(const Predicate& pred : formula.get_predicates()) {
-            auto params = pred.get_params();
-            size_t len = std::min(params[0].size(), params[1].size());
+    Formula NielsenDecisionProcedure::trim_formula(Formula formula) const {
+        for(Predicate& pred : formula.get_predicates()) {
+            Concat& lhs = pred.get_left_side();
+            Concat& rhs = pred.get_right_side();
+            size_t len = std::min(lhs.size(), rhs.size());
             size_t i = 0;
             for(; i < len; i++) {
-                if(params[0][i] != params[1][i]) {
+                if(lhs[i] != rhs[i]) {
                     break;
                 }
             }
-            size_t left = params[0].size(), right = params[1].size();
+            size_t left = lhs.size(), right = rhs.size();
             for(; left > 0 && right > 0 && left-1 > i && right-1 > i; --left, --right) {
-                if(params[0][left-1] != params[1][right-1]) {
+                if(lhs[left-1] != rhs[right-1]) {
                     break;
                 }
             }
-            ret.add_predicate(
-                Predicate::create_equation(
-                    Concat(params[0].begin()+i, params[0].begin() + left),
-                    Concat(params[1].begin()+i, params[1].begin() + right)
-                ));
+            lhs.erase(lhs.begin() + left, lhs.end());
+            lhs.erase(lhs.begin(), lhs.begin() + i);
+            rhs.erase(rhs.begin() + right, rhs.end());
+            rhs.erase(rhs.begin(), rhs.begin() + i);
+            pred = Predicate::create_equation(std::move(lhs), std::move(rhs));
         }
-        return ret;
+        return formula;
     }
 
     /**
@@ -338,8 +359,8 @@ namespace smt::noodler {
      * @return true -> unsat
      */
     bool NielsenDecisionProcedure::is_pred_unsat(const Predicate& pred) const {
-        Concat left = pred.get_left_side();
-        Concat right = pred.get_right_side();
+        const Concat& left = pred.get_left_side();
+        const Concat& right = pred.get_right_side();
 
         if(left.size() == 0 && right.size() > 0 && right[0].is_literal()) {
             return true;
