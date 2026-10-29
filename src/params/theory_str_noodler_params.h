@@ -2,6 +2,7 @@
 #pragma once
 
 #include "util/params.h"
+#include "util/symbol.h"
 
 struct theory_str_noodler_params {
    
@@ -9,6 +10,9 @@ struct theory_str_noodler_params {
     bool m_preprocess_red = false;
     bool m_preprocess_nft = true;
     bool m_homomorphism_heuristic = true;
+    /// One of default, forward, reverse, smallest, largest, random; see str.noodle_order.
+    symbol m_noodle_order = symbol("default");
+    unsigned m_noodle_order_seed = 0;
     bool m_loop_protect = false;
     bool m_try_nielsen = false;
     bool m_try_length_proc = false;

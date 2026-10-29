@@ -111,15 +111,15 @@
       },
       "locked": {
         "lastModified": 1793269767,
-        "narHash": "sha256-kx1tDlcdn4b9oZuH/pNIoPI69FJRZ46OUnhpQ90FHZk=",
+        "narHash": "sha256-vTRitlXOPN0TFt70/klkFQ0hNRACyFZiuOGRCuN7TVM=",
         "owner": "VeriFIT",
         "repo": "mata",
-        "rev": "e4d6313153f3699a02892eba77fee712bc58c801",
+        "rev": "253d7734cdcdcad0c98434daae357b2e0edaeece",
         "type": "github"
       },
       "original": {
         "owner": "VeriFIT",
-        "ref": "issue-972-lazy-noodles",
+        "ref": "issue-975-noodle-order",
         "repo": "mata",
         "type": "github"
       }

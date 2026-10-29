@@ -60,6 +60,22 @@ namespace smt::noodler {
         private:
             std::map<std::pair<const mata::nfa::Nfa*, mata::nfa::State>, std::weak_ptr<mata::nfa::Nfa>> automata;
         };
+
+        /**
+         * The order of the noodles of noodlification @p noodlification_no chosen by str.noodle_order; 'default' is the
+         * forward order if @p default_forward, the reverse otherwise. Every noodlification shuffles by its own seed.
+         */
+        mata::applications::strings::seg_nfa::NoodleOrder noodle_order(const theory_str_noodler_params& params, bool default_forward, unsigned noodlification_no) {
+            using Kind = mata::applications::strings::seg_nfa::NoodleOrder::Kind;
+            const symbol& order = params.m_noodle_order;
+            Kind kind = default_forward ? Kind::Forward : Kind::Reverse;
+            if (order == "forward") { kind = Kind::Forward; }
+            else if (order == "reverse") { kind = Kind::Reverse; }
+            else if (order == "smallest") { kind = Kind::SmallestFirst; }
+            else if (order == "largest") { kind = Kind::LargestFirst; }
+            else if (order == "random") { kind = Kind::Random; }
+            return { .kind = kind, .seed = (uint64_t{params.m_noodle_order_seed} << 32) | noodlification_no };
+        }
     }
 
     lbool DecisionProcedure::compute_next_solution() {
@@ -307,9 +323,7 @@ namespace smt::noodler {
                                                                     right_side_automata,
                                                                     false,
                                                                     {{"reduce", "forward"}},
-                                                                    is_inclusion_to_process_on_cycle
-                                                                        ? mata::applications::strings::seg_nfa::NoodleOrder::Forward
-                                                                        : mata::applications::strings::seg_nfa::NoodleOrder::Reverse));
+                                                                    noodle_order(m_params, is_inclusion_to_process_on_cycle, noodlification_no)));
 
         auto next_state = [this,
                            noodles = std::move(noodles),
@@ -549,7 +563,7 @@ namespace smt::noodler {
         // The noodles become solving states one at a time, from the last one, as the states of all noodles pushed to the
         // front were processed.
         auto noodles = std::make_unique<NoodleStream<mata::applications::strings::seg_nfa::TransducerNoodle>>(
-            mata::applications::strings::seg_nfa::noodlify_for_transducer_lazy(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true, m_params.m_homomorphism_heuristic, mata::applications::strings::seg_nfa::NoodleOrder::Reverse));
+            mata::applications::strings::seg_nfa::noodlify_for_transducer_lazy(transducer_to_process.get_transducer(), input_vars_automata, output_vars_automata, true, m_params.m_homomorphism_heuristic, noodle_order(m_params, false, noodlification_no)));
         auto next_state = [this,
                            noodles = std::move(noodles),
                            solving_state = std::move(solving_state),

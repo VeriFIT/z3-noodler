@@ -331,7 +331,7 @@ else()
 	FetchContent_Declare(
     mata
     GIT_REPOSITORY https://github.com/VeriFIT/mata
-    GIT_TAG        issue-972-lazy-noodles # needs to be updated manually when new mata version is needed
+    GIT_TAG        issue-975-noodle-order # needs to be updated manually when new mata version is needed
   )
 
   FetchContent_MakeAvailable(mata)
