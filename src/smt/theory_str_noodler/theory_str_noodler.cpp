@@ -2310,8 +2310,14 @@ namespace smt::noodler {
 
             SASSERT(is_app(x));
             expr_ref formula = builder.generate_constraints(to_app(x));
+            const app_ref_vector& fresh_vars = builder.get_fresh_vars();
+            expr_ref exists_formula(m);
+            if (!fresh_vars.empty()) {
+                exists_formula = mk_exists(m, fresh_vars.size(), fresh_vars.data(), formula);
+                m_rewrite(exists_formula);
+            }
             m_extended_regex_cache.memberships.emplace(
-                e, extended_regex_cache::membership_entry{expr_ref(e, m), formula, builder.get_fresh_vars()});
+                e, extended_regex_cache::membership_entry{expr_ref(e, m), formula, fresh_vars, exists_formula});
         }
         const extended_regex_cache::membership_entry& constraints = m_extended_regex_cache.memberships.at(e);
         expr_ref regex_formula = constraints.formula;
@@ -2334,10 +2340,9 @@ namespace smt::noodler {
         //         existential to true/false and the implication becomes a ground axiom.
         //         E.g. "(a)\1" + x="aa"  →  true → e  (forces e=true, so ¬e is UNSAT).
         //       - When the rewriter cannot eliminate the quantifier (e.g. "(a*)\1" with free x),
-        //         the implication  ∃y.C → e  is still trivially satisfied at the propositional
-        //         level whenever e is already assigned true, so no quantifier instantiation is
-        //         triggered for the positive case, preserving Noodler's performance.
-        //         For the negative case Z3's quantifier engine handles it.
+        //         the axiom is added only when e is assigned false (see handle_not_from_regex()).
+        //         A quantifier anywhere in the formula makes Z3 check the model of every
+        //         satisfying assignment by MBQI, so the positive case stays free of quantifiers.
         //
         // For purely regular patterns (no auxiliary variables) the exact ground biconditional
         // is used directly.
@@ -2360,33 +2365,35 @@ namespace smt::noodler {
                    tout << ";; ----------------------------------" << std::endl;);
             add_axiom(expr_ref(m.mk_implies(e, pos_formula), m));
 
-            // (2) Negative axiom: e ∨ ∀fresh.¬C(x,fresh)  (equivalently (∃fresh.C)→e)
-            //
-            // Z3's add_axiom only supports mk_forall quantifiers (internalize_quantifier
-            // asserts gate_ctx and rejects existentials).  Strategy:
-            //   - First try mk_exists + m_rewrite.  When x is concrete enough the rewriter
-            //     evaluates the existential (e.g. "aa" matches (a)\1 → true), yielding a
-            //     ground formula whose negation gives a cheap ground axiom.
-            //   - If the existential survives rewriting, fall back to the forall form which
-            //     add_axiom can handle.  When e is already true at the propositional level
-            //     the clause "e ∨ forall" is trivially satisfied without quantifier evaluation,
-            //     so the positive case stays free of quantifier overhead.
-            expr_ref exists_formula = mk_exists(m, fresh_vars.size(), fresh_vars.data(), regex_formula);
-            m_rewrite(exists_formula);
+            // (2) Negative axiom: e ∨ ¬F, where F is the existential rewritten to a ground formula
+            const expr_ref& exists_formula = constraints.exists_formula;
             STRACE(str, tout << ";; --- GENERATED EXTENDED REGEX CONSTRAINTS (simplified, negative) ---" << std::endl;
                    tout << mk_pp(exists_formula.get(), m) << std::endl;
                    tout << ";; ----------------------------------" << std::endl;);
-
             if (!is_quantifier(exists_formula.get())) {
-                // Existential evaluated to a ground formula F; add  e ∨ ¬F.
                 add_axiom(expr_ref(m.mk_or(e, m.mk_not(exists_formula)), m));
-            } else {
-                // Existential survived: use the forall form  e ∨ ∀fresh.¬C.
-                expr_ref forall_neg = mk_forall(m, fresh_vars.size(), fresh_vars.data(),
-                                                expr_ref(m.mk_not(regex_formula), m));
-                add_axiom(expr_ref(m.mk_or(e, forall_neg), m));
             }
         }
+    }
+
+    void theory_str_noodler::handle_not_from_regex(expr* e) {
+        if (!m_extended_regex_cache.memberships.contains(e)) {
+            handle_from_regex(e);
+        }
+        const extended_regex_cache::membership_entry& constraints = m_extended_regex_cache.memberships.at(e);
+        if (constraints.fresh_vars.empty() || !is_quantifier(constraints.exists_formula.get())) {
+            // the ground negative axiom was added by handle_from_regex()
+            return;
+        }
+
+        // Negative axiom: e ∨ ∀fresh.¬C(x,fresh)  (equivalently (∃fresh.C)→e)
+        //
+        // Z3's add_axiom only supports mk_forall quantifiers (internalize_quantifier
+        // asserts gate_ctx and rejects existentials).
+        const app_ref_vector& fresh_vars = constraints.fresh_vars;
+        expr_ref forall_neg = mk_forall(m, fresh_vars.size(), fresh_vars.data(),
+                                        expr_ref(m.mk_not(constraints.formula), m));
+        add_axiom(expr_ref(m.mk_or(e, forall_neg), m));
     }
 
     void theory_str_noodler::handle_in_re(expr *const e, const bool is_true) {
@@ -2397,8 +2404,12 @@ namespace smt::noodler {
 
         // Memberships over (re.from_regex ...) are handled via axioms that relate them
         // to (str.to_re ...) and should not be sent to the decision procedure.
-        if (m_util_s.re.is_from_regex(re))
+        if (m_util_s.re.is_from_regex(re)) {
+            if (!is_true) {
+                handle_not_from_regex(e);
+            }
             return;
+        }
 
         app_ref re_constr(to_app(s), m);
         expr_ref re_atom(e, m);

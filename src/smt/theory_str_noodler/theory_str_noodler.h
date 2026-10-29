@@ -90,6 +90,7 @@ namespace smt::noodler {
                 expr_ref atom; // the membership itself (keeps the key of memberships alive)
                 expr_ref formula; // generated formula over x and the fresh variables
                 app_ref_vector fresh_vars; // fresh variables introduced by the formula
+                expr_ref exists_formula; // (exists fresh_vars formula) simplified by the rewriter, null without fresh variables
             };
 
             /**
@@ -362,6 +363,7 @@ namespace smt::noodler {
         void handle_in_re(expr *e, bool is_true);
         void handle_in_rat(expr *e, bool is_true);
         void handle_from_regex(expr *e);
+        void handle_not_from_regex(expr *e);
         void handle_is_digit(expr *e);
         void handle_conversion(expr *e);
         void handle_lex_lt(expr *e);

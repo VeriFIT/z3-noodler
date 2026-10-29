@@ -179,6 +179,15 @@ namespace smt::noodler {
     
     zstring MultMembHeuristicProcedure::get_model(BasicTerm var, const std::map<BasicTerm,rational>& arith_model) {
         STRACE(str_mult_memb_heur, tout << "getting model for " << var << std::endl;);
+        if (!models.contains(var)) {
+            // the models are computed only if they are requested, but the model-based quantifier instantiation asks
+            // for them also if they are not, so they are computed now
+            produce_model = true;
+            compute_next_solution();
+        }
+        if (!models.contains(var)) {
+            util::throw_error("Cannot produce model of " + var.to_string());
+        }
         return models.at(var);
     }
 }
