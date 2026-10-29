@@ -643,8 +643,8 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
             flavor = to_func_decl(parameters[0].get_ast())->get_name();
         else
             m.raise_exception("re.from_regex expects a regex flavor as its index, e.g., ((_ re.from_regex ecma2020) pattern)");
-        if (flavor != "ecma2020")
-            m.raise_exception(std::format("unknown regex flavor '{}' of re.from_regex, expected ecma2020", flavor.str()));
+        if (flavor != "ecma2020" && flavor != "re2")
+            m.raise_exception(std::format("unknown regex flavor '{}' of re.from_regex, expected ecma2020 or re2", flavor.str()));
         parameter p(flavor);
         return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, 1, &p));
     }

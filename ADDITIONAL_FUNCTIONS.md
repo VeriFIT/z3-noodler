@@ -30,10 +30,11 @@ Examples:
 ### `(str.in_re String ((_ re.from_regex flavor) String) Bool)`
 Tests whether a string belongs to the language described by a regular expression pattern written in the syntax of the given regex flavor.
 The flavor is a symbol given as the index of `re.from_regex`, the pattern is given as a string literal.
-You can use (nonstandard) single-quote string notation (`''`) to represent the pattern.
-In this notation, every character (even Unicode) is represented as is, so you write a string such as `'[0-9\ы═ы║ы╒ыёыєы╔ыіыїы╗ы╘]'`.
+You can use (nonstandard) single-quote string notation (`''`) to represent the pattern, in which `"` is written as is instead of `""`.
+As in other string literals, non-ASCII characters are written using the escape sequences `\u{...}` (or `\uXXXX`), such as in `'[0-9\u{6f0}-\u{6f9}]'`, and the pattern is the resulting sequence of characters (code points).
 Supported flavors:
  - `ecma2020` — ECMAScript 2020 regular expressions, see below.
+ - `re2` — RE2 regular expressions, see below.
 
 ### ECMAScript 2020 flavor
 The pattern of `((_ re.from_regex ecma2020) String)` is interpreted according to the [ECMAScript 2020 RegExp specification](https://262.ecma-international.org/11.0/#sec-patterns).
@@ -67,6 +68,30 @@ Examples:
 - `(str.in_re x ((_ re.from_regex ecma2020) '(a)\1'))` — `x` equals `"aa"` (backreference: group 1 captures `"a"`, then repeats it)
 - `(str.in_re x ((_ re.from_regex ecma2020) '(a*b)\1'))` — `x` is in `{ww | w in a*b}`, e.g. `"bb"`, `"abab"`
 - `(str.in_re x ((_ re.from_regex ecma2020) '(ab)\1'))` — `x` equals `"abab"`
+
+### RE2 flavor
+The pattern of `((_ re.from_regex re2) String)` is interpreted according to the [RE2 syntax](https://github.com/google/re2/wiki/Syntax) with the default options of RE2.
+By default, the whole string has to match the pattern (like `RE2::FullMatch`), with the option `str.ecma_engine_semantics=true`, some substring of it has to match the pattern (like `RE2::PartialMatch`).
+
+Supported RE2 features:
+
+- Character classes: `.`, `[...]`, `[^...]`, character ranges `[a-z]`, `\d`, `\D`, `\s`, `\S`, `\w`, `\W`, ASCII classes `[[:alpha:]]`, `[[:^alpha:]]`
+- Anchors `^`, `$`, `\A`, `\z` and word boundaries `\b`, `\B`
+- Repetitions `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}` (greedy and lazy variants)
+- Alternation `|`, capturing groups `(...)`, named groups `(?P<name>...)`, `(?<name>...)`, non-capturing groups `(?:...)`
+- Flags `m`, `s` and `U` in `(?flags)` and `(?flags:...)`
+- Escape sequences: `\a`, `\f`, `\t`, `\n`, `\r`, `\v`, octal `\123`, hexadecimal `\x7F` and `\x{10FFFF}`, escaped punctuation `\*`, literal text `\Q...\E`
+
+Limitations:
+
+- Case-insensitive matching (flag `i`), Unicode character classes (`\pN`, `\p{Greek}`, `\PN`, `\P{Greek}`) and `\C` are not supported.
+- Anchors and word boundaries cannot appear under unbounded repetitions (`*`, `+`).
+
+Examples:
+
+- `(str.in_re x ((_ re.from_regex re2) '[[:alpha:]_]\w*'))` — `x` is an identifier, e.g. `"_a1"`
+- `(str.in_re x ((_ re.from_regex re2) 'a.b'))` — `x` is `"a"` and `"b"` with one character between them other than a newline
+- `(str.in_re x ((_ re.from_regex re2) '(?m)^b$'))` with `str.ecma_engine_semantics=true` — some line of `x` is `"b"`, e.g. `"a\u{a}b"`
 
 ## 3. Special string functions
 ### `(str.to_lower String String)`

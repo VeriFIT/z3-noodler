@@ -17,7 +17,7 @@ Eternal glory to Yu-Fang.
 #include "ast/seq_decl_plugin.h"
 #include "ast/reg_decl_plugins.h"
 #include "theory_str_noodler.h"
-#include "ecma_regex.h"
+#include "extended_regex/extended_regex.h"
 
 namespace smt::noodler {
 
@@ -533,7 +533,7 @@ namespace smt::noodler {
         ) {
             handle_conversion(n);
         } else if (m_util_s.str.is_in_re_from_regex(n)) { // str.in_re with re.from_regex
-            handle_ecma_re(n);
+            handle_from_regex(n);
         } else if (util::is_str_variable(n, m_util_s)) {
             BasicTerm var_for_n = util::get_variable_basic_term(n);
             SASSERT(!var_name.contains(var_for_n) || var_name.at(var_for_n) == n);
@@ -2292,7 +2292,7 @@ namespace smt::noodler {
 
     }
 
-    void theory_str_noodler::handle_ecma_re(expr* e) {
+    void theory_str_noodler::handle_from_regex(expr* e) {
         expr* x = nullptr;
         symbol flavor;
         zstring pattern;
@@ -2300,25 +2300,24 @@ namespace smt::noodler {
             util::throw_error("We can only handle (str.in_re ... ((_ re.from_regex flavor) pattern)) with a constant pattern");
             return;
         }
-        SASSERT(flavor == "ecma2020");
 
         // The axioms of e are deleted when backtracking below the level they were added at, and when e becomes relevant
         // again, they are added again. The constraints are generated only once and reused, otherwise each addition
         // would introduce new fresh variables, and the lemmas learned for the previous ones would not apply to them.
-        if (!m_ecma_cache.memberships.contains(e)) {
-            ecma::RegexConstraintBuilder builder(m, pattern, m_params);
+        if (!m_extended_regex_cache.memberships.contains(e)) {
+            extended_regex::RegexConstraintBuilder builder(m, flavor, pattern, m_params);
             builder.build_rcg();
 
             SASSERT(is_app(x));
             expr_ref formula = builder.generate_constraints(to_app(x));
-            m_ecma_cache.memberships.emplace(
-                e, ecma_cache::membership_entry{expr_ref(e, m), formula, builder.get_fresh_vars()});
+            m_extended_regex_cache.memberships.emplace(
+                e, extended_regex_cache::membership_entry{expr_ref(e, m), formula, builder.get_fresh_vars()});
         }
-        const ecma_cache::membership_entry& constraints = m_ecma_cache.memberships.at(e);
-        expr_ref ecma_formula = constraints.formula;
+        const extended_regex_cache::membership_entry& constraints = m_extended_regex_cache.memberships.at(e);
+        expr_ref regex_formula = constraints.formula;
 
-        STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS ---" << std::endl;
-               tout << mk_pp(ecma_formula.get(), m) << std::endl;
+        STRACE(str, tout << ";; --- GENERATED EXTENDED REGEX CONSTRAINTS ---" << std::endl;
+               tout << mk_pp(regex_formula.get(), m) << std::endl;
                tout << ";; ----------------------------------" << std::endl;);
 
         // Two separate axioms encode the biconditional e ↔ ∃fresh.C(x,fresh) without ever
@@ -2344,19 +2343,19 @@ namespace smt::noodler {
         // is used directly.
         const app_ref_vector& fresh_vars = constraints.fresh_vars;
         if (fresh_vars.empty()) {
-            m_rewrite(ecma_formula);
-            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified) ---" << std::endl;
-                   tout << mk_pp(ecma_formula.get(), m) << std::endl;
+            m_rewrite(regex_formula);
+            STRACE(str, tout << ";; --- GENERATED EXTENDED REGEX CONSTRAINTS (simplified) ---" << std::endl;
+                   tout << mk_pp(regex_formula.get(), m) << std::endl;
                    tout << ";; ----------------------------------" << std::endl;);
             // The biconditional is added as two clauses instead of one iff: the iff would not make ¬C relevant, so
             // a disequation in ¬C (e.g. x != "a" from x in (str.to_re "a")) would be ignored by the final check.
-            add_axiom(expr_ref(m.mk_or(m.mk_not(e), ecma_formula), m));
-            add_axiom(expr_ref(m.mk_or(e, m.mk_not(ecma_formula)), m));
+            add_axiom(expr_ref(m.mk_or(m.mk_not(e), regex_formula), m));
+            add_axiom(expr_ref(m.mk_or(e, m.mk_not(regex_formula)), m));
         } else {
             // (1) Positive axiom: e → C_ground(x, sko1,...,skon)
-            expr_ref pos_formula = ecma_formula;
+            expr_ref pos_formula = regex_formula;
             m_rewrite(pos_formula);
-            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified, positive) ---" << std::endl;
+            STRACE(str, tout << ";; --- GENERATED EXTENDED REGEX CONSTRAINTS (simplified, positive) ---" << std::endl;
                    tout << mk_pp(pos_formula.get(), m) << std::endl;
                    tout << ";; ----------------------------------" << std::endl;);
             add_axiom(expr_ref(m.mk_implies(e, pos_formula), m));
@@ -2372,9 +2371,9 @@ namespace smt::noodler {
             //     add_axiom can handle.  When e is already true at the propositional level
             //     the clause "e ∨ forall" is trivially satisfied without quantifier evaluation,
             //     so the positive case stays free of quantifier overhead.
-            expr_ref exists_formula = mk_exists(m, fresh_vars.size(), fresh_vars.data(), ecma_formula);
+            expr_ref exists_formula = mk_exists(m, fresh_vars.size(), fresh_vars.data(), regex_formula);
             m_rewrite(exists_formula);
-            STRACE(str, tout << ";; --- GENERATED ECMA CONSTRAINTS (simplified, negative) ---" << std::endl;
+            STRACE(str, tout << ";; --- GENERATED EXTENDED REGEX CONSTRAINTS (simplified, negative) ---" << std::endl;
                    tout << mk_pp(exists_formula.get(), m) << std::endl;
                    tout << ";; ----------------------------------" << std::endl;);
 
@@ -2384,7 +2383,7 @@ namespace smt::noodler {
             } else {
                 // Existential survived: use the forall form  e ∨ ∀fresh.¬C.
                 expr_ref forall_neg = mk_forall(m, fresh_vars.size(), fresh_vars.data(),
-                                                expr_ref(m.mk_not(ecma_formula), m));
+                                                expr_ref(m.mk_not(regex_formula), m));
                 add_axiom(expr_ref(m.mk_or(e, forall_neg), m));
             }
         }

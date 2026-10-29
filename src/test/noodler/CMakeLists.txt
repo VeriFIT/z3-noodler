@@ -23,7 +23,9 @@ if (Catch2_FOUND)
             util.cc
             formula.cpp
             ecma_regex.cpp
+            extended_regex.cpp
             from_regex.cpp
+            re2_regex.cpp
     )
 
     z3_add_install_tactic_rule(${z3_test_deps})
