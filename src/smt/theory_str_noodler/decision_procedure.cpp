@@ -898,8 +898,26 @@ namespace smt::noodler {
             }
         }
 
-        const std::set<BasicTerm> code_subst_vars = overapprox ? std::set<BasicTerm>{} : conversion_handler.get_code_subst_vars();
         const mata::Symbol ONE_LETTER_SYMBOL = util::get_dummy_symbol() + 1;
+        if (overapprox) {
+            // The lengths of every chain of these transducers satisfy the one-letter relation of each transducer of the
+            // chain, so the conjunction of their Parikh formulas over-approximates the lengths. The languages of the
+            // variables bound their lengths in get_formula_for_len_vars(), as they are not added to
+            // length_vars_with_transducers. Composing the chains with exact symbols on the shared tapes, as below,
+            // gives a stronger formula, but one composition can take tens of seconds and the Parikh formula of the
+            // composed transducer is a product of the formulas of its transducers.
+            for (const auto& [output_var, transducers] : output_var_to_its_transducers) {
+                for (const Predicate& transducer : transducers) {
+                    // the input var is on level 0 of the transducer, the output var on level 1
+                    const mata::nft::Nft one_letter_transducer = mata::nft::reduce(transducer.get_transducer()->get_one_letter_aut({}, ONE_LETTER_SYMBOL).trim()).trim();
+                    result.succ.push_back(parikh::ParikhImageTransducer{one_letter_transducer, {transducer.get_input()[0], output_var}}.compute_parikh_image());
+                    util::check_limit(m);
+                }
+            }
+            return result;
+        }
+
+        const std::set<BasicTerm> code_subst_vars = conversion_handler.get_code_subst_vars();
         // A composition reads only the symbols of its synchronisation tape. In every transducer built below, only
         // tape 0 is synchronised later (the tapes are never reordered), so the one-letter abstraction that the
         // Parikh formula applies to the composed transducer (except for the tapes of the code-point variables) can
@@ -917,7 +935,7 @@ namespace smt::noodler {
             }
             nft = mata::nft::reduce(nft.get_one_letter_aut(levels_to_keep, ONE_LETTER_SYMBOL)).trim();
         };
-        const bool abstract_unsynchronised_tapes = overapprox || !m_params.m_produce_models;
+        const bool abstract_unsynchronised_tapes = !m_params.m_produce_models;
 
         // This function creates one transducer for ouptut_var using all the transducers on input.
         // For example, if we have transducers x = T1(y), y = T2(z), y = T3(v), v = T4(w) we will
@@ -925,7 +943,7 @@ namespace smt::noodler {
         // The second item of the pair gives us the vector of tapes, for the example is it {x,y,z,v,w}.
         std::function<std::pair<mata::nft::Nft,std::vector<BasicTerm>>(BasicTerm)> get_composed_trans_with_tapes;
         std::set<BasicTerm> output_vars_being_composed; // the output vars on the current path of the recursion
-        get_composed_trans_with_tapes = [&output_var_to_its_transducers, &get_composed_trans_with_tapes, &output_vars_being_composed, &abstract_tapes_after_first, abstract_unsynchronised_tapes, overapprox, this](BasicTerm output_var) {
+        get_composed_trans_with_tapes = [&output_var_to_its_transducers, &get_composed_trans_with_tapes, &output_vars_being_composed, &abstract_tapes_after_first, abstract_unsynchronised_tapes, this](BasicTerm output_var) {
             // we start with a simple transducer representing the NFA for output_var (one tape with output_var)
             mata::nft::Nft final_trans{*this->solution.aut_ass.at(output_var)};
             std::vector<BasicTerm> vars_on_tapes{output_var};
@@ -935,9 +953,8 @@ namespace smt::noodler {
                 const auto& transducers = output_var_to_its_transducers.at(output_var);
                 for (std::vector<Predicate>::size_type i = 0; i < transducers.size(); ++i) {
                     if (output_vars_being_composed.contains(transducers[i].get_input()[0])) {
-                        // the transducers of an unfinished state can form a cycle, leaving out the one closing it
-                        // keeps the formula an over-approximation
-                        SASSERT(overapprox);
+                        // only the transducers of an unfinished state, which are not composed, can form a cycle
+                        SASSERT(false);
                         continue;
                     }
                     // we get transducer output_var = Ti(input_var)
@@ -997,7 +1014,7 @@ namespace smt::noodler {
                     code_subst_vars_handled_by_parikh.insert(var);
                     levels_of_code_subst_vars.insert(i);
                 }
-                if (!overapprox && (conversion_handler.get_int_subst_vars().contains(var) || conversion_handler.get_real_subst_vars().contains(var))) {
+                if (conversion_handler.get_int_subst_vars().contains(var) || conversion_handler.get_real_subst_vars().contains(var)) {
                     // TODO add support (pretty hard, we need to remember the order of selected transitions by parikh)
                     util::throw_error("Integer/real conversions with transducers are not supported yet");
                 }
@@ -1021,7 +1038,7 @@ namespace smt::noodler {
                 }
             };
 
-            if (m_params.m_produce_models && !overapprox) { // model generation is enabled, we need to compute state renaming
+            if (m_params.m_produce_models) { // model generation is enabled, we need to compute state renaming
                 // we do not do removing epsilons, as this operation can add new transitions which we cannot map to from the original transducer transitions
                 one_symbol_transducer = mata::nft::reduce(one_symbol_transducer, &state_renaming);
                 mata::nft::StateRenaming other_state_renaming;
@@ -1038,7 +1055,7 @@ namespace smt::noodler {
             STRACE(str_parikh, tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer); // add it to the LIA formula
 
-            if (m_params.m_produce_models && !overapprox) { // models are enabled, we need to compute the mapping from combined_transducer transitions and states to parikh variables
+            if (m_params.m_produce_models) { // models are enabled, we need to compute the mapping from combined_transducer transitions and states to parikh variables
                 TransducerParikhInformation transducer_with_parikh_information {
                     .nft = std::move(combined_transducer),
                     .vars_on_tapes = vars_on_tapes,
