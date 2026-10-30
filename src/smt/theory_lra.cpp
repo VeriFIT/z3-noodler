@@ -28,6 +28,8 @@
 #include "math/polynomial/polynomial.h"
 #include "util/nat_set.h"
 #include <optional>
+#include <set>
+#include <unordered_map>
 #include "util/inf_rational.h"
 #include "util/cancel_eh.h"
 #include "util/scoped_timer.h"
@@ -2958,18 +2960,34 @@ public:
         CTRACE(arith, !m_new_bounds.empty(), tout << "flush bound axioms\n";);
 
         while (!m_new_bounds.empty()) {
-            lp_bounds atoms;            
-            atoms.push_back(m_new_bounds.back());
-            m_new_bounds.pop_back();
-            theory_var v = atoms.back()->get_var();
-            for (unsigned i = 0; i < m_new_bounds.size(); ++i) {
-                if (m_new_bounds[i]->get_var() == v) {
-                    atoms.push_back(m_new_bounds[i]);
-                    m_new_bounds[i] = m_new_bounds.back();
-                    m_new_bounds.pop_back();
-                    --i;
+            // Groups the bounds by variable without rescanning the whole list for each variable, which is
+            // quadratic, yet in exactly the order of that scan: the order of the axioms steers the search.
+            // The scan takes the last bound, then the bounds of its variable by increasing position, each
+            // replaced by the last bound of the list.
+            lp_bounds pending;
+            pending.swap(m_new_bounds);
+            std::unordered_map<theory_var, std::set<unsigned>> positions;
+            for (unsigned i = 0; i < pending.size(); ++i)
+                positions[pending[i]->get_var()].insert(i);
+            auto remove = [&](unsigned p) {
+                api_bound* b = pending[p];
+                positions[b->get_var()].erase(p);
+                unsigned last = pending.size() - 1;
+                if (p != last) {
+                    auto& moved = positions[pending[last]->get_var()];
+                    moved.erase(last);
+                    moved.insert(p);
+                    pending[p] = pending[last];
                 }
-            }            
+                pending.pop_back();
+                return b;
+            };
+            while (!pending.empty()) {
+            lp_bounds atoms;
+            atoms.push_back(remove(pending.size() - 1));
+            theory_var v = atoms.back()->get_var();
+            for (auto& of_v = positions[v]; !of_v.empty(); )
+                atoms.push_back(remove(*of_v.begin()));
             CTRACE(arith, atoms.size() > 1, 
                    for (auto* a : atoms) a->display(tout) << "\n";);
             lp_bounds occs(m_bounds[v]);
@@ -3007,6 +3025,7 @@ public:
                 if (hi_inf1 != end && hi_inf != end && !visited.contains(*hi_inf)) mk_bound_axiom(*a1, **hi_inf);
                 if (hi_sup1 != end && hi_sup != end && !visited.contains(*hi_sup)) mk_bound_axiom(*a1, **hi_sup);
             }                            
+            }
         }
     }
 
