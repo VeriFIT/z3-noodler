@@ -372,8 +372,28 @@ public:
  */
 class ParikhImageTransducer : public ParikhImage {
 
-private: 
-    mata::nft::Nft nft; ///< The non-deterministic finite transducer (NFT) being analyzed.
+    /// How many times each (level, symbol) is read when taking a transition of the automaton given to ParikhImage.
+    using TransitionWeights = std::map<Transition, std::map<std::pair<mata::nft::Level, mata::Symbol>, unsigned>>;
+    struct WeightedNfa {
+        mata::nfa::Nfa nfa;
+        TransitionWeights weights;
+    };
+    /**
+     * @brief Build the automaton whose Parikh image is computed, with the (level, symbol) counts of its transitions.
+     *
+     * Without @p contract_chains, it is @p nft itself. With it, every path through states with exactly one incoming
+     * and one outgoing transition that are neither initial nor final becomes a single transition counting the symbols
+     * of the whole path, and parallel paths with equal counts become one transition. Every run passes such a path as a
+     * whole, so accepting runs of the two automata correspond one to one with the same counts, while the formula loses
+     * the variables of the inner states and transitions.
+     */
+    static WeightedNfa mk_weighted_nfa(const mata::nft::Nft& nft, bool contract_chains);
+
+    ParikhImageTransducer(WeightedNfa weighted, std::vector<BasicTerm> tape_vars, std::set<BasicTerm> vars_that_need_symbol_mapping)
+        : ParikhImage(weighted.nfa), weights(std::move(weighted.weights)), tape_vars(std::move(tape_vars)), vars_that_need_symbol_mapping(std::move(vars_that_need_symbol_mapping)) { }
+
+private:
+    TransitionWeights weights;
     std::vector<BasicTerm> tape_vars {}; ///< Variables representing the lengths of the output tape.
     std::set<BasicTerm> vars_that_need_symbol_mapping {}; ///< Variables for which we will compute also the symbol mapping
 
@@ -393,10 +413,12 @@ public:
      * @param nft The non-deterministic finite transducer to analyze.
      * @param tape_vars The vars on tapes whose lengths we want to encode, |tape_vars| must be equal nft.num_of_levels()
      * @param vars_that_need_symbol_mapping The tape vars that need the encoding of how many times each symbol occurs.
+     * @param contract_chains Contract chains of states (see mk_weighted_nfa). The transition and state variables
+     *  (get_trans_vars(), get_gamma_init()) then no longer correspond to the transitions and states of @p nft.
      */
-    ParikhImageTransducer(const mata::nft::Nft& nft, std::vector<BasicTerm> tape_vars, std::set<BasicTerm> vars_that_need_symbol_mapping = {}) 
-        : ParikhImage(nft.to_nfa_copy()), nft(nft), tape_vars(tape_vars), vars_that_need_symbol_mapping(vars_that_need_symbol_mapping) {
-            SASSERT(nft.levels.num_of_levels == tape_vars.size());
+    ParikhImageTransducer(const mata::nft::Nft& nft, std::vector<BasicTerm> tape_vars, std::set<BasicTerm> vars_that_need_symbol_mapping = {}, bool contract_chains = false)
+        : ParikhImageTransducer(mk_weighted_nfa(nft, contract_chains), std::move(tape_vars), std::move(vars_that_need_symbol_mapping)) {
+            SASSERT(nft.levels.num_of_levels == this->tape_vars.size());
         }
 
     /**

@@ -1043,10 +1043,7 @@ namespace {
         return LenNode(LenFormulaType::EQ, {get_var(var), value});
     }
 
-    lbool check_not_contains_lia(const std::pair<LenNode, LenNodePrecision>& lia, const std::vector<LenNode>& additional_constraints) {
-        LenNode formula(LenFormulaType::AND, {lia.first});
-        formula.succ.insert(formula.succ.end(), additional_constraints.begin(), additional_constraints.end());
-
+    lbool check_lia(const LenNode& formula) {
         // Convert directly (not via SMT-LIB2 text), as the formula can contain empty sums
         ast_manager manager;
         reg_decl_plugins(manager);
@@ -1066,6 +1063,12 @@ namespace {
         smt_params params{};
         int_expr_solver solver(manager, params);
         return solver.check_sat(z3_formula, false, false);
+    }
+
+    lbool check_not_contains_lia(const std::pair<LenNode, LenNodePrecision>& lia, const std::vector<LenNode>& additional_constraints) {
+        LenNode formula(LenFormulaType::AND, {lia.first});
+        formula.succ.insert(formula.succ.end(), additional_constraints.begin(), additional_constraints.end());
+        return check_lia(formula);
     }
 }
 
@@ -1310,4 +1313,30 @@ TEST_CASE("NotContains::mk_parikh_images_encode_same_word_formula distinguishes 
         }
     }
     CHECK(letters_of_first_edge == std::set<mata::Symbol>{'a', 'b'});
+}
+
+TEST_CASE("ParikhImageTransducer encodes the tape lengths with and without contracted chains", "[noodler]") {
+    // x = c then a* on level 0, y = (bb)^n on level 1: from the initial state 4, c leads to the final state 0, and each
+    // of the two (equal) loops through 0 reads one a and writes bb. States 5, 1, 2, 3, 6, 7, 8 lie on chains.
+    mata::nft::Nft nft(9, {4}, {0}, mata::nft::Levels(2, {0, 1, 0, 1, 0, 1, 1, 0, 1}));
+    nft.delta.add(4, 'c', 5);
+    nft.delta.add(5, mata::nft::EPSILON, 0);
+    for (const auto& [first, second, third] : { std::tuple<State, State, State>{1, 2, 3}, {6, 7, 8} }) {
+        nft.delta.add(0, 'a', first);
+        nft.delta.add(first, 'b', second);
+        nft.delta.add(second, mata::nft::EPSILON, third);
+        nft.delta.add(third, 'b', 0);
+    }
+
+    for (bool contract_chains : { false, true }) {
+        CAPTURE(contract_chains);
+        LenNode image = ParikhImageTransducer(nft, { get_var('x'), get_var('y') }, {}, contract_chains).compute_parikh_image();
+        for (int x = 0; x <= 4; ++x) {
+            for (int y = 0; y <= 6; ++y) {
+                CAPTURE(x, y);
+                const lbool expected = (x >= 1 && y == 2 * (x - 1)) ? l_true : l_false;
+                CHECK(check_lia(LenNode(LenFormulaType::AND, { image, len_eq('x', x), len_eq('y', y) })) == expected);
+            }
+        }
+    }
 }

@@ -2,6 +2,7 @@
 #include "parikh_image.h"
 #include "formula.h"
 #include <cstdlib>
+#include <limits>
 
 using namespace smt::noodler::ca;
 
@@ -1408,23 +1409,84 @@ namespace smt::noodler::parikh {
         return this->offset_var;
     }
 
+    ParikhImageTransducer::WeightedNfa ParikhImageTransducer::mk_weighted_nfa(const mata::nft::Nft& nft, bool contract_chains) {
+        if (!contract_chains) {
+            WeightedNfa result{ nft.to_nfa_copy(), {} };
+            for (const auto& tr : nft.delta.transitions()) {
+                auto& counts = result.weights[{tr.source, tr.symbol, tr.target}];
+                if (tr.symbol != mata::nft::EPSILON) {
+                    counts[{nft.levels[tr.source], tr.symbol}] = 1;
+                }
+            }
+            return result;
+        }
+
+        const size_t num_of_states = nft.num_of_states();
+        std::vector<unsigned> num_in(num_of_states, 0), num_out(num_of_states, 0);
+        for (const auto& tr : nft.delta.transitions()) {
+            ++num_out[tr.source];
+            ++num_in[tr.target];
+        }
+        constexpr mata::nfa::State NOT_KEPT = std::numeric_limits<mata::nfa::State>::max();
+        std::vector<mata::nfa::State> kept_id(num_of_states, NOT_KEPT);
+        mata::nfa::State num_of_kept = 0;
+        for (mata::nfa::State s = 0; s < num_of_states; ++s) {
+            if (nft.initial.contains(s) || nft.final.contains(s) || num_in[s] != 1 || num_out[s] != 1) {
+                kept_id[s] = num_of_kept++;
+            }
+        }
+
+        WeightedNfa result{ mata::nfa::Nfa(num_of_kept), {} };
+        mata::nfa::Nfa& contracted = result.nfa;
+        for (mata::nfa::State s : nft.initial) { contracted.initial.insert(kept_id[s]); }
+        for (mata::nfa::State s : nft.final) { contracted.final.insert(kept_id[s]); }
+
+        // a transition of the contracted automaton for each distinct (source, target, counts)
+        std::map<std::tuple<mata::nfa::State, mata::nfa::State, std::map<std::pair<mata::nft::Level, mata::Symbol>, unsigned>>, mata::Symbol> paths;
+        for (mata::nfa::State source = 0; source < num_of_states; ++source) {
+            if (kept_id[source] == NOT_KEPT) { continue; }
+            for (const mata::nfa::SymbolPost& symbol_post : nft.delta[source]) {
+                for (mata::nfa::State first_target : symbol_post.targets) {
+                    std::map<std::pair<mata::nft::Level, mata::Symbol>, unsigned> counts;
+                    auto count = [&](mata::nfa::State from, mata::Symbol symbol) {
+                        if (symbol != mata::nft::EPSILON) { ++counts[{nft.levels[from], symbol}]; }
+                    };
+                    count(source, symbol_post.symbol);
+                    // the inner states of a chain have a single incoming transition, so a walk entering a chain from a
+                    // kept state cannot return to it and ends in a kept state
+                    mata::nfa::State state = first_target;
+                    while (kept_id[state] == NOT_KEPT) {
+                        const mata::nfa::SymbolPost& only_post = *nft.delta[state].begin();
+                        count(state, only_post.symbol);
+                        state = *only_post.targets.begin();
+                    }
+                    auto [it, inserted] = paths.try_emplace({kept_id[source], kept_id[state], std::move(counts)}, paths.size());
+                    if (inserted) {
+                        contracted.delta.add(kept_id[source], it->second, kept_id[state]);
+                        result.weights[{kept_id[source], it->second, kept_id[state]}] = std::get<2>(it->first);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
     LenNode ParikhImageTransducer::compute_parikh_image() {
         LenNode parikhStruct = ParikhImage::compute_parikh_image();
         LenNode len_formula(LenFormulaType::AND);
 
-        std::vector<LenNode> sum_tapes(this->nft.levels.num_of_levels, LenNode(LenFormulaType::PLUS));
-        std::map<BasicTerm, std::map<mata::Symbol, std::vector<BasicTerm>>> tape_var_symbol_to_transition_vars;
+        std::vector<LenNode> sum_tapes(this->tape_vars.size(), LenNode(LenFormulaType::PLUS));
+        std::map<BasicTerm, std::map<mata::Symbol, std::vector<LenNode>>> tape_var_symbol_to_transition_vars;
 
         for(const auto& [trans, var] : get_trans_vars()) {
-            // skip epsilons
-            if(std::get<1>(trans) == mata::nft::EPSILON) {
-                continue;
-            }
-            auto srclvl = this->nft.levels[std::get<0>(trans)];
-            sum_tapes[srclvl].succ.push_back(var);
-            const BasicTerm& src_tape_var = tape_vars[srclvl];
-            if (vars_that_need_symbol_mapping.contains(src_tape_var)) {
-                tape_var_symbol_to_transition_vars[src_tape_var][std::get<1>(trans)].push_back(var);
+            for (const auto& [level_symbol, count] : weights.at(trans)) {
+                const auto& [level, symbol] = level_symbol;
+                LenNode times_taken = (count == 1) ? LenNode(var) : LenNode(LenFormulaType::TIMES, { count, var });
+                sum_tapes[level].succ.push_back(times_taken);
+                const BasicTerm& tape_var = tape_vars[level];
+                if (vars_that_need_symbol_mapping.contains(tape_var)) {
+                    tape_var_symbol_to_transition_vars[tape_var][symbol].push_back(times_taken);
+                }
             }
         }
 
@@ -1436,13 +1498,9 @@ namespace smt::noodler::parikh {
 
         for (const auto& [tape_var, symbol_to_transitions_vars] : tape_var_symbol_to_transition_vars) {
             for (const auto& [symbol, transition_vars] : symbol_to_transitions_vars) {
-                LenNode transition_vars_sum{LenFormulaType::PLUS};
-                for (const BasicTerm& transition_var : transition_vars) {
-                    transition_vars_sum.succ.emplace_back(transition_var);
-                }
                 BasicTerm tape_var_num_of_symbol = get_tape_var_for_symbol_mapping(tape_var, symbol);
                 tape_var_used_symbols[tape_var].insert(symbol);
-                len_formula.succ.push_back({LenFormulaType::EQ, {tape_var_num_of_symbol, transition_vars_sum}});
+                len_formula.succ.push_back({LenFormulaType::EQ, {tape_var_num_of_symbol, LenNode(LenFormulaType::PLUS, transition_vars)}});
             }
         }
 

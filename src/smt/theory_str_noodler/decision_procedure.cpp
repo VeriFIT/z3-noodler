@@ -910,7 +910,7 @@ namespace smt::noodler {
                 for (const Predicate& transducer : transducers) {
                     // the input var is on level 0 of the transducer, the output var on level 1
                     const mata::nft::Nft one_letter_transducer = mata::nft::reduce(transducer.get_transducer()->get_one_letter_aut({}, ONE_LETTER_SYMBOL).trim()).trim();
-                    result.succ.push_back(parikh::ParikhImageTransducer{one_letter_transducer, {transducer.get_input()[0], output_var}}.compute_parikh_image());
+                    result.succ.push_back(parikh::ParikhImageTransducer{one_letter_transducer, {transducer.get_input()[0], output_var}, {}, true}.compute_parikh_image());
                     util::check_limit(m);
                 }
             }
@@ -1050,7 +1050,8 @@ namespace smt::noodler {
 
             // we compute the parikh formula for one_symbol_transducer
             STRACE(str_parikh, tout << "Formula for transducer of size " << one_symbol_transducer.num_of_states() << " with variables " << vars_on_tapes << " is: ";);
-            parikh::ParikhImageTransducer parikh_transducer{one_symbol_transducer, vars_on_tapes, code_subst_vars};
+            // model generation maps the transitions and states of combined_transducer to the Parikh variables
+            parikh::ParikhImageTransducer parikh_transducer{one_symbol_transducer, vars_on_tapes, code_subst_vars, !m_params.m_produce_models};
             LenNode parikh_of_transducer = parikh_transducer.compute_parikh_image();
             STRACE(str_parikh, tout << parikh_of_transducer << "\n";);
             result.succ.push_back(parikh_of_transducer); // add it to the LIA formula
