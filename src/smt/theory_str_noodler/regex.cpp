@@ -60,6 +60,40 @@ namespace {
         }
         return true;
     }
+
+    /// The NFA of @p body repeated at most @p count times: a chain of copies of @p body in which the final states
+    ///  of a copy enter the next copy, and every final state accepts. Repeating (ε | body) by squaring would
+    ///  connect the final states of every copy to the following copies instead.
+    /// The initial states of the copies can be unreachable: trim the result.
+    Nfa concatenate_at_most(const Nfa& body, unsigned count) {
+        const mata::nfa::State num_of_body_states = static_cast<mata::nfa::State>(body.num_of_states());
+        Nfa result{};
+        // State 0 accepts the empty word; copy c takes the states from 1 + c * num_of_body_states on.
+        const mata::nfa::State start{ 0 };
+        result.initial.insert(start);
+        result.final.insert(start);
+        result.delta.allocate(1);
+        auto enter_copy = [&](mata::nfa::State from, mata::nfa::State offset) {
+            for (const mata::nfa::State init : body.initial) {
+                for (const mata::nfa::SymbolPost& move : body.delta[init]) {
+                    for (const mata::nfa::State target : move.targets) {
+                        result.delta.add(from, move.symbol, target + offset);
+                    }
+                }
+            }
+        };
+        for (unsigned copy = 0; copy < count; ++copy) {
+            const mata::nfa::State offset{ 1 + copy * num_of_body_states };
+            result.delta.append_shifted(body.delta, offset);
+            for (const mata::nfa::State fin : body.final) { result.final.insert(fin + offset); }
+            if (copy == 0) {
+                enter_copy(start, offset);
+            } else {
+                for (const mata::nfa::State fin : body.final) { enter_copy(fin + offset - num_of_body_states, offset); }
+            }
+        }
+        return result;
+    }
 }
 
 namespace smt::noodler::regex {
@@ -302,21 +336,20 @@ namespace smt::noodler::regex {
                         result = mata::nfa::concatenate_nth_power(body_nfa, low);
                         result.trim();
 
-                        // we will now either repeat body_nfa high-low times (if is_high_set) or
-                        // unlimited times (if it is not set), but we have to accept after each loop,
-                        // so we add an empty word into body_nfa
-                        mata::nfa::State new_state = body_nfa.add_state();
-                        body_nfa.initial.insert(new_state);
-                        body_nfa.final.insert(new_state);
-
-                        body_nfa.unify_initial();
-                        body_nfa.trim();
-
                         if (is_high_set) {
                             // if high is set, we repeat body_nfa another high-low times
-                            result.concatenate(concatenate_nth_power(std::move(body_nfa), high - low));
+                            result.concatenate(concatenate_at_most(body_nfa, high - low));
                             result.trim();
                         } else {
+                            // we repeat body_nfa unlimited times, but we have to accept after each loop,
+                            // so we add an empty word into body_nfa
+                            mata::nfa::State new_state = body_nfa.add_state();
+                            body_nfa.initial.insert(new_state);
+                            body_nfa.final.insert(new_state);
+
+                            body_nfa.unify_initial();
+                            body_nfa.trim();
+
                             // if high is not set, we can repeat body_nfa unlimited more times
                             // so we do star operation on body_nfa and add it to end of nfa
                             for (const auto& final : body_nfa.final) {
