@@ -310,7 +310,6 @@ namespace smt::noodler::regex {
                         body_nfa.final.insert(new_state);
 
                         body_nfa.unify_initial();
-                        body_nfa = mata::nfa::reduce(body_nfa);
                         body_nfa.trim();
 
                         if (is_high_set) {
