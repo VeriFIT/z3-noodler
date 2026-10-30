@@ -151,7 +151,8 @@ namespace smt::noodler {
 
             if (len_checks_enabled &&
                 !element_to_process.predicates_to_process.empty() &&
-                element_to_process.has_siblings) {
+                element_to_process.has_siblings &&
+                !len_check_backoff.skip()) {
                 // Before processing this solving state, we check the length constraints first to potentionally save
                 // some time if it is unsat (get_lengths() over-approximates the lengths of all solutions below it)
                 this->solution = element_to_process;
@@ -165,10 +166,24 @@ namespace smt::noodler {
                     // Lengths were unsat, we don't have to process this solving state. Its over-approximation of the
                     // lengths below it is blocked unless a short exploration finds that no solution is below it, then
                     // the subtree adds nothing to the blocked formula, as it would if it was processed.
-                    if (block_checked_lens != nullptr &&
-                        has_finished_state_below(std::move(element_to_process), LEN_CHECK_EXPLORATION_LIMIT) != l_false) {
-                        block_checked_lens();
-                        this->skipped_some_with_len_checks = true;
+                    if (block_checked_lens != nullptr) {
+                        lbool below = l_undef;
+                        if (!exploration_backoff.skip()) {
+                            below = has_finished_state_below(std::move(element_to_process), LEN_CHECK_EXPLORATION_LIMIT);
+                            // Without a finished state below, the exploration has processed the whole subtree, so the
+                            // check saved nothing; with one, the formula is blocked as when the exploration is skipped.
+                            if (below == l_false) {
+                                exploration_backoff.succeeded();
+                                len_check_backoff.failed();
+                            } else {
+                                exploration_backoff.failed();
+                                len_check_backoff.succeeded();
+                            }
+                        }
+                        if (below != l_false) {
+                            block_checked_lens();
+                            this->skipped_some_with_len_checks = true;
+                        }
                     }
                     continue;
                 }

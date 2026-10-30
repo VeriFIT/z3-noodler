@@ -296,9 +296,37 @@ TEST_CASE("Decision Procedure", "[noodler]") {
         unsigned checks = 0;
         unsigned blocks = 0;
         // every premature length check is unsat
+        auto check_lens = [&checks]() { ++checks; return l_false; };
+        auto block_checked_lens = [&blocks]() { ++blocks; };
+        // the subtree of the first noodle has no finished state, so it is not blocked, and as the check saved
+        // nothing, the second noodle is processed unchecked
+        CHECK(proc.compute_next_solution_with_len_checks(check_lens, block_checked_lens) == l_true);
+        CHECK(checks == 1);
+        CHECK(proc.compute_next_solution_with_len_checks(check_lens, block_checked_lens) == l_false);
+        CHECK(checks == 2);
+        CHECK(blocks == 0);
+        CHECK(!proc.get_skipped_some_with_len_checks());
+    }
+
+    SECTION("premature-length-checks-back-off-explorations-finding-solutions", "[noodler]") {
+        // the noodles of xy = r are x = ε & y = ab, x = a & y = b, x = ab & y = ε, only the last, which is checked
+        // first, can satisfy y = w
+        Formula equalities;
+        equalities.add_predicate(create_equality("xy", "r"));
+        equalities.add_predicate(create_equality("y", "w"));
+        init_ass[get_var('x')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('y')] = regex_to_nfa("(a|b)*");
+        init_ass[get_var('r')] = regex_to_nfa("ab");
+        init_ass[get_var('w')] = regex_to_nfa("");
+        DecisionProcedureCUT proc(equalities, init_ass, { }, m, m_util_s, m_util_a, {}, noodler_params);
+        proc.init_computation();
+        unsigned checks = 0;
+        unsigned blocks = 0;
+        // every premature length check is unsat; the exploration below the first checked noodle finds a finished
+        // state, so the second one is blocked unexplored, the third one is explored again and not blocked
         CHECK(proc.compute_next_solution_with_len_checks([&checks]() { ++checks; return l_false; }, [&blocks]() { ++blocks; }) == l_false);
         CHECK(checks == 3);
-        CHECK(blocks == 1);
+        CHECK(blocks == 2);
         CHECK(proc.get_skipped_some_with_len_checks());
     }
 

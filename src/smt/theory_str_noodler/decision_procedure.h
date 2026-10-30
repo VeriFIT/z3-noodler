@@ -192,6 +192,32 @@ namespace smt::noodler {
         /// The number of predicates has_finished_state_below() processes before a premature length check at most.
         static constexpr unsigned LEN_CHECK_EXPLORATION_LIMIT = 50;
 
+        /// Exponential back-off of a step that does not pay off: after the n-th failure in a row, the next 2^n - 1
+        /// opportunities to take the step are skipped.
+        class Backoff {
+        public:
+            /// Whether to skip the step this time.
+            bool skip() {
+                if (skips_left == 0) { return false; }
+                --skips_left;
+                return true;
+            }
+            void failed() {
+                skips = 2 * skips + 1;
+                skips_left = skips;
+            }
+            void succeeded() { skips = 0; }
+        private:
+            unsigned long skips = 0;
+            unsigned long skips_left = 0;
+        };
+        /// Backs off the premature length checks while the states they skip have no finished state below: those
+        /// subtrees are fully processed by has_finished_state_below() anyway.
+        Backoff len_check_backoff;
+        /// Backs off has_finished_state_below() after premature length checks while it finds finished states: then the
+        /// skipped state blocks its lengths as if it was not explored.
+        Backoff exploration_backoff;
+
         /**
          * @brief Explores the solving states below @p state, as the main search does but without length checks, until
          * it finds a finished one (with nothing to process) or processes @p max_processed predicates.
