@@ -643,31 +643,33 @@ namespace smt::noodler {
     regex::Alphabet theory_str_noodler::get_symbols_from_relevant() {
         // start with symbol representing everything not in formula
         regex::Alphabet symbols_in_formula{};
+        // The relations share subexpressions, e.g. the arguments of one str.indexof in thousands of terms.
+        std::unordered_set<expr*> visited;
 
         for (const auto &word_equation: m_word_eq_todo_rel) {
-            regex::extract_symbols(word_equation.first, m_util_s, symbols_in_formula);
-            regex::extract_symbols(word_equation.second, m_util_s, symbols_in_formula);
+            regex::extract_symbols(word_equation.first, m_util_s, symbols_in_formula, visited);
+            regex::extract_symbols(word_equation.second, m_util_s, symbols_in_formula, visited);
         }
 
         for (const auto &word_disequation: m_word_diseq_todo_rel) {
-            regex::extract_symbols(word_disequation.first, m_util_s, symbols_in_formula);
-            regex::extract_symbols(word_disequation.second, m_util_s, symbols_in_formula);
+            regex::extract_symbols(word_disequation.first, m_util_s, symbols_in_formula, visited);
+            regex::extract_symbols(word_disequation.second, m_util_s, symbols_in_formula, visited);
         }
 
         for (const auto &membership: m_membership_todo_rel) {
-            regex::extract_symbols(std::get<1>(membership), m_util_s, symbols_in_formula);
+            regex::extract_symbols(std::get<1>(membership), m_util_s, symbols_in_formula, visited);
         }
 
         for (const auto &rat_membership: m_rat_membership_todo_rel) {
-            regex::extract_symbols(std::get<0>(rat_membership), m_util_s, symbols_in_formula);
-            regex::extract_symbols(std::get<1>(rat_membership), m_util_s, symbols_in_formula);
-            regex::extract_symbols(std::get<2>(rat_membership), m_util_s, symbols_in_formula);
+            regex::extract_symbols(std::get<0>(rat_membership), m_util_s, symbols_in_formula, visited);
+            regex::extract_symbols(std::get<1>(rat_membership), m_util_s, symbols_in_formula, visited);
+            regex::extract_symbols(std::get<2>(rat_membership), m_util_s, symbols_in_formula, visited);
         }
 
         // extract from not contains
         for(const auto& not_contains : m_not_contains_todo_rel) {
-            regex::extract_symbols(not_contains.first, m_util_s, symbols_in_formula);
-            regex::extract_symbols(not_contains.second, m_util_s, symbols_in_formula);
+            regex::extract_symbols(not_contains.first, m_util_s, symbols_in_formula, visited);
+            regex::extract_symbols(not_contains.second, m_util_s, symbols_in_formula, visited);
         }
 
         bool contains_int_conversion = false;

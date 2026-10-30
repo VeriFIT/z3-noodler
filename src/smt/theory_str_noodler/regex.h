@@ -178,8 +178,15 @@ namespace smt::noodler::regex {
      * @param[in] ex Expression to be checked for symbols.
      * @param[in] m_util_s Seq util for AST.
      * @param[out] alphabet A set of symbols with where found symbols are appended to.
+     * @param[in,out] visited The subexpressions already extracted from, which are skipped: sharing it across the
+     *  calls for one formula visits each shared subexpression once.
      */
-    void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet);
+    void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet, std::unordered_set<expr*>& visited);
+
+    inline void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet) {
+        std::unordered_set<expr*> visited;
+        extract_symbols(ex, m_util_s, alphabet, visited);
+    }
 
     class NfaConstructor {
     private:

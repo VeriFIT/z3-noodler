@@ -103,11 +103,14 @@ namespace smt::noodler::regex {
         return current_symbol;
     }
 
-    void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet) {
+    void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet, std::unordered_set<expr*>& visited) {
+        if (!visited.insert(ex).second) {
+            return;
+        }
         if (m_util_s.str.is_string(ex)) {
             auto ex_app{ to_app(ex) };
             SASSERT(ex_app->get_num_parameters() == 1);
-            const zstring string_literal{ zstring{ ex_app->get_parameter(0).get_zstring() } };
+            const zstring& string_literal{ ex_app->get_parameter(0).get_zstring() };
             for (size_t i{ 0 }; i < string_literal.length(); ++i) {
                 alphabet.insert(string_literal[i]);
             }
@@ -144,7 +147,7 @@ namespace smt::noodler::regex {
             for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
                 SASSERT(is_app(ex_app->get_arg(i)));
                 app *arg = to_app(ex_app->get_arg(i));
-                extract_symbols(arg, m_util_s, alphabet);
+                extract_symbols(arg, m_util_s, alphabet, visited);
             }
         }
     }
