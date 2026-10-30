@@ -709,8 +709,9 @@ namespace smt::noodler {
                 const std::vector<BasicTerm>& replace,
                 std::vector<BasicTerm>& res) {
             bool modif = false;
+            // `find` does not fit into fewer remaining terms, and `it + find.size()` would be past the end.
             for(auto it = concat.begin(); it != concat.end(); ) {
-                if(std::equal(it, it+find.size(), find.begin(), find.end())) {
+                if(static_cast<size_t>(concat.end() - it) >= find.size() && std::equal(find.begin(), find.end(), it)) {
                     res.insert(res.end(), replace.begin(), replace.end());
                     modif = true;
                     it += find.size();
