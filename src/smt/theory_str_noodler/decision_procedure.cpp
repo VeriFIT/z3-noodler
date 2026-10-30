@@ -898,13 +898,34 @@ namespace smt::noodler {
             }
         }
 
+        const std::set<BasicTerm> code_subst_vars = overapprox ? std::set<BasicTerm>{} : conversion_handler.get_code_subst_vars();
+        const mata::Symbol ONE_LETTER_SYMBOL = util::get_dummy_symbol() + 1;
+        // A composition reads only the symbols of its synchronisation tape. In every transducer built below, only
+        // tape 0 is synchronised later (the tapes are never reordered), so the one-letter abstraction that the
+        // Parikh formula applies to the composed transducer (except for the tapes of the code-point variables) can
+        // be applied to the other tapes right after each composition, followed by a reduction: relabelling a tape
+        // that no composition reads commutes with composing, and the reduction keeps the relation, so the composed
+        // one-letter transducer has the same relation and the formula the same models. Model generation needs the
+        // exact symbols of the composed transducer.
+        auto abstract_tapes_after_first = [&code_subst_vars, ONE_LETTER_SYMBOL](mata::nft::Nft& nft, const std::vector<BasicTerm>& vars_on_tapes) {
+            SASSERT(nft.levels.num_of_levels == vars_on_tapes.size());
+            std::set<mata::nft::Level> levels_to_keep{0};
+            for (size_t i = 1; i < vars_on_tapes.size(); ++i) {
+                if (code_subst_vars.contains(vars_on_tapes[i])) {
+                    levels_to_keep.insert(i);
+                }
+            }
+            nft = mata::nft::reduce(nft.get_one_letter_aut(levels_to_keep, ONE_LETTER_SYMBOL)).trim();
+        };
+        const bool abstract_unsynchronised_tapes = overapprox || !m_params.m_produce_models;
+
         // This function creates one transducer for ouptut_var using all the transducers on input.
         // For example, if we have transducers x = T1(y), y = T2(z), y = T3(v), v = T4(w) we will
         // get a transducer x = T(y,z,v,w) that composes all these 4 transducers together.
         // The second item of the pair gives us the vector of tapes, for the example is it {x,y,z,v,w}.
         std::function<std::pair<mata::nft::Nft,std::vector<BasicTerm>>(BasicTerm)> get_composed_trans_with_tapes;
         std::set<BasicTerm> output_vars_being_composed; // the output vars on the current path of the recursion
-        get_composed_trans_with_tapes = [&output_var_to_its_transducers, &get_composed_trans_with_tapes, &output_vars_being_composed, overapprox, this](BasicTerm output_var) {
+        get_composed_trans_with_tapes = [&output_var_to_its_transducers, &get_composed_trans_with_tapes, &output_vars_being_composed, &abstract_tapes_after_first, abstract_unsynchronised_tapes, overapprox, this](BasicTerm output_var) {
             // we start with a simple transducer representing the NFA for output_var (one tape with output_var)
             mata::nft::Nft final_trans{*this->solution.aut_ass.at(output_var)};
             std::vector<BasicTerm> vars_on_tapes{output_var};
@@ -928,14 +949,26 @@ namespace smt::noodler {
                     mata::nft::Nft composed_input = mata::nft::compose(invert_trans, input_trans, 1, 0, false, mata::nft::JumpMode::NoJump).trim();
                     SASSERT(!composed_input.contains_jump_transitions());
                     SASSERT(composed_input.num_of_states() > 0);
+                    util::check_limit(m);
+                    if (abstract_unsynchronised_tapes) {
+                        std::vector<BasicTerm> vars_on_tapes_of_composed_input{output_var};
+                        vars_on_tapes_of_composed_input.insert(vars_on_tapes_of_composed_input.end(), vars_on_tapes_of_input_trans.begin(), vars_on_tapes_of_input_trans.end());
+                        abstract_tapes_after_first(composed_input, vars_on_tapes_of_composed_input);
+                        util::check_limit(m);
+                    }
                     // we have a transducer output_var = T(y1, y2, ..., ym) computed from previous Tj's, j < i, and we compose here on output_var with Ti''
                     // getting transducer output_var = T'(y1, y2, ..., ym, input_var, x1, x2, ..., xn)
                     final_trans = mata::nft::compose(final_trans, composed_input, 0, 0, false, mata::nft::JumpMode::NoJump).trim();
                     SASSERT(!final_trans.contains_jump_transitions());
                     SASSERT(final_trans.num_of_states() > 0);
+                    util::check_limit(m);
                     // we had vars_on_tapes = {output_var, y1, y2, ..., ym} we add to it vars_on_tapes_of_input_trans getting
                     //   {output_var, y1, y2, ..., ym, input_var, x1, x2, ..., xn}
                     vars_on_tapes.insert(vars_on_tapes.end(), vars_on_tapes_of_input_trans.begin(), vars_on_tapes_of_input_trans.end());
+                    if (abstract_unsynchronised_tapes) {
+                        abstract_tapes_after_first(final_trans, vars_on_tapes);
+                        util::check_limit(m);
+                    }
                 }
                 output_vars_being_composed.erase(output_var);
             }
@@ -957,7 +990,6 @@ namespace smt::noodler {
             
             // we build a parikh image for the transducer (first we collect all levels of code_vars)
             std::set<mata::nft::Level> levels_of_code_subst_vars;
-            std::set<BasicTerm> code_subst_vars = overapprox ? std::set<BasicTerm>{} : conversion_handler.get_code_subst_vars();
             for (size_t i = 0; i < vars_on_tapes.size(); ++i) {
                 const BasicTerm& var = vars_on_tapes[i];
                 length_vars_with_transducers.insert(var);
@@ -974,7 +1006,6 @@ namespace smt::noodler {
             // We only need the length dependency between variables given by the transducers, therefore we can replace all symbols
             // in the transducer by one symbol except for code-point variables, for these we need exact value (but still, the dependency
             // of this variable on other non-code-point variables is only trough lengths).
-            const mata::Symbol ONE_LETTER_SYMBOL = util::get_dummy_symbol() + 1;
             mata::nft::Nft one_symbol_transducer = combined_transducer.get_one_letter_aut(levels_of_code_subst_vars, ONE_LETTER_SYMBOL);
 
             mata::nft::StateRenaming state_renaming; // will map states of combined_transducer to one_symbol_transducer (if needed for model generation)
