@@ -3,6 +3,7 @@ The skeleton of this code was obtained by Yu-Fang Chen from https://github.com/g
 Eternal glory to Yu-Fang.
 */
 
+#include "ast/for_each_expr.h"
 #include "smt/smt_kernel.h"
 #include "expr_solver.h"
 
@@ -67,13 +68,10 @@ namespace smt::noodler {
 
         scoped_ptr<kernel> fresh_solver;
         kernel* solver;
-        lbool r;
+        expr_ref_vector assumptions(m);
         if (asserted_ctx != nullptr) {
             solver = &asserted_kernel->get(*asserted_ctx);
-            expr_ref_vector assumptions(m);
             for (expr* f : erv) { assumptions.push_back(asserted_kernel->mk_assumption(f)); }
-            assumptions.push_back(e);
-            r = solver->check(assumptions);
         } else {
             if (asserted_kernel != nullptr) {
                 solver = &asserted_kernel->get_empty(fp);
@@ -81,10 +79,22 @@ namespace smt::noodler {
                 fresh_solver = alloc(kernel, m, fp);
                 solver = fresh_solver.get();
             }
-            erv.push_back(e);
-            r = solver->check(erv);
-            erv.pop_back();
+            assumptions.append(erv);
         }
+
+        // A large e (the Parikh formula of a transducer has thousands of nodes) is asserted in a scope, where the
+        // kernel preprocesses it, instead of assumed: its check gets several times faster. A small one is assumed, so
+        // it stays internalized for the next checks; asserting it in a scope doubles the time of the thousands of
+        // small checks of some formulae. An e that has to be in the unsat core is always assumed.
+        constexpr unsigned MIN_SIZE_TO_ASSERT = 1000;
+        const bool assume_e = compute_unsat_core || get_num_exprs(e) < MIN_SIZE_TO_ASSERT;
+        if (assume_e) {
+            assumptions.push_back(e);
+        } else {
+            solver->push();
+            solver->assert_expr(e);
+        }
+        lbool r = solver->check(assumptions);
 
         reset_result();
         if (compute_unsat_core && r == lbool::l_false) {
@@ -98,6 +108,9 @@ namespace smt::noodler {
             model_ref mdl;
             solver->get_model(mdl);
             compute_model_formula(e, mdl);
+        }
+        if (!assume_e) {
+            solver->pop(1);
         }
 
         TRACE(str_lia, tout << "check_sat end\n";);
