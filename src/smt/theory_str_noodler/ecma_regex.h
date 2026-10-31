@@ -1223,6 +1223,17 @@ namespace smt::noodler::ecma {
          */
         const app_ref_vector& get_fresh_vars() const;
 
+        /**
+         * @brief Get the regex of the whole RCG if the RCG is a single path consisting only of match edges.
+         *
+         * This is the case for regular patterns (possibly wrapped in Sigma* edges for the engine matching semantics).
+         * Must be called after build_rcg().
+         *
+         * @return app_ref The concatenation of the regexes on the path, or null if the RCG is not a single path of
+         *                 match edges.
+         */
+        app_ref get_regular_path_regex();
+
     private:
         zstring m_sanitized_regex_storage; 
         zstring_view m_regex;
@@ -1254,16 +1265,6 @@ namespace smt::noodler::ecma {
          * @param root The root of the regex AST.
          */
         static void check_lookaround_backrefs(const ASTNode& root);
-
-        /**
-         * @brief Get the regex of the whole RCG if the RCG is a single path consisting only of match edges.
-         *
-         * This is the case for regular patterns (possibly wrapped in Sigma* edges for the engine matching semantics).
-         *
-         * @return app_ref The concatenation of the regexes on the path, or null if the RCG is not a single path of
-         *                 match edges.
-         */
-        app_ref get_regular_path_regex();
 
         /**
          * @brief Run an inner DFS on a subgraph to evaluate a non-regular lookaround.
@@ -1330,4 +1331,18 @@ namespace smt::noodler::ecma {
          */
         void rcg_dfs_visit(VertexID current_vertex, DFSContext& ctx);
     };
+
+    /**
+     * @brief Replace each (re.from_ecma2020 pattern) in @p regex by the classical regex of its pattern.
+     *
+     * The classical regex is the one from RegexConstraintBuilder::get_regular_path_regex(), so its language is the set
+     * of strings matching the pattern under the semantics given by @p params.
+     *
+     * @param regex  The regex in which (re.from_ecma2020 ...) is replaced.
+     * @param m      The AST manager.
+     * @param params The parameters of the string theory (the engine matching semantics).
+     * @return expr_ref The classical regex, or null if some pattern is not a string constant or is not regular
+     *                  (e.g., it contains anchors, lookarounds or backreferences).
+     */
+    expr_ref to_classical_regex(expr* regex, ast_manager& m, const theory_str_noodler_params& params);
 }  // namespace smt::noodler::ecma
