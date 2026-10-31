@@ -386,7 +386,9 @@ namespace smt::noodler::regex {
                         body_nfa.unify_final();
                         body_nfa.unify_initial();
 
-                        body_nfa = mata::nfa::reduce(body_nfa);
+                        if (body_nfa.num_of_states() < RED_BOUND) {
+                            body_nfa = mata::nfa::reduce(body_nfa);
+                        }
                         body_nfa.trim();
                         result = concatenate_chain(body_nfa, low, is_high_set ? high - low : 0);
 
