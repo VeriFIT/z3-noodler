@@ -65,12 +65,13 @@ namespace {
     ///  copies of @p body in which the final states of a copy enter the next copy, and the final states of the
     ///  copies from the @p mandatory-th on accept. Repeating by squaring would copy every intermediate power and
     ///  connect the final states of every optional copy to all the following copies.
-    /// The initial states of the copies can be unreachable: trim the result.
+    /// For a trimmed @p body with one initial state the result is trimmed: a copy is entered by the moves of its
+    ///  initial state, so the initial state is left out of the copies unless it has incoming transitions.
     Nfa concatenate_chain(const Nfa& body, unsigned mandatory, unsigned optional) {
-        const mata::nfa::State num_of_body_states = static_cast<mata::nfa::State>(body.num_of_states());
+        using mata::nfa::State;
         // Entering a copy skips its initial state, so a copy cannot be passed through on the empty word; but if
         //  the body accepts it, body^m is the same as body^{0..m}.
-        for (const mata::nfa::State init : body.initial) {
+        for (const State init : body.initial) {
             if (body.final.contains(init)) {
                 optional += mandatory;
                 mandatory = 0;
@@ -78,34 +79,73 @@ namespace {
             }
         }
         const unsigned count = mandatory + optional;
+
+        // The moves entering a copy and the copied part of the body.
+        std::vector<mata::nfa::SymbolPost> entering{};
+        mata::nfa::Delta copied{};
+        State num_of_copied_states = static_cast<State>(body.num_of_states());
+        bool omit_init = false;
+        if (body.initial.size() == 1) {
+            const State init = *body.initial.begin();
+            omit_init = true;
+            for (const mata::nfa::StatePost& post : body.delta) {
+                for (const mata::nfa::SymbolPost& move : post) {
+                    if (move.targets.contains(init)) { omit_init = false; break; }
+                }
+                if (!omit_init) { break; }
+            }
+            if (omit_init) {
+                std::vector<mata::nfa::StatePost> posts = body.delta.renumber_targets(
+                    [init](State s) { return s < init ? s : s - 1; });
+                if (init < posts.size()) {
+                    entering.assign(posts[init].begin(), posts[init].end());
+                    posts.erase(posts.begin() + init);
+                }
+                copied.append(posts);
+                --num_of_copied_states;
+            }
+        }
+        if (!omit_init) {
+            for (const State init : body.initial) {
+                for (const mata::nfa::SymbolPost& move : body.delta[init]) { entering.push_back(move); }
+            }
+            copied = body.delta;
+        }
+        std::vector<State> copied_final{};
+        for (const State fin : body.final) {
+            if (!omit_init) {
+                copied_final.push_back(fin);
+            } else if (!body.initial.contains(fin)) {
+                copied_final.push_back(fin < *body.initial.begin() ? fin : fin - 1);
+            }
+        }
+
         Nfa result{};
-        // State 0 is initial; copy c takes the states from 1 + c * num_of_body_states on.
-        const mata::nfa::State start{ 0 };
+        // State 0 is initial; copy c takes the states from 1 + c * num_of_copied_states on.
+        const State start{ 0 };
         result.initial.insert(start);
         if (mandatory == 0) { result.final.insert(start); }
         result.delta.allocate(1);
-        result.delta.reserve(1 + static_cast<size_t>(count) * num_of_body_states);
-        auto enter_copy = [&](mata::nfa::State from, mata::nfa::State offset) {
-            for (const mata::nfa::State init : body.initial) {
-                for (const mata::nfa::SymbolPost& move : body.delta[init]) {
-                    for (const mata::nfa::State target : move.targets) {
-                        result.delta.add(from, move.symbol, target + offset);
-                    }
-                }
+        result.delta.reserve(1 + static_cast<size_t>(count) * num_of_copied_states);
+        auto enter_copy = [&](State from, State offset) {
+            for (const mata::nfa::SymbolPost& move : entering) {
+                for (const State target : move.targets) { result.delta.add(from, move.symbol, target + offset); }
             }
         };
         for (unsigned copy = 0; copy < count; ++copy) {
-            const mata::nfa::State offset{ 1 + copy * num_of_body_states };
-            result.delta.append_shifted(body.delta, offset);
+            const State offset{ 1 + copy * num_of_copied_states };
+            result.delta.append_shifted(copied, offset);
             if (copy + 1 >= mandatory) {
-                for (const mata::nfa::State fin : body.final) { result.final.insert(fin + offset); }
+                for (const State fin : copied_final) { result.final.insert(fin + offset); }
             }
             if (copy == 0) {
                 enter_copy(start, offset);
             } else {
-                for (const mata::nfa::State fin : body.final) { enter_copy(fin + offset - num_of_body_states, offset); }
+                for (const State fin : copied_final) { enter_copy(fin + offset - num_of_copied_states, offset); }
             }
         }
+        // With several initial states, those of the copies can be unreachable.
+        if (body.initial.size() > 1) { result.trim(); }
         return result;
     }
 }
@@ -347,8 +387,8 @@ namespace smt::noodler::regex {
                         body_nfa.unify_initial();
 
                         body_nfa = mata::nfa::reduce(body_nfa);
+                        body_nfa.trim();
                         result = concatenate_chain(body_nfa, low, is_high_set ? high - low : 0);
-                        result.trim();
 
                         if (!is_high_set) {
                             // we repeat body_nfa unlimited times, but we have to accept after each loop,
