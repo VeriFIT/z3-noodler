@@ -1586,8 +1586,12 @@ namespace smt::noodler {
     }
 
     /**
-     * @brief Handle replace_all. Just store the instance. It is solved using transducer
-     * constraints in the final_check.
+     * @brief Handle replace_all. Store the instance, it is solved using transducer constraints in the final_check.
+     * For a string literal pattern a and replacement b, also add the length relation of the result v:
+     *   |v| = |s| + (|b| - |a|) * k  with  k >= 0  and  |a| * k <= |s|  (k is the number of replaced occurrences)
+     * Without it, an arithmetic assignment violating the relation (e.g. |s| > |v| when every |b| >= |a|) is refuted
+     * only by the decision procedure exhausting all solving states of the transducers, and then for this string
+     * assignment only.
      * 
      * @param e replace_all
      */
@@ -1601,6 +1605,22 @@ namespace smt::noodler {
         VERIFY(m_util_s.str.is_replace_all(e, s, i, l));
 
         expr_ref v = get_fresh_var_for_string_function("replace_all", e);
+
+        zstring pattern, replacement;
+        if (!m_util_s.str.is_string(i, pattern) || !m_util_s.str.is_string(l, replacement)) {
+            return;
+        }
+        expr_ref len_s(m_util_s.str.mk_length(s), m);
+        expr_ref len_v(m_util_s.str.mk_length(v), m);
+        const int growth = static_cast<int>(replacement.length()) - static_cast<int>(pattern.length());
+        if (pattern.length() == 0 || growth == 0) { // an empty pattern replaces nothing
+            add_axiom({mk_eq(len_v, len_s, false)});
+            return;
+        }
+        expr_ref k = mk_int_var_fresh("replace_all_count");
+        add_axiom({mk_literal(m_util_a.mk_ge(k, m_util_a.mk_int(0)))});
+        add_axiom({mk_literal(m_util_a.mk_le(m_util_a.mk_mul(m_util_a.mk_int(pattern.length()), k), len_s))});
+        add_axiom({mk_eq(len_v, m_util_a.mk_add(len_s, m_util_a.mk_mul(m_util_a.mk_int(growth), k)), false)});
     }
 
     /**
