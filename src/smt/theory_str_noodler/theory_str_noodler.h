@@ -128,6 +128,22 @@ namespace smt::noodler {
         obj_hashtable<expr> m_has_length;          // is length applied
         expr_ref_vector     m_length;             // length applications themselves
         std::vector<std::pair<expr_ref, stored_instance>> axiomatized_instances;
+        struct blocked_structure {
+            unsigned num_blocks = 0;
+            // terms of the literals kept by the last generalisation (see block_curr_len_generalised)
+            expr_ref_vector kept_terms;
+            explicit blocked_structure(ast_manager& m) : kept_terms(m) {}
+        };
+        // Blocked string assignments by the ids of the relevant constraints that block_curr_len_generalised may not drop
+        std::map<std::vector<unsigned>, blocked_structure> blocked_structures;
+        // number of blocks of a structure before block_curr_len_generalised generalises them
+        static constexpr unsigned GENERALISE_AFTER_BLOCKS = 10;
+        // The trials of block_curr_len_generalised may run as many length checks as GENERALISE_CHECK_FACTOR times the
+        // final check did before, but at least GENERALISE_MIN_CHECKS (a deterministic limit, unlike time).
+        static constexpr unsigned long GENERALISE_CHECK_FACTOR = 8;
+        static constexpr unsigned long GENERALISE_MIN_CHECKS = 64;
+        unsigned long num_len_checks = 0; // number of calls of check_len_sat
+        unsigned long num_len_checks_at_final_check = 0; // num_len_checks at the start of the last final check
 
         // TODO what are these?
         vector<std::pair<obj_hashtable<expr>,std::vector<app_ref>>> len_state;
@@ -571,6 +587,32 @@ namespace smt::noodler {
          * TODO explain better
          */
         void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool is_overapprox = false);
+
+        /**
+         * @brief Blocks the current string assignment as block_curr_len does, but without the relevant (dis)equations
+         * with a string literal side and memberships that the main decision procedure does not need to refute it.
+         *
+         * Such literals (e.g., the case `(str.at w i) = "a"` of a split over characters) make the blocked string
+         * assignment specific to a single case, so the SAT solver would otherwise enumerate the cases one by one.
+         *
+         * @param len_formula Length formula of the current instance, refuted by the current context
+         * @param add_axiomatized Add item to the vector of axiomatized instances (for the loop protection)
+         * @param is_overapprox Is @p len_formula an over-approximation (for the loop protection)
+         */
+        void block_curr_len_generalised(expr_ref len_formula, bool add_axiomatized = true, bool is_overapprox = false);
+
+        /**
+         * @brief Runs the main decision procedure on the current relevant constraints, checking lengths together with
+         * @p ctx_core (a part of the current context) instead of the whole context.
+         *
+         * @param ctx_core Formula implied by the current context
+         * @param max_len_checks Value of num_len_checks after which the procedure gives up (by throwing refutation_limit)
+         * @param[out] block_len If l_false is returned, a length formula implied by the relevant constraints and
+         *                       refuted by @p ctx_core
+         * @return l_false if the relevant constraints are refuted together with @p ctx_core, l_undef otherwise
+         */
+        lbool refute_relevant_with(expr* ctx_core, unsigned long max_len_checks, expr_ref& block_len);
+        struct refutation_limit {};
 
         /**
          * @brief Checks if the current instance is suitable for Nielsen decision procedure.

@@ -1,3 +1,4 @@
+#include <array>
 #include <mata/nfa/builder.hh>
 #include <memory>
 #include "ast/ast_util.h"
@@ -53,6 +54,7 @@ namespace smt::noodler {
             return FC_CONTINUE;
         }
 
+        num_len_checks_at_final_check = num_len_checks;
         dec_proc = nullptr;
         relevant_vars.clear();
         scope_with_last_run_was_sat = -1;
@@ -253,9 +255,9 @@ namespace smt::noodler {
             // we want to kill it after preprocessing as it generates stronger theory lemma (negation of the string part).
             lbool result = main_dec_proc->preprocess(PreprocessType::PLAIN, this->var_eqs.get_equivalence_bt(aut_assignment, ctx, m_util_s, asserted_kernel));
             if (result == l_false) {
-                block_curr_len(expr_ref(m.mk_false(), m), false, true);
+                block_curr_len_generalised(expr_ref(m.mk_false(), m), false, true);
             } else {
-                block_curr_len(lengths, true, true);
+                block_curr_len_generalised(lengths, true, true);
             }
             return FC_CONTINUE;
 
@@ -289,7 +291,7 @@ namespace smt::noodler {
         if (result == l_false) {
             this->statistics.at("stabilization").num_solved_preprocess++;
             STRACE(str, tout << "Unsat from preprocessing" << std::endl);
-            block_curr_len(expr_ref(m.mk_false(), m), false, true); // we do not store for loop protection
+            block_curr_len_generalised(expr_ref(m.mk_false(), m), false, true); // we do not store for loop protection
             return FC_CONTINUE;
         } // we do not check for l_true, because we will get it in get_another_solution() anyway TODO: should we check?
 
@@ -299,7 +301,7 @@ namespace smt::noodler {
         if(check_len_sat(lengths, check_len_sat_with_context) == l_false) {
             this->statistics.at("stabilization").num_solved_preprocess++;
             STRACE(str, tout << "Unsat from initial lengths (2)" << std::endl);
-            block_curr_len(lengths, true, true);
+            block_curr_len_generalised(lengths, true, true);
             return FC_CONTINUE;
         }
 
@@ -373,12 +375,12 @@ namespace smt::noodler {
 
                 if (!check_len_sat_with_context) {
                     // if we were not checking length satisfiability with the context, then the current string assignment must be unsatisfiable on its own => we can block it completely
-                    block_curr_len(expr_ref(m.mk_false(), m));
+                    block_curr_len_generalised(expr_ref(m.mk_false(), m));
                 } else {
                     // If some solving states were skipped, an overapproximation was added to block_len
                     const bool overapprox = main_dec_proc->get_skipped_some_with_len_checks();
 
-                    block_curr_len(block_len, true, overapprox);
+                    block_curr_len_generalised(block_len, true, overapprox);
                 }
                 this->statistics.at("stabilization").num_finish++;
                 return FC_CONTINUE;
@@ -866,6 +868,7 @@ namespace smt::noodler {
             return l_true;
         }
 
+        ++num_len_checks;
         bool compute_model = (model_formula != nullptr);
         bool compute_unsat_core = (unsat_core != nullptr);
 
@@ -1003,6 +1006,283 @@ namespace smt::noodler {
             add_axiom(m.mk_or(m.mk_not(refinement), len_formula));
         }
         STRACE(str_block, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
+    }
+
+    void theory_str_noodler::block_curr_len_generalised(expr_ref len_formula, bool add_axiomatized, bool is_overapprox) {
+        // Soundness: the kept literals R' are implied by the blocked refinement R. If the decision procedure refutes R'
+        // with the lengths checked together with a part K of the current context, it yields a length formula L' implied
+        // by R' (the disjunction of the lengths of the explored solving states, as for R) such that L' && K is unsat. So
+        // the lemmas `!R' || L'` and `!(R' && K)` are valid and refute the current assignment as `!R || len_formula` does.
+        enum class Kind { EQ, DISEQ, MEMB };
+        struct Candidate {
+            Kind kind;
+            unsigned idx;
+            expr* term; // the constrained term, i.e., the side that is not a string literal or the member
+            expr* literal; // the string literal side, nullptr for a membership
+        };
+        std::vector<Candidate> candidates;
+        auto add_if_literal_side = [&](Kind kind, unsigned idx, const expr_pair& p) {
+            if (m_util_s.str.is_string(p.first)) {
+                candidates.push_back({kind, idx, p.second, p.first});
+            } else if (m_util_s.str.is_string(p.second)) {
+                candidates.push_back({kind, idx, p.first, p.second});
+            }
+        };
+        for (unsigned i = 0; i < m_word_eq_todo_rel.size(); ++i) {
+            add_if_literal_side(Kind::EQ, i, m_word_eq_todo_rel[i]);
+        }
+        for (unsigned i = 0; i < m_word_diseq_todo_rel.size(); ++i) {
+            add_if_literal_side(Kind::DISEQ, i, m_word_diseq_todo_rel[i]);
+        }
+        for (unsigned i = 0; i < m_membership_todo_rel.size(); ++i) {
+            candidates.push_back({Kind::MEMB, i, std::get<0>(m_membership_todo_rel[i]), nullptr});
+        }
+        if (candidates.empty()) {
+            block_curr_len(len_formula, add_axiomatized, is_overapprox);
+            return;
+        }
+        // the candidates on the same term are adjacent
+        std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+            return a.term->get_id() < b.term->get_id();
+        });
+
+        const vector<expr_pair> eqs = m_word_eq_todo_rel;
+        const vector<expr_pair> diseqs = m_word_diseq_todo_rel;
+        const vector<expr_pair_flag> membs = m_membership_todo_rel;
+        std::vector<bool> dropped_eq(eqs.size(), false), dropped_diseq(diseqs.size(), false), dropped_memb(membs.size(), false);
+        auto dropped = [&](size_t k) -> std::vector<bool>::reference {
+            switch (candidates[k].kind) {
+                case Kind::EQ: return dropped_eq[candidates[k].idx];
+                case Kind::DISEQ: return dropped_diseq[candidates[k].idx];
+                default: return dropped_memb[candidates[k].idx];
+            }
+        };
+        auto set_relevant = [&]() {
+            m_word_eq_todo_rel.reset();
+            for (unsigned i = 0; i < eqs.size(); ++i) { if (!dropped_eq[i]) { m_word_eq_todo_rel.push_back(eqs[i]); } }
+            m_word_diseq_todo_rel.reset();
+            for (unsigned i = 0; i < diseqs.size(); ++i) { if (!dropped_diseq[i]) { m_word_diseq_todo_rel.push_back(diseqs[i]); } }
+            m_membership_todo_rel.reset();
+            for (unsigned i = 0; i < membs.size(); ++i) { if (!dropped_memb[i]) { m_membership_todo_rel.push_back(membs[i]); } }
+        };
+        auto restore_relevant = [&]() {
+            m_word_eq_todo_rel = eqs;
+            m_word_diseq_todo_rel = diseqs;
+            m_membership_todo_rel = membs;
+        };
+
+        // Only blocks of string assignments that differ in the candidates only from many blocked ones are generalised:
+        // these enumerate cases of the candidates, otherwise the trials rarely pay off. The structure is identified by
+        // the ids of the other relevant constraints, as new expressions would change the ids of the later ones and so
+        // the search, also where nothing gets generalised.
+        for (size_t k = 0; k < candidates.size(); ++k) { dropped(k) = true; }
+        std::vector<std::array<unsigned, 4>> constraint_ids;
+        for (unsigned i = 0; i < eqs.size(); ++i) {
+            if (!dropped_eq[i]) { constraint_ids.push_back({0, eqs[i].first->get_id(), eqs[i].second->get_id(), 0}); }
+        }
+        for (unsigned i = 0; i < diseqs.size(); ++i) {
+            if (!dropped_diseq[i]) { constraint_ids.push_back({1, diseqs[i].first->get_id(), diseqs[i].second->get_id(), 0}); }
+        }
+        for (const auto& memb : m_rat_membership_todo_rel) {
+            constraint_ids.push_back({std::get<3>(memb) ? 2u : 3u, std::get<0>(memb)->get_id(), std::get<1>(memb)->get_id(), std::get<2>(memb)->get_id()});
+        }
+        for (const auto& nc : m_not_contains_todo_rel) {
+            constraint_ids.push_back({4, nc.first->get_id(), nc.second->get_id(), 0});
+        }
+        for (size_t k = 0; k < candidates.size(); ++k) { dropped(k) = false; }
+        std::sort(constraint_ids.begin(), constraint_ids.end());
+        std::vector<unsigned> structure;
+        for (const auto& ids : constraint_ids) { structure.insert(structure.end(), ids.begin(), ids.end()); }
+        blocked_structure& blocked = blocked_structures.try_emplace(std::move(structure), m).first->second;
+        if (++blocked.num_blocks < GENERALISE_AFTER_BLOCKS) {
+            block_curr_len(len_formula, add_axiomatized, is_overapprox);
+            return;
+        }
+
+        // The part of the context refuting len_formula; the reduced constraints only need to be refuted with it.
+        expr_ref ctx_core(m.mk_true(), m);
+        if (!m.is_false(len_formula)) {
+            // check_len_sat rewrites len_formula, rewriting it here lets us recognize it in the core
+            expr_ref checked_len_formula = len_formula;
+            m_rewrite(checked_len_formula);
+            expr_ref_vector core(m);
+            if (check_len_sat(checked_len_formula, true, &core) != l_false) {
+                block_curr_len(len_formula, add_axiomatized, is_overapprox);
+                return;
+            }
+            expr_ref_vector ctx_lits(m);
+            for (expr* e : core) {
+                if (e != checked_len_formula.get()) { ctx_lits.push_back(e); }
+            }
+            ctx_core = mk_and(ctx_lits);
+        }
+
+        // The trials may explore far more solving states than the blocked instance needed, so they get a multiple of
+        // the length checks the final check ran so far.
+        const unsigned long max_len_checks = num_len_checks + std::max(GENERALISE_MIN_CHECKS,
+            GENERALISE_CHECK_FACTOR * (num_len_checks - num_len_checks_at_final_check));
+        expr_ref generalised_len(m);
+        // Drops the candidates @p ks if the rest is still refuted.
+        auto try_drop = [&](const std::vector<size_t>& ks) {
+            if (ks.empty()) { return true; }
+            if (num_len_checks >= max_len_checks) { return false; }
+            for (size_t k : ks) { dropped(k) = true; }
+            set_relevant();
+            expr_ref trial_len(m);
+            lbool refuted = l_undef;
+            try {
+                refuted = refute_relevant_with(ctx_core, max_len_checks, trial_len);
+            } catch (const refutation_limit&) {
+            } catch (const default_exception&) {
+                // e.g., the reduced constraints need a feature the procedure does not support
+                if (m.limit().is_canceled()) {
+                    restore_relevant();
+                    throw;
+                }
+            }
+            if (refuted == l_false) {
+                generalised_len = trial_len;
+                return true;
+            }
+            for (size_t k : ks) { dropped(k) = false; }
+            return false;
+        };
+        auto kept_candidates = [&](const std::function<bool(const Candidate&)>& pred) {
+            std::vector<size_t> ks;
+            for (size_t k = 0; k < candidates.size(); ++k) {
+                if (!dropped(k) && pred(candidates[k])) { ks.push_back(k); }
+            }
+            return ks;
+        };
+        auto was_kept = [&](expr* term) { return blocked.kept_terms.contains(term); };
+
+        // A block of a case split usually needs a few literals, at most one on each term; the terms of the literals
+        // needed by the last generalisation of the same structure are likely to be needed again.
+        if (!try_drop(kept_candidates([](const Candidate&) { return true; }))) {
+            const bool dropped_unkept_terms = !blocked.kept_terms.empty() &&
+                try_drop(kept_candidates([&](const Candidate& c) { return !was_kept(c.term); }));
+            for (size_t begin = 0, end; begin < candidates.size(); begin = end) {
+                expr* term = candidates[begin].term;
+                for (end = begin + 1; end < candidates.size() && candidates[end].term == term; ++end) {}
+                if (!(dropped_unkept_terms && was_kept(term))) {
+                    try_drop(kept_candidates([term](const Candidate& c) { return c.term == term; }));
+                }
+            }
+            // keep halving the literals of each term while one half can be dropped
+            for (size_t begin = 0, end; begin < candidates.size(); begin = end) {
+                expr* term = candidates[begin].term;
+                for (end = begin + 1; end < candidates.size() && candidates[end].term == term; ++end) {}
+                std::vector<size_t> ks = kept_candidates([term](const Candidate& c) { return c.term == term; });
+                // A case split often compares terms with the same character, e.g. `u[i] = "a" && w[i] != "a"`: first
+                // try to keep only the literals with the string literal of a kept literal on another term.
+                std::vector<size_t> same_literal, other;
+                for (size_t k : ks) {
+                    expr* literal = candidates[k].literal;
+                    const bool same = literal != nullptr && !kept_candidates([&](const Candidate& c) {
+                        return c.term != term && c.literal == literal;
+                    }).empty();
+                    (same ? same_literal : other).push_back(k);
+                }
+                if (ks.size() > 1 && !same_literal.empty() && !other.empty() && try_drop(other)) {
+                    ks = same_literal;
+                }
+                while (ks.size() > 1) {
+                    const std::vector<size_t> first(ks.begin(), ks.begin() + ks.size() / 2);
+                    const std::vector<size_t> second(ks.begin() + ks.size() / 2, ks.end());
+                    if (try_drop(first)) {
+                        ks = second;
+                    } else if (try_drop(second)) {
+                        ks = first;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        blocked.kept_terms.reset();
+        for (size_t k : kept_candidates([](const Candidate&) { return true; })) {
+            if (!blocked.kept_terms.contains(candidates[k].term)) { blocked.kept_terms.push_back(candidates[k].term); }
+        }
+
+        set_relevant();
+        // no refinement is left if all relevant constraints were dropped; block_curr_len would block nothing then
+        expr_ref refinement = construct_refinement();
+        if (generalised_len && refinement) {
+            if (m.is_true(ctx_core)) {
+                // the length formula is refuted on its own, so the reduced constraints are unsatisfiable
+                block_curr_len(expr_ref(m.mk_false(), m), add_axiomatized, true);
+            } else {
+                // the lengths were checked with a part of the context only, so the loop protection must not use them for sat
+                block_curr_len(generalised_len, add_axiomatized, true);
+                // The SAT solver can satisfy the lemma above by fresh variables of the length formula and come back with
+                // the same literals (see run_loop_protection); this lemma over its literals refutes them for good.
+                expr_ref lemma(m.mk_not(m.mk_and(refinement, ctx_core)), m);
+                set_input_has_quantifiers(expr_cases::has_quantifier(lemma, m));
+                ctx.internalize(lemma.get(), true);
+                add_axiom({mk_literal(lemma)});
+            }
+            restore_relevant();
+        } else {
+            restore_relevant();
+            // the next blocks of the structure are not generalised until it is blocked as many times again
+            blocked.num_blocks = 0;
+            block_curr_len(len_formula, add_axiomatized, is_overapprox);
+        }
+    }
+
+    lbool theory_str_noodler::refute_relevant_with(expr* ctx_core, unsigned long max_len_checks, expr_ref& block_len) {
+        regex::Alphabet symbols_in_formula = get_symbols_from_relevant();
+        Formula instance = get_formula_from_relevant(symbols_in_formula);
+        AutAssignment aut_assignment{create_aut_assignment_for_formula(instance, symbols_in_formula)};
+        std::vector<TermConversion> conversions = get_conversions_as_basicterms(aut_assignment);
+        DecisionProcedure proc(instance, aut_assignment, get_init_length_vars(aut_assignment), m_params, conversions, m);
+
+        auto check = [this, ctx_core, max_len_checks](const expr_ref& lengths) {
+            if (num_len_checks >= max_len_checks) { throw refutation_limit(); }
+            return check_len_sat(expr_ref(m.mk_and(lengths, ctx_core), m), false);
+        };
+        // the same steps as the main decision procedure in final_check_eh
+        expr_ref lengths = len_node_to_z3_formula(proc.get_initial_lengths(true));
+        if (check(lengths) == l_false) {
+            block_len = lengths;
+            return l_false;
+        }
+        if (proc.preprocess(PreprocessType::PLAIN, this->var_eqs.get_equivalence_bt(aut_assignment, ctx, m_util_s, asserted_kernel)) == l_false) {
+            block_len = m.mk_false();
+            return l_false;
+        }
+        lengths = len_node_to_z3_formula(proc.get_initial_lengths());
+        if (check(lengths) == l_false) {
+            block_len = lengths;
+            return l_false;
+        }
+
+        proc.init_computation();
+        block_len = m.mk_false();
+        LenNodePrecision precision = LenNodePrecision::PRECISE;
+        auto check_lens = [this, &proc, &lengths, &precision, &check]() {
+            auto [noodler_lengths, prec] = proc.get_lengths();
+            precision = prec;
+            lengths = len_node_to_z3_formula(noodler_lengths);
+            m_rewrite(lengths);
+            return check(lengths);
+        };
+        auto block_checked_lens = [this, &lengths, &block_len]() {
+            block_len = m.mk_or(block_len, lengths);
+        };
+        while (true) {
+            util::check_limit(m);
+            if (num_len_checks >= max_len_checks) { throw refutation_limit(); }
+            const lbool result = proc.compute_next_solution_with_len_checks(check_lens, block_checked_lens);
+            if (result != l_true) {
+                return result;
+            }
+            // an under-approximation of lengths does not refute the solution
+            if (check_lens() != l_false || precision == LenNodePrecision::UNDERAPPROX) {
+                return l_undef;
+            }
+            block_len = m.mk_or(block_len, lengths);
+        }
     }
 
     bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const {
