@@ -122,6 +122,24 @@ namespace smt::noodler {
         });
     }
 
+    bool DecisionProcedure::violates_disequation(const SolvingState& solving_state) {
+        auto normalize = [](const Concat& side) {
+            Concat result;
+            for (const BasicTerm& term : side) {
+                if (term.is_literal() && term.get_name().length() == 0) { continue; }
+                if (term.is_literal() && !result.empty() && result.back().is_literal()) {
+                    result.back() = BasicTerm(BasicTermType::Literal, result.back().get_name() + term.get_name());
+                } else {
+                    result.push_back(term);
+                }
+            }
+            return result;
+        };
+        return std::ranges::any_of(solving_state.postponed_disequations.get_predicates(), [&normalize](const Predicate& diseq) {
+            return normalize(diseq.get_left_side()) == normalize(diseq.get_right_side());
+        });
+    }
+
     lbool DecisionProcedure::compute_next_solution() {
         // We call the one with length checks but don't check them
         return compute_next_solution_with_len_checks(nullptr, nullptr);
@@ -143,9 +161,9 @@ namespace smt::noodler {
         while (!is_worklist_empty()) {
             util::check_limit(m);
             SolvingState element_to_process = pop_from_worklist();
-            if (violates_not_contains(element_to_process)) {
+            if (violates_not_contains(element_to_process) || violates_disequation(element_to_process)) {
                 // every solution of this solving state, and so of each state that would follow it, makes the needle of
-                // some not-contains predicate a factor of its haystack
+                // some not-contains predicate a factor of its haystack, or the sides of some disequation equal
                 continue;
             }
 

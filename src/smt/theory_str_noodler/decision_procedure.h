@@ -144,6 +144,12 @@ namespace smt::noodler {
          */
         bool violates_not_contains(const SolvingState& solving_state) const;
 
+        /**
+         * Whether some postponed disequation of @p solving_state has, after its substitutions, the same sides (adjacent
+         * literals merged); then no solution of @p solving_state satisfies it.
+         */
+        static bool violates_disequation(const SolvingState& solving_state);
+
         /// State of a found satisfiable solution set when one is computed using
         ///  compute_next_solution() or after preprocess()
         SolvingState solution;
