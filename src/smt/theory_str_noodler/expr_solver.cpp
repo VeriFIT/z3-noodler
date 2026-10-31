@@ -49,6 +49,8 @@ namespace smt::noodler {
     kernel& asserted_formulas_kernel::get_empty(const smt_params& fp) {
         if (!empty_solver) {
             empty_fp = fp;
+            // the length formulas checked here are rewritten already; preprocessing them costs more than it saves
+            empty_fp.m_preprocess = false;
             empty_solver = alloc(kernel, m, empty_fp);
         }
         return *empty_solver;
