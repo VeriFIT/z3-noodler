@@ -118,7 +118,12 @@ namespace smt::noodler {
 
             bool first = true;
             for (auto& reg : list_of_normal_regs) {
-                intersection = mata::nfa::intersection(*nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false), intersection);
+                if (first) {
+                    // the universal automaton is the identity of intersection: take the NFA instead of a product with it
+                    intersection = *nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false);
+                } else {
+                    intersection = mata::nfa::intersection(*nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false), intersection);
+                }
                 if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
                     && intersection.num_of_states() < regex::RED_BOUND)
                 {
