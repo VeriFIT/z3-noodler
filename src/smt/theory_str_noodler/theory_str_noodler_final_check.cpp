@@ -797,19 +797,35 @@ namespace smt::noodler {
             regex::extract_symbols(right_side, m_util_s, alph);
             alph.insert_dummy_if_not_full(); // dummy is needed for example for equation such as (= re.allchar (str.to_re "a"))
 
-            // construct NFAs for both sides
-            std::shared_ptr<const mata::nfa::Nfa> nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
-            std::shared_ptr<const mata::nfa::Nfa> nfa2 = nfa_constructor.conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
+            auto is_lang_empty = [&](expr* regex) {
+                expr *lhs, *rhs;
+                if (m_util_s.re.is_intersection(regex, lhs, rhs)) {
+                    // searched for a common word on the fly: building the product would reduce its arguments and itself
+                    std::shared_ptr<const mata::nfa::Nfa> lhs_nfa = nfa_constructor.conv_to_nfa(to_app(lhs), m_util_s, m, alph, false);
+                    std::shared_ptr<const mata::nfa::Nfa> rhs_nfa = nfa_constructor.conv_to_nfa(to_app(rhs), m_util_s, m, alph, false);
+                    return mata::nfa::is_intersection_empty(*lhs_nfa, *rhs_nfa);
+                }
+                return nfa_constructor.conv_to_nfa(to_app(regex), m_util_s, m, alph, false)->is_lang_empty();
+            };
 
             // check if NFAs are equivalent (if we have equation) or not (if we have disequation)
             bool are_equiv;
             // for the case that one side is empty, we just need to check if the other automaton is empty
-            if (nfa1->num_of_states() == 0) {
-                are_equiv = nfa2->is_lang_empty();
-            } else if (nfa2->num_of_states() == 0) {
-                are_equiv = nfa1->is_lang_empty();
+            if (m_util_s.re.is_empty(left_side)) {
+                are_equiv = is_lang_empty(right_side);
+            } else if (m_util_s.re.is_empty(right_side)) {
+                are_equiv = is_lang_empty(left_side);
             } else {
-                are_equiv = mata::nfa::are_equivalent(*nfa1, *nfa2);
+                // construct NFAs for both sides
+                std::shared_ptr<const mata::nfa::Nfa> nfa1 = nfa_constructor.conv_to_nfa(to_app(left_side), m_util_s, m, alph, false );
+                std::shared_ptr<const mata::nfa::Nfa> nfa2 = nfa_constructor.conv_to_nfa(to_app(right_side), m_util_s, m ,alph, false );
+                if (nfa1->num_of_states() == 0) {
+                    are_equiv = nfa2->is_lang_empty();
+                } else if (nfa2->num_of_states() == 0) {
+                    are_equiv = nfa1->is_lang_empty();
+                } else {
+                    are_equiv = mata::nfa::are_equivalent(*nfa1, *nfa2);
+                }
             }
             if ((is_equation && !are_equiv) || (!is_equation && are_equiv)) {
                 // the language (dis)equation does not hold => block it and return
