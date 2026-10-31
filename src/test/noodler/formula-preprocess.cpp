@@ -1048,3 +1048,44 @@ TEST_CASE( "Generate identities circular removal", "[noodler]" ) {
         CHECK(std::any_of(eqs.begin(), eqs.end(), [&res](const Predicate& eq) { return res.contains(eq); }));
     } while (std::next_permutation(order.begin(), order.end()));
 }
+
+TEST_CASE( "Reduce commutation", "[noodler]" ) {
+    BasicTerm x{ BasicTermType::Variable, "x"};
+    BasicTerm y{ BasicTermType::Variable, "y"};
+    BasicTerm a{ BasicTermType::Literal, "a"};
+    BasicTerm aa{ BasicTermType::Literal, "aa"};
+    BasicTerm ab{ BasicTermType::Literal, "ab"};
+    AutAssignment aut_ass({
+        {x, regex_to_nfa("(a|b)*")}, {y, regex_to_nfa("(a|b)*")},
+        {a, regex_to_nfa("a")}, {aa, regex_to_nfa("aa")}, {ab, regex_to_nfa("ab")},
+    });
+    auto reduce = [&aut_ass, &x](const Predicate& eq) {
+        Formula conj;
+        conj.add_predicate(eq);
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        prep.reduce_commutation();
+        return std::make_pair(prep.get_formula().get_predicates_set(), *prep.get_aut_assignment().at(x));
+    };
+    const mata::Word aaa{'a', 'a', 'a'}, aab{'a', 'a', 'b'};
+
+    SECTION("a x = x y") {
+        auto [res, x_aut] = reduce(Predicate::create_equation({a, x}, {x, y}));
+        CHECK(res == std::set<Predicate>{Predicate::create_equation({y}, {a})});
+        CHECK(x_aut.is_in_lang(aaa));
+        CHECK(!x_aut.is_in_lang(aab));
+    }
+
+    SECTION("y x = x aa") {
+        auto [res, x_aut] = reduce(Predicate::create_equation({y, x}, {x, aa}));
+        CHECK(res == std::set<Predicate>{Predicate::create_equation({y}, {aa})});
+        CHECK(x_aut.is_in_lang(aaa));
+        CHECK(!x_aut.is_in_lang(aab));
+    }
+
+    SECTION("two letters are kept") {
+        Predicate eq = Predicate::create_equation({ab, x}, {x, y});
+        auto [res, x_aut] = reduce(eq);
+        CHECK(res == std::set<Predicate>{eq});
+        CHECK(x_aut.is_in_lang(aab));
+    }
+}

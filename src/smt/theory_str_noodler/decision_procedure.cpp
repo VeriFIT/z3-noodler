@@ -1410,6 +1410,7 @@ namespace smt::noodler {
         prep_handler.reduce_regular_sequence(1);
         prep_handler.generate_identities();
         prep_handler.propagate_variables();
+        prep_handler.reduce_commutation();
         prep_handler.remove_regular();
 
         prep_handler.conversions_validity(conversion_handler.get_conversions());

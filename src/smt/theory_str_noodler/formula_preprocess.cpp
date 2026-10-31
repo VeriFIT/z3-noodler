@@ -1548,6 +1548,76 @@ namespace smt::noodler {
     }
 
     /**
+     * @brief Replace commutation equations c^n X = X V (or X c^n = V X) by V = c^n and X in c*, where c is a
+     * character, n > 0, X a variable and V a nonempty concatenation.
+     *
+     * For words, u x = x v with u nonempty holds iff u = st, v = ts and x = (st)^k s for some s, t, k
+     * (Lyndon-Schützenberger). For u = c^n this forces x in c* and v = c^n; conversely c^n c^m = c^m c^n.
+     * The rule thus keeps the set of solutions, while the decision procedure keeps unfolding the cyclic
+     * equation without it.
+     */
+    void FormulaPreprocessor::reduce_commutation() {
+        STRACE(str_prep, tout << "Preprocessing step - reduce_commutation\n";);
+        // if lits X = X rest with lits = c^n, return c
+        auto commutation_char = [](const Concat& lits_x, const Concat& x_rest) -> std::optional<unsigned> {
+            if(lits_x.size() < 2 || x_rest.size() < 2) return std::nullopt;
+            const BasicTerm& x = lits_x.back();
+            if(!x.is_variable() || x_rest.front() != x) return std::nullopt;
+            std::optional<unsigned> c;
+            for(size_t i = 0; i + 1 < lits_x.size(); i++) {
+                if(!lits_x[i].is_literal()) return std::nullopt;
+                const zstring& word = lits_x[i].get_name();
+                for(size_t j = 0; j < word.length(); j++) {
+                    if(c.has_value() && *c != word[j]) return std::nullopt;
+                    c = word[j];
+                }
+            }
+            return c;
+        };
+
+        std::vector<std::tuple<size_t, BasicTerm, unsigned, Predicate>> found;
+        for(const auto& [id, pred] : this->formula.get_predicates()) {
+            if(!pred.is_equation()) continue;
+            for(const bool swap : {false, true}) {
+                Concat lits_x = swap ? pred.get_right_side() : pred.get_left_side();
+                Concat x_rest = swap ? pred.get_left_side() : pred.get_right_side();
+                bool reversed = false;
+                std::optional<unsigned> c = commutation_char(lits_x, x_rest);
+                if(!c.has_value()) {
+                    // the mirrored form X c^n = V X
+                    std::reverse(lits_x.begin(), lits_x.end());
+                    std::reverse(x_rest.begin(), x_rest.end());
+                    c = commutation_char(lits_x, x_rest);
+                    reversed = true;
+                }
+                if(!c.has_value()) continue;
+                Concat rest(x_rest.begin() + 1, x_rest.end());
+                Concat lits(lits_x.begin(), lits_x.end() - 1);
+                if(reversed) {
+                    // c^n reads the same reversed, only the order of the terms of rest matters
+                    std::reverse(rest.begin(), rest.end());
+                    std::reverse(lits.begin(), lits.end());
+                }
+                found.emplace_back(id, lits_x.back(), *c, Predicate::create_equation(rest, lits));
+                break;
+            }
+        }
+
+        for(const auto& [id, x, c, new_pred] : found) {
+            STRACE(str_prep, tout << "reduce_commutation: " << this->formula.get_predicate(id) << " -> " << new_pred << ", " << x << " in (" << c << ")*\n";);
+            mata::nfa::Nfa c_star(1, {0}, {0});
+            c_star.delta.add(0, c, 0);
+            auto x_aut = this->aut_ass.find(x);
+            mata::nfa::Nfa inters = (x_aut == this->aut_ass.end()) ? c_star : mata::nfa::intersection(*x_aut->second, c_star);
+            inters.trim();
+            this->aut_ass[x] = std::make_shared<mata::nfa::Nfa>(std::move(inters));
+            this->formula.remove_predicate(id);
+            this->formula.add_predicate(new_pred);
+        }
+        STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
+    }
+
+    /**
      * @brief Construct replace map. Replace map contains all items of the form X -> {W1 W2, W3, ...} if 
      * there are quations X = W1 W2, X = W3, ... 
      * 

@@ -429,6 +429,7 @@ namespace smt::noodler {
         void infer_alignment();
         void common_prefix_propagation();
         void common_suffix_propagation();
+        void reduce_commutation();
         void conversions_validity(const std::vector<TermConversion>& conversions);
         bool has_unsat_transducers();
 
