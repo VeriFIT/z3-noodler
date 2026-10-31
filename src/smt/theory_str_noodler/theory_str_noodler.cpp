@@ -649,6 +649,21 @@ namespace smt::noodler {
                 // if we have two distinct literals, we immediately stop by not allowing this equation
                 add_axiom({mk_literal(m.mk_not(equation))});
             } else if (!m.is_true(equation_atom)) {
+                // Z3 does not take string literals for unique values (see seq_decl_plugin::is_unique_value), so it merges
+                // classes with distinct string literals without a conflict, e.g. by `t = "a"` and `t = "b"`.
+                enode* literal_node = nullptr;
+                for (enode* n : *get_enode(x)->get_root()) {
+                    if (!m_util_s.str.is_string(n->get_expr())) {
+                        continue;
+                    }
+                    if (literal_node == nullptr) {
+                        literal_node = n;
+                    } else if (literal_node->get_expr() != n->get_expr()) {
+                        const enode_pair eq(literal_node, n);
+                        ctx.set_conflict(ctx.mk_justification(ext_theory_conflict_justification(get_id(), ctx, 0, nullptr, 1, &eq)));
+                        return;
+                    }
+                }
                 // if equation is not trivially true, we add it for later check
                 m_word_eq_todo.push_back({l, r});
 
