@@ -122,6 +122,8 @@ namespace smt::noodler {
         obj_hashtable<expr> axiomatized_persist_terms;
         // constraints generated for ECMAScript regex memberships, reused when their axioms are added again (see handle_ecma_re)
         std::unordered_map<expr*, ecma_constraints> ecma_constraints_cache;
+        // fresh witnesses (left, right) of str.contains(a, s), i.e. a = left.s.right, shared by the contains and replace axioms of (a, s)
+        std::unordered_map<expr*, std::tuple<expr_ref, expr_ref, expr_ref>> contains_witnesses;
         obj_hashtable<expr> propagated_string_theory; // expressions that were already processed by string_theory_propagation (to avoid looping)
         obj_hashtable<expr> m_has_length;          // is length applied
         expr_ref_vector     m_length;             // length applications themselves
@@ -330,6 +332,20 @@ namespace smt::noodler {
             predicate_replace.insert(str_func, res.get());
             add_axiom({mk_eq(res, str_func, false)});
             return res;
+        }
+
+        /**
+         * @brief Get the fresh witnesses (left, right) of @p contains_term = str.contains(a, s), creating them on first use.
+         *
+         * The contains axiom (a = left.s.right) and the replace axioms of (a, s) (leftmost occurrence) share them, so
+         * the decision procedure sees one decomposition of a instead of two independent ones.
+         */
+        std::pair<expr_ref, expr_ref> get_contains_witness(expr* contains_term) {
+            auto it = contains_witnesses.find(contains_term);
+            if (it == contains_witnesses.end()) {
+                it = contains_witnesses.emplace(contains_term, std::make_tuple(expr_ref(contains_term, m), mk_str_var_fresh("contains_left"), mk_str_var_fresh("contains_right"))).first;
+            }
+            return {std::get<1>(it->second), std::get<2>(it->second)};
         }
 
         // methods for rewriting different predicates into something simpler that we can handle

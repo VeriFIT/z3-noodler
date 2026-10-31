@@ -1359,7 +1359,8 @@ namespace smt::noodler {
 
         // GENERAL CASE
 
-        literal cnt = mk_literal(m_util_s.str.mk_contains(a, s));
+        expr_ref cnt_term(m_util_s.str.mk_contains(a, s), m);
+        literal cnt = mk_literal(cnt_term);
         // a = eps && s != eps -> v = a
         add_axiom({~a_emp, s_emp, mk_eq(v, a, false)});
         // (not(contains(a,s))) -> v = a
@@ -1370,8 +1371,8 @@ namespace smt::noodler {
             add_axiom({~cnt, mk_eq(m_util_s.str.mk_length(v), m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(str_a.length() - str_b.length())), false)});
         }
 
-        expr_ref x = mk_str_var_fresh("replace_left");
-        expr_ref y = mk_str_var_fresh("replace_right");
+        // the leftmost occurrence is a valid witness of contains(a, s), so share the witnesses with its contains axiom
+        auto [x, y] = get_contains_witness(cnt_term);
         expr_ref xty = mk_concat(x, mk_concat(t, y));
         expr_ref xsy = mk_concat(x, mk_concat(s, y));
 
@@ -2140,8 +2141,7 @@ namespace smt::noodler {
             return;
         }
 
-        expr_ref p = mk_str_var_fresh("contains_left");
-        expr_ref s = mk_str_var_fresh("contains_right");
+        auto [p, s] = get_contains_witness(e);
         expr_ref pys(m_util_s.str.mk_concat(m_util_s.str.mk_concat(p, y), s), m);
 
         string_theory_propagation(pys);
