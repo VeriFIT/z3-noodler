@@ -1065,6 +1065,9 @@ namespace smt::noodler {
         std::map<BasicTerm, expr_ref>&   known_z3_exprs;
 
         int current_quantif_depth = 0;  // To compute de Brujin numbers for quantified variables
+
+        /// The expressions of the variables converted so far, except the quantified ones
+        std::unordered_map<BasicTerm, expr_ref, BasicTerm::HashFunction> var_exprs{};
     };
 
     /**

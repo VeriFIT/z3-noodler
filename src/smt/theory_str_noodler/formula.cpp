@@ -449,7 +449,7 @@ namespace smt::noodler {
 
         // Check whether we already have a z3 expr for this variable. Expressions for quantified variables
         // cannot be cached as they variable.id is dynamic.
-        if (!ctx.known_z3_exprs.contains(node.atom_val)) {
+        if (!ctx.quantified_vars.empty() && !ctx.known_z3_exprs.contains(node.atom_val)) {
             std::string var_name = node.atom_val.get_name().encode();
             auto it = ctx.quantified_vars.find(var_name);
             if (it != ctx.quantified_vars.end()) {
@@ -460,7 +460,12 @@ namespace smt::noodler {
             }
         }
 
-        return util::basic_term_to_length_expr(node.atom_val, ctx.known_z3_exprs, ctx.manager, ctx.seq_utilities, ctx.arith_utilities);
+        // a variable occurs many times in a formula, and building its expression encodes its name
+        auto [it, inserted] = ctx.var_exprs.try_emplace(node.atom_val, ctx.manager);
+        if (inserted) {
+            it->second = util::basic_term_to_length_expr(node.atom_val, ctx.known_z3_exprs, ctx.manager, ctx.seq_utilities, ctx.arith_utilities);
+        }
+        return it->second;
     }
 
     /// The z3 expressions of @p nodes, in order.
