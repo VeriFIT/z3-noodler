@@ -12,6 +12,15 @@ namespace smt::noodler {
         // where we take c1 + k*c2 for each k >= 0
         std::set<std::pair<int, int>> aut_constr = mata::applications::strings::get_word_lengths(aut);
 
+        // binary nodes whose first operand is moved in, as copying it would take time quadratic in the number of disjuncts
+        auto mk_binary = [](LenFormulaType type, LenNode first, LenNode second) {
+            std::vector<LenNode> operands;
+            operands.reserve(2);
+            operands.push_back(std::move(first));
+            operands.push_back(std::move(second));
+            return LenNode(type, std::move(operands));
+        };
+
         LenNode res(LenFormulaType::FALSE, {});
         for(const auto& cns : aut_constr) { // for each (c1, c2) representing lengths of var
             LenNode c1(cns.first);
@@ -22,22 +31,19 @@ namespace smt::noodler {
                 // c1 + k*c2
                 LenNode right(LenFormulaType::PLUS, {c1, LenNode(LenFormulaType::TIMES, {k, c2})});
                 // add (var = c1 + k*c2 && 0 <= k) to result
-                res = LenNode(LenFormulaType::OR, 
-                                {res,
+                res = mk_binary(LenFormulaType::OR, std::move(res),
                                  LenNode(LenFormulaType::AND,
                                             {LenNode(LenFormulaType::EQ, {var, right}),
                                              LenNode(LenFormulaType::LEQ, {LenNode(0), k})
-                                            })
-                                });
+                                            }));
             } else {
                 // add (var = c1) to result
-                res = LenNode(LenFormulaType::OR, {res, LenNode(LenFormulaType::EQ, {var, c1})});
+                res = mk_binary(LenFormulaType::OR, std::move(res), LenNode(LenFormulaType::EQ, {var, c1}));
             }
         }
 
         // to be safe, var must be >= 0
-        res = LenNode(LenFormulaType::AND, {res, LenNode(LenFormulaType::LEQ, {0, var})});
-        return res;
+        return mk_binary(LenFormulaType::AND, std::move(res), LenNode(LenFormulaType::LEQ, {0, var}));
     }
 
     mata::nfa::Nfa AutAssignment::create_word_nfa(const zstring& word) {
