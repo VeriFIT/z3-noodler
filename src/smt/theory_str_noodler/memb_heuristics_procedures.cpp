@@ -110,35 +110,38 @@ namespace smt::noodler {
             }
 
             // Compute intersection L of all regexes that should not be complemented
-            mata::nfa::Nfa intersection(1, {0}, {0});
-            // initalize to universal automaton
-            for (const mata::Symbol& symb : alph) {
-                intersection.delta.add(0, symb, 0);
-            }
-
-            bool first = true;
+            // (the cached automaton of a single regex is used as it is, without a copy)
+            std::shared_ptr<const mata::nfa::Nfa> intersection_ptr;
             for (auto& reg : list_of_normal_regs) {
-                if (first) {
-                    // the universal automaton is the identity of intersection: take the NFA instead of a product with it
-                    intersection = *nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false);
+                std::shared_ptr<const mata::nfa::Nfa> reg_nfa = nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false);
+                if (!intersection_ptr) {
+                    // no reduction for the first regex, conv_to_nfa already reduced it
+                    intersection_ptr = std::move(reg_nfa);
                 } else {
-                    intersection = mata::nfa::intersection(*nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false), intersection);
+                    mata::nfa::Nfa product = mata::nfa::intersection(*reg_nfa, *intersection_ptr);
+                    if (product.num_of_states() < regex::RED_BOUND) {
+                        product = mata::nfa::reduce(product);
+                    }
+                    intersection_ptr = std::make_shared<const mata::nfa::Nfa>(std::move(product));
                 }
-                if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
-                    && intersection.num_of_states() < regex::RED_BOUND)
-                {
-                    intersection = mata::nfa::reduce(intersection);
-                }
-                first = false;
-                if (intersection.is_lang_empty()) {
+                if (intersection_ptr->is_lang_empty()) {
                     STRACE(str_mult_memb_heur, tout << "intersection is empty => UNSAT" << std::endl;);
                     return l_false;
                 }
             }
+            if (!intersection_ptr) {
+                // no regex: the universal automaton
+                mata::nfa::Nfa universal(1, {0}, {0});
+                for (const mata::Symbol& symb : alph) {
+                    universal.delta.add(0, symb, 0);
+                }
+                intersection_ptr = std::make_shared<const mata::nfa::Nfa>(std::move(universal));
+            }
+            const mata::nfa::Nfa& intersection = *intersection_ptr;
 
             // Compute union L' of all regexes that should be complemented (we are using de Morgan)
             mata::nfa::Nfa unionn; // initialize to empty automaton
-            first = true;
+            bool first = true;
             for (auto& reg : list_of_compl_regs) {
                 unionn = mata::nfa::union_nondet(*nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false), unionn);
                 if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
