@@ -61,17 +61,28 @@ namespace {
         return true;
     }
 
-    /// The NFA of @p body repeated at most @p count times: a chain of copies of @p body in which the final states
-    ///  of a copy enter the next copy, and every final state accepts. Repeating (ε | body) by squaring would
-    ///  connect the final states of every copy to the following copies instead.
+    /// The NFA of @p body repeated at least @p mandatory and at most @p mandatory + @p optional times: a chain of
+    ///  copies of @p body in which the final states of a copy enter the next copy, and the final states of the
+    ///  copies from the @p mandatory-th on accept. Repeating by squaring would copy every intermediate power and
+    ///  connect the final states of every optional copy to all the following copies.
     /// The initial states of the copies can be unreachable: trim the result.
-    Nfa concatenate_at_most(const Nfa& body, unsigned count) {
+    Nfa concatenate_chain(const Nfa& body, unsigned mandatory, unsigned optional) {
         const mata::nfa::State num_of_body_states = static_cast<mata::nfa::State>(body.num_of_states());
+        // Entering a copy skips its initial state, so a copy cannot be passed through on the empty word; but if
+        //  the body accepts it, body^m is the same as body^{0..m}.
+        for (const mata::nfa::State init : body.initial) {
+            if (body.final.contains(init)) {
+                optional += mandatory;
+                mandatory = 0;
+                break;
+            }
+        }
+        const unsigned count = mandatory + optional;
         Nfa result{};
-        // State 0 accepts the empty word; copy c takes the states from 1 + c * num_of_body_states on.
+        // State 0 is initial; copy c takes the states from 1 + c * num_of_body_states on.
         const mata::nfa::State start{ 0 };
         result.initial.insert(start);
-        result.final.insert(start);
+        if (mandatory == 0) { result.final.insert(start); }
         result.delta.allocate(1);
         auto enter_copy = [&](mata::nfa::State from, mata::nfa::State offset) {
             for (const mata::nfa::State init : body.initial) {
@@ -85,7 +96,9 @@ namespace {
         for (unsigned copy = 0; copy < count; ++copy) {
             const mata::nfa::State offset{ 1 + copy * num_of_body_states };
             result.delta.append_shifted(body.delta, offset);
-            for (const mata::nfa::State fin : body.final) { result.final.insert(fin + offset); }
+            if (copy + 1 >= mandatory) {
+                for (const mata::nfa::State fin : body.final) { result.final.insert(fin + offset); }
+            }
             if (copy == 0) {
                 enter_copy(start, offset);
             } else {
@@ -333,14 +346,10 @@ namespace smt::noodler::regex {
                         body_nfa.unify_initial();
 
                         body_nfa = mata::nfa::reduce(body_nfa);
-                        result = mata::nfa::concatenate_nth_power(body_nfa, low);
+                        result = concatenate_chain(body_nfa, low, is_high_set ? high - low : 0);
                         result.trim();
 
-                        if (is_high_set) {
-                            // if high is set, we repeat body_nfa another high-low times
-                            result.concatenate(concatenate_at_most(body_nfa, high - low));
-                            result.trim();
-                        } else {
+                        if (!is_high_set) {
                             // we repeat body_nfa unlimited times, but we have to accept after each loop,
                             // so we add an empty word into body_nfa
                             mata::nfa::State new_state = body_nfa.add_state();
