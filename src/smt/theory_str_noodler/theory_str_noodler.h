@@ -79,12 +79,13 @@ namespace smt::noodler {
         };
 
         /**
-         * Caches for (re.from_ecma2020 ...). Their content does not depend on the current assignment, so it is kept
-         * for the whole run of the solver and not restored when backtracking.
+         * Caches for ((_ re.from_regex ecma2020) ...). Their content does not depend on the current assignment, so it
+         * is kept for the whole run of the solver and not restored when backtracking.
          */
         struct ecma_cache {
             /**
-             * Constraints generated for an ECMAScript regex membership (str.in_re x (re.from_ecma2020 pattern)).
+             * Constraints generated for an ECMAScript regex membership
+             * (str.in_re x ((_ re.from_regex ecma2020) pattern)).
              */
             struct membership_entry {
                 expr_ref atom; // the membership itself (keeps the key of memberships alive)
@@ -529,7 +530,7 @@ namespace smt::noodler {
          * Get the classical regex of a side @p regex of a language (dis)equation, see ecma::to_classical_regex. It is
          * computed only once for each side and stored in m_ecma_cache.
          *
-         * @return The classical regex, or null if some (re.from_ecma2020 ...) in @p regex is not regular.
+         * @return The classical regex, or null if some ((_ re.from_regex ecma2020) ...) in @p regex is not regular.
          */
         expr_ref get_classical_regex(expr* regex);
         /**

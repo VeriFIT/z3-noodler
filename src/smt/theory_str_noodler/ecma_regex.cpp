@@ -2927,13 +2927,15 @@ namespace smt::noodler::ecma {
         seq_util util_s(m);
         expr_safe_replace replacer(m);
         for (expr* subterm : subterms::all(expr_ref(regex, m))) {
-            if (!util_s.re.is_from_ecma2020(subterm)) {
+            if (!util_s.re.is_from_regex(subterm)) {
                 continue;
             }
+            symbol flavor;
             zstring pattern;
-            if (!util_s.re.is_from_ecma2020(subterm, pattern)) {
+            if (!util_s.re.is_from_regex(subterm, flavor, pattern)) {
                 return expr_ref(m);
             }
+            SASSERT(flavor == "ecma2020");
             RegexConstraintBuilder builder(m, pattern, params);
             builder.build_rcg();
             const app_ref classical_regex = builder.get_regular_path_regex();

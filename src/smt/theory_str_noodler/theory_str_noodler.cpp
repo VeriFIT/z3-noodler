@@ -532,7 +532,7 @@ namespace smt::noodler {
             m_util_s.str.is_from_code(n) // str.from_code
         ) {
             handle_conversion(n);
-        } else if (m_util_s.str.is_in_re_from_ecma2020(n)) { // str.in_re with re.from_ecma2020
+        } else if (m_util_s.str.is_in_re_from_regex(n)) { // str.in_re with re.from_regex
             handle_ecma_re(n);
         } else if (util::is_str_variable(n, m_util_s)) {
             BasicTerm var_for_n = util::get_variable_basic_term(n);
@@ -2294,11 +2294,13 @@ namespace smt::noodler {
 
     void theory_str_noodler::handle_ecma_re(expr* e) {
         expr* x = nullptr;
+        symbol flavor;
         zstring pattern;
-        if (!m_util_s.str.is_in_re_from_ecma2020(e, x, pattern)) {
-            util::throw_error("We can only handle (str.in_re ... (re.from_ecma2020 pattern)) with a constant pattern");
+        if (!m_util_s.str.is_in_re_from_regex(e, x, flavor, pattern)) {
+            util::throw_error("We can only handle (str.in_re ... ((_ re.from_regex flavor) pattern)) with a constant pattern");
             return;
         }
+        SASSERT(flavor == "ecma2020");
 
         // The axioms of e are deleted when backtracking below the level they were added at, and when e becomes relevant
         // again, they are added again. The constraints are generated only once and reused, otherwise each addition
@@ -2394,9 +2396,9 @@ namespace smt::noodler {
         expr *s = nullptr, *re = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, s, re));
 
-        // Memberships over (re.from_ecma2020 ...) are handled via axioms that relate them
+        // Memberships over (re.from_regex ...) are handled via axioms that relate them
         // to (str.to_re ...) and should not be sent to the decision procedure.
-        if (m_util_s.re.is_from_ecma2020(re))
+        if (m_util_s.re.is_from_regex(re))
             return;
 
         app_ref re_constr(to_app(s), m);
