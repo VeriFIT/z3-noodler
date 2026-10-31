@@ -84,6 +84,7 @@ namespace {
         result.initial.insert(start);
         if (mandatory == 0) { result.final.insert(start); }
         result.delta.allocate(1);
+        result.delta.reserve(1 + static_cast<size_t>(count) * num_of_body_states);
         auto enter_copy = [&](mata::nfa::State from, mata::nfa::State offset) {
             for (const mata::nfa::State init : body.initial) {
                 for (const mata::nfa::SymbolPost& move : body.delta[init]) {
@@ -266,7 +267,7 @@ namespace smt::noodler::regex {
                     SASSERT(num_of_regex_arguments_of_cur_expr > 0);
                     result = std::move(arg_nfas.at(0));
                     for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
-                        result.concatenate(arg_nfas.at(i));
+                        result.concatenate(std::move(arg_nfas.at(i)));
                         arg_nfas[i].clear();
                     }
                     result.trim();
