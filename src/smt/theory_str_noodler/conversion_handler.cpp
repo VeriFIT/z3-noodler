@@ -290,6 +290,10 @@ void ConversionHandler::initialize_solution(SolvingState solution) {
         }
     }
 
+    // only the formulas of the invalid inputs of the int/real substituting variables use them
+    if (int_subst_vars.empty() && real_subst_vars.empty()) {
+        return;
+    }
     contain_non_digit = this->solution.aut_ass.complement_aut(only_digits);
     STRACE(str_conversion_int, tout << "only-digit NFA:" << std::endl << only_digits << std::endl;);
     STRACE(str_conversion_int, tout << "contains-non-digit NFA:" << std::endl << contain_non_digit << std::endl;);
