@@ -730,7 +730,7 @@ namespace smt::noodler::parikh {
         // <R, disequation, side, mismatch_idx, alphabet_symbol>
         // Therefore, for any disequation D and its side S we need to have:
         //    #<C, var, D, S, copy_idx> + #<R, disequation, side, mismatch_idx, alphabet_symbol> = 1
-        std::unordered_map<std::pair<size_t, ca::AtomicSymbol::PredicateSide>, std::vector<LenNode>> sampling_transitions_per_diseq_side;
+        std::map<std::pair<size_t, ca::AtomicSymbol::PredicateSide>, std::vector<LenNode>> sampling_transitions_per_diseq_side;
 
         // Collect variables that need to add to one for every (predicate, side)
         for (const auto& [transition, transition_var] : this->get_trans_vars()) {

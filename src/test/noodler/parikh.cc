@@ -760,9 +760,9 @@ void add_nonsampling_transitions_based_on_template(std::vector<TagSetTransition>
             tag_set = {length_tag};
         }
 
-        TagSetTransition transition_instance{ transition_template.source + source_copy_idx*states_in_row,
+        TagSetTransition transition_instance{ static_cast<mata::nfa::State>(transition_template.source + source_copy_idx*states_in_row),
                                               tag_set,
-                                              transition_template.target + source_copy_idx*states_in_row};
+                                              static_cast<mata::nfa::State>(transition_template.target + source_copy_idx*states_in_row)};
         transitions.push_back(transition_instance);
     }
 }
