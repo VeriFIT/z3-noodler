@@ -16,9 +16,8 @@ Every [release](https://github.com/VeriFIT/z3-noodler/releases/latest) comes wit
 |---|---|
 | Linux, x86-64 | `z3-noodler-linux-x86_64` |
 | macOS 13.3 or newer, Apple Silicon | `z3-noodler-macos-arm64` |
-| macOS 13.3 or newer, Intel | `z3-noodler-macos-x86_64` |
 
-There are no Windows binaries.
+There are no Windows binaries and no binaries for Intel Macs.
 
 ### Linux
 
@@ -41,10 +40,7 @@ $ mkdir -p ~/.local/bin && mv z3-noodler ~/.local/bin/
 ### macOS
 
 ```console
-$ # Apple Silicon
 $ curl -fL -o z3-noodler https://github.com/VeriFIT/z3-noodler/releases/latest/download/z3-noodler-macos-arm64
-$ # Intel
-$ curl -fL -o z3-noodler https://github.com/VeriFIT/z3-noodler/releases/latest/download/z3-noodler-macos-x86_64
 $ chmod +x z3-noodler
 $ ./z3-noodler -version
 ```

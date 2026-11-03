@@ -33,13 +33,10 @@ jobs:
             cmake_flags: -DCMAKE_EXE_LINKER_FLAGS=-static
           # Without a deployment target, the binary requires the macOS version of the runner.
           # 13.3 is the oldest macOS whose libc++ provides std::format (used by Mata).
-          - os: macos
-            asset: z3-noodler-macos-x86_64
-            runner: macos-15-intel
-            cmake_flags: -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3
+          # Mata requires Clang >= 18; the macOS 15 image ships AppleClang 17.
           - os: macos
             asset: z3-noodler-macos-arm64
-            runner: macos-15
+            runner: macos-26
             cmake_flags: -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3
 
     steps:
