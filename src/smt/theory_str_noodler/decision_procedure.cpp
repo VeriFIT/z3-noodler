@@ -280,7 +280,7 @@ namespace smt::noodler {
             for (unsigned i = 0; i < noodle.size(); ++i) {
                 // we add a fresh var for each segment of noodle (TODO: do not make new var if we can replace it from one side by one var)
                 BasicTerm new_var = new_element.add_fresh_var(
-                                                        noodle[i].first, // we assign to it the automaton from the segment
+                                                        std::make_shared<mata::nfa::Nfa>(noodle[i].first.to_nfa()), // we assign to it the automaton from the segment
                                                         std::string("align_") + std::to_string(noodlification_no), // the prefix of the new var
                                                         // the var is length if the corresponding variable on the left or right is length too
                                                         new_element.length_sensitive_vars.contains(left_side_vars[noodle[i].second[0]])
@@ -288,7 +288,7 @@ namespace smt::noodler {
                                                         true);
                 left_side_vars_to_new_vars[noodle[i].second[0]].push_back(new_var);
                 right_side_divisions_to_new_vars[noodle[i].second[1]].push_back(new_var);
-                STRACE(str_nfa, tout << new_var << std::endl << *noodle[i].first;);
+                STRACE(str_nfa, tout << new_var << std::endl << noodle[i].first.to_nfa(););
             }
 
             /* Following the example from before, the following will create these inclusions from the right side divisions:

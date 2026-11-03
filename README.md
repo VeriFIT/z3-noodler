@@ -24,11 +24,11 @@ If Mata is not found on your system, it will be **automatically fetched and buil
 
 However, if you plan to **develop or frequently rebuild Z3-Noodler**, it is recommended to install Mata manually. This avoids repeatedly downloading and rebuilding Mata and significantly speeds up development workflows.
 
-The minimum required Mata version is `v1.32.37`.
+The minimum required Mata version is `v1.32.45-dev.166`.
 
 To install the version of Mata that Z3-Noodler uses, run:
 ```shell
-git clone --branch v1.32.37 'https://github.com/VeriFIT/mata.git'
+git clone --branch v1.32.45-dev.166 'https://github.com/VeriFIT/mata.git'
 cd mata
 make release
 sudo make install
@@ -42,7 +42,7 @@ xcode-select --install
 
 ### Step 2: Build Z3-Noodler
 
-Building requires CMake 3.16 or newer, a C++20 compiler (GCC 13 or newer, or Apple Clang), and Python 3 (used by the build to generate source files).
+Building requires CMake 3.16 or newer, a C++23 compiler (GCC 14 or newer, or Clang 18 or newer), and Python 3 (used by the build to generate source files).
 If Mata is not installed, git and network access are also needed when running `cmake`.
 
 ```shell

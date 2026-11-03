@@ -41,7 +41,7 @@ namespace smt::noodler {
     }
 
     mata::nfa::Nfa AutAssignment::create_word_nfa(const zstring& word) {
-        const size_t word_length{ word.length() };
+        const mata::nfa::State word_length{ word.length() };
         mata::nfa::Nfa nfa{ word_length, { 0 }, { word_length } };
         nfa.initial.insert(0);
         size_t state{ 0 };
@@ -257,7 +257,7 @@ namespace smt::noodler {
                     SASSERT(delta_from_state.back().symbol != mata::nfa::EPSILON);
                     if (delta_from_state.back().symbol == util::get_dummy_symbol()) { // dummy symbol should be largest (we do not have epsilons), so should be at the back
                         is_there_some_dummy = true;
-                        mata::nfa::StateSet targets = delta_from_state.back().targets;
+                        mata::nfa::SmallStateSet targets = delta_from_state.back().targets;
                         delta_from_state.pop_back();
                         for (mata::Symbol symbol : symbols) {
                             nfa->delta.add(state, symbol, targets);

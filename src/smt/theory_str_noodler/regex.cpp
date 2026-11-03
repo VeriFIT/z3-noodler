@@ -23,7 +23,7 @@ namespace {
             } else {
                 transducer_symbol = {s, tr.symbol};
             }
-            result.add_transition(tr.source, transducer_symbol, tr.target);
+            result.add_transition_by_levels(tr.source, transducer_symbol, tr.target);
         }
         return result;
     }
@@ -602,7 +602,7 @@ namespace smt::noodler::regex {
                             for (const auto& final : body_nft.final) {
                                 for (const auto& initial : body_nft.initial) {
                                     if (final != initial) {
-                                        body_nft.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
+                                        body_nft.add_transition_by_levels(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
                                     }
                                 }
                             }
@@ -638,7 +638,7 @@ namespace smt::noodler::regex {
                             if (final == initial) {
                                 contains_epsilon = true;
                             } else {
-                                result.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
+                                result.add_transition_by_levels(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
                             }
                         }
                     }
@@ -656,7 +656,7 @@ namespace smt::noodler::regex {
                     for (const auto& final : result.final) {
                         for (const auto& initial : result.initial) {
                             if (initial != final) {
-                                result.add_transition(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
+                                result.add_transition_by_levels(final, {mata::nft::EPSILON, mata::nft::EPSILON}, initial);
                             }
                         }
                     }
@@ -1182,19 +1182,19 @@ namespace smt::noodler::regex {
         auto add_printing_transition = [&result, this](mata::Symbol first_input_tape_symbol, const mata::Word& word_to_print, mata::nft::State state_from, mata::nft::State state_to) {
             if (word_to_print.empty()) {
                 // we are printing epsilon, so we just read the symbol first_input_tape_symbol and go directly to state_to
-                result.add_transition(state_from, {first_input_tape_symbol, mata::nft::EPSILON}, state_to);
+                result.add_transition_by_levels(state_from, {first_input_tape_symbol, mata::nft::EPSILON}, state_to);
             } else if (word_to_print.size() == 1) {
                 // replacing by just one symbol means that we put it out while reading the symbol first_input_tape_symbol
-                result.add_transition(state_from, {first_input_tape_symbol, word_to_print[0]}, state_to);
+                result.add_transition_by_levels(state_from, {first_input_tape_symbol, word_to_print[0]}, state_to);
             } else {
                 // we need to replace by a longer word, so first we read first_input_tape_symbol while putting out the first symbol of word_to_print
-                mata::nft::State next_state = result.add_transition(state_from, {first_input_tape_symbol, word_to_print[0]});
+                mata::nft::State next_state = result.add_transition_by_levels(state_from, {first_input_tape_symbol, word_to_print[0]});
                 // and then just put out the rest while on the input we take epsilon
                 for (size_t i = 1; i < word_to_print.size()-1; ++i) {
-                    next_state = result.add_transition(next_state, {mata::nft::EPSILON, word_to_print[i]});
+                    next_state = result.add_transition_by_levels(next_state, {mata::nft::EPSILON, word_to_print[i]});
                 }
                 // the last transition needs to the final state
-                result.add_transition(next_state, {mata::nft::EPSILON, word_to_print[word_to_print.size()-1]}, state_to);
+                result.add_transition_by_levels(next_state, {mata::nft::EPSILON, word_to_print[word_to_print.size()-1]}, state_to);
             }
         };
 
@@ -1222,7 +1222,7 @@ namespace smt::noodler::regex {
                         add_printing_transition(symbol, replacing_map.at(*next_prefix_state), result_state, 0);
                     } else {
                         // otherwise we just move to the next state of the prefix tree
-                        mata::nft::State next_result_state = result.add_transition(result_state, {symbol, mata::nft::EPSILON});
+                        mata::nft::State next_result_state = result.add_transition_by_levels(result_state, {symbol, mata::nft::EPSILON});
                         worklist.push({*next_prefix_state, next_result_state});
                         prefix_state_to_result_state[*next_prefix_state] = next_result_state;
 
