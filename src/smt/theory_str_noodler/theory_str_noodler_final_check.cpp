@@ -712,9 +712,12 @@ namespace smt::noodler {
             if (aut_ass_it != aut_assignment.end()) {
                 // This variable already has some regular constraints. Hence, we create an intersection of the new one
                 //  with the previously existing.
-                aut_ass_it->second = std::make_shared<mata::nfa::Nfa>(
-                        mata::nfa::reduce(mata::nfa::intersection(*nfa, *aut_ass_it->second)));
-
+                mata::nfa::Nfa intersection = mata::nfa::intersection(*nfa, *aut_ass_it->second);
+                // The simulation of a big intersection would be too expensive (see regex::INTERSECTION_RED_BOUND)
+                if (intersection.num_of_states() < regex::INTERSECTION_RED_BOUND) {
+                    intersection = mata::nfa::reduce(intersection);
+                }
+                aut_ass_it->second = std::make_shared<mata::nfa::Nfa>(std::move(intersection));
             } else { // We create a regular constraint for the current variable for the first time.
                 aut_assignment[term] = std::make_shared<mata::nfa::Nfa>(*nfa);
             }

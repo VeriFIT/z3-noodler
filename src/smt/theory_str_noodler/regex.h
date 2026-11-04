@@ -34,6 +34,9 @@ namespace smt::noodler::regex {
 
     // simulation reduction bound in states (bigger automata are not reduced)
     const unsigned RED_BOUND = 1000;
+    // simulation reduction bound in states for the intersection of the memberships of one variable in the final check
+    // it is lower than RED_BOUND, as these intersections are often dense complements whose simulation is expensive already for a few hundred states
+    const unsigned INTERSECTION_RED_BOUND = 100;
 
     /**
      * @brief Info gathered about a regex. 
