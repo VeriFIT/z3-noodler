@@ -2427,16 +2427,17 @@ namespace smt::noodler {
             // app_ref fv(this->m_util_s.mk_skolem(this->m.mk_fresh_var_name(), 0, nullptr, this->m_util_s.mk_string_sort()), m);
             expr_ref eq_fv(mk_eq_atom(var.get(), s), m);
             expr_ref n_re(this->m_util_s.re.mk_in_re(var, re), m);
-            expr_ref re_orig(e, m);
+            // The literal of e itself, mk_literal(e) could rewrite e into a different atom that is not assigned
+            literal lit_orig = ctx.get_literal(e);
 
             // propagate_basic_string_axioms(ctx.get_enode(eq_fv));
 
             if(!is_true) {
                 n_re = m.mk_not(n_re);
-                re_orig = m.mk_not(re_orig);
+                lit_orig.neg();
             }
             add_axiom({mk_literal(eq_fv)});
-            add_axiom({~mk_literal(re_orig), mk_literal(n_re)});
+            add_axiom({~lit_orig, mk_literal(n_re)});
 
             re_constr = to_app(var); 
             re_atom = n_re;
