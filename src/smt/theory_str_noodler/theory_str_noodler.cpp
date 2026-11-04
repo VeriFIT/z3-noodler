@@ -109,6 +109,10 @@ namespace smt::noodler {
         for (auto arg : *term) {
             mk_var(ensure_enode(arg));
         }
+        // Internalizing the arguments can propagate relevancy, whose axioms internalize this term first (e.g., two re.from_regex memberships with the same classical regex).
+        if (ctx.b_internalized(term)) {
+            return true;
+        }
         if (m.is_bool(term)) {
             bool_var bv = ctx.mk_bool_var(term);
             ctx.set_var_theory(bv, get_id());
