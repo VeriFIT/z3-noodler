@@ -21,6 +21,7 @@ if (Catch2_FOUND)
             decision-procedure.cpp
             parikh.cc
             util.cc
+            regex.cpp
             formula.cpp
             ecma_regex.cpp
             extended_regex.cpp
