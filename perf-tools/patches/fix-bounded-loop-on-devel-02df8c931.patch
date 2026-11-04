@@ -1,0 +1,189 @@
+diff --git a/src/smt/theory_str_noodler/regex.cpp b/src/smt/theory_str_noodler/regex.cpp
+index 207984383..025b77fb5 100644
+--- a/src/smt/theory_str_noodler/regex.cpp
++++ b/src/smt/theory_str_noodler/regex.cpp
+@@ -299,24 +299,20 @@ namespace smt::noodler::regex {
+                         result = mata::nfa::concatenate_nth_power(body_nfa, low);
+                         result.trim();
+ 
+-                        // we will now either repeat body_nfa high-low times (if is_high_set) or
+-                        // unlimited times (if it is not set), but we have to accept after each loop,
+-                        // so we add an empty word into body_nfa
+-                        mata::nfa::State new_state = body_nfa.add_state();
+-                        body_nfa.initial.insert(new_state);
+-                        body_nfa.final.insert(new_state);
+-
+-                        body_nfa.unify_initial();
+-                        body_nfa = mata::nfa::reduce(body_nfa);
+-                        body_nfa.trim();
+-
+                         if (is_high_set) {
+-                            // if high is set, we repeat body_nfa another high-low times
+-                            result.concatenate(concatenate_nth_power(std::move(body_nfa), high - low));
+-                            result.trim();
++                            // if high is set, we repeat body_nfa at most another high-low times
++                            concatenate_up_to_nth_power(result, body_nfa, high - low);
+                         } else {
+-                            // if high is not set, we can repeat body_nfa unlimited more times
+-                            // so we do star operation on body_nfa and add it to end of nfa
++                            // if high is not set, we can repeat body_nfa unlimited more times, but we have to accept after each loop.
++                            // So we add an empty word into body_nfa, do star operation on it and add it to end of nfa.
++                            mata::nfa::State new_state = body_nfa.add_state();
++                            body_nfa.initial.insert(new_state);
++                            body_nfa.final.insert(new_state);
++
++                            body_nfa.unify_initial();
++                            body_nfa = mata::nfa::reduce(body_nfa);
++                            body_nfa.trim();
++
+                             for (const auto& final : body_nfa.final) {
+                                 for (const auto& initial : body_nfa.initial) {
+                                     body_nfa.delta.add(final, mata::nfa::EPSILON, initial);
+@@ -581,24 +577,20 @@ namespace smt::noodler::regex {
+                         result = mata::nft::concatenate_nth_power(body_nft, low);
+                         result.trim();
+ 
+-                        // we will now either repeat body_nft high-low times (if is_high_set) or
+-                        // unlimited times (if it is not set), but we have to accept after each loop,
+-                        // so we add an empty word into body_nft
+-                        mata::nft::State new_state = body_nft.add_state();
+-                        body_nft.initial.insert(new_state);
+-                        body_nft.final.insert(new_state);
+-
+-                        body_nft.unify_initial();
+-                        body_nft = mata::nft::reduce(body_nft);
+-                        body_nft.trim();
+-
+                         if (is_high_set) {
+-                            // if high is set, we repeat body_nft another high-low times
+-                            result.concatenate(mata::nft::concatenate_nth_power(std::move(body_nft), high - low));
+-                            result.trim();
++                            // if high is set, we repeat body_nft at most another high-low times
++                            concatenate_up_to_nth_power(result, body_nft, high - low);
+                         } else {
+-                            // if high is not set, we can repeat body_nft unlimited more times
+-                            // so we do star operation on body_nft and add it to end of nft
++                            // if high is not set, we can repeat body_nft unlimited more times, but we have to accept after each loop.
++                            // So we add an empty word into body_nft, do star operation on it and add it to end of nft.
++                            mata::nft::State new_state = body_nft.add_state();
++                            body_nft.initial.insert(new_state);
++                            body_nft.final.insert(new_state);
++
++                            body_nft.unify_initial();
++                            body_nft = mata::nft::reduce(body_nft);
++                            body_nft.trim();
++
+                             for (const auto& final : body_nft.final) {
+                                 for (const auto& initial : body_nft.initial) {
+                                     if (final != initial) {
+diff --git a/src/smt/theory_str_noodler/regex.h b/src/smt/theory_str_noodler/regex.h
+index 8a452aaf6..a58ceb933 100644
+--- a/src/smt/theory_str_noodler/regex.h
++++ b/src/smt/theory_str_noodler/regex.h
+@@ -181,6 +181,29 @@ namespace smt::noodler::regex {
+      */
+     void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet);
+ 
++    /**
++     * Concatenate @p result with at most @p n repetitions of @p body, i.e., with body^0 ∪ body^1 ∪ ... ∪ body^n.
++     *
++     * The copies of @p body are appended one by one and the final states before each copy stay final.
++     * Concatenating n copies of (body ∪ {ε}) instead would copy the initial transitions of each copy to the final states
++     * of all previous copies, which gives a quadratic number of transitions.
++     * @param[in,out] result Automaton (NFA or NFT) to be concatenated with the repetitions.
++     * @param[in] body Repeated automaton.
++     * @param[in] n Maximal number of repetitions.
++     */
++    template<class Automaton>
++    void concatenate_up_to_nth_power(Automaton& result, const Automaton& body, const unsigned n) {
++        std::vector<mata::nfa::State> ends(result.final.begin(), result.final.end());
++        for (unsigned i = 0; i < n; ++i) {
++            result.concatenate(body);
++            ends.insert(ends.end(), result.final.begin(), result.final.end());
++        }
++        for (const mata::nfa::State end : ends) {
++            result.final.insert(end);
++        }
++        result.trim();
++    }
++
+     class NfaConstructor {
+     private:
+         using Nfa = mata::nfa::Nfa;
+diff --git a/src/test/noodler/CMakeLists.txt b/src/test/noodler/CMakeLists.txt
+index a98d4f3af..1dc53e954 100644
+--- a/src/test/noodler/CMakeLists.txt
++++ b/src/test/noodler/CMakeLists.txt
+@@ -21,6 +21,7 @@ if (Catch2_FOUND)
+             decision-procedure.cpp
+             parikh.cc
+             util.cc
++            regex.cpp
+             formula.cpp
+             ecma_regex.cpp
+     )
+diff --git a/src/test/noodler/e2e/issue-502-bounded-loop.smt2 b/src/test/noodler/e2e/issue-502-bounded-loop.smt2
+new file mode 100644
+index 000000000..6b78744c6
+--- /dev/null
++++ b/src/test/noodler/e2e/issue-502-bounded-loop.smt2
+@@ -0,0 +1,8 @@
++; issue #502: the NFA of a bounded loop had a quadratic number of transitions in the upper bound
++(set-info :status sat)
++(set-logic QF_SLIA)
++(declare-const x String)
++(assert (str.in_re x ((_ re.loop 0 800) (re.range "a" "z"))))
++(assert (str.in_re x (re.++ re.all (str.to_re "q") re.all)))
++(assert (> (str.len x) 5))
++(check-sat)
+diff --git a/src/test/noodler/regex.cpp b/src/test/noodler/regex.cpp
+new file mode 100644
+index 000000000..19d642e1f
+--- /dev/null
++++ b/src/test/noodler/regex.cpp
+@@ -0,0 +1,45 @@
++#include <catch2/catch_test_macros.hpp>
++#include <mata/nfa/builder.hh>
++#include <mata/nfa/nfa.hh>
++
++#include "smt/theory_str_noodler/regex.h"
++
++using namespace smt::noodler;
++
++TEST_CASE("regex::concatenate_up_to_nth_power", "[regex]") {
++    // body accepts the words "a", "b" and "c"
++    mata::nfa::Nfa body(2, {0}, {1});
++    for (const mata::Symbol symbol : {'a', 'b', 'c'}) {
++        body.delta.add(0, symbol, 1);
++    }
++
++    SECTION("accepts body^low ∪ ... ∪ body^(low+n)") {
++        for (const unsigned low : {0, 1, 2}) {
++            for (const unsigned n : {0, 1, 3}) {
++                mata::nfa::Nfa result = mata::nfa::concatenate_nth_power(body, low);
++                regex::concatenate_up_to_nth_power(result, body, n);
++
++                mata::nfa::Nfa expected = mata::nfa::concatenate_nth_power(body, low);
++                for (unsigned k = low + 1; k <= low + n; ++k) {
++                    expected = mata::nfa::union_nondet(expected, mata::nfa::concatenate_nth_power(body, k));
++                }
++                CHECK(mata::nfa::are_equivalent(result, expected));
++            }
++        }
++    }
++
++    SECTION("body accepting the empty word") {
++        mata::nfa::Nfa nullable_body = body;
++        nullable_body.final.insert(0);
++        mata::nfa::Nfa result = mata::nfa::builder::create_empty_string_nfa();
++        regex::concatenate_up_to_nth_power(result, nullable_body, 3);
++        CHECK(mata::nfa::are_equivalent(result, mata::nfa::concatenate_nth_power(nullable_body, 3)));
++    }
++
++    SECTION("size is linear in n") {
++        mata::nfa::Nfa result = mata::nfa::builder::create_empty_string_nfa();
++        regex::concatenate_up_to_nth_power(result, body, 300);
++        CHECK(result.num_of_states() == 301);
++        CHECK(result.delta.num_of_transitions() == 3 * 300);
++    }
++}
