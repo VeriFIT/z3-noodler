@@ -204,6 +204,8 @@ namespace smt::noodler::regex {
 
                 // create the resulting NFA for cur_expr
                 Nfa result{};
+                // whether result is built from reduced automata so that its reduction is not worth its cost
+                bool is_almost_reduced = false;
                 if (m_util_s.re.is_to_re(cur_expr)) { // Handle conversion of to regex function call.
                     SASSERT(cur_expr->get_num_args() == 1);
                     // Assume that expression inside re.to_re() function is a string of characters.
@@ -302,6 +304,8 @@ namespace smt::noodler::regex {
                         if (is_high_set) {
                             // if high is set, we repeat body_nfa at most another high-low times
                             concatenate_up_to_nth_power(result, body_nfa, high - low);
+                            // a chain of copies of the reduced body
+                            is_almost_reduced = true;
                         } else {
                             // if high is not set, we can repeat body_nfa unlimited more times, but we have to accept after each loop.
                             // So we add an empty word into body_nfa, do star operation on it and add it to end of nfa.
@@ -399,8 +403,9 @@ namespace smt::noodler::regex {
 
                 // intermediate automata reduction
                 // if the automaton is too big --> skip it. The computation of the simulation would be too expensive.
-                if(result.num_of_states() < RED_BOUND) {
-                    STRACE(str_create_nfa_reduce, 
+                // The automata of leaves (e.g., str.to_re or re.range) are minimal already.
+                if(num_of_regex_arguments_of_cur_expr > 0 && !is_almost_reduced && result.num_of_states() < RED_BOUND) {
+                    STRACE(str_create_nfa_reduce,
                         tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
                         tout << result;
                     );
