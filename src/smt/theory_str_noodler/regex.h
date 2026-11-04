@@ -181,6 +181,29 @@ namespace smt::noodler::regex {
      */
     void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet);
 
+    /**
+     * Concatenate @p result with at most @p n repetitions of @p body, i.e., with body^0 ∪ body^1 ∪ ... ∪ body^n.
+     *
+     * The copies of @p body are appended one by one and the final states before each copy stay final.
+     * Concatenating n copies of (body ∪ {ε}) instead would copy the initial transitions of each copy to the final states
+     * of all previous copies, which gives a quadratic number of transitions.
+     * @param[in,out] result Automaton (NFA or NFT) to be concatenated with the repetitions.
+     * @param[in] body Repeated automaton.
+     * @param[in] n Maximal number of repetitions.
+     */
+    template<class Automaton>
+    void concatenate_up_to_nth_power(Automaton& result, const Automaton& body, const unsigned n) {
+        std::vector<mata::nfa::State> ends(result.final.begin(), result.final.end());
+        for (unsigned i = 0; i < n; ++i) {
+            result.concatenate(body);
+            ends.insert(ends.end(), result.final.begin(), result.final.end());
+        }
+        for (const mata::nfa::State end : ends) {
+            result.final.insert(end);
+        }
+        result.trim();
+    }
+
     class NfaConstructor {
     private:
         using Nfa = mata::nfa::Nfa;

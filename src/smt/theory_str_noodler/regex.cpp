@@ -299,24 +299,20 @@ namespace smt::noodler::regex {
                         result = mata::nfa::concatenate_nth_power(body_nfa, low);
                         result.trim();
 
-                        // we will now either repeat body_nfa high-low times (if is_high_set) or
-                        // unlimited times (if it is not set), but we have to accept after each loop,
-                        // so we add an empty word into body_nfa
-                        mata::nfa::State new_state = body_nfa.add_state();
-                        body_nfa.initial.insert(new_state);
-                        body_nfa.final.insert(new_state);
-
-                        body_nfa.unify_initial();
-                        body_nfa = mata::nfa::reduce(body_nfa);
-                        body_nfa.trim();
-
                         if (is_high_set) {
-                            // if high is set, we repeat body_nfa another high-low times
-                            result.concatenate(concatenate_nth_power(std::move(body_nfa), high - low));
-                            result.trim();
+                            // if high is set, we repeat body_nfa at most another high-low times
+                            concatenate_up_to_nth_power(result, body_nfa, high - low);
                         } else {
-                            // if high is not set, we can repeat body_nfa unlimited more times
-                            // so we do star operation on body_nfa and add it to end of nfa
+                            // if high is not set, we can repeat body_nfa unlimited more times, but we have to accept after each loop.
+                            // So we add an empty word into body_nfa, do star operation on it and add it to end of nfa.
+                            mata::nfa::State new_state = body_nfa.add_state();
+                            body_nfa.initial.insert(new_state);
+                            body_nfa.final.insert(new_state);
+
+                            body_nfa.unify_initial();
+                            body_nfa = mata::nfa::reduce(body_nfa);
+                            body_nfa.trim();
+
                             for (const auto& final : body_nfa.final) {
                                 for (const auto& initial : body_nfa.initial) {
                                     body_nfa.delta.add(final, mata::nfa::EPSILON, initial);
@@ -581,24 +577,20 @@ namespace smt::noodler::regex {
                         result = mata::nft::concatenate_nth_power(body_nft, low);
                         result.trim();
 
-                        // we will now either repeat body_nft high-low times (if is_high_set) or
-                        // unlimited times (if it is not set), but we have to accept after each loop,
-                        // so we add an empty word into body_nft
-                        mata::nft::State new_state = body_nft.add_state();
-                        body_nft.initial.insert(new_state);
-                        body_nft.final.insert(new_state);
-
-                        body_nft.unify_initial();
-                        body_nft = mata::nft::reduce(body_nft);
-                        body_nft.trim();
-
                         if (is_high_set) {
-                            // if high is set, we repeat body_nft another high-low times
-                            result.concatenate(mata::nft::concatenate_nth_power(std::move(body_nft), high - low));
-                            result.trim();
+                            // if high is set, we repeat body_nft at most another high-low times
+                            concatenate_up_to_nth_power(result, body_nft, high - low);
                         } else {
-                            // if high is not set, we can repeat body_nft unlimited more times
-                            // so we do star operation on body_nft and add it to end of nft
+                            // if high is not set, we can repeat body_nft unlimited more times, but we have to accept after each loop.
+                            // So we add an empty word into body_nft, do star operation on it and add it to end of nft.
+                            mata::nft::State new_state = body_nft.add_state();
+                            body_nft.initial.insert(new_state);
+                            body_nft.final.insert(new_state);
+
+                            body_nft.unify_initial();
+                            body_nft = mata::nft::reduce(body_nft);
+                            body_nft.trim();
+
                             for (const auto& final : body_nft.final) {
                                 for (const auto& initial : body_nft.initial) {
                                     if (final != initial) {
