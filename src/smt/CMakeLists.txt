@@ -94,6 +94,7 @@ z3_add_component(smt
     theory_str_noodler/conversion_handler.cpp
     theory_str_noodler/extended_regex/char_set.cpp
     theory_str_noodler/extended_regex/regex_ast.cpp
+    theory_str_noodler/extended_regex/regex_simplification.cpp
     theory_str_noodler/extended_regex/regex_constraint_graph.cpp
     theory_str_noodler/extended_regex/constraint_generator.cpp
     theory_str_noodler/extended_regex/ecma_regex.cpp

@@ -2,6 +2,7 @@
 
 #include "ecma_regex.h"
 #include "re2_regex.h"
+#include "regex_simplification.h"
 
 #include "smt/theory_str_noodler/util.h"
 
@@ -30,7 +31,10 @@ namespace smt::noodler::extended_regex {
         strip_unreferenced_captures(root, referenced_groups);
         check_lookaround_backrefs(*root);
 
-        m_graph = extended_regex::build_rcg(*root, m_params.m_ecma_engine_semantics, m_util_s, m_manager);
+        // The simplified AST contains the engine semantics explicitly, it is matched against the whole string
+        make_matching_explicit(root, m_params.m_ecma_engine_semantics);
+        fold_lookarounds(root);
+        m_graph = extended_regex::build_rcg(*root, false, m_util_s, m_manager);
         return m_graph;
     }
 
