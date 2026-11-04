@@ -240,26 +240,20 @@ namespace smt::noodler::extended_regex {
         std::vector<GroupID> captures;
         collect_capture_groups(*repetition.child, captures);
 
-        // Create chains with (min, min+1, ..., max) iterations and alternate them all.
-        std::vector<GraphFragment> chains;
-        const uint64_t start = std::max<uint64_t>(1, repetition.min);
-        for (uint64_t k = start; k <= repetition.max; ++k) {
-            GraphFragment chain = make_iteration(repetition, graph, util_s, m, captures, 1);
-            for (uint64_t i = 2; i <= k; ++i) {
-                chain = chain_fragments(graph, chain, make_iteration(repetition, graph, util_s, m, captures, i));
+        // A ladder of `max` iterations that can be left after every iteration from `min` on.
+        // It is built from the last iteration back to the first one, each iteration is followed by the rest of the ladder.
+        GraphFragment result = make_iteration(repetition, graph, util_s, m, captures, repetition.max);
+        for (uint64_t i = repetition.max - 1; i >= 1; --i) {
+            GraphFragment rest = result;
+            if (i >= repetition.min) {
+                rest = alternate_fragments(graph, make_epsilon_fragment(graph, util_s, m), rest);
             }
-            chains.push_back(chain);
+            result = chain_fragments(graph, make_iteration(repetition, graph, util_s, m, captures, i), rest);
         }
 
         // Zero iterations
         if (repetition.min == 0) {
-            chains.push_back(make_epsilon_fragment(graph, util_s, m));
-        }
-
-        SASSERT(!chains.empty());
-        GraphFragment result = chains[0];
-        for (std::size_t i = 1; i < chains.size(); ++i) {
-            result = alternate_fragments(graph, result, chains[i]);
+            result = alternate_fragments(graph, result, make_epsilon_fragment(graph, util_s, m));
         }
         return result;
     }
@@ -294,57 +288,18 @@ namespace smt::noodler::extended_regex {
                 quant = util_s.re.mk_plus(child_expr);
             }
             else {
-                // Concatenation `min` times followed by kleene star
-                quant = child_expr;
-                for (uint64_t i = 1; i < repetition.min; i++) {
-                    quant = util_s.re.mk_concat(quant, child_expr);
-                }
-                quant = util_s.re.mk_concat(quant, util_s.re.mk_star(child_expr));
+                // `min` times followed by kleene star
+                const unsigned min = static_cast<unsigned>(repetition.min);
+                quant = util_s.re.mk_concat(util_s.re.mk_loop(child_expr, min, min), util_s.re.mk_star(child_expr));
             }
         }
+        else if (repetition.min == 1 && repetition.max == 1) {
+            quant = child_expr;
+        }
         else {
-            // For some reason, using mk_loop and mk_power directly leads to unsoudness of the solver, although the
-            // semantics should be the same as concatenation.
-            // if (repetition.min == repetition.max) {
-            //     quant = util_s.re.mk_power(child_expr, repetition.min);
-            // } else {
-            //     quant = util_s.re.mk_loop(child_expr, repetition.min, repetition.max);
-            // }
-            if (repetition.min == repetition.max) {
-                if (repetition.min == 0) {
-                    quant = util_s.re.mk_epsilon(util_s.mk_string_sort());
-                }
-                else {
-                    // A concrete number of concatenations
-                    quant = child_expr;
-                    for (uint64_t i = 1; i < repetition.min; i++) {
-                        quant = util_s.re.mk_concat(quant, child_expr);
-                    }
-                }
-            }
-            else {
-                // Range [min, max]:
-                // Obligatory part -- at least `min` times
-                app* at_least_min = util_s.re.mk_epsilon(util_s.mk_string_sort());
-                if (repetition.min > 0) {
-                    at_least_min = child_expr;
-                    for (uint64_t i = 1; i < repetition.min; i++) {
-                        at_least_min = util_s.re.mk_concat(at_least_min, child_expr);
-                    }
-                }
-
-                // Optional pattern -- union with epsilon
-                app* eps = util_s.re.mk_epsilon(util_s.mk_string_sort());
-                app* re_optional = util_s.re.mk_union(eps, child_expr);
-
-                // Chain the optional pattern `max` - `min` times
-                app* up_to_max = re_optional;
-                for (uint64_t i = 1; i < (repetition.max - repetition.min); i++) {
-                    up_to_max = util_s.re.mk_concat(up_to_max, re_optional);
-                }
-
-                quant = util_s.re.mk_concat(at_least_min, up_to_max);
-            }
+            // A loop and not re.^, which is not supported by the NFA construction of language (dis)equations
+            quant = util_s.re.mk_loop(child_expr, static_cast<unsigned>(repetition.min),
+                                      static_cast<unsigned>(repetition.max));
         }
 
         SASSERT(quant != nullptr);
