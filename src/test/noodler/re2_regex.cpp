@@ -303,16 +303,21 @@ TEST_CASE("RE2 Regex serialized RCG tests", "[noodler][re2]") {
     }
 
     SECTION("Anchors") {
-        REQUIRE(build_and_serialize_rcg("^a$", m) ==
-                "(RCG (EDGE *->* [ANCHOR '^']) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE *->* [ANCHOR '$']))");
+        // The anchors at the ends of a pattern matched against the whole string are absorbed
+        REQUIRE(build_and_serialize_rcg("^a$", m) == "(RCG (EDGE *->* [MATCH (str.to_re \"a\")]))");
     }
 
     SECTION("Multi-line anchors") {
-        REQUIRE(build_and_serialize_rcg("(?m)^a$", m) ==
+        // Multi-line anchors are lookarounds, which always hold at the ends of the string
+        REQUIRE(build_and_serialize_rcg("(?m)^a$", m) == "(RCG (EDGE *->* [MATCH (str.to_re \"a\")]))");
+        // Next to newlines, they stay
+        REQUIRE(build_and_serialize_rcg("(?m)\\n*^a$\\n*", m) ==
                 "(RCG"
+                " (EDGE *->* [MATCH (re.* (str.to_re \"\\u{a}\"))])"
                 " (EDGE *->* [LOOKAROUND ?<! (re.inter re.allchar (re.comp (str.to_re \"\\u{a}\")))])"
                 " (EDGE *->* [MATCH (str.to_re \"a\")])"
                 " (EDGE *->* [LOOKAROUND ?! (re.inter re.allchar (re.comp (str.to_re \"\\u{a}\")))])"
+                " (EDGE *->* [MATCH (re.* (str.to_re \"\\u{a}\"))])"
                 ")");
     }
 }
@@ -337,7 +342,8 @@ TEST_CASE("RE2 Regex constraint generation", "[noodler][re2]") {
     }
 
     SECTION("Pattern with a word boundary introduces fresh variables") {
-        RegexConstraintBuilder builder(m, symbol("re2"), zstring("a\\b"), params);
+        // A boundary at the end of the string would be folded into the character before it
+        RegexConstraintBuilder builder(m, symbol("re2"), zstring("a\\b\\w*"), params);
         builder.build_rcg();
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(!builder.get_fresh_vars().empty());

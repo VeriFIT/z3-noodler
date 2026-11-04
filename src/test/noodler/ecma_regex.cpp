@@ -1161,124 +1161,139 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 
     // ---- Basic cases ----
 
+    // With the engine semantics, Sigma* (re.* re.allchar) is matched on each side without an anchor.
+
     SECTION("Single literal") {
+        // A regular pattern is merged with Sigma* on both sides into a single match edge.
         REQUIRE(build_and_serialize_rcg("a", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+                "(RCG (EDGE *->* [MATCH (re.++ (re.++ (re.* re.allchar) (str.to_re \"a\")) (re.* re.allchar))]))");
     }
 
     SECTION("Capture group with markers") {
         REQUIRE(build_and_serialize_rcg("(a)", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+                "(RCG (EDGE *->* [MATCH (re.++ (re.++ (re.* re.allchar) (str.to_re \"a\")) (re.* re.allchar))]))");
     }
 
     SECTION("Non-capturing group") {
         // Non-capturing groups are transparent — no STARTS/ENDS markers.
         REQUIRE(build_and_serialize_rcg("(?:a)", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+                "(RCG (EDGE *->* [MATCH (re.++ (re.++ (re.* re.allchar) (str.to_re \"a\")) (re.* re.allchar))]))");
     }
 
     SECTION("Numeric backreference") {
-        REQUIRE(build_and_serialize_rcg("(a)\\1", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
-                "[BACKREF 1]) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(a)\\1", m) == "(RCG"
+                                                        " (EDGE *->* [MATCH (re.* re.allchar)])"
+                                                        " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                                                        " (EDGE *->* [BACKREF 1])"
+                                                        " (EDGE *->* [MATCH (re.* re.allchar)])"
+                                                        ")");
     }
 
     SECTION("Named capture group and named backreference") {
         // Named groups are translated to numeric groups internally.
         REQUIRE(build_and_serialize_rcg("(?<foo>a)\\k<foo>", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1}) (EDGE *->* "
-                "[BACKREF 1]) (EDGE *->* [MATCH re.all]))");
+                "(RCG"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
+                " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
+                ")");
     }
 
     // ---- Anchors ----
 
     SECTION("Anchors ^a$") {
-        REQUIRE(build_and_serialize_rcg("^a$", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [ANCHOR '^']) (EDGE *->* [MATCH (str.to_re \"a\")]) (EDGE "
-                "*->* [ANCHOR '$']) (EDGE *->* [MATCH re.all]))");
+        // The anchors at the ends are absorbed: the pattern is matched against the whole string.
+        REQUIRE(build_and_serialize_rcg("^a$", m) == "(RCG (EDGE *->* [MATCH (str.to_re \"a\")]))");
     }
 
     // ---- Alternation ----
 
     SECTION("Alternation without groups") {
         REQUIRE(build_and_serialize_rcg("a|b", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (re.union (str.to_re \"a\") (str.to_re \"b\"))]) "
-                "(EDGE *->* [MATCH re.all]))");
+                "(RCG (EDGE *->* [MATCH (re.++ (re.++ (re.* re.allchar) (re.union (str.to_re \"a\") (str.to_re \"b\")))"
+                " (re.* re.allchar))]))");
     }
 
     SECTION("Alternation with capture groups") {
         REQUIRE(build_and_serialize_rcg("(a)|(b)", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (re.union (str.to_re \"a\") (str.to_re \"b\"))]) "
-                "(EDGE *->* [MATCH re.all]))");
+                "(RCG (EDGE *->* [MATCH (re.++ (re.++ (re.* re.allchar) (re.union (str.to_re \"a\") (str.to_re \"b\")))"
+                " (re.* re.allchar))]))");
     }
 
     // ---- Sequential and nested groups ----
 
     SECTION("Sequential capture groups") {
-        REQUIRE(build_and_serialize_rcg("(a)(b)(c)", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (re.++ (re.++ (str.to_re \"a\") (str.to_re \"b\")) "
-                "(str.to_re \"c\"))]) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(a)(b)(c)", m) == "(RCG (EDGE *->* [MATCH (let ((a!1 (re.++ (re.* re.allchar) "
+                                                           "(re.++ (re.++ (str.to_re \"a\") (str.to_re \"b\"))"
+                                                           " (str.to_re \"c\"))))) (re.++ a!1 (re.* re.allchar)))]))");
     }
 
     SECTION("Complex nested groups and multiple backreferences") {
         REQUIRE(build_and_serialize_rcg(R"(((a)(b))\1\2\3)", m) ==
                 "(RCG"
-                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
                 " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {2,1} ENDS {2})"
                 " (EDGE *->* [MATCH (str.to_re \"b\")] STARTS {3} ENDS {3,1})"
                 " (EDGE *->* [BACKREF 1])"
                 " (EDGE *->* [BACKREF 2])"
                 " (EDGE *->* [BACKREF 3])"
-                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
                 ")");
     }
 
     // ---- Regular lookarounds ----
 
     SECTION("Positive lookahead (regular)") {
-        REQUIRE(build_and_serialize_rcg("(?=a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?= "
-                                                       "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(?=a)", m) ==
+                "(RCG (EDGE *->* [MATCH (re.* re.allchar)]) (EDGE *->* [LOOKAROUND ?= "
+                "(str.to_re \"a\")]) (EDGE *->* [MATCH (re.* re.allchar)]))");
     }
 
     SECTION("Negative lookahead (regular)") {
-        REQUIRE(build_and_serialize_rcg("(?!a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?! "
-                                                       "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(?!a)", m) ==
+                "(RCG (EDGE *->* [MATCH (re.* re.allchar)]) (EDGE *->* [LOOKAROUND ?! "
+                "(str.to_re \"a\")]) (EDGE *->* [MATCH (re.* re.allchar)]))");
     }
 
     SECTION("Positive lookbehind (regular)") {
-        REQUIRE(build_and_serialize_rcg("(?<=a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?<= "
-                                                        "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(?<=a)", m) ==
+                "(RCG (EDGE *->* [MATCH (re.* re.allchar)]) (EDGE *->* [LOOKAROUND ?<= "
+                "(str.to_re \"a\")]) (EDGE *->* [MATCH (re.* re.allchar)]))");
     }
 
     SECTION("Negative lookbehind (regular)") {
-        REQUIRE(build_and_serialize_rcg("(?<!a)", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?<! "
-                                                        "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(?<!a)", m) ==
+                "(RCG (EDGE *->* [MATCH (re.* re.allchar)]) (EDGE *->* [LOOKAROUND ?<! "
+                "(str.to_re \"a\")]) (EDGE *->* [MATCH (re.* re.allchar)]))");
     }
 
     // ---- Non-regular lookarounds ----
 
     SECTION("Positive lookahead containing capture group (non-regular)") {
         // (?=(a)) — the lookahead contains a capture group, making its subregex non-regular.
-        REQUIRE(build_and_serialize_rcg("(?=(a))", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?= "
-                                                         "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(?=(a))", m) ==
+                "(RCG (EDGE *->* [MATCH (re.* re.allchar)]) (EDGE *->* [LOOKAROUND ?= "
+                "(str.to_re \"a\")]) (EDGE *->* [MATCH (re.* re.allchar)]))");
     }
 
     SECTION("Positive lookahead with capture group and backreference inside") {
         // (?=(a)\1) — the lookahead captures group 1 and \1 inside the same lookahead references it.
         REQUIRE(build_and_serialize_rcg("(?=(a)\\1)", m) == "(RCG"
-                                                            " (EDGE *->* [MATCH re.all])"
+                                                            " (EDGE *->* [MATCH (re.* re.allchar)])"
                                                             " (EDGE *->* [LOOKAROUND ?= (FRAGMENT"
                                                             " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
                                                             " (EDGE *->* [BACKREF 1])"
                                                             " (EDGE *->* [MATCH re.all]))])"
-                                                            " (EDGE *->* [MATCH re.all])"
+                                                            " (EDGE *->* [MATCH (re.* re.allchar)])"
                                                             ")");
     }
 
     SECTION("Positive lookbehind containing capture group (non-regular)") {
         // (?<=(a)) — lookbehind with capture group.
-        REQUIRE(build_and_serialize_rcg("(?<=(a))", m) == "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [LOOKAROUND ?<= "
-                                                          "(str.to_re \"a\")]) (EDGE *->* [MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(?<=(a))", m) ==
+                "(RCG (EDGE *->* [MATCH (re.* re.allchar)]) (EDGE *->* [LOOKAROUND ?<= "
+                "(str.to_re \"a\")]) (EDGE *->* [MATCH (re.* re.allchar)]))");
     }
 
     // ---- Word boundaries ----
@@ -1305,20 +1320,24 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 
     SECTION("Mix of regular sequence and backreference") {
         // (x)ab\1cd — 'ab' and 'cd' are each merged into a single MATCH edge.
-        REQUIRE(build_and_serialize_rcg("(x)ab\\1cd", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1}) (EDGE *->* "
-                "[MATCH (str.to_re \"ab\")]) (EDGE *->* [BACKREF 1]) (EDGE *->* [MATCH (str.to_re \"cd\")]) (EDGE *->* "
-                "[MATCH re.all]))");
+        REQUIRE(build_and_serialize_rcg("(x)ab\\1cd", m) == "(RCG"
+                                                            " (EDGE *->* [MATCH (re.* re.allchar)])"
+                                                            " (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1})"
+                                                            " (EDGE *->* [MATCH (str.to_re \"ab\")])"
+                                                            " (EDGE *->* [BACKREF 1])"
+                                                            " (EDGE *->* [MATCH (str.to_re \"cd\")])"
+                                                            " (EDGE *->* [MATCH (re.* re.allchar)])"
+                                                            ")");
     }
 
     SECTION("Alternation of regular and non-regular components") {
         // (x)|a|\1 — two MATCH edges and one BACKREF edge in parallel.
         REQUIRE(build_and_serialize_rcg("(x)|a|\\1", m) == "(RCG"
-                                                           " (EDGE *->* [MATCH re.all])"
+                                                           " (EDGE *->* [MATCH (re.* re.allchar)])"
                                                            " (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1})"
                                                            " (EDGE *->* [BACKREF 1])"
                                                            " (EDGE *->* [MATCH (str.to_re \"a\")])"
-                                                           " (EDGE *->* [MATCH re.all])"
+                                                           " (EDGE *->* [MATCH (re.* re.allchar)])"
                                                            ")");
     }
 
@@ -1326,24 +1345,28 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
 
     SECTION("Complex: Nested groups inside alternation with backreference") {
         REQUIRE(build_and_serialize_rcg("^((a)|(b))\\1$", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [ANCHOR '^']) (EDGE *->* [MATCH (re.union (str.to_re "
-                "\"a\") (str.to_re \"b\"))] STARTS {1} ENDS {1}) (EDGE *->* [BACKREF 1]) (EDGE *->* [ANCHOR '$']) "
-                "(EDGE *->* [MATCH re.all]))");
+                "(RCG"
+                " (EDGE *->* [MATCH (re.union (str.to_re \"a\") (str.to_re \"b\"))] STARTS {1} ENDS {1})"
+                " (EDGE *->* [BACKREF 1])"
+                ")");
     }
 
     SECTION("Complex: HTML-like tag matching with interrupted greedy merge") {
         REQUIRE(build_and_serialize_rcg("<(?<tag>x)>y\\k<tag>", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"<\")]) (EDGE *->* [MATCH (str.to_re "
-                "\"x\")] STARTS {1} ENDS {1}) (EDGE *->* [MATCH (str.to_re \">y\")]) (EDGE *->* [BACKREF 1]) (EDGE "
-                "*->* [MATCH re.all]))");
+                "(RCG"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
+                " (EDGE *->* [MATCH (str.to_re \"<\")])"
+                " (EDGE *->* [MATCH (str.to_re \"x\")] STARTS {1} ENDS {1})"
+                " (EDGE *->* [MATCH (str.to_re \">y\")])"
+                " (EDGE *->* [BACKREF 1])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
+                ")");
     }
 
     SECTION("Final Boss 1: Perfect BFS interleaving of parallel complex branches") {
+        // Both alternatives are anchored at both ends, so no Sigma* and no anchor edges are left.
         REQUIRE(build_and_serialize_rcg("^(?<v1>a)x(?=y)\\1$|^(?<v2>b)z(?<!w)\\2$", m) ==
                 "(RCG"
-                " (EDGE *->* [MATCH re.all])"
-                " (EDGE *->* [ANCHOR '^'])"
-                " (EDGE *->* [ANCHOR '^'])"
                 " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
                 " (EDGE *->* [MATCH (str.to_re \"b\")] STARTS {2} ENDS {2})"
                 " (EDGE *->* [MATCH (str.to_re \"x\")])"
@@ -1352,17 +1375,12 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
                 " (EDGE *->* [LOOKAROUND ?<! (str.to_re \"w\")])"
                 " (EDGE *->* [BACKREF 1])"
                 " (EDGE *->* [BACKREF 2])"
-                " (EDGE *->* [ANCHOR '$'])"
-                " (EDGE *->* [ANCHOR '$'])"
-                " (EDGE *->* [MATCH re.all])"
                 ")");
     }
 
     SECTION("Final Boss 2: Greedy merge boundaries with non-capturing groups and named refs") {
         REQUIRE(build_and_serialize_rcg("^a(?:b|c)(?<named>d)\\k<named>(?=e)\\1f$", m) ==
                 "(RCG"
-                " (EDGE *->* [MATCH re.all])"
-                " (EDGE *->* [ANCHOR '^'])"
                 // Non-capturing group content merges greedily with the leading 'a'
                 " (EDGE *->* [MATCH (re.++ (str.to_re \"a\") (re.union (str.to_re \"b\") (str.to_re \"c\")))])"
                 // Named capture group gets its own edge
@@ -1371,8 +1389,6 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
                 " (EDGE *->* [LOOKAROUND ?= (str.to_re \"e\")])"
                 " (EDGE *->* [BACKREF 1])"
                 " (EDGE *->* [MATCH (str.to_re \"f\")])"
-                " (EDGE *->* [ANCHOR '$'])"
-                " (EDGE *->* [MATCH re.all])"
                 ")");
     }
 
@@ -1381,7 +1397,7 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
     SECTION("Unrolled iterations with capture group reset the captures") {
         REQUIRE(build_and_serialize_rcg("(?:(a)|b){2}\\1", m) ==
                 "(RCG"
-                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
                 " (EDGE *->* [EPSILON] RESETS {1})"
                 " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
                 " (EDGE *->* [MATCH (str.to_re \"b\")])"
@@ -1389,14 +1405,14 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
                 " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
                 " (EDGE *->* [MATCH (str.to_re \"b\")])"
                 " (EDGE *->* [BACKREF 1])"
-                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
                 ")");
     }
 
     SECTION("Optional iteration with capture group must be nonempty") {
         REQUIRE(build_and_serialize_rcg("(?:(a)|b)?\\1", m) ==
                 "(RCG"
-                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
                 " (EDGE *->* [EPSILON] RESETS {1})"
                 // Zero iterations
                 " (EDGE *->* [MATCH (str.to_re \"\")])"
@@ -1404,26 +1420,26 @@ TEST_CASE("ECMA Regex serialized RCG tests", "[noodler][ecma]") {
                 " (EDGE *->* [MATCH (str.to_re \"b\")])"
                 " (EDGE *->* [BACKREF 1])"
                 " (EDGE *->* [EPSILON] NONEMPTY)"
-                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
                 ")");
     }
 
     SECTION("Unrolled iterations without capture group have no iteration edges") {
         REQUIRE(build_and_serialize_rcg("(a)(?:b\\1){2}", m) ==
                 "(RCG"
-                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
                 " (EDGE *->* [MATCH (str.to_re \"a\")] STARTS {1} ENDS {1})"
                 " (EDGE *->* [MATCH (str.to_re \"b\")])"
                 " (EDGE *->* [BACKREF 1])"
                 " (EDGE *->* [MATCH (str.to_re \"b\")])"
                 " (EDGE *->* [BACKREF 1])"
-                " (EDGE *->* [MATCH re.all])"
+                " (EDGE *->* [MATCH (re.* re.allchar)])"
                 ")");
     }
 
     SECTION("Zero iterations of non-regular subpattern stay regular") {
         REQUIRE(build_and_serialize_rcg("(?:(a)\\1){0}", m) ==
-                "(RCG (EDGE *->* [MATCH re.all]) (EDGE *->* [MATCH (str.to_re \"\")]) (EDGE *->* [MATCH re.all]))");
+                "(RCG (EDGE *->* [MATCH (re.++ (re.++ (re.* re.allchar) (str.to_re \"\")) (re.* re.allchar))]))");
     }
 
     // ---- Captures inside lookarounds ----
@@ -1483,7 +1499,7 @@ TEST_CASE("ECMA Regex constraint generation", "[noodler][ecma]") {
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(builder.get_fresh_vars().empty());
         REQUIRE(app_to_string(app_ref(to_app(formula), m), m) ==
-                "(str.in_re x (re.++ re.all (re.++ (str.to_re \"a\") re.all)))");
+                "(str.in_re x (re.++ (re.++ (re.* re.allchar) (str.to_re \"a\")) (re.* re.allchar)))");
     }
 
     SECTION("Regular pattern with an unreferenced capture group generates a plain membership") {
@@ -1520,12 +1536,9 @@ TEST_CASE("ECMA Regex constraint generation for zero-width assertions", "[noodle
         builder.build_rcg();
         const expr_ref formula = builder.generate_constraints(x);
         REQUIRE(builder.get_fresh_vars().size() == 2);
-        REQUIRE(app_to_string(app_ref(to_app(formula), m), m) ==
-                "(and (= \"\" \"\")"
-                " (str.in_re regex!0 (str.to_re \"a\"))"
-                " (= regex!1 regex!0)"
-                " (= (str.++ regex!0 regex!1) x)"
-                " (= x (str.++ regex!0 regex!1)))");
+        REQUIRE(app_to_string(app_ref(to_app(formula), m), m) == "(and (str.in_re regex!0 (str.to_re \"a\"))"
+                                                                 " (= regex!1 regex!0)"
+                                                                 " (= x (str.++ regex!0 regex!1)))");
     }
 
     SECTION("Lookahead constrains the suffix after its position") {
@@ -1565,15 +1578,23 @@ TEST_CASE("ECMA Regex translation to classical regexes", "[noodler][ecma]") {
         const expr_ref regex =
             to_classical_regex(util_s.re.mk_from_regex(symbol("ecma2020"), zstring("a")), m, params);
         REQUIRE(regex);
-        REQUIRE(app_to_string(app_ref(to_app(regex), m), m) == "(re.++ re.all (re.++ (str.to_re \"a\") re.all))");
+        REQUIRE(app_to_string(app_ref(to_app(regex), m), m) ==
+                "(re.++ (re.++ (re.* re.allchar) (str.to_re \"a\")) (re.* re.allchar))");
     }
 
     SECTION("Pattern with a backreference is not translated") {
         REQUIRE(!to_classical_regex(util_s.re.mk_from_regex(symbol("ecma2020"), zstring("(a)\\1")), m, params));
     }
 
-    SECTION("Pattern with anchors is not translated") {
-        REQUIRE(!to_classical_regex(util_s.re.mk_from_regex(symbol("ecma2020"), zstring("^a$")), m, params));
+    SECTION("Pattern with anchors at its ends is replaced by its regex without them") {
+        const expr_ref regex =
+            to_classical_regex(util_s.re.mk_from_regex(symbol("ecma2020"), zstring("^a$")), m, params);
+        REQUIRE(regex);
+        REQUIRE(app_to_string(app_ref(to_app(regex), m), m) == "(str.to_re \"a\")");
+    }
+
+    SECTION("Pattern with an anchor inside is not translated") {
+        REQUIRE(!to_classical_regex(util_s.re.mk_from_regex(symbol("ecma2020"), zstring("(?:^|a)b")), m, params));
     }
 
     SECTION("Pattern nested in another regex operation is replaced") {
