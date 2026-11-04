@@ -255,8 +255,51 @@ namespace smt::noodler {
          * @return true Is complement of a finite language
          */
         bool is_co_finite(const BasicTerm& t) const {
-            mata::nfa::Nfa cmp = mata::nfa::minimize(mata::nfa::complement(*(*this).at(t), alphabet.get_mata_alphabet()));
+            const mata::nfa::Nfa& aut = *(*this).at(t);
+            // A co-finite language contains a^n for every symbol a and all long n, which is cheap to refute
+            for (const mata::Symbol symbol : alphabet) {
+                if (!accepts_long_powers(aut, symbol)) {
+                    return false;
+                }
+            }
+            // A trimmed automaton accepts a finite language iff it is acyclic, so the complement does not need to be minimized
+            mata::nfa::Nfa cmp = mata::nfa::complement(aut, alphabet.get_mata_alphabet());
             return cmp.trim().is_acyclic();
+        }
+
+        /**
+         * @brief Check whether @p aut accepts the words a^n for all long n, where a is @p symbol.
+         *
+         * The sets of states reached by a^0, a^1, ... start to repeat after a while, the words a^n for long n are
+         * accepted iff every set in the repeated part contains a final state.
+         * @return false if some long a^n is not accepted, true otherwise (also if the repetition is not found in time)
+         */
+        static bool accepts_long_powers(const mata::nfa::Nfa& aut, const mata::Symbol symbol) {
+            const size_t max_steps = 2 * aut.num_of_states() + 2;
+            std::unordered_map<mata::nfa::StateSet, size_t> first_step;
+            std::vector<bool> is_accepting;
+            mata::nfa::StateSet current(aut.initial);
+            for (size_t step = 0; step <= max_steps; ++step) {
+                const auto [it, inserted] = first_step.emplace(current, step);
+                if (!inserted) {
+                    // The sets repeat from the step it->second on
+                    return std::all_of(is_accepting.begin() + static_cast<std::ptrdiff_t>(it->second), is_accepting.end(),
+                                       [](const bool accepting) { return accepting; });
+                }
+                is_accepting.push_back(std::ranges::any_of(current, [&](const mata::nfa::State state) {
+                    return aut.final.contains(state);
+                }));
+                mata::nfa::StateSet next;
+                for (const mata::nfa::State state : current) {
+                    const mata::nfa::StatePost& post = aut.delta[state];
+                    const auto symbol_post = post.find(symbol);
+                    if (symbol_post != post.end()) {
+                        next.insert(symbol_post->targets);
+                    }
+                }
+                current = std::move(next);
+            }
+            return true;
         }
 
         /**
