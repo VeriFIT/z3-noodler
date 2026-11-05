@@ -43,3 +43,23 @@ TEST_CASE("regex::concatenate_up_to_nth_power", "[regex]") {
         CHECK(result.delta.num_of_transitions() == 3 * 300);
     }
 }
+
+TEST_CASE("regex::should_reduce", "[regex]") {
+    // n states with a self-loop on each of k symbols, so their number times the number of transitions is n * n * k
+    auto self_loops = [](size_t n, size_t k) {
+        mata::nfa::Nfa nfa(n, {0}, {0});
+        for (mata::nfa::State state = 0; state < n; ++state) {
+            for (mata::Symbol symbol = 0; symbol < k; ++symbol) {
+                nfa.delta.add(state, symbol, state);
+            }
+        }
+        return nfa;
+    };
+    const size_t n = 100;
+    const size_t k = regex::REDUCTION_COST_BOUND / (n * n);
+
+    CHECK(regex::should_reduce(self_loops(1, 1)));
+    CHECK(regex::should_reduce(mata::nfa::Nfa(n)));
+    CHECK(regex::should_reduce(self_loops(n, k)));
+    CHECK_FALSE(regex::should_reduce(self_loops(n, k + 1)));
+}
