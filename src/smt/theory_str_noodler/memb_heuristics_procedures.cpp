@@ -120,7 +120,7 @@ namespace smt::noodler {
             for (auto& reg : list_of_normal_regs) {
                 intersection = mata::nfa::intersection(*nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false), intersection);
                 if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
-                    && intersection.num_of_states() < regex::RED_BOUND)
+                    && regex::should_reduce(intersection))
                 {
                     intersection = mata::nfa::reduce(intersection);
                 }
@@ -137,7 +137,7 @@ namespace smt::noodler {
             for (auto& reg : list_of_compl_regs) {
                 unionn = mata::nfa::union_nondet(*nfa_constructor.conv_to_nfa(reg, m_util_s, m, alph, false, false), unionn);
                 if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
-                    && unionn.num_of_states() < regex::RED_BOUND)
+                    && regex::should_reduce(unionn))
                 {
                     unionn = mata::nfa::reduce(unionn);
                 }

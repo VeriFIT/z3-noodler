@@ -103,6 +103,10 @@ namespace smt::noodler::regex {
         return current_symbol;
     }
 
+    bool should_reduce(const mata::nfa::Nfa &nfa) {
+        return nfa.num_of_states() * nfa.delta.num_of_transitions() <= REDUCTION_COST_BOUND;
+    }
+
     void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet) {
         if (m_util_s.str.is_string(ex)) {
             auto ex_app{ to_app(ex) };
@@ -251,22 +255,10 @@ namespace smt::noodler::regex {
                     }
                 } else if (m_util_s.re.is_intersection(cur_expr)) { // Handle intersection.
                     SASSERT(num_of_regex_arguments_of_cur_expr > 0);
+                    // the arguments are reduced already, unless their reduction would be too expensive
                     result = std::move(arg_nfas.at(0));
-                    if (result.num_of_states() >= RED_BOUND) {
-                        // first argument was not reduced if it is larger than RED_BOUND, however,
-                        // intersection is expensive and it is (probably) better to reduce
-                        // the arguments of intersection
-                        result = mata::nfa::reduce(result);
-                    }
                     for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
-                        mata::nfa::Nfa next_arg = std::move(arg_nfas.at(i));
-                        if (next_arg.num_of_states() >= RED_BOUND) {
-                            // next_arg was not reduced if it is larger than RED_BOUND, however,
-                            // intersection is expensive and it is (probably) better to reduce
-                            // the arguments of intersection
-                            next_arg = mata::nfa::reduce(next_arg);
-                        }
-                        result = mata::nfa::intersection(result, next_arg);
+                        result = mata::nfa::intersection(result, arg_nfas.at(i));
                     }
                 } else if (m_util_s.re.is_loop(cur_expr)) { // Handle loop.
                     unsigned low, high;
@@ -402,9 +394,9 @@ namespace smt::noodler::regex {
                 }
 
                 // intermediate automata reduction
-                // if the automaton is too big --> skip it. The computation of the simulation would be too expensive.
+                // if the computation of the simulation would be too expensive --> skip it.
                 // The automata of leaves (e.g., str.to_re or re.range) are minimal already.
-                if(num_of_regex_arguments_of_cur_expr > 0 && !is_almost_reduced && result.num_of_states() < RED_BOUND) {
+                if (num_of_regex_arguments_of_cur_expr > 0 && !is_almost_reduced && should_reduce(result)) {
                     STRACE(str_create_nfa_reduce,
                         tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
                         tout << result;

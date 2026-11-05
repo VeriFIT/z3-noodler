@@ -32,11 +32,17 @@ namespace smt::noodler::regex {
     using expr_pair = std::pair<expr_ref, expr_ref>;
     using expr_pair_flag = std::tuple<expr_ref, expr_ref, bool>;
 
-    // simulation reduction bound in states (bigger automata are not reduced)
-    const unsigned RED_BOUND = 1000;
-    // simulation reduction bound in states for the intersection of the memberships of one variable in the final check
-    // it is lower than RED_BOUND, as these intersections are often dense complements whose simulation is expensive already for a few hundred states
-    const unsigned INTERSECTION_RED_BOUND = 100;
+    // bound on the number of states times the number of transitions of an automaton reduced by simulation
+    const size_t REDUCTION_COST_BOUND = 100000;
+
+    /**
+     * @brief Decide whether the simulation reduction of @p nfa is cheap enough.
+     *
+     * The time of mata::nfa::reduce() grows with the number of states times the number of transitions.
+     * @param[in] nfa Automaton to be reduced.
+     * @return True iff the number of states times the number of transitions of @p nfa is at most REDUCTION_COST_BOUND.
+     */
+    bool should_reduce(const mata::nfa::Nfa &nfa);
 
     /**
      * @brief Info gathered about a regex. 
