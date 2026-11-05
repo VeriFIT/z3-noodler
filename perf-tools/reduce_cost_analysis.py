@@ -1,396 +1,331 @@
 #!/usr/bin/env python3
-"""Statistical analysis of the cost of mata::nfa::reduce from the statistics of reduce_stats_collect.py (REDUCE-COST-PLAN.md, section 4).
+"""Statistical analysis of the cost of mata::nfa::reduce: which properties of the input automaton predict the time of a reduction.
 
-Steps: merging of repeated calls, ranking of single properties (Spearman, Kendall, ROC AUC of "expensive"), OLS cost models of log(time)
-with standard errors clustered by formula, grouped cross-validation, censored calls, benefit of the reductions, and candidate guards.
-The tables go to OUT/analysis.md (and stdout), the plots to OUT/*.png.
-Usage: reduce_cost_analysis.py PREFIX [PREFIX...] --out DIR [--budgets-ms 1,5,10,20,50,100] [--sample N]
-PREFIX is the prefix of a collection (PREFIX-calls.csv, PREFIX-formulas.csv, PREFIX-callers.csv); several collections are concatenated.
+Input: a benchmark of run_bench.py --reduce-log, best of a variant without guards (instrumentation/no-guards.patch) and with
+REDUCE_LOG_GRAPH=1, so that every automaton is reduced and all properties are recorded.
+Sections:
+  overview      the time spent in reductions per set and per call site;
+  ranking       each single property against the time: Spearman ρ, Kendall τ, and ROC AUC for "the call takes over N ms";
+  cost models   linear models of log(time) on the logarithms of the properties, compared by cross-validation (grouped by formula);
+                log(Q^a · T^b) = a·log Q + b·log T, so the fitted coefficients give the best products of powers of the properties;
+  censored      the calls cut by the timeout, against the prediction of the model;
+  benefit       how much the reductions shrink the automata, by cost and by site;
+  guards        rules deciding whether to reduce, evaluated on the guarded sites.
+Writes OUT_DIR/analysis.md and OUT_DIR/reduce-time.png.
+
+Example: reduce_cost_analysis.py collection-dir --out collection-dir/analysis
 """
 import argparse
 import os
-import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.csv as pa_csv
 import statsmodels.api as sm
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import GroupKFold
 from sklearn.tree import DecisionTreeClassifier, export_text
-from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-PROPERTIES = ["states", "initial", "final", "useful", "transitions", "moves", "epsilon", "self_loops", "symbols", "max_out", "max_targets",
-              "deterministic", "sccs", "max_scc", "cyclic"]
-# properties computable in O(transitions) without a graph search, the candidates for the guard
-CHEAP = ["states", "transitions", "moves", "symbols"]
-# sites whose reduction is guarded by a state bound in the branch
-GUARDED_PREFIXES = ("construction:", "final_check_intersection", "memb_heuristic_")
-UNGUARDED_CONSTRUCTION = ("construction:loop_body", "construction:loop_body_unbounded")
-# palette of the dataviz reference instance
-SURFACE, INK, INK_2, BLUE, ORANGE = "#fcfcfb", "#0b0b0b", "#52514e", "#2a78d6", "#eb6834"
-SEQUENTIAL = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
+import plot_style
+import reduce_log
 
-out_lines = []
-
-
-def emit(text=""):
-    print(text)
-    out_lines.append(text)
-
-
-def table(df, floatfmt=".3g"):
-    emit(df.to_markdown(floatfmt=floatfmt))
-    emit()
-
-
-def site_of(function, location, operation):
-    """Short name of a call site."""
-    name = function.split("(")[0].split("::")[-1] if isinstance(function, str) else "?"
-    line = location.rsplit(":", 1)[-1] if isinstance(location, str) else "?"
-    if name == "create_nfa_for_expr":
-        return f"construction:{operation}"
-    if name == "create_aut_assignment_for_formula":
-        return "final_check_intersection"
-    if name == "compute_next_solution":
-        return "memb_heuristic_intersection" if line == "125" else "memb_heuristic_union"
-    return f"{name}:{line}" if line not in ("?", "0") else name
-
-
-def is_guarded(site):
-    return site.startswith(GUARDED_PREFIXES) and site not in UNGUARDED_CONSTRUCTION
-
-
-def load(prefixes):
-    calls, formulas = [], []
-    for prefix in prefixes:
-        parquet = f"{prefix}-calls.parquet"
-        if os.path.exists(parquet) and os.path.getmtime(parquet) >= os.path.getmtime(f"{prefix}-calls.csv"):
-            c = pd.read_parquet(parquet)
-        else:
-            options = pa_csv.ConvertOptions(column_types={"caller": pa.string(), "operation": pa.string()})
-            c = pa_csv.read_csv(f"{prefix}-calls.csv", convert_options=options).to_pandas()
-            c.to_parquet(parquet)
-        callers = pd.read_csv(f"{prefix}-callers.csv").set_index("caller")
-        pairs = c[["caller", "operation"]].drop_duplicates()
-        pairs["site"] = [site_of(callers.function.get(a), callers.location.get(a), op) for a, op in zip(pairs.caller, pairs.operation)]
-        c = c.merge(pairs, on=["caller", "operation"], how="left")
-        calls.append(c)
-        formulas.append(pd.read_csv(f"{prefix}-formulas.csv"))
-    return pd.concat(calls, ignore_index=True), pd.concat(formulas, ignore_index=True)
-
-
-def merge_repeats(calls):
-    """One row per distinct call of a formula (same site, properties and result), with the median time and the number of repeats.
-
-    The collector merges the calls already; raw rows (one per call) of older collections are merged here.
-    """
-    if "repeats" in calls:
-        merged = calls
-    else:
-        key = ["file", "site"] + PROPERTIES + ["res_states", "res_transitions", "censored"]
-        calls["key"] = pd.util.hash_pandas_object(calls[key], index=False)
-        merged = calls.groupby(["file", "key"], sort=False).agg(
-            set=("set", "first"), site=("site", "first"), alphabet=("alphabet", "max"), ns=("ns", "median"), ns_min=("ns", "min"),
-            ns_max=("ns", "max"), ns_sum=("ns", "sum"), repeats=("ns", "size"),
-            **{p: (p, "first") for p in PROPERTIES + ["res_states", "res_transitions", "censored"]})
-        merged = merged.reset_index().drop(columns="key")
-    # the alphabet of the formula where the call site does not know it
-    merged["alphabet"] = merged["alphabet"].where(merged["alphabet"] >= 0)
-    merged["alphabet"] = merged["alphabet"].fillna(merged.groupby("file")["alphabet"].transform("max"))
-    return merged
-
-
-def add_features(df):
-    q, t, s, m = (df[c].astype(float) for c in ["states", "transitions", "symbols", "moves"])
-    df["Q*T"] = q * t
-    df["Q*M"] = q * m
-    df["Q*S"] = q * s
-    df["Q^2*S"] = q * q * s
-    df["T/Q"] = t / q.clip(lower=1)
-    df["completeness"] = m / (q * s).clip(lower=1)
-    for c in PROPERTIES + ["Q*T", "Q*M", "Q*S", "Q^2*S", "T/Q", "completeness", "alphabet", "res_states"]:
-        df[f"l_{c}"] = np.log(df[c].astype(float).clip(lower=0) + 1)
-    df["l_states^2"] = df["l_states"] ** 2
-    df["l_transitions^2"] = df["l_transitions"] ** 2
-    df["l_ns"] = np.log(df["ns"].astype(float).clip(lower=1))
-    return df
-
-
-def overview(merged, formulas):
-    emit("## Overview")
-    emit()
-    emit(f"{len(formulas)} formulas, {int(merged.repeats.sum())} calls, {len(merged)} distinct calls (same formula, site, properties and result), "
-         f"{int(merged.censored.sum())} censored.")
-    emit()
-    f = formulas.assign(timeout=formulas.result.eq("timeout"))
-    per_set = f.groupby("set").agg(formulas=("file", "size"), timeouts=("timeout", "sum"), seconds=("seconds", "sum"),
-                                   reduce_s=("reduce_ns", lambda x: x.sum() / 1e9), calls=("calls", "sum"))
-    per_set["reduce_share"] = per_set.reduce_s / per_set.seconds
-    table(per_set.sort_values("reduce_s", ascending=False))
-    emit("Per site (median and p99 over the distinct calls):")
-    emit()
-    per_site = merged.groupby("site").agg(calls=("repeats", "sum"), distinct=("ns", "size"), total_s=("ns_sum", lambda x: x.sum() / 1e9),
-                                          median_us=("ns", lambda x: x.median() / 1e3), p99_ms=("ns", lambda x: x.quantile(.99) / 1e6),
-                                          max_ms=("ns", lambda x: x.max() / 1e6), censored=("censored", "sum"))
-    per_site["guarded"] = [is_guarded(s) for s in per_site.index]
-    table(per_site.sort_values("total_s", ascending=False))
-
-
-def ranking(df, thresholds_ms):
-    emit("## Ranking of single properties")
-    emit()
-    emit("Spearman ρ and Kendall τ with the time (non-censored distinct calls; τ on a sample of at most 200k), "
-         "ROC AUC of each property for a call over the threshold (censored calls over it count as expensive).")
-    emit()
-    done = df[df.censored == 0]
-    sample = done.sample(min(len(done), 200_000), random_state=1)
-    rows = {}
-    for c in PROPERTIES + ["alphabet", "Q*T", "Q*M", "Q*S", "Q^2*S", "T/Q", "completeness"]:
-        # nan_policy="omit" falls back to the masked versions, which are quadratic
-        d, s = done[done[c].notna()], sample[sample[c].notna()]
-        row = {"spearman": stats.spearmanr(d[c], d.ns).statistic, "kendall": stats.kendalltau(s[c], s.ns).statistic}
-        for ms in thresholds_ms:
-            y = df.ns > ms * 1e6
-            known = (df.censored == 0) | y
-            if y[known].nunique() == 2:
-                row[f"AUC>{ms}ms"] = roc_auc_score(y[known], df.loc[known, c].fillna(0))
-        rows[c] = row
-    table(pd.DataFrame(rows).T.sort_values("spearman", ascending=False))
-
-
+# Properties computable in one pass over the transitions, the candidates for a guard.
+CHEAP_PROPERTIES = ["states", "transitions", "moves", "symbols"]
+# Combinations of properties ranked next to the properties themselves (Q = states, T = transitions, M = moves, S = symbols).
+COMBINATIONS = {"Q*T": ("states", "transitions"), "Q*M": ("states", "moves"), "Q*S": ("states", "symbols")}
+# Models of log(time); each name lists the log-properties of the model.
 MODELS = {
-    "Q": ["l_states"],
-    "T": ["l_transitions"],
-    "Q*T": ["l_Q*T"],
-    "Q+T": ["l_states", "l_transitions"],
-    "Q+T+S": ["l_states", "l_transitions", "l_symbols"],
-    "Q+T+S+M": ["l_states", "l_transitions", "l_symbols", "l_moves"],
-    "Q+T/Q+S+compl": ["l_states", "l_T/Q", "l_symbols", "l_completeness"],
-    "Q+T+S+structure": ["l_states", "l_transitions", "l_symbols", "l_moves", "l_useful", "l_sccs", "l_max_scc", "l_cyclic", "l_max_out",
-                        "l_max_targets", "deterministic", "l_final", "l_initial"],
-    "Q+T+Q²+T²": ["l_states", "l_transitions", "l_states^2", "l_transitions^2"],
-    "Q+T+S+Q²+T²": ["l_states", "l_transitions", "l_symbols", "l_states^2", "l_transitions^2"],
-    "post: Q+T+S+classes": ["l_states", "l_transitions", "l_symbols", "l_res_states"],
+    "Q": ["states"],
+    "T": ["transitions"],
+    "Q*T": ["Q*T"],
+    "Q+T": ["states", "transitions"],
+    "Q+T+S": ["states", "transitions", "symbols"],
+    "Q+T+S+M": ["states", "transitions", "symbols", "moves"],
+    "Q+T+S+structure": ["states", "transitions", "symbols", "moves", "useful", "sccs", "max_scc", "cyclic", "max_out", "max_targets",
+                        "deterministic", "final", "initial"],
+    # the result is not known before the reduction; this model shows how much the number of simulation classes would explain
+    "Q+T+S+result states": ["states", "transitions", "symbols", "res_states"],
 }
+MODEL_FOR_GUARDS = "Q+T+S"
+FOLDS = 5
+RANKING_THRESHOLDS_MS = [1, 10, 50]
+GUARD_BUDGETS_MS = [1, 5, 10, 20, 50, 100]
+# the state bounds of the branch before the cost guard, for comparison
+STATE_BOUNDS = [100, 250, 1000]
 
 
-def cv_score(df, features, groups, folds=5):
-    """Grouped (by formula) k-fold cross-validated R² and RMSE of log(time)."""
-    x, y = df[features].to_numpy(), df["l_ns"].to_numpy()
-    sse, sst = 0.0, 0.0
-    for train, test in GroupKFold(n_splits=folds).split(x, y, groups):
-        model = LinearRegression().fit(x[train], y[train])
-        sse += ((model.predict(x[test]) - y[test]) ** 2).sum()
-        sst += ((y[test] - y[train].mean()) ** 2).sum()
-    return 1 - sse / sst, np.sqrt(sse / len(y))
+def parse_arguments():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("bench_dirs", nargs="+", type=Path, help="output directories of run_bench.py --reduce-log (concatenated)")
+    parser.add_argument("--out", required=True, type=Path, help="directory of analysis.md and the plot")
+    return parser.parse_args()
 
 
-def cost_models(df, name):
-    emit(f"## Cost models of log(time): {name}")
-    emit()
-    done = df[df.censored == 0].copy()
-    groups = done["file"].astype("category").cat.codes.to_numpy()
-    emit(f"{len(done)} distinct non-censored calls of {len(np.unique(groups))} formulas; standard errors clustered by formula.")
-    emit()
+def load(bench_dirs):
+    """The distinct calls (one row per merged call of a run) and the runs."""
+    calls = pd.concat([pd.read_csv(directory / "reduce-calls.csv", dtype={"caller": str, "operation": str}) for directory in bench_dirs],
+                      ignore_index=True)
+    runs = pd.concat([pd.read_csv(directory / "runs.csv") for directory in bench_dirs], ignore_index=True)
+    for column in ["file", "set", "site"]:
+        calls[column] = calls[column].astype("category")
+    calls["guarded"] = calls.site.map(reduce_log.is_guarded).astype(bool)
+    calls["formula"] = calls.file.cat.codes
+    calls["ns"] = calls.ns_median
+    for name, (left, right) in COMBINATIONS.items():
+        calls[name] = calls[left].astype(float) * calls[right]
+    return calls, runs
+
+
+def log_features(calls, properties):
+    """log(1 + x) of the properties, the inputs of the models."""
+    return np.log1p(calls[properties].astype(float).clip(lower=0))
+
+
+def log_time(calls):
+    return np.log(calls.ns.astype(float).clip(lower=1))
+
+
+def markdown(table, floatfmt=".3g"):
+    return table.to_markdown(floatfmt=floatfmt)
+
+
+def overview(calls, runs):
+    per_set = runs.groupby("set").agg(formulas=("file", "nunique"), timeouts=("outcome", lambda outcome: (outcome == "timeout").sum()),
+                                      solving_seconds=("seconds", "sum"), reductions=("reduce_calls", "sum"),
+                                      reduce_seconds=("reduce_ns", lambda ns: ns.sum() / 1e9))
+    per_set["reduce_share"] = per_set.reduce_seconds / per_set.solving_seconds
+    per_site = calls.groupby("site", observed=True).agg(guarded=("guarded", "first"), reductions=("repeats", "sum"), distinct=("ns", "size"),
+                                                         total_seconds=("ns_sum", lambda ns: ns.sum() / 1e9),
+                                                         median_us=("ns", lambda ns: ns.median() / 1e3),
+                                                         p99_ms=("ns", lambda ns: ns.quantile(0.99) / 1e6),
+                                                         max_ms=("ns", lambda ns: ns.max() / 1e6), censored=("censored", "sum"))
+    return "\n\n".join(["## Overview",
+                        f"{runs.file.nunique()} formulas, {int(calls.repeats.sum())} reductions, {len(calls)} distinct ones "
+                        f"(same run, site, input and result), {int(calls.censored.sum())} censored.",
+                        markdown(per_set.sort_values("reduce_seconds", ascending=False)),
+                        "Per call site (median and 99th percentile over the distinct reductions):",
+                        markdown(per_site.sort_values("total_seconds", ascending=False))])
+
+
+def expensive_and_known(calls, threshold_ms):
+    """Whether each call takes over the threshold, and whether that is known (a censored call is known to be expensive only if its lower
+    bound is over the threshold)."""
+    expensive = calls.ns > threshold_ms * 1e6
+    known = (calls.censored == 0) | expensive
+    return expensive, known
+
+
+def ranking(calls):
+    finished = calls[calls.censored == 0]
+    sample = finished.sample(min(len(finished), 200_000), random_state=1)
+    time_ranks = finished.ns.rank()
+    rows = {}
+    for column in reduce_log.PROPERTIES + list(COMBINATIONS):
+        values = finished[column]
+        if values.nunique() < 2:
+            continue
+        # Spearman's ρ is the correlation of the ranks
+        row = {"spearman": np.corrcoef(values.rank(), time_ranks)[0, 1], "kendall": stats.kendalltau(sample[column], sample.ns).statistic}
+        for threshold_ms in RANKING_THRESHOLDS_MS:
+            expensive, known = expensive_and_known(calls, threshold_ms)
+            if expensive[known].nunique() == 2:
+                row[f"AUC > {threshold_ms} ms"] = roc_auc_score(expensive[known], calls.loc[known, column])
+        rows[column] = row
+    return "\n\n".join(["## Ranking of single properties",
+                        "Spearman ρ and Kendall τ (on a sample of at most 200k) with the time of the finished distinct calls, and the ROC AUC "
+                        "of each property for a call over the threshold (censored calls over it count as expensive).",
+                        markdown(pd.DataFrame(rows).T.sort_values("spearman", ascending=False))])
+
+
+def grouped_folds(calls):
+    """Cross-validation folds that keep the calls of one formula together."""
+    return list(GroupKFold(n_splits=FOLDS).split(calls, groups=calls.formula))
+
+
+def cross_validated(features, target, folds):
+    """Out-of-fold predictions of a linear model, and the R² and RMSE of them."""
+    predictions = np.empty(len(target))
+    for train, test in folds:
+        model = LinearRegression().fit(features[train], target[train])
+        predictions[test] = model.predict(features[test])
+    residual = ((target - predictions) ** 2).sum()
+    return predictions, 1 - residual / ((target - target.mean()) ** 2).sum(), np.sqrt(residual / len(target))
+
+
+def variance_inflation(features):
+    """The variance inflation factor of each feature: the diagonal of the inverse of their correlation matrix."""
+    return np.diag(np.linalg.inv(np.corrcoef(features, rowvar=False)))
+
+
+def cost_models(calls, title):
+    finished = calls[calls.censored == 0]
+    target = log_time(finished).to_numpy()
+    folds = grouped_folds(finished)
     rows, fits = {}, {}
-    for model_name, features in MODELS.items():
-        x = sm.add_constant(done[features].astype(float))
-        fit = sm.OLS(done["l_ns"], x).fit(cov_type="cluster", cov_kwds={"groups": groups})
-        r2_cv, rmse_cv = cv_score(done, features, groups)
-        fits[model_name] = fit
-        rows[model_name] = {"R2": fit.rsquared, "R2_cv": r2_cv, "RMSE_cv": rmse_cv, "AIC": fit.aic, "BIC": fit.bic,
-                            "coefficients": ", ".join(f"{f.removeprefix('l_')} {fit.params[f]:.2f}±{fit.bse[f]:.2f}" for f in features)}
-    table(pd.DataFrame(rows).T, floatfmt=".4g")
+    for name, properties in MODELS.items():
+        features = log_features(finished, properties)
+        fit = sm.OLS(target, sm.add_constant(features)).fit(cov_type="cluster", cov_kwds={"groups": finished.formula})
+        _, r2_cv, rmse_cv = cross_validated(features.to_numpy(), target, folds)
+        fits[name] = fit
+        coefficients = ", ".join(f"{p} {fit.params[p]:.2f}±{fit.bse[p]:.2f}" for p in properties)
+        rows[name] = {"R2": fit.rsquared, "R2_cv": r2_cv, "RMSE_cv": rmse_cv, "AIC": fit.aic, "coefficients": coefficients}
     base, bigger = fits["Q+T+S"], fits["Q+T+S+structure"]
-    lr = 2 * (bigger.llf - base.llf)
-    emit(f"Likelihood-ratio test structure vs Q+T+S: LR {lr:.1f}, df {bigger.df_model - base.df_model:.0f}, "
-         f"p {stats.chi2.sf(lr, bigger.df_model - base.df_model):.3g} (non-robust; with this many calls, effect sizes and CV decide).")
-    emit()
-    x = sm.add_constant(done[MODELS["Q+T+S+M"]].astype(float))
-    vif = {c: variance_inflation_factor(x.to_numpy(), i) for i, c in enumerate(x.columns) if c != "const"}
-    emit("VIF (Q+T+S+M): " + ", ".join(f"{c.removeprefix('l_')} {v:.1f}" for c, v in vif.items()))
-    emit()
-    return fits
+    likelihood_ratio = 2 * (bigger.llf - base.llf)
+    degrees = bigger.df_model - base.df_model
+    inflation = variance_inflation(log_features(finished, MODELS["Q+T+S+M"]).to_numpy())
+    return fits, "\n\n".join([
+        f"## Cost models of log(time): {title}",
+        f"{len(finished)} finished distinct calls of {finished.formula.nunique()} formulas; standard errors clustered by formula; "
+        f"R2_cv and RMSE_cv by {FOLDS}-fold cross-validation grouped by formula.",
+        markdown(pd.DataFrame(rows).T, floatfmt=".4g"),
+        f"Likelihood-ratio test of the structure against Q+T+S: {likelihood_ratio:.1f}, df {degrees:.0f}, "
+        f"p {stats.chi2.sf(likelihood_ratio, degrees):.3g} (with this many calls nearly any term is significant; effect sizes and R2_cv decide).",
+        "Variance inflation of Q+T+S+M: " + ", ".join(f"{p} {v:.1f}" for p, v in zip(MODELS["Q+T+S+M"], inflation))])
 
 
-def censored_check(df, fit, features):
-    emit("## Censored calls")
-    emit()
-    cens = df[df.censored == 1]
-    if cens.empty:
-        emit("No censored calls.")
-        emit()
-        return
-    pred = np.exp(fit.predict(sm.add_constant(cens[features].astype(float), has_constant="add")))
-    out = cens[["set", "site", "states", "transitions", "symbols", "moves", "ns"]].assign(lower_bound_ms=cens.ns / 1e6, predicted_ms=pred / 1e6)
-    emit(f"{len(cens)} censored calls; predicted time vs the lower bound (time until the end of the run):")
-    emit()
-    table(out.drop(columns="ns").sort_values("lower_bound_ms", ascending=False).head(30))
+def censored_calls(calls, fit):
+    censored = calls[calls.censored == 1]
+    if censored.empty:
+        return "## Censored calls\n\nNone."
+    predicted_ms = np.exp(fit.predict(sm.add_constant(log_features(censored, MODELS[MODEL_FOR_GUARDS]), has_constant="add"))) / 1e6
+    table = censored[["set", "site", "states", "transitions", "symbols"]].assign(lower_bound_ms=censored.ns / 1e6, predicted_ms=predicted_ms)
+    return "\n\n".join(["## Censored calls",
+                        f"{len(censored)} calls cut by the timeout; their time is a lower bound (until the end of the run). The longest:",
+                        markdown(table.sort_values("lower_bound_ms", ascending=False).head(30))])
 
 
-def benefit(df):
-    emit("## Benefit of the reductions")
-    emit()
-    done = df[df.censored == 0].copy()
-    done["state_ratio"] = done.res_states / done.states.clip(lower=1)
-    done["transition_ratio"] = done.res_transitions / done.transitions.clip(lower=1)
-    done["cost"] = pd.cut(done.ns / 1e6, [0, 0.1, 1, 10, 100, 1e3, 1e9], labels=["<0.1ms", "0.1-1ms", "1-10ms", "10-100ms", "0.1-1s", ">1s"])
-    emit("Median ratios after/before by cost of the call (guarded sites):")
-    emit()
-    g = done[done.site.map(is_guarded)].groupby("cost", observed=True).agg(calls=("ns", "size"), state_ratio=("state_ratio", "median"),
-                                                                            transition_ratio=("transition_ratio", "median"))
-    table(g)
-    emit("By site:")
-    emit()
-    g = done.groupby("site").agg(calls=("ns", "size"), state_ratio=("state_ratio", "median"), transition_ratio=("transition_ratio", "median"),
-                                 unchanged=("state_ratio", lambda x: (x >= 1).mean()))
-    table(g.sort_values("calls", ascending=False))
+def benefit(calls):
+    finished = calls[calls.censored == 0].assign(state_ratio=lambda c: c.res_states / c.states.clip(lower=1),
+                                                 transition_ratio=lambda c: c.res_transitions / c.transitions.clip(lower=1))
+    cost = pd.cut(finished.ns / 1e6, [0, 0.1, 1, 10, 100, 1e3, np.inf], labels=["<0.1 ms", "0.1-1 ms", "1-10 ms", "10-100 ms", "0.1-1 s", ">1 s"])
+    by_cost = finished[finished.guarded].groupby(cost[finished.guarded], observed=True).agg(
+        calls=("ns", "size"), state_ratio=("state_ratio", "median"), transition_ratio=("transition_ratio", "median"))
+    by_site = finished.groupby("site", observed=True).agg(calls=("ns", "size"), state_ratio=("state_ratio", "median"),
+                                                           transition_ratio=("transition_ratio", "median"),
+                                                           unchanged=("state_ratio", lambda ratio: (ratio >= 1).mean()))
+    return "\n\n".join(["## Benefit of the reductions",
+                        "Median ratios after / before by the cost of the call (guarded sites):", markdown(by_cost),
+                        "By site (unchanged: the share of reductions that remove no state):", markdown(by_site.sort_values("calls", ascending=False))])
 
 
-def out_of_fold(df, features, folds=5):
-    """Predictions of log(time) for each non-censored call by a model fitted on the other folds (grouped by formula); censored calls get
-    the prediction of the model fitted on all non-censored calls."""
-    done = df.censored == 0
-    x, y = df[features].to_numpy(float), df["l_ns"].to_numpy()
-    groups = df["file"].astype("category").cat.codes.to_numpy()
-    pred = LinearRegression().fit(x[done], y[done]).predict(x)
-    idx = np.flatnonzero(done)
-    for train, test in GroupKFold(n_splits=folds).split(idx, groups=groups[idx]):
-        pred[idx[test]] = LinearRegression().fit(x[idx[train]], y[idx[train]]).predict(x[idx[test]])
-    return pred
+def best_threshold(values, expensive):
+    """The threshold c of the rule "reduce if value <= c" with the best balanced accuracy at telling the expensive calls apart.
+
+    Balanced accuracy weighs the rare expensive calls as much as the cheap ones, so the threshold is lower than the budget suggests.
+    """
+    order = np.argsort(values, kind="stable")
+    sorted_values, sorted_expensive = values[order], expensive[order]
+    # with c = sorted_values[i], the calls up to i are reduced and the others skipped
+    cheap_reduced = np.cumsum(~sorted_expensive)
+    expensive_reduced = np.cumsum(sorted_expensive)
+    expensive_total, cheap_total = expensive_reduced[-1], cheap_reduced[-1]
+    if expensive_total == 0 or cheap_total == 0:
+        return np.inf
+    balanced_accuracy = (expensive_total - expensive_reduced) / expensive_total + cheap_reduced / cheap_total
+    # a threshold must not split equal values
+    last_of_its_value = np.append(sorted_values[1:] != sorted_values[:-1], True)
+    return sorted_values[np.argmax(np.where(last_of_its_value, balanced_accuracy, -np.inf))]
 
 
-def product_rule(df, product, budget_ns, folds=5):
-    """Out-of-fold decisions (True = reduce) of the rule product <= c, with c chosen on the other folds (grouped by formula) to maximize
-    the balanced accuracy of telling the calls over budget_ns, and the threshold chosen on all calls."""
-    y = (df.ns > budget_ns).to_numpy()
-    known = ((df.censored == 0) | y).to_numpy()
-    p = df[product].to_numpy(float)
-    groups = df["file"].astype("category").cat.codes.to_numpy()
-
-    def best_threshold(rows):
-        rows = rows[known[rows]]
-        if y[rows].all() or not y[rows].any():
-            return np.inf
-        candidates = np.unique(np.quantile(p[rows], np.linspace(0, 1, 400)))
-        pos, neg = y[rows].sum(), (~y[rows]).sum()
-        scores = [((p[rows] > c) & y[rows]).sum() / pos + ((p[rows] <= c) & ~y[rows]).sum() / neg for c in candidates]
-        return candidates[int(np.argmax(scores))]
-
-    reduce = np.zeros(len(df), dtype=bool)
-    for train, test in GroupKFold(n_splits=folds).split(p, groups=groups):
-        reduce[test] = p[test] <= best_threshold(train)
-    return reduce, best_threshold(np.arange(len(df)))
+def threshold_rule(calls, column, budget_ms, folds):
+    """Out-of-fold decisions (True = reduce) of "reduce if column <= c", with c chosen on the other folds, and c chosen on all calls."""
+    expensive, known = expensive_and_known(calls, budget_ms)
+    values, expensive, known = calls[column].to_numpy(float), expensive.to_numpy(), known.to_numpy()
+    reduce = np.zeros(len(calls), dtype=bool)
+    for train, test in folds:
+        train = train[known[train]]
+        reduce[test] = values[test] <= best_threshold(values[train], expensive[train])
+    return reduce, best_threshold(values[known], expensive[known])
 
 
-def guards(df, fit, features, budgets_ms):
-    emit("## Candidate guards (guarded sites, calls weighted by repeats, out-of-fold decisions)")
-    emit()
-    g = df[df.site.map(is_guarded)].copy()
-    g["predicted"] = np.exp(out_of_fold(g, features))
-    g["weight"] = g.repeats
-    total = (g.ns * g.weight).sum()
-    removed = (g.states - g.res_states.fillna(g.states)).clip(lower=0)
-    rules = {"Q<100": g.states < 100, "Q<250": g.states < 250, "Q<1000": g.states < 1000}
+def guards(calls):
+    guarded = calls[calls.guarded].copy()
+    folds = grouped_folds(guarded)
+    features = log_features(guarded, MODELS[MODEL_FOR_GUARDS]).to_numpy()
+    finished = (guarded.censored == 0).to_numpy()
+    predictions, _, _ = cross_validated(features[finished], log_time(guarded).to_numpy()[finished],
+                                        grouped_folds(guarded[finished]))
+    guarded["predicted_ns"] = np.inf
+    guarded.loc[finished, "predicted_ns"] = np.exp(predictions)
+    rules = {f"states < {bound}": guarded.states < bound for bound in STATE_BOUNDS}
     thresholds = {}
-    for ms in budgets_ms:
-        rules[f"model<={ms}ms"] = g.predicted <= ms * 1e6
-        for product in ["Q*T", "Q*M"]:
-            reduce, c = product_rule(g, product, ms * 1e6)
-            rules[f"{product}<=c({ms}ms)"] = pd.Series(reduce, index=g.index)
-            thresholds[f"{product}<=c({ms}ms)"] = c
-    emit("Columns: share of reduced calls, share of the reduce time still spent, for each budget B the calls over B still reduced and the "
-         "calls under B skipped, and the share of the states removed by the reductions that is lost by skipping.")
-    emit()
+    for budget_ms in GUARD_BUDGETS_MS:
+        rules[f"model ≤ {budget_ms} ms"] = guarded.predicted_ns <= budget_ms * 1e6
+        for column in ["Q*T", "Q*M"]:
+            reduce, threshold = threshold_rule(guarded, column, budget_ms, folds)
+            rules[f"{column} ≤ c({budget_ms} ms)"] = pd.Series(reduce, index=guarded.index)
+            thresholds[f"{column} ≤ c({budget_ms} ms)"] = threshold
+    weight = guarded.repeats
+    removed_states = (guarded.states - guarded.res_states.fillna(guarded.states)).clip(lower=0)
     rows = {}
     for name, reduce in rules.items():
-        row = {"reduced_calls": (g.weight * reduce).sum() / g.weight.sum(), "time_kept": (g.ns * g.weight * reduce).sum() / total}
-        for ms in budgets_ms:
-            expensive = g.ns > ms * 1e6
-            row[f"kept>{ms}ms"] = int((g.weight * (reduce & expensive)).sum())
-            row[f"skipped<={ms}ms"] = int((g.weight * (~reduce & ~expensive)).sum())
-        row["states_removed_lost"] = (removed * g.weight * ~reduce).sum() / max(1, (removed * g.weight).sum())
+        row = {"reduced": (weight * reduce).sum() / weight.sum(), "time_kept": (guarded.ns * weight * reduce).sum() / (guarded.ns * weight).sum(),
+               "removed_states_lost": (removed_states * weight * ~reduce).sum() / max(1, (removed_states * weight).sum())}
+        for budget_ms in GUARD_BUDGETS_MS:
+            expensive = guarded.ns > budget_ms * 1e6
+            row[f"kept > {budget_ms} ms"] = int((weight * (reduce & expensive)).sum())
+            row[f"skipped ≤ {budget_ms} ms"] = int((weight * (~reduce & ~expensive)).sum())
         rows[name] = row
-    table(pd.DataFrame(rows).T)
-    emit("Thresholds of the product rules fitted on all guarded calls: " + ", ".join(f"{k}: c = {v:.3g}" for k, v in thresholds.items()))
-    emit()
-    for ms in budgets_ms:
-        y = g.ns > ms * 1e6
-        known = (g.censored == 0) | y
-        if y[known].nunique() < 2:
+    sections = ["## Candidate guards",
+                "On the guarded sites, calls weighted by their repeats, out-of-fold decisions. Columns: the share of the reductions done, the "
+                "share of the reduction time still spent, the share of the removed states lost by skipping, and for each budget B the calls "
+                "over B still reduced and the calls under B skipped. c(B) is chosen by balanced accuracy (see best_threshold).",
+                markdown(pd.DataFrame(rows).T),
+                "Thresholds chosen on all guarded calls: " + ", ".join(f"{name}: c = {value:.3g}" for name, value in thresholds.items())]
+    for budget_ms in GUARD_BUDGETS_MS:
+        expensive, known = expensive_and_known(guarded, budget_ms)
+        if expensive[known].nunique() < 2:
             continue
-        tree = DecisionTreeClassifier(max_depth=2, class_weight="balanced").fit(g.loc[known, [f"l_{c}" for c in CHEAP]], y[known],
-                                                                                 sample_weight=g.loc[known, "weight"])
-        emit(f"Depth-2 tree for > {ms} ms (thresholds on log(x+1) of {', '.join(CHEAP)}):")
-        emit("```")
-        emit(export_text(tree, feature_names=[f"l_{c}" for c in CHEAP]).rstrip())
-        emit("```")
-        emit()
+        names = [f"log_{p}" for p in CHEAP_PROPERTIES]
+        tree = DecisionTreeClassifier(max_depth=2, class_weight="balanced").fit(
+            log_features(guarded[known], CHEAP_PROPERTIES).to_numpy(), expensive[known], sample_weight=weight[known])
+        sections.append(f"Depth-2 decision tree for over {budget_ms} ms (thresholds on log(1 + x)):\n```\n"
+                        f"{export_text(tree, feature_names=names).rstrip()}\n```")
+    return "\n\n".join(sections)
 
 
-def plots(df, fit, features, out):
-    import matplotlib
-    matplotlib.use("Agg")
+def plot_time(calls, fit, path):
     import matplotlib.pyplot as plt
     from matplotlib.colors import LinearSegmentedColormap
 
-    cmap = LinearSegmentedColormap.from_list("blue", SEQUENTIAL)
-    plt.rcParams.update({"figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "text.color": INK, "axes.labelcolor": INK,
-                         "xtick.color": INK_2, "ytick.color": INK_2, "axes.edgecolor": INK_2, "font.size": 10})
-    done, cens = df[df.censored == 0], df[df.censored == 1]
-    pred = fit.predict(sm.add_constant(df[features].astype(float), has_constant="add"))
-    panels = [("states", np.log10(df.states.clip(lower=1))), ("transitions", np.log10(df.transitions.clip(lower=1))),
-              ("states × transitions", np.log10((df.states * df.transitions).clip(lower=1))), ("predicted time [ns]", pred / np.log(10))]
-    fig, axes = plt.subplots(1, 4, figsize=(18, 4.5), sharey=True)
-    for ax, (label, x) in zip(axes, panels):
-        ax.hexbin(x[done.index], np.log10(done.ns.clip(lower=1)), gridsize=60, bins="log", cmap=cmap, mincnt=1, linewidths=0)
-        ax.scatter(x[cens.index], np.log10(cens.ns.clip(lower=1)), marker="^", s=24, color=ORANGE, label="censored (lower bound)")
-        ax.set_xlabel(f"log10 {label}")
-        ax.grid(color="#e4e3df", linewidth=0.6)
+    plot_style.apply()
+    finished, censored = calls[calls.censored == 0], calls[calls.censored == 1]
+    predicted = fit.predict(sm.add_constant(log_features(calls, MODELS[MODEL_FOR_GUARDS]), has_constant="add")) / np.log(10)
+    panels = [("states", np.log10(calls.states.clip(lower=1))), ("transitions", np.log10(calls.transitions.clip(lower=1))),
+              ("states × transitions", np.log10(calls["Q*T"].clip(lower=1))), ("predicted time [ns]", predicted)]
+    colors = LinearSegmentedColormap.from_list("blues", plot_style.BLUES)
+    figure, axes = plt.subplots(1, 4, figsize=(18, 4.5), sharey=True)
+    for panel, (label, x) in zip(axes, panels):
+        panel.hexbin(x[finished.index], np.log10(finished.ns.clip(lower=1)), gridsize=60, bins="log", cmap=colors, mincnt=1, linewidths=0)
+        panel.scatter(x[censored.index], np.log10(censored.ns.clip(lower=1)), marker="^", s=24, color=plot_style.ORANGE,
+                      label="censored (lower bound)")
+        panel.set_xlabel(f"log10 {label}")
     axes[0].set_ylabel("log10 time of reduce [ns]")
     axes[0].legend(loc="upper left", frameon=False)
-    lim = axes[3].get_xlim()
-    axes[3].plot(lim, lim, color=INK_2, linewidth=1, linestyle="--")
-    fig.suptitle("Time of mata::nfa::reduce (distinct calls; density of non-censored calls, log scale)", color=INK)
-    fig.tight_layout()
-    fig.savefig(f"{out}/reduce-time.png", dpi=130)
-    plt.close(fig)
+    limits = axes[3].get_xlim()
+    axes[3].plot(limits, limits, color=plot_style.SECONDARY_TEXT, linewidth=1, linestyle="--")
+    figure.suptitle("Time of mata::nfa::reduce (distinct calls; density of the finished ones, log scale)")
+    figure.tight_layout()
+    figure.savefig(path, dpi=130)
+    plt.close(figure)
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("prefixes", nargs="+")
-    parser.add_argument("--out", required=True)
-    parser.add_argument("--budgets-ms", default="1,5,10,20,50,100")
-    parser.add_argument("--model", default="Q+T+S", help="the model used for the censored calls, the guards and the plots")
-    args = parser.parse_args()
-    budgets = [float(b) if "." in b else int(b) for b in args.budgets_ms.split(",")]
+    args = parse_arguments()
     os.makedirs(args.out, exist_ok=True)
-
-    calls, formulas = load(args.prefixes)
-    merged = add_features(merge_repeats(calls))
-    emit("# Cost of mata::nfa::reduce")
-    emit()
-    emit(f"Collections: {', '.join(args.prefixes)}")
-    emit()
-    overview(merged, formulas)
-    ranking(merged, [1, 10, 50])
-    fits = cost_models(merged, "all distinct calls")
-    guarded = merged[merged.site.map(is_guarded)]
-    cost_models(guarded, "guarded sites")
-    cost_models(merged[merged.states >= 100], "calls with at least 100 states")
-    features = MODELS[args.model]
-    censored_check(merged, fits[args.model], features)
-    benefit(merged)
-    guards(merged, fits[args.model], features, budgets)
-    plots(merged, fits[args.model], features, args.out)
-    with open(f"{args.out}/analysis.md", "w") as f:
-        f.write("\n".join(out_lines) + "\n")
+    calls, runs = load(args.bench_dirs)
+    fits, all_models = cost_models(calls, "all distinct calls")
+    _, guarded_models = cost_models(calls[calls.guarded], "guarded sites")
+    _, big_models = cost_models(calls[calls.states >= 100], "calls with at least 100 states")
+    sections = ["# Cost of mata::nfa::reduce", f"Benchmarks: {', '.join(map(str, args.bench_dirs))}", overview(calls, runs), ranking(calls),
+                all_models, guarded_models, big_models, censored_calls(calls, fits[MODEL_FOR_GUARDS]), benefit(calls), guards(calls)]
+    text = "\n\n".join(sections) + "\n"
+    (args.out / "analysis.md").write_text(text)
+    plot_time(calls, fits[MODEL_FOR_GUARDS], args.out / "reduce-time.png")
+    print(text)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

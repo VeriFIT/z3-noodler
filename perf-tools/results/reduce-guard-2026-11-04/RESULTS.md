@@ -27,7 +27,9 @@
   These reductions are expensive and barely shrink the automata.
   See [Why the regex-heavy sets gain](#why-the-regex-heavy-sets-gain).
 
-Everything is uncommitted on `perf-experiment`.
+The guard was committed afterwards as 018f0c981 (with its unit test in 868ee53c0).
+The tools named below were replaced on 2026-11-05 by run_bench.py, report.py, plots.py and a rewritten reduce_cost_analysis.py
+(see `perf-tools/README.md`); their outputs here are as they were made.
 Binaries: `build/release-g/variants/{current,qt-*}/z3`.
 `current` = HEAD b2f2ec58f; `qt-X` = the working tree with the bound X.
 
@@ -54,7 +56,7 @@ The remaining scatter comes from the number of simulation classes, which is not 
 | lang_inclusion_1722, concat | 152 | 42,417 | 6.4e6 | 2 states | 38 ms |
 | regex_7316, concat | 307 | 20,045 | 6.2e6 | 307 states (no reduction) | 15.7 s |
 
-## Implementation (uncommitted)
+## Implementation (committed as 018f0c981)
 
 - `src/smt/theory_str_noodler/regex.h`, `regex.cpp`: `REDUCTION_COST_BOUND = 100000` and `should_reduce`.
   Construction: `should_reduce(result)` replaces `num_of_states() < RED_BOUND`.

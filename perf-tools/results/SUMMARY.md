@@ -1,8 +1,11 @@
 # Benchmark summaries
 
-Brief per-set results of the perf-experiment benchmarks (old = 2d58ba1af, new = perf-experiment unless noted).
-Timeout 10 s, 4 jobs, release builds. "other" = unknown, error or crash. Mean times include timeouts as 10 s.
-The raw CSVs, logs and sample lists named below stayed on the laptop (archive `~/Documents/perf-experiment-archive-2026-11-04/perf-tools/`).
+Brief per-set results of the perf-experiment benchmarks, appended after each run.
+Unless a section says otherwise: old = 2d58ba1af, new = perf-experiment, timeout 10 s, 4 jobs, release builds; "other" = unknown, error or
+crash; mean times include timeouts as the timeout.
+The sections up to 2026-11-04 were made with earlier versions of the tools (smtbench_run.py, smtbench_compare.py, summarize.py), which
+run_bench.py and report.py replaced on 2026-11-05.
+The raw CSVs, logs and sample lists named in them stayed on the laptop (archive `~/Documents/perf-experiment-archive-2026-11-04/perf-tools/`).
 
 ## ECMAScript benchmark, all memberships + all 4000 BMP mixed (2026-11-04)
 
@@ -616,3 +619,19 @@ Narrative, sample benchmarks of other bounds and plots: perf-tools/results/reduc
 | zaligvinder | qt-1e5 | 118157 | 117563 | 0 | 523 | 71 | 0.200 | 0.067 |
 | **total** | current | 239797 | 236092 | 603 | 1945 | 1157 | 0.351 | 0.107 |
 | **total** | qt-1e5 | 239797 | 236119 | 603 | 1918 | 1157 | 0.344 | 0.104 |
+
+## Reductions before and after the cost guard (2026-11-05)
+
+old = the bounds of b2f2ec58f (states < 1000 / < 100), new = states × transitions ≤ 1e5 (018f0c981); 100 random formulas of each of 26 sets,
+timeout 30 s, 4 jobs, binaries that log every reduction; details in [reduce-counts-2026-11-05/RESULTS.md](reduce-counts-2026-11-05/RESULTS.md).
+
+| over the 2352 formulas finished by both | old | new |
+|---|---|---|
+| reductions | 716,300 | 716,100 |
+| reductions at the guarded sites | 48,270 | 48,070 |
+| time of the reductions at the guarded sites [s] | 215 | 24 |
+| states removed | 269,000 | 247,000 |
+| solved (of 2478) | 2293 | 2297 |
+| total time / old (timeouts as 30 s) | 1 | 1.012 |
+
+The guard skips about 200 reductions that took 190 of the 215 s; matching gets slower on some wildcard formulas and much faster on others.

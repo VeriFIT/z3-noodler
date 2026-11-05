@@ -1,5 +1,8 @@
 # Plan: a cost-based guard for `mata::nfa::reduce`
 
+This is the plan of 2026-11-04, carried out in this folder (see RESULTS.md); the tools it names were replaced on 2026-11-05 (see
+`perf-tools/README.md`).
+
 ## Goal
 
 Replace the state-count guards of the simulation reduction with a guard based on the measured cost of `reduce`:

@@ -1,0 +1,79 @@
+--- a/src/smt/theory_str_noodler/regex.cpp
++++ b/src/smt/theory_str_noodler/regex.cpp
+@@ -10,6 +10,10 @@
+ #include "theory_str_noodler.h"
+ #include "inclusion_graph.h"
+ #include "aut_assignment.h"
++
++// Context of the next mata::nfa::reduce call for the reduce statistics (defined in perf-tools/reduce_wrap.cpp).
++extern thread_local const char* reduce_tag_operation;
++extern thread_local long reduce_tag_alphabet;
+ 
+ namespace {
+     mata::nft::Nft extend_nfa_to_nft(const mata::nfa::Nfa &nfa, bool identity, mata::Symbol s, bool left) {
+@@ -289,6 +293,8 @@
+                         body_nfa.unify_final();
+                         body_nfa.unify_initial();
+ 
++                        reduce_tag_operation = "loop_body";
++                        reduce_tag_alphabet = alphabet.size();
+                         body_nfa = mata::nfa::reduce(body_nfa);
+                         result = mata::nfa::concatenate_nth_power(body_nfa, low);
+                         result.trim();
+@@ -306,6 +312,8 @@
+                             body_nfa.final.insert(new_state);
+ 
+                             body_nfa.unify_initial();
++                            reduce_tag_operation = "loop_body_unbounded";
++                            reduce_tag_alphabet = alphabet.size();
+                             body_nfa = mata::nfa::reduce(body_nfa);
+                             body_nfa.trim();
+ 
+@@ -401,6 +409,16 @@
+                         tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
+                         tout << result;
+                     );
++                    reduce_tag_operation = m_util_s.re.is_concat(cur_expr) ? "concat"
++                        : m_util_s.re.is_complement(cur_expr) ? "complement"
++                        : m_util_s.re.is_intersection(cur_expr) ? "intersection"
++                        : m_util_s.re.is_loop(cur_expr) ? "loop"
++                        : m_util_s.re.is_opt(cur_expr) ? "opt"
++                        : m_util_s.re.is_union(cur_expr) ? "union"
++                        : m_util_s.re.is_star(cur_expr) ? "star"
++                        : m_util_s.re.is_plus(cur_expr) ? "plus"
++                        : "other";
++                    reduce_tag_alphabet = alphabet.size();
+                     result = mata::nfa::reduce(result);
+                 }
+ 
+--- a/src/smt/theory_str_noodler/memb_heuristics_procedures.cpp
++++ b/src/smt/theory_str_noodler/memb_heuristics_procedures.cpp
+@@ -1,6 +1,10 @@
+ #include <mata/nfa/algorithms.hh>
+ 
+ #include "memb_heuristics_procedures.h"
++
++// Context of the next mata::nfa::reduce call for the reduce statistics (defined in perf-tools/instrumentation/reduce_wrap.cpp).
++extern thread_local const char* reduce_tag_operation;
++extern thread_local long reduce_tag_alphabet;
+ 
+ namespace smt::noodler {
+     lbool MembHeuristicProcedure::compute_next_solution() {
+@@ -122,6 +126,8 @@
+                 if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
+                     && regex::should_reduce(intersection))
+                 {
++                    reduce_tag_operation = "memb_intersection";
++                    reduce_tag_alphabet = alph.size();
+                     intersection = mata::nfa::reduce(intersection);
+                 }
+                 first = false;
+@@ -139,6 +145,8 @@
+                 if (!first // for first iteration we won't do reduction, as it would just be done twice, once in conv_to_nfa and once here
+                     && regex::should_reduce(unionn))
+                 {
++                    reduce_tag_operation = "memb_union";
++                    reduce_tag_alphabet = alph.size();
+                     unionn = mata::nfa::reduce(unionn);
+                 }
+                 first = false;
