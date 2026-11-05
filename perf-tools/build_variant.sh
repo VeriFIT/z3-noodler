@@ -3,6 +3,7 @@
 # Builds build/release/variants/NAME/z3: the release z3 where each repo source SRC (e.g.
 # src/smt/theory_str_noodler/regex.cpp) is compiled from REPLACEMENT (a file, or a git revision to take SRC from);
 # all other objects are reused from build/release. Headers placed next to a replacement shadow the original ones.
+# LINK_EXTRA: objects and flags added to the link before the libraries (e.g., a wrapper object and -Wl,--wrap=SYM).
 set -euo pipefail
 name=$1; shift
 repo=${REPO:-/home/koumy/Documents/z3-noodler}
@@ -25,6 +26,6 @@ for spec in "$@"; do
     link=${link/ $obj_rel / $vdir/$base.o }
 done
 link=${link/--dependency-file=src\/shell\/CMakeFiles\/shell.dir\/link.d/--dependency-file=$vdir/link.d}
-link=${link/ -o z3 / -o $vdir/z3 }
+link=${link/ -o z3 / -o $vdir/z3 ${LINK_EXTRA:-} }
 eval "$link"
 ls -la "$vdir/z3"

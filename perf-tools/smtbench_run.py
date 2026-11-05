@@ -6,7 +6,7 @@ Each formula is cleaned like smt-bench's bin/clean-formula.sh and passed on stdi
 tool (model=false -smt2).
 The runs of one formula are queued next to each other, so that a stopped run leaves few formulas with a single run.
 Rows are appended to the CSV as soon as they finish; a rerun skips the (formula, solver) pairs that are already there.
-Usage: smtbench_run.py OUT.csv NAME=Z3_PATH... [--sets s1,s2 | --list FILE] [--jobs N] [--timeout S] [--sample SET=N...] [--minutes M]
+Usage: smtbench_run.py OUT.csv NAME=Z3_PATH... [--sets s1,s2 | --list FILE] [--jobs N] [--timeout S] [--sample SET=N...] [--minutes M] [--memory-gb G]
 """
 import argparse
 import csv
@@ -38,13 +38,14 @@ def clean(text):
     return text
 
 
-def run(path, z3, timeout, options=()):
-    """Runs z3 with the options on the formula; returns (expected, result, seconds)."""
+def run(path, z3, timeout, options=(), memory_gb=None):
+    """Runs z3 with the options on the formula (with at most memory_gb of address space); returns (expected, result, seconds)."""
     with open(path, errors="replace") as f:
         text = f.read()
     expected = " ".join(STATUS.findall(text)) or "-"
+    limit = ["prlimit", f"--as={int(memory_gb * 2**30)}"] if memory_gb else []
     start = time.monotonic()
-    proc = subprocess.Popen([z3, *options, "model=false", "-smt2", "-in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    proc = subprocess.Popen([*limit, z3, *options, "model=false", "-smt2", "-in"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, errors="replace")
     try:
         out, _ = proc.communicate(clean(text), timeout=timeout)
@@ -78,6 +79,7 @@ def main():
     parser.add_argument("--sample-all", type=int, help="N: a random sample of N formulas of every set")
     parser.add_argument("--minutes", type=float, help="runs not started within this many minutes are skipped")
     parser.add_argument("--seed", type=int, default=1103)
+    parser.add_argument("--memory-gb", type=float, help="address-space limit of each run")
     args = parser.parse_args()
 
     solvers = dict(s.split("=", 1) for s in args.solvers)
@@ -123,7 +125,7 @@ def main():
         def run_until_deadline(path, z3):
             if deadline is not None and time.monotonic() > deadline:
                 return None
-            return run(path, z3, args.timeout, options.get(path, ()))
+            return run(path, z3, args.timeout, options.get(path, ()), args.memory_gb)
 
         with ThreadPoolExecutor(args.jobs) as pool:
             futures = {pool.submit(run_until_deadline, p if args.list else os.path.normpath(os.path.join(BENCH, p)),

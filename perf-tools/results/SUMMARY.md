@@ -551,3 +551,68 @@ Same sample (results/bound-big-sample.txt, 12412 formulas), all finished (the ru
 | woorpje | red250 | 40 | 40 | 0 | 0 | 0 | 0.177 | 0.177 |
 | **total** | red1000 | 12412 | 11520 | 0 | 335 | 557 | 0.371 | 0.101 |
 | **total** | red250 | 12412 | 11521 | 0 | 334 | 557 | 0.366 | 0.098 |
+
+## Cost guard of the reduction: RED_BOUND/INTERSECTION_RED_BOUND (current) vs states × transitions <= 1e5 (qt-1e5), whole smt-bench (2026-11-05)
+
+Narrative, sample benchmarks of other bounds and plots: perf-tools/results/reduce-guard-2026-11-04/RESULTS.md. Unlike the header of this file: timeout 30 s (mean times include timeouts as 30 s), 10 jobs, release-g builds, 6 GB address space per run. The 603 wrong answers are mislabeled regexlib_membership/sat formulas (same for both).
+
+| set | solver | formulas | solved | wrong | timeout | other | mean time [s] | mean time of solved [s] |
+|---|---|---|---|---|---|---|---|---|
+| automatark | current | 15995 | 15988 | 0 | 7 | 0 | 0.071 | 0.058 |
+| automatark | qt-1e5 | 15995 | 15989 | 0 | 6 | 0 | 0.038 | 0.026 |
+| denghang | current | 999 | 998 | 0 | 1 | 0 | 0.099 | 0.069 |
+| denghang | qt-1e5 | 999 | 999 | 0 | 0 | 0 | 0.037 | 0.037 |
+| ecma2020 | current | 8815 | 8707 | 0 | 5 | 103 | 0.066 | 0.046 |
+| ecma2020 | qt-1e5 | 8815 | 8708 | 0 | 4 | 103 | 0.053 | 0.036 |
+| ecma2020_mixed_bmp | current | 4000 | 2479 | 0 | 1073 | 448 | 9.170 | 1.668 |
+| ecma2020_mixed_bmp | qt-1e5 | 4000 | 2480 | 0 | 1072 | 448 | 9.166 | 1.672 |
+| full_str_int | current | 16968 | 16913 | 0 | 44 | 11 | 0.148 | 0.070 |
+| full_str_int | qt-1e5 | 16968 | 16912 | 0 | 45 | 11 | 0.149 | 0.069 |
+| hornstr | current | 552 | 552 | 0 | 0 | 0 | 0.039 | 0.039 |
+| hornstr | qt-1e5 | 552 | 552 | 0 | 0 | 0 | 0.039 | 0.039 |
+| kaluza | current | 19465 | 19439 | 0 | 26 | 0 | 0.077 | 0.037 |
+| kaluza | qt-1e5 | 19465 | 19439 | 0 | 26 | 0 | 0.077 | 0.037 |
+| kepler | current | 587 | 584 | 0 | 3 | 0 | 0.182 | 0.029 |
+| kepler | qt-1e5 | 587 | 584 | 0 | 3 | 0 | 0.183 | 0.030 |
+| leetcode | current | 2652 | 2651 | 0 | 1 | 0 | 0.034 | 0.023 |
+| leetcode | qt-1e5 | 2652 | 2651 | 0 | 1 | 0 | 0.034 | 0.023 |
+| matching | current | 246 | 204 | 0 | 42 | 0 | 9.403 | 5.162 |
+| matching | qt-1e5 | 246 | 224 | 0 | 22 | 0 | 8.834 | 6.755 |
+| negated_predicates | current | 450 | 432 | 0 | 18 | 0 | 2.672 | 1.534 |
+| negated_predicates | qt-1e5 | 450 | 432 | 0 | 18 | 0 | 2.683 | 1.545 |
+| norn | current | 1027 | 1027 | 0 | 0 | 0 | 0.019 | 0.019 |
+| norn | qt-1e5 | 1027 | 1027 | 0 | 0 | 0 | 0.020 | 0.020 |
+| omark | current | 17 | 10 | 0 | 7 | 0 | 12.372 | 0.032 |
+| omark | qt-1e5 | 17 | 10 | 0 | 7 | 0 | 12.370 | 0.029 |
+| pcp | current | 1000 | 500 | 0 | 0 | 500 | 0.018 | 0.018 |
+| pcp | qt-1e5 | 1000 | 500 | 0 | 0 | 500 | 0.018 | 0.018 |
+| pyex | current | 23845 | 23797 | 0 | 48 | 0 | 0.244 | 0.184 |
+| pyex | qt-1e5 | 23845 | 23797 | 0 | 48 | 0 | 0.245 | 0.185 |
+| redos | current | 3287 | 3283 | 0 | 4 | 0 | 0.653 | 0.617 |
+| redos | qt-1e5 | 3287 | 3285 | 0 | 2 | 0 | 0.639 | 0.621 |
+| regex | current | 2172 | 1567 | 603 | 2 | 0 | 0.162 | 0.167 |
+| regex | qt-1e5 | 2172 | 1568 | 603 | 1 | 0 | 0.073 | 0.067 |
+| rna | current | 1000 | 1000 | 0 | 0 | 0 | 0.057 | 0.057 |
+| rna | qt-1e5 | 1000 | 1000 | 0 | 0 | 0 | 0.057 | 0.057 |
+| slent | current | 1128 | 1126 | 0 | 2 | 0 | 0.094 | 0.041 |
+| slent | qt-1e5 | 1128 | 1126 | 0 | 2 | 0 | 0.095 | 0.042 |
+| slog | current | 1976 | 1976 | 0 | 0 | 0 | 0.036 | 0.036 |
+| slog | qt-1e5 | 1976 | 1976 | 0 | 0 | 0 | 0.036 | 0.036 |
+| snia | current | 37 | 37 | 0 | 0 | 0 | 0.016 | 0.016 |
+| snia | qt-1e5 | 37 | 37 | 0 | 0 | 0 | 0.016 | 0.016 |
+| str_small_rw | current | 1880 | 1823 | 0 | 55 | 2 | 0.934 | 0.059 |
+| str_small_rw | qt-1e5 | 1880 | 1823 | 0 | 55 | 2 | 0.935 | 0.059 |
+| stringfuzz | current | 11618 | 11618 | 0 | 0 | 0 | 0.029 | 0.029 |
+| stringfuzz | qt-1e5 | 11618 | 11618 | 0 | 0 | 0 | 0.026 | 0.026 |
+| sygus_qgen | current | 343 | 343 | 0 | 0 | 0 | 0.018 | 0.018 |
+| sygus_qgen | qt-1e5 | 343 | 343 | 0 | 0 | 0 | 0.018 | 0.018 |
+| transducer_plus | current | 91 | 28 | 0 | 51 | 12 | 17.817 | 2.034 |
+| transducer_plus | qt-1e5 | 91 | 28 | 0 | 51 | 12 | 17.818 | 2.039 |
+| webapp | current | 681 | 669 | 0 | 2 | 10 | 0.242 | 0.153 |
+| webapp | qt-1e5 | 681 | 669 | 0 | 2 | 10 | 0.243 | 0.153 |
+| woorpje | current | 809 | 779 | 0 | 30 | 0 | 1.331 | 0.227 |
+| woorpje | qt-1e5 | 809 | 779 | 0 | 30 | 0 | 1.331 | 0.227 |
+| zaligvinder | current | 118157 | 117562 | 0 | 524 | 71 | 0.204 | 0.072 |
+| zaligvinder | qt-1e5 | 118157 | 117563 | 0 | 523 | 71 | 0.200 | 0.067 |
+| **total** | current | 239797 | 236092 | 603 | 1945 | 1157 | 0.351 | 0.107 |
+| **total** | qt-1e5 | 239797 | 236119 | 603 | 1918 | 1157 | 0.344 | 0.104 |

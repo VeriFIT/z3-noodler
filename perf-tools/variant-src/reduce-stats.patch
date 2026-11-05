@@ -1,0 +1,66 @@
+--- a/regex.cpp
++++ b/regex.cpp
+@@ -11,6 +11,10 @@
+ #include "inclusion_graph.h"
+ #include "aut_assignment.h"
+ 
++// Context of the next mata::nfa::reduce call for the reduce statistics (defined in perf-tools/reduce_wrap.cpp).
++extern thread_local const char* reduce_tag_operation;
++extern thread_local long reduce_tag_alphabet;
++
+ namespace {
+     mata::nft::Nft extend_nfa_to_nft(const mata::nfa::Nfa &nfa, bool identity, mata::Symbol s, bool left) {
+         mata::nft::Nft result(nfa.num_of_states(), nfa.initial, nfa.final, mata::nft::Levels(2, nfa.num_of_states(), 0));
+@@ -256,6 +260,8 @@
+                         // first argument was not reduced if it is larger than RED_BOUND, however,
+                         // intersection is expensive and it is (probably) better to reduce
+                         // the arguments of intersection
++                        reduce_tag_operation = "intersection_arg";
++                        reduce_tag_alphabet = alphabet.size();
+                         result = mata::nfa::reduce(result);
+                     }
+                     for (unsigned int i = 1; i < num_of_regex_arguments_of_cur_expr; ++i) {
+@@ -264,6 +270,8 @@
+                             // next_arg was not reduced if it is larger than RED_BOUND, however,
+                             // intersection is expensive and it is (probably) better to reduce
+                             // the arguments of intersection
++                            reduce_tag_operation = "intersection_arg";
++                            reduce_tag_alphabet = alphabet.size();
+                             next_arg = mata::nfa::reduce(next_arg);
+                         }
+                         result = mata::nfa::intersection(result, next_arg);
+@@ -297,6 +305,8 @@
+                         body_nfa.unify_final();
+                         body_nfa.unify_initial();
+ 
++                        reduce_tag_operation = "loop_body";
++                        reduce_tag_alphabet = alphabet.size();
+                         body_nfa = mata::nfa::reduce(body_nfa);
+                         result = mata::nfa::concatenate_nth_power(body_nfa, low);
+                         result.trim();
+@@ -314,6 +324,8 @@
+                             body_nfa.final.insert(new_state);
+ 
+                             body_nfa.unify_initial();
++                            reduce_tag_operation = "loop_body_unbounded";
++                            reduce_tag_alphabet = alphabet.size();
+                             body_nfa = mata::nfa::reduce(body_nfa);
+                             body_nfa.trim();
+ 
+@@ -409,6 +421,16 @@
+                         tout << "--------------" << "NFA for: " << mk_pp(const_cast<app*>(cur_expr), const_cast<ast_manager&>(m)) << " that is going to be reduced" << "---------------" << std::endl;
+                         tout << result;
+                     );
++                    reduce_tag_operation = m_util_s.re.is_concat(cur_expr) ? "concat"
++                        : m_util_s.re.is_complement(cur_expr) ? "complement"
++                        : m_util_s.re.is_intersection(cur_expr) ? "intersection"
++                        : m_util_s.re.is_loop(cur_expr) ? "loop"
++                        : m_util_s.re.is_opt(cur_expr) ? "opt"
++                        : m_util_s.re.is_union(cur_expr) ? "union"
++                        : m_util_s.re.is_star(cur_expr) ? "star"
++                        : m_util_s.re.is_plus(cur_expr) ? "plus"
++                        : "other";
++                    reduce_tag_alphabet = alphabet.size();
+                     result = mata::nfa::reduce(result);
+                 }
+ 
