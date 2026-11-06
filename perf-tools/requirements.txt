@@ -1,9 +1,5 @@
-# Packages of the report, plot and analysis scripts (the runner needs only the standard library).
+# Packages of report.py and plots.py (run.py and build_variant.py need only the standard library).
 # python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-matplotlib
-numpy
 pandas
-scikit-learn
-scipy
-statsmodels
+seaborn
 tabulate

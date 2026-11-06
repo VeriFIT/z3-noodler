@@ -1,0 +1,23 @@
+diff --git a/src/smt/theory_str_noodler/regex.cpp b/src/smt/theory_str_noodler/regex.cpp
+--- a/src/smt/theory_str_noodler/regex.cpp
++++ b/src/smt/theory_str_noodler/regex.cpp
+@@ -11,6 +11,9 @@
+ #include "inclusion_graph.h"
+ #include "aut_assignment.h"
+ 
++// Whether the next mata::nfa::reduce call passed this guard, for counting the reductions (defined in perf-tools/instrumentation/reduce_wrap.cpp).
++extern thread_local bool reduce_guarded;
++
+ namespace {
+     mata::nft::Nft extend_nfa_to_nft(const mata::nfa::Nfa &nfa, bool identity, mata::Symbol s, bool left) {
+         mata::nft::Nft result(nfa.num_of_states(), nfa.initial, nfa.final, mata::nft::Levels(2, nfa.num_of_states(), 0));
+@@ -104,7 +107,8 @@ namespace smt::noodler::regex {
+     }
+ 
+     bool should_reduce(const mata::nfa::Nfa &nfa) {
+-        return nfa.num_of_states() * nfa.delta.num_of_transitions() <= REDUCTION_COST_BOUND;
++        reduce_guarded = nfa.num_of_states() * nfa.delta.num_of_transitions() <= REDUCTION_COST_BOUND;
++        return reduce_guarded;
+     }
+ 
+     void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet) {
