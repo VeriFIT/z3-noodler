@@ -1,6 +1,7 @@
 #include "extended_regex.h"
 
 #include "ecma_regex.h"
+#include "pcre2.h"
 #include "re2_regex.h"
 
 #include "smt/theory_str_noodler/util.h"
@@ -17,6 +18,9 @@ namespace smt::noodler::extended_regex {
         }
         if (flavor == "re2") {
             return re2::RE2Parser(pattern).parse();
+        }
+        if (flavor == "pcre2") {
+            return pcre2::PCRE2Parser(pattern).parse();
         }
         util::throw_error("Unsupported regex flavor " + flavor.str());
         return nullptr;

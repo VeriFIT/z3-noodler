@@ -35,6 +35,7 @@ As in other string literals, non-ASCII characters are written using the escape s
 Supported flavors:
  - `ecma2020` — ECMAScript 2020 regular expressions, see below.
  - `re2` — RE2 regular expressions, see below.
+ - `pcre2` — PCRE2 regular expressions, see below.
 
 ### ECMAScript 2020 flavor
 The pattern of `((_ re.from_regex ecma2020) String)` is interpreted according to the [ECMAScript 2020 RegExp specification](https://262.ecma-international.org/11.0/#sec-patterns).
@@ -92,6 +93,34 @@ Examples:
 - `(str.in_re x ((_ re.from_regex re2) '[[:alpha:]_]\w*'))` — `x` is an identifier, e.g. `"_a1"`
 - `(str.in_re x ((_ re.from_regex re2) 'a.b'))` — `x` is `"a"` and `"b"` with one character between them other than a newline
 - `(str.in_re x ((_ re.from_regex re2) '(?m)^b$'))` with `str.ecma_engine_semantics=true` — some line of `x` is `"b"`, e.g. `"a\u{a}b"`
+
+### PCRE2 flavor
+The pattern of `((_ re.from_regex pcre2) String)` is interpreted according to the [PCRE2 pattern syntax](https://www.pcre2.org/doc/pcre2pattern/), as compiled by `pcre2_compile()` with the option `PCRE2_UTF` and without `PCRE2_UCP`.
+The characters of the pattern are code points, but `\d`, `\s`, `\w`, the POSIX classes and the word boundaries are ASCII only.
+The newline is `\n` (the default of PCRE2 builds).
+By default, the whole string has to match the pattern (like `pcre2_match()` with `PCRE2_ANCHORED` and `PCRE2_ENDANCHORED`), with the option `str.ecma_engine_semantics=true`, some substring of it has to match the pattern.
+
+Supported PCRE2 features:
+
+- Character classes: `.`, `[...]`, `[^...]`, character ranges `[a-z]`, `\d`, `\D`, `\s`, `\S`, `\w`, `\W`, `\h`, `\H`, `\v`, `\V`, `\N`, POSIX classes `[[:alpha:]]`, `[[:^alpha:]]`
+- Newline sequence `\R`
+- Anchors `^`, `$`, `\A`, `\Z`, `\z` and word boundaries `\b`, `\B`; `$` and `\Z` match also before a `\n` that ends the string
+- Repetitions `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`, `{,m}` (greedy and lazy variants)
+- Alternation `|`, capturing groups `(...)`, named groups `(?<name>...)`, `(?'name'...)`, `(?P<name>...)`, non-capturing groups `(?:...)`, comments `(?#...)`
+- Flags `m`, `s`, `n` and `U` in `(?flags)`, `(?flags:...)` and `(?^flags)`
+- Escape sequences: `\a`, `\e`, `\f`, `\n`, `\r`, `\t`, `\cx`, octal `\012` and `\o{12}`, hexadecimal `\x7F`, `\x{10FFFF}` and `\N{U+10FFFF}`, escaped punctuation `\*`, literal text `\Q...\E`
+
+Limitations:
+
+- Backreferences, lookarounds, atomic groups and possessive quantifiers are not supported yet.
+- Case-insensitive matching (flag `i`), the extended syntax (flags `x`, `xx`), Unicode properties (`\p`, `\P`, `\X`), `\C`, `\K`, `\G`, recursion and subroutine calls, conditional groups, callouts, backtracking control verbs, branch reset groups `(?|...)`, extended character classes `(?[...])` and the start-of-pattern options that change the matching (e.g. `(*UCP)`, `(*CRLF)`) are not supported.
+- Anchors, word boundaries and `\R` cannot appear under unbounded repetitions (`*`, `+`).
+
+Examples:
+
+- `(str.in_re x ((_ re.from_regex pcre2) '[[:alpha:]_]\w*'))` — `x` is an identifier, e.g. `"_a1"`
+- `(str.in_re x ((_ re.from_regex pcre2) 'a$\n?'))` — `x` is `"a"` or `"a\u{a}"`, because `$` matches also before the final newline
+- `(str.in_re x ((_ re.from_regex pcre2) 'a\Rb'))` — `x` is `"a"` and `"b"` with a newline sequence between them, e.g. `"a\u{d}\u{a}b"`
 
 ## 3. Special string functions
 ### `(str.to_lower String String)`

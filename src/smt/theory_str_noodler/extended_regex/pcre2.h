@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <variant>
 
@@ -142,6 +143,11 @@ namespace smt::noodler::extended_regex::pcre2 {
         zstring_view lexeme;   // The text of the token in the pattern
     };
 
+    /**
+     * @brief Throw the error that @p feature is not supported, e.g., "Unsupported: callouts in PCRE2 regex".
+     */
+    void throw_unsupported(const std::string& feature);
+
     // ================= PCRE2 REGEX LEXER =================
 
     /**
@@ -161,14 +167,17 @@ namespace smt::noodler::extended_regex::pcre2 {
     public:
         /**
          * @brief Create a lexer of the pattern @p regex.
-         *
-         * @param regex              The PCRE2 pattern.
-         * @param num_capture_groups The number of capture groups in the whole pattern, which decides whether \NN with
-         *                           two or more digits is a backreference or an octal escape.
          */
-        explicit PCRE2Lexer(const zstring_view regex, const GroupID num_capture_groups = 0)
-            : m_regex(regex),
-              m_num_capture_groups(num_capture_groups) { }
+        explicit PCRE2Lexer(const zstring_view regex)
+            : m_regex(regex) { }
+
+        /**
+         * @brief Set the number of capture groups opened before the next token.
+         *
+         * The number decides whether \NN with two or more digits is a backreference or an octal escape.
+         * It is known only to the parser, since the flag n turns plain parentheses into non-capturing groups.
+         */
+        void set_num_capture_groups(GroupID num_capture_groups);
 
         /**
          * @brief Read the next token of the pattern.
@@ -193,8 +202,8 @@ namespace smt::noodler::extended_regex::pcre2 {
         /** The pattern. */
         zstring_view m_regex;
 
-        /** The number of capture groups in the whole pattern. */
-        GroupID m_num_capture_groups;
+        /** The number of capture groups opened before the next token, see set_num_capture_groups(). */
+        GroupID m_num_capture_groups = 0;
 
         /** The position of the next character to read. */
         std::size_t m_position = 0;
@@ -238,6 +247,22 @@ namespace smt::noodler::extended_regex::pcre2 {
         Token get_token_char_class();
 
         /**
+         * @brief Make the token of the single character @p ch inside a character class and update the position in the
+         * class: the character can be the lower bound of a range, unless it is the upper bound of one.
+         */
+        Token make_class_literal_token(Z3Char ch);
+
+        /**
+         * @brief Check whether '[' at @p bracket_pos starts the syntax of a POSIX class, i.e., "[:", "[." or "[="
+         * followed later by ":]", ".]" or "=]" with no ']' in between (check_posix_syntax() of PCRE2).
+         *
+         * @param bracket_pos The position of '['.
+         * @param end         Set to the position of the terminating ":]", ".]" or "=]".
+         * @return bool True if '[' starts the syntax of a POSIX class.
+         */
+        bool find_posix_class_end(std::size_t bracket_pos, std::size_t& end) const;
+
+        /**
          * @brief Read a literal of quoted text \Q...\E, or move behind \E and read the token after it.
          */
         Token get_quoted_token();
@@ -259,21 +284,22 @@ namespace smt::noodler::extended_regex::pcre2 {
          * Reads the rest of the escape sequence, e.g., the digits of \x41.
          *
          * @param escaped       The first character after '\'.
-         * @param in_char_class True inside a character class, where \b is a backspace and \8, \9 are literal digits.
+         * @param in_char_class True inside a character class, where \b is a backspace, \1 to \7 start octal escapes
+         *                      and \8, \9, \g and \k are the characters '8', '9', 'g' and 'k'.
          */
         Z3Char parse_escaped_char(Z3Char escaped, bool in_char_class);
 
         /**
-         * @brief The character of \xhh (up to two hexadecimal digits) or \x{h...}, after "\x".
+         * @brief The character of \xh, \xhh (one or two hexadecimal digits) or \x{h...}, after "\x".
          */
         Z3Char parse_hex_escape();
 
         /**
-         * @brief The character of \0, \0d, \0dd, \ddd or \o{d...} after '\'.
+         * @brief The character of the octal escape \d, \dd or \ddd (at most three octal digits).
          *
-         * @param first The first digit or 'o', already read.
+         * @param first_digit The first digit, already read.
          */
-        Z3Char parse_octal_escape(Z3Char first);
+        Z3Char parse_octal_escape(Z3Char first_digit);
 
         /**
          * @brief The character of \cx, i.e., the control character of the printable ASCII character x, after "\c".
@@ -286,11 +312,25 @@ namespace smt::noodler::extended_regex::pcre2 {
         Z3Char parse_unicode_name_escape();
 
         /**
-         * @brief Read a backreference \1..., \g... or \k... after '\'.
+         * @brief Read the digits of a code point in braces up to '}' and move behind it, e.g., "41}" of \x{41}.
          *
-         * @param escaped The first digit, 'g' or 'k', already read.
+         * Spaces and tabs before '}' are skipped.
+         * The code point must be a Unicode code point that is not a surrogate, as in the UTF modes of PCRE2.
+         *
+         * @param base The base of the digits, 8 or 16.
          */
-        Token get_backreference_token(Z3Char escaped);
+        Z3Char parse_braced_code_point(unsigned base);
+
+        /**
+         * @brief Read \1, \2, ... after '\' outside a character class, which is a backreference or an octal escape.
+         *
+         * All the following digits are read as a decimal number.
+         * If the number is less than 10, starts with 8 or 9, or is at most the number of capture groups opened so far,
+         * the sequence is a backreference, otherwise it is an octal escape of at most three digits.
+         *
+         * @param first_digit The first digit, already read.
+         */
+        Token get_backreference_token(Z3Char first_digit);
 
         /**
          * @brief Read the token starting with '(' (already read), i.e., the start of a group or of a lookaround, or
@@ -328,10 +368,17 @@ namespace smt::noodler::extended_regex::pcre2 {
         void skip_comment();
 
         /**
-         * @brief Read (*...) after "(*": a start-of-pattern option, which produces no token, or an alphabetic name of a
+         * @brief Read (*...) after '(': a start-of-pattern option, which produces no token, or an alphabetic name of a
          * lookaround or an atomic group, e.g., (*pla: or (*atomic:.
+         *
+         * "(*" that is not followed by a letter or ':' is the start of a capture group followed by the quantifier '*'.
          */
         Token get_verb_token();
+
+        /**
+         * @brief Check whether the pattern continues with the ASCII @p text at the position @p pos.
+         */
+        bool starts_with(std::size_t pos, std::string_view text) const;
 
         /**
          * @brief Read the quantifier *, + or ? and its mode.
@@ -348,6 +395,17 @@ namespace smt::noodler::extended_regex::pcre2 {
         Token get_braced_quantifier_token();
 
         /**
+         * @brief Read the numbers of {n}, {n,}, {n,m} or {,m} after '{' at @p pos and move @p pos behind '}'.
+         *
+         * Spaces and tabs are allowed around the numbers.
+         *
+         * @param pos   The position after '{', it is moved only if the text is a quantifier.
+         * @param range The numbers of repetitions.
+         * @return bool False if the text after '{' is not a quantifier.
+         */
+        bool parse_quantifier_range(std::size_t& pos, QuantifierRange& range) const;
+
+        /**
          * @brief Read the '?' (lazy) or '+' (possessive) after a quantifier.
          *
          * @return QuantifierMode GREEDY if there is neither of them.
@@ -357,12 +415,14 @@ namespace smt::noodler::extended_regex::pcre2 {
         /**
          * @brief Read a decimal number at @p pos into @p value and move @p pos behind it.
          *
+         * A number that is too big to be a repetition count or a group number is read as a value larger than both.
+         *
          * @return bool False if there is no digit at @p pos.
          */
         bool parse_integer(std::size_t& pos, uint64_t& value) const;
 
         /**
-         * @brief Move @p pos behind the spaces and tabs at it (allowed around the numbers of {n,m}).
+         * @brief Move @p pos behind the spaces and tabs at it, which are allowed inside braces.
          */
         void skip_blanks(std::size_t& pos) const;
 
@@ -375,6 +435,16 @@ namespace smt::noodler::extended_regex::pcre2 {
          * @brief Check whether @p ch is an octal digit.
          */
         static bool is_octal_digit(Z3Char ch);
+
+        /**
+         * @brief Check whether @p ch is an ASCII upper case letter.
+         */
+        static bool is_upper(Z3Char ch);
+
+        /**
+         * @brief Check whether @p ch is an ASCII lower case letter.
+         */
+        static bool is_lower(Z3Char ch);
 
         /**
          * @brief Check whether @p ch is an ASCII letter or a decimal digit.
@@ -408,10 +478,15 @@ namespace smt::noodler::extended_regex::pcre2 {
      * an iteration matching the empty string ends the repetition but does not fail.
      * A backreference to an unset capture group fails.
      *
-     * Unsupported: case-insensitive matching (flag i), extended syntax (flags x, xx), duplicate group names (flag J),
-     * Unicode properties (\p, \P, \X), \C, \K, \G, recursion and subroutine calls ((?R), (?1), (?&name), \g<1>),
-     * conditional groups, callouts, backtracking control verbs, branch reset groups (?|...), non-atomic lookarounds,
-     * script runs and the start-of-pattern options that change the semantics (e.g., (*UCP), (*CR)).
+     * Unsupported: case-insensitive matching (flag i), extended syntax (flags x, xx), capture groups with the same name
+     * (flag J), Unicode properties (\p, \P, \X), \C, \K, \G, recursion and subroutine calls ((?R), (?1), (?&name),
+     * \g<1>), conditional groups, callouts, backtracking control verbs, branch reset groups (?|...), non-atomic
+     * lookarounds, script runs, extended character classes (?[...]), the POSIX word boundaries [[:<:]] and [[:>:]],
+     * non-ASCII names of capture groups and the start-of-pattern options that change the semantics (e.g., (*UCP),
+     * (*CR)).
+     * The flags r and a are accepted, they have no effect without the flag i and without PCRE2_UCP.
+     *
+     * Not implemented yet: backreferences, lookarounds, atomic groups and possessive quantifiers.
      */
     class PCRE2Parser {
     public:
@@ -504,7 +579,8 @@ namespace smt::noodler::extended_regex::pcre2 {
         NodeRef parse_atom();
 
         /**
-         * @brief Parse a capture group, a named capture group or a non-capturing group (with its flags).
+         * @brief Parse a capture group, a named capture group, a non-capturing group (with its flags) or an atomic
+         * group.
          */
         NodeRef parse_group();
 
@@ -563,13 +639,13 @@ namespace smt::noodler::extended_regex::pcre2 {
 
         /**
          * @brief Make ^, which matches at the start of the text, or with the flag m also after a \n that is not at the
-         * end of the text: \A|(?<=\n)(?!\z).
+         * end of the text: \A|(?<=\n)(?=[^]).
          */
         static NodeRef make_circumflex(bool is_multi_line);
 
         /**
          * @brief Make $ (and \Z if @p is_multi_line is false), which matches at the end of the text or before a \n at
-         * the end of the text, (?=\n?\z), or with the flag m also before any \n.
+         * the end of the text, (?![^\n]|\n[^]), or with the flag m also before any \n.
          */
         static NodeRef make_dollar(bool is_multi_line);
     };
