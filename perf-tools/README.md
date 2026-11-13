@@ -8,12 +8,13 @@ plots of the results, and counting the simulation reductions (`mata::nfa::reduce
 | `run.py` | gets smt-bench and its formulas (on the first run), runs the solvers, writes `runs.csv` (and `reductions.csv`) |
 | `report.py` | writes `REPORT.md`, `REDUCTIONS.md` and the plots into the run directory |
 | `plots.py` | the plots of `report.py`: time per formula (scatter) and total time per set |
+| `analysis.py` | writes `analysis/tables.md` and `analysis/plots/` into a run directory with `reductions.csv`: paired tests of the solving and reduction times of two solvers, overall and per set, and the reductions per call site |
 | `build_variant.py` | builds a variant of z3 from patched sources and an existing build, optionally with the reduce wrapper |
 | `instrumentation/reduce_wrap.cpp` | link-time wrapper of `mata::nfa::reduce` that logs every call to `$REDUCE_LOG` |
 | `instrumentation/guard-flag.patch` | marks the reductions allowed by `regex::should_reduce` as guarded |
 
 `run.py` needs only Python 3, git, curl, unzstd, prlimit and addr2line.
-`report.py` needs the packages of `requirements.txt`:
+`report.py` and `analysis.py` need the packages of `requirements.txt`:
 
 ```
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
