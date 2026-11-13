@@ -25,6 +25,7 @@ if (Catch2_FOUND)
             ecma_regex.cpp
             extended_regex.cpp
             from_regex.cpp
+            pcre2_regex.cpp
             re2_regex.cpp
     )
 
