@@ -751,6 +751,12 @@ namespace smt::noodler {
             last_run_was_sat = false;
             scope_with_last_run_was_sat = -1;
         }
+        // all lemmas derived from approximations were deleted by popping below the base level where they were created
+        if (approx_flags_base_level != -1 && m_scope_level < approx_flags_base_level) {
+            ctx.get_fparams().is_underapprox = false;
+            ctx.get_fparams().is_overapprox = false;
+            approx_flags_base_level = -1;
+        }
         STRACE(str,
             tout << "pop_scope: " << num_scopes << " (back to level " << m_scope_level << ")\n";);
 
