@@ -28,6 +28,7 @@ namespace smt::noodler {
         m_util_a(m),
         m_util_s(m),
         var_eqs(m_util_a),
+        m_diseq_atoms_from_other_atoms_refs(m),
         m_length(m),
         axiomatized_instances() {
     }
@@ -234,6 +235,15 @@ namespace smt::noodler {
         if (init && m.is_ite(ex)) {
             // the condition of ite occurs both positively and negatively
             mark_nested_str_diseqs_as_relevant(to_app(ex)->get_arg(0));
+        }
+        if (init && is_app(ex) && to_app(ex)->get_family_id() != m.get_basic_family_id()) {
+            // a boolean argument of a function that is not a boolean connective (e.g., uninterpreted function or select),
+            // is a term whose both values matter, so it occurs both positively and negatively (see issue #564)
+            for (expr* arg : *to_app(ex)) {
+                if (m.is_bool(arg)) {
+                    mark_nested_str_diseqs_as_relevant(arg);
+                }
+            }
         }
 
         // we need to propagate all string predicates (including their negated forms) before the actual solve (in init_search), because we need to ensure these axioms are 
@@ -674,9 +684,16 @@ namespace smt::noodler {
         app* equation = m.mk_eq(l, r);
         app* disequation = m.mk_not(equation);
 
-        // This is to handle the case containing ite inside disequations
-        // TODO explain better
+        // If the equation atom of l and r does not exist, the disequation does not come from its own atom but from
+        // an atom with different sides (e.g., (not (= a (ite c b d))) gives b != a if c holds). Nothing else marks
+        // such disequation as relevant, so we mark it here. We remember these atoms, because the atom created below
+        // can survive backtracking (e.g., in a learned clause) and then the disequation has to be marked as relevant
+        // also in the following branches (see issue #564).
         if(!ctx.e_internalized(equation)) {
+            m_diseq_atoms_from_other_atoms.insert(equation);
+            m_diseq_atoms_from_other_atoms_refs.push_back(equation);
+        }
+        if(m_diseq_atoms_from_other_atoms.contains(equation)) {
             STRACE(str, tout << "relevanting: " << mk_pp(disequation, m) << std::endl;);
             ctx.mark_as_relevant(disequation);
         }
@@ -1845,6 +1862,24 @@ namespace smt::noodler {
 
 
     /**
+     * @brief Axiomatize the special case e = (str.prefixof x (str.substr s i n)) with |x| = 1, i and n numerals and n >= 1:
+     * e <-> x = (str.at s i)
+     *
+     * The negative literal is built from (not (x = (str.at s i))) so that the disequation becomes relevant
+     * (negating the literal of the equation marks only the equation as relevant, see issue #564).
+     *
+     * @param e prefix term
+     * @param x the one-letter string literal
+     * @param s the string of str.substr
+     * @param i the start index of str.substr
+     */
+    void theory_str_noodler::add_prefix_char_axioms(expr* e, expr* x, expr* s, expr* i) {
+        expr_ref at(m_util_s.str.mk_at(s, i), m);
+        add_axiom({mk_literal(m.mk_not(mk_eq_atom(x, at))), mk_literal(e) });
+        add_axiom({mk_eq(x, at, false), ~mk_literal(e) });
+    }
+
+    /**
      * @brief Handling of str.prefix(x, y) = e (x is a prefix of y)
      * Translates to the following theory axioms:
      * e -> y = x.v
@@ -1865,8 +1900,7 @@ namespace smt::noodler {
         zstring str;
         // handle the special case of the form (str.prefix "a" (str.substr s 5 2)) --> (str.at s 5) == "a"
         if(m_util_s.str.is_string(x, str) && str.length() == 1 && m_util_s.str.is_extract(y, sub_str, sub_ind, sub_len) && m_util_a.is_numeral(sub_ind) && m_util_a.is_numeral(sub_len, val) && val.get_int32() >= 1) {
-            add_axiom({~mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), mk_literal(e) });
-            add_axiom({mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), ~mk_literal(e) });
+            add_prefix_char_axioms(e, x, sub_str, sub_ind);
             return;
         }
 
@@ -1905,8 +1939,7 @@ namespace smt::noodler {
         zstring str;
         // handle the special case of the form (not (str.prefix "a" (str.substr s 5 2))) <-> (str.at s 5) != "a"
         if(m_util_s.str.is_string(x, str) && str.length() == 1 && m_util_s.str.is_extract(y, sub_str, sub_ind, sub_len) && m_util_a.is_numeral(sub_ind) && m_util_a.is_numeral(sub_len, val) && val.get_int32() >= 1) {
-            add_axiom({mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), ~mk_literal(e) });
-            add_axiom({~mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), mk_literal(e) });
+            add_prefix_char_axioms(e, x, sub_str, sub_ind);
             return;
         }
 

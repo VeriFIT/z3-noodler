@@ -1,0 +1,5 @@
+(set-info :status sat)
+(declare-const y String)
+(assert (not (str.prefixof "a" (str.substr y 1 2))))
+(assert (str.in_re y (re.++ re.allchar (re.union (str.to_re "a") (str.to_re "b")) (re.* re.allchar))))
+(check-sat)

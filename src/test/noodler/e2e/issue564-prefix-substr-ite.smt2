@@ -1,0 +1,7 @@
+(set-info :status unsat)
+(declare-const y String)
+(declare-const c Bool)
+(assert (ite c (str.prefixof "a" (str.substr y 1 2)) (not (str.prefixof "a" (str.substr y 1 2)))))
+(assert (not c))
+(assert (str.in_re y (re.++ re.allchar (str.to_re "a") (re.* re.allchar))))
+(check-sat)
