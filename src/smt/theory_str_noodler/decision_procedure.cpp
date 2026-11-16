@@ -602,7 +602,11 @@ namespace smt::noodler {
         if(this->m_params.m_ca_constr) {
             conjuncts.push_back(get_formula_for_ca_diseqs());
         }
-        if (!solution.postponed_disequations.get_predicates().empty()) {
+        // The |lhs| != |rhs| underapproximation is used only when postponing disequations, where an unsat
+        // result leads to translating them to equations. Without postponing, the disequations are kept only
+        // in CA mode, whose formula encodes them precisely; the underapproximation would mask its mismatch
+        // case and make equal-length disequations unsatisfiable (issue #479).
+        if (this->m_params.m_postpone_diseqs_stabilization && !solution.postponed_disequations.get_predicates().empty()) {
             conjuncts.push_back(solution.get_disequations_underapprox_length_formula());
             // For postponed disequations we currently encode only |lhs| != |rhs|.
             // This is an underapproximation of string disequality and must not be
