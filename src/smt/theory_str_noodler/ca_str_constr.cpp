@@ -762,24 +762,12 @@ namespace smt::noodler::ca {
                 var_idx += 1;
             }
 
-            // We have automata ready, lets compute the lengths of solutions
+            // We have automata ready, lets compute the lengths of solutions. Only the lengths of words are needed, so we
+            // describe the set of lengths of each language directly, instead of a Parikh image whose size grows with
+            // the number of transitions (i.e., with the alphabet) for each letter choice (see issue #500).
             LenNode lengths_of_solutions (LenFormulaType::AND, {});
             for (const auto& [var, var_language] : assignment_for_this_word_choice) {
-                parikh::ParikhImage parikh_image_generator (*var_language);
-                LenNode parikh_image = parikh_image_generator.compute_parikh_image();
-
-                LenNode word_length_expr = LenNode(LenFormulaType::PLUS, {});
-                for (const auto& [transition, transition_var] : parikh_image_generator.get_trans_vars()) {
-                    mata::Symbol transition_symbol = std::get<1>(transition);
-                    if (transition_symbol == mata::nfa::EPSILON) continue;
-
-                    word_length_expr.succ.push_back(transition_var);
-                }
-
-                LenNode lengths_of_var_words = LenNode(LenFormulaType::EQ, {var, word_length_expr});
-
-                lengths_of_solutions.succ.push_back(parikh_image);
-                lengths_of_solutions.succ.push_back(lengths_of_var_words);
+                lengths_of_solutions.succ.push_back(AutAssignment::get_lengths(*var_language, var));
             }
 
             if (conversion_handler != nullptr) {
