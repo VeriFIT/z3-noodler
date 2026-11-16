@@ -138,6 +138,9 @@ namespace smt::noodler {
         obj_hashtable<expr> axiomatized_persist_terms;
         ecma_cache m_ecma_cache;
         obj_hashtable<expr> propagated_string_theory; // expressions that were already processed by string_theory_propagation (to avoid looping)
+        // equation atoms (= l r) created by new_diseq_eh for disequations l != r coming from atoms with other sides (see new_diseq_eh)
+        obj_hashtable<expr> m_diseq_atoms_from_other_atoms;
+        expr_ref_vector     m_diseq_atoms_from_other_atoms_refs; // keeps the atoms of m_diseq_atoms_from_other_atoms alive
         obj_hashtable<expr> m_has_length;          // is length applied
         expr_ref_vector     m_length;             // length applications themselves
         std::vector<std::pair<expr_ref, stored_instance>> axiomatized_instances;
@@ -353,6 +356,7 @@ namespace smt::noodler {
         void handle_index_of(expr *e);
         void handle_replace(expr *e);
         void handle_replace_re(expr *e);
+        void add_prefix_char_axioms(expr* e, expr* x, expr* s, expr* i);
         void handle_prefix(expr *e);
         void handle_suffix(expr *e);
         void handle_not_prefix(expr *e);
