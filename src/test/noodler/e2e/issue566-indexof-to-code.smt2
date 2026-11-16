@@ -1,0 +1,8 @@
+(set-info :status unsat)
+(declare-const x String)
+(declare-const z String)
+(assert (str.in_re x (re.union (str.to_re "a") (str.to_re "b"))))
+(assert (str.in_re z (re.union (str.to_re "a") (str.to_re "b"))))
+(assert (= (str.to_code z) (str.to_code x)))
+(assert (= (str.indexof z x 0) (- 1)))
+(check-sat)
