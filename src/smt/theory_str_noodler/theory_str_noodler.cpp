@@ -25,6 +25,7 @@ namespace smt::noodler {
         theory(ctx, ctx.get_manager().mk_family_id("seq")),
         m_params(params),
         m_rewrite(m),
+        m_seq_rewrite(m),
         m_util_a(m),
         m_util_s(m),
         var_eqs(m_util_a),
@@ -655,6 +656,10 @@ namespace smt::noodler {
 
         STRACE(str, tout << "new_eq: " << l <<  " = " << r << std::endl;);
 
+        if (m_util_s.is_seq(l) && check_ground_value_clash(get_enode(x))) {
+            return;
+        }
+
         app* equation = m.mk_eq(l, r);
 
         // TODO explain what is happening here
@@ -691,6 +696,64 @@ namespace smt::noodler {
                 }
             }
         }
+    }
+
+    bool theory_str_noodler::is_ground_seq_value(expr* e) const {
+        expr* elem = nullptr;
+        if (m_util_s.str.is_string(e) || m_util_s.str.is_empty(e)) {
+            return true;
+        }
+        if (m_util_s.str.is_unit(e, elem)) {
+            return m.is_value(elem);
+        }
+        if (m_util_s.str.is_concat(e)) {
+            for (expr* arg : *to_app(e)) {
+                if (!is_ground_seq_value(arg)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    bool theory_str_noodler::check_ground_value_clash(enode* n) {
+        // two values (e.g., elements of ground sequences) that are surely different
+        auto values_differ = [this](expr* a, expr* b) {
+            zstring sa, sb;
+            if (m_util_s.str.is_string(a, sa) && m_util_s.str.is_string(b, sb)) {
+                return sa != sb;
+            }
+            return m.are_distinct(a, b);
+        };
+
+        // it suffices to compare all ground values of the class with one of them
+        enode* first = nullptr;
+        for (enode* e : *n->get_root()) {
+            if (!is_ground_seq_value(e->get_expr())) {
+                continue;
+            }
+            if (first == nullptr) {
+                first = e;
+                continue;
+            }
+            expr_ref_pair_vector elem_eqs(m);
+            bool change = false;
+            // reduce_eq returns false if the two sequences cannot be equal, otherwise it reduces their
+            // equality to equalities of their elements
+            bool clash = !m_seq_rewrite.reduce_eq(first->get_expr(), e->get_expr(), elem_eqs, change);
+            for (unsigned i = 0; !clash && i < elem_eqs.size(); ++i) {
+                clash = values_differ(elem_eqs.get(i).first, elem_eqs.get(i).second);
+            }
+            if (clash) {
+                STRACE(str, tout << "ground value clash: " << mk_pp(first->get_expr(), m) << " = " << mk_pp(e->get_expr(), m) << std::endl;);
+                // the conflict is explained by the E-graph (why first and e are in the same class)
+                enode_pair eq(first, e);
+                ctx.set_conflict(ctx.mk_justification(ext_theory_conflict_justification(get_id(), ctx, 0, nullptr, 1, &eq)));
+                return true;
+            }
+        }
+        return false;
     }
 
     void theory_str_noodler::new_diseq_eh(theory_var x, theory_var y) {
@@ -737,10 +800,27 @@ namespace smt::noodler {
     }
 
     bool theory_str_noodler::can_propagate() {
-        return false;
+        return m_axiom_replay.has_pending();
     }
 
     void theory_str_noodler::propagate() {
+        // replay the axioms of persistently axiomatized terms that were deleted by backtracking
+        // (they are recorded again, so that they are replayed also after the next backtracking)
+        axiom_recorder recorder(m_axiom_replay);
+        for (const expr_ref_vector& clause : m_axiom_replay.take_pending()) {
+            STRACE(str, tout << "replay axiom: " << clause << std::endl;);
+            std::vector<literal> lits;
+            for (expr* e : clause) {
+                expr* atom = e;
+                bool negated = m.is_not(e, atom);
+                if (!ctx.b_internalized(atom)) {
+                    ctx.internalize(atom, false);
+                }
+                literal l = ctx.get_literal(atom);
+                lits.push_back(negated ? ~l : l);
+            }
+            add_axiom(lits);
+        }
     }
 
     void theory_str_noodler::push_scope_eh() {
@@ -763,6 +843,10 @@ namespace smt::noodler {
         axiomatized_terms.reset();
         propagated_string_theory.reset();
         m_scope_level -= num_scopes;
+        // Axioms added above the new scope level are deleted by Z3 (as all theory axioms added during the search),
+        // but the terms they axiomatize stay marked as axiomatized (see axiomatized_persist_terms). We hence
+        // replay these axioms (with the same fresh variables) in propagate().
+        m_axiom_replay.pop(m_scope_level);
         m_word_eq_todo.pop_scope(num_scopes);
         m_lang_eq_todo.pop_scope(num_scopes);
         m_lang_diseq_todo.pop_scope(num_scopes);
@@ -847,6 +931,7 @@ namespace smt::noodler {
             ctx.internalize(e, false);
             literal l{ctx.get_literal(e)};
             ctx.mark_as_relevant(l);
+            record_axiom(literal_vector(1, &l));
             ctx.mk_th_axiom(get_id(), 1, &l);
         }
     }
@@ -872,7 +957,24 @@ namespace smt::noodler {
         if (lv.empty()) {
             return;
         }
+        // record the clause before passing it to Z3: ctx.mk_th_axiom simplifies the literals in place
+        // (sorts them and removes the false ones), so lv does not hold the clause afterwards
+        record_axiom(lv);
         ctx.mk_th_axiom(get_id(), lv);
+    }
+
+
+    void theory_str_noodler::record_axiom(const literal_vector& lits) {
+        if (!m_axiom_replay.is_recording()) {
+            return;
+        }
+        expr_ref_vector clause(m);
+        for (literal l : lits) {
+            expr_ref e(m);
+            ctx.literal2expr(l, e);
+            clause.push_back(e);
+        }
+        m_axiom_replay.record(m_scope_level, clause);
     }
 
     /**
@@ -896,7 +998,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_char_at(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle char_at: " << mk_pp(e, m) << '\n';);
 
@@ -1038,13 +1141,15 @@ namespace smt::noodler {
     void theory_str_noodler::replace_by_fresh_seq_var(expr *e) {
         SASSERT(m_util_s.is_seq(e));
         if (!predicate_replace.contains(e)) {
+            axiom_recorder recorder(m_axiom_replay);
             get_fresh_var_for_string_function("uninter", e);
         }
     }
 
     void theory_str_noodler::handle_nth(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle nth: " << mk_pp(e, m) << '\n';);
 
@@ -1108,7 +1213,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_substr(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle substr: " << mk_pp(e, m) << '\n';);
 
@@ -1345,7 +1451,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_replace(expr *r) {
         if (axiomatized_persist_terms.contains(r)) { return; }
-        axiomatized_persist_terms.insert(r);
+        { expr* key = r; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle replace: " << mk_pp(r, m) << '\n';);
 
@@ -1503,7 +1610,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_index_of(expr *i) {
         if (axiomatized_persist_terms.contains(i)) { return; }
-        axiomatized_persist_terms.insert(i);
+        { expr* key = i; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle indexof: " << mk_pp(i, m) << '\n';);
 
@@ -1650,7 +1758,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_replace_re(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle replace_re: " << mk_pp(e, m) << '\n';);
 
@@ -1668,7 +1777,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_replace_all(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle replace_all: " << mk_pp(e, m) << '\n';);
 
@@ -1686,7 +1796,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_replace_re_all(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle replace_re_all: " << mk_pp(e, m) << '\n';);
 
@@ -1719,7 +1830,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_update(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         expr *w = nullptr, *i = nullptr, *r = nullptr;
         VERIFY(m_util_s.str.is_update(e, w, i, r));
@@ -1790,7 +1902,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_trim(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         expr *w = nullptr;
         VERIFY(m_util_s.str.is_trim(e, w));
@@ -1852,7 +1965,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_delete(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         expr *w = nullptr, *i = nullptr, *l = nullptr;
         VERIFY(m_util_s.str.is_delete(e, w, i, l));
@@ -1939,7 +2053,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_prefix(expr *e) {
         if(axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle prefix: " << mk_pp(e, m) << '\n';);
 
@@ -1980,7 +2095,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_not_prefix(expr *e) {
         if(axiomatized_persist_terms.contains(m.mk_not(e))) { return; }
-        axiomatized_persist_terms.insert(m.mk_not(e));
+        { expr* key = m.mk_not(e); axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle not(prefx): " << mk_pp(e, m) << '\n';);
 
@@ -2106,7 +2222,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_suffix(expr *e) {
         if(axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle suffix: " << mk_pp(e, m) << '\n';);
 
@@ -2136,7 +2253,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_not_suffix(expr *e) {
         if(axiomatized_persist_terms.contains(m.mk_not(e))) { return; }
-        axiomatized_persist_terms.insert(m.mk_not(e));
+        { expr* key = m.mk_not(e); axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle not(suffix): " << mk_pp(e, m) << '\n';);
 
@@ -2236,7 +2354,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_contains(expr *e) {
         if(axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout  << "handle contains: " << mk_pp(e, m) << std::endl;);
 
@@ -2290,7 +2409,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_not_contains(expr *e) {
         if(axiomatized_persist_terms.contains(m.mk_not(e))) { return; }
-        axiomatized_persist_terms.insert(m.mk_not(e));
+        { expr* key = m.mk_not(e); axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout  << "handle not(contains) " << mk_pp(e, m) << std::endl;);
 
@@ -2377,7 +2497,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_lex_lt(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout  << "handle lessthan: " << mk_pp(e, m) << std::endl;);
 
@@ -2613,7 +2734,8 @@ namespace smt::noodler {
      */
     void theory_str_noodler::handle_is_digit(expr *e) {
         if(axiomatized_persist_terms.contains(e)) { return; }
-        axiomatized_persist_terms.insert(e);
+        { expr* key = e; axiomatized_persist_terms.insert(key); m_persist_pins.push_back(key); }
+        axiom_recorder recorder(m_axiom_replay);
 
         STRACE(str, tout << "handle is_digit: " << mk_pp(e, m) << '\n';);
 

@@ -1,0 +1,93 @@
+; VeriRego (Weave FluxBucketApprovedRegion, deniesAll, scenario namespace_excluded): strings wrapped in datatypes,
+; generic sequences of datatype values. Previously timed out: shared string variables equal to distinct literals were
+; detected only in final_check (ground value clash), axioms of terms axiomatized deeper in the search were lost after
+; backtracking (axiom replay), and the lemmas blocked whole instances instead of their unsat slices.
+(set-info :status unsat)
+
+(declare-datatypes ()
+	((OTypeD0
+		(OString (str String))
+		(ONumber (num Int))
+		(OBoolean (bool Bool))
+		ONull
+		OUndef
+	))
+)
+
+
+(declare-datatypes ()
+  ((OTypeD1
+    (Atom1 (atom1 OTypeD0))
+    (OObj1 (obj1 (Array String OTypeD0)))
+    (OArray1 (arr1 (Seq OTypeD0)))
+    (OSet1 (set1 (Array OTypeD0 Bool)))
+    (Wrap1 (wrap1 OTypeD0))
+  ))
+)
+
+(declare-datatypes ()
+  ((OTypeD2
+    (Atom2 (atom2 OTypeD0))
+    (OObj2 (obj2 (Array String OTypeD1)))
+    (OArray2 (arr2 (Seq OTypeD1)))
+    (OSet2 (set2 (Array OTypeD1 Bool)))
+    (Wrap2 (wrap2 OTypeD1))
+  ))
+)
+
+(declare-datatypes ()
+  ((OTypeD3
+    (Atom3 (atom3 OTypeD0))
+    (OObj3 (obj3 (Array String OTypeD2)))
+    (OArray3 (arr3 (Seq OTypeD2)))
+    (OSet3 (set3 (Array OTypeD2 Bool)))
+    (Wrap3 (wrap3 OTypeD2))
+  ))
+)
+(define-fun Compare_0_0 ((x OTypeD0) (y OTypeD0)) Bool
+  (= x y))
+(define-fun OSetUnion2 ((x OTypeD2) (y OTypeD2)) OTypeD2
+  (OSet2 ((_ map or) (set2 x) (set2 y))))
+(declare-fun __abs_str_0 () String)
+(declare-fun controller_input () OTypeD3)
+(declare-fun controller_spec () OTypeD1)
+(declare-fun exclude_label_key () OTypeD0)
+(declare-fun exclude_label_value () OTypeD0)
+(declare-fun exclude_namespaces () OTypeD1)
+(declare-fun input.parameters () OTypeD2)
+(declare-fun input.review.object () OTypeD3)
+(declare-fun input.review.object_obj () OTypeD1)
+(declare-fun input.review.object_leaf () OTypeD0)
+(declare-fun input.review.object_leaf_1 () OTypeD0)
+(declare-fun isExcludedNamespace () OTypeD0)
+(declare-fun regions () OTypeD1)
+(declare-fun violation () OTypeD2)
+(declare-fun exclude_namespaces__res_1 () OTypeD1)
+(declare-fun exclude_label_key__res_1 () OTypeD0)
+(declare-fun exclude_label_value__res_1 () OTypeD0)
+(declare-fun regions__res_1 () OTypeD1)
+(declare-fun violation__res_1 () OTypeD2)
+(declare-fun controller_input__res_1 () OTypeD3)
+(declare-fun controller_spec__res_1 () OTypeD1)
+(declare-fun isExcludedNamespace__res_1 () OTypeD0)
+(define-fun exclude_namespaces_upd_1 ((obj OTypeD1)(__out OTypeD1)) Bool (or (let ((__lv0 (ite (is-OObj2 input.parameters) (select (obj2 input.parameters) "exclude_namespaces") (Wrap1 OUndef)))) (and (not (= __lv0 (Wrap1 OUndef))) (= __out __lv0))) (and (not (let ((__lv0 (ite (is-OObj2 input.parameters) (select (obj2 input.parameters) "exclude_namespaces") (Wrap1 OUndef)))) (not (= __lv0 (Wrap1 OUndef))))) (= __out (Wrap1 OUndef)))))
+(define-fun exclude_label_key_upd_1 ((obj OTypeD0)(__out OTypeD0)) Bool (or (let ((__lv1 (wrap1 (ite (is-OObj2 input.parameters) (select (obj2 input.parameters) "exclude_label_key") (Wrap1 OUndef))))) (and (not (= __lv1 OUndef)) (= __out __lv1))) (and (not (let ((__lv1 (wrap1 (ite (is-OObj2 input.parameters) (select (obj2 input.parameters) "exclude_label_key") (Wrap1 OUndef))))) (not (= __lv1 OUndef)))) (= __out OUndef))))
+(define-fun exclude_label_value_upd_1 ((obj OTypeD0)(__out OTypeD0)) Bool (or (let ((__lv2 (wrap1 (ite (is-OObj2 input.parameters) (select (obj2 input.parameters) "exclude_label_value") (Wrap1 OUndef))))) (and (not (= __lv2 OUndef)) (= __out __lv2))) (and (not (let ((__lv2 (wrap1 (ite (is-OObj2 input.parameters) (select (obj2 input.parameters) "exclude_label_value") (Wrap1 OUndef))))) (not (= __lv2 OUndef)))) (= __out OUndef))))
+(define-fun regions_upd_1 ((obj OTypeD1)(__out OTypeD1)) Bool (or (let ((__lv3 (ite (is-OObj2 input.parameters) (select (obj2 input.parameters) "regions") (Wrap1 OUndef)))) (and (not (= __lv3 (Wrap1 OUndef))) (= __out __lv3))) (and (not (let ((__lv3 (ite (is-OObj2 input.parameters) (select (obj2 input.parameters) "regions") (Wrap1 OUndef)))) (not (= __lv3 (Wrap1 OUndef))))) (= __out (Wrap1 OUndef)))))
+(define-fun violation_upd_1_wit ((__set_elem OTypeD1)) Bool (let ((__lv5 exclude_label_key)) (and (is-OString __lv5) (let ((__lv6 (ite (is-OObj1 controller_spec) (ite (is-OObj1 controller_spec) (select (obj1 controller_spec) "region") OUndef) OUndef))) (let ((__lv7 regions)) (let ((__lv8 (wrap1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "name") (Wrap1 OUndef))))) (let ((__lv9 regions)) (let ((__lv10 (ite (is-OObj1 controller_spec) (ite (is-OObj1 controller_spec) (select (obj1 controller_spec) "region") OUndef) OUndef))) (let ((__lv11 (OString __abs_str_0))) (let ((__lv4 (OObj1 (store (store (store ((as const (Array String OTypeD0)) OUndef) "issue_detected" (OBoolean true)) "msg" __lv11) "violating_key" (OString "spec.region"))))) (and (and (Compare_0_0 isExcludedNamespace (OBoolean false)) (not (= __lv5 OUndef)) (not (and (not (and (is-OUndef exclude_label_value) (is-OUndef (ite (is-OObj1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "labels") (Wrap1 OUndef))) (select (obj1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "labels") (Wrap1 OUndef))) (str __lv5)) OUndef)))) (Compare_0_0 exclude_label_value (ite (is-OObj1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "labels") (Wrap1 OUndef))) (select (obj1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "labels") (Wrap1 OUndef))) (str __lv5)) OUndef)))) (not (= __lv6 OUndef)) (not (= __lv7 (Wrap1 OUndef))) (not (and (is-OArray1 __lv7) (not (is-OUndef __lv6)) (seq.contains (arr1 __lv7) (seq.unit __lv6)))) (not (= __lv8 OUndef)) (not (= __lv9 (Wrap1 OUndef))) (not (= __lv10 OUndef)) (not (= __lv4 (Wrap1 OUndef)))) (= __set_elem __lv4))))))))))))
+(define-fun controller_input_upd_1 ((obj OTypeD3)(__out OTypeD3)) Bool (or (let ((__lv12 input.review.object)) (and (not (= __lv12 (Wrap3 (Wrap2 (Wrap1 OUndef))))) (= __out __lv12))) (and (not (let ((__lv12 input.review.object)) (not (= __lv12 (Wrap3 (Wrap2 (Wrap1 OUndef))))))) (= __out (Wrap3 (Wrap2 (Wrap1 OUndef)))))))
+(define-fun controller_spec_upd_1 ((obj OTypeD1)(__out OTypeD1)) Bool (or (let ((__lv13 (wrap2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "spec") (Wrap2 (Wrap1 OUndef)))))) (and (and (Compare_0_0 (wrap1 (wrap2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "kind") (Wrap2 (Wrap1 OUndef))))) (OString "Bucket")) (not (= __lv13 (Wrap1 OUndef)))) (= __out __lv13))) (and (not (let ((__lv13 (wrap2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "spec") (Wrap2 (Wrap1 OUndef)))))) (and (Compare_0_0 (wrap1 (wrap2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "kind") (Wrap2 (Wrap1 OUndef))))) (OString "Bucket")) (not (= __lv13 (Wrap1 OUndef)))))) (= __out (Wrap1 OUndef)))))
+(define-fun isExcludedNamespace_upd_1 ((obj OTypeD0)(__out OTypeD0)) Bool (or (let ((__lv14 (wrap1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "namespace") (Wrap1 OUndef))))) (let ((__lv15 exclude_namespaces)) (and (and (not (is-OUndef (wrap1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "namespace") (Wrap1 OUndef))))) (not (= __lv14 OUndef)) (not (= __lv15 (Wrap1 OUndef))) (and (is-OArray1 __lv15) (not (is-OUndef __lv14)) (seq.contains (arr1 __lv15) (seq.unit __lv14)))) (= __out (OBoolean true))))) (and (not (let ((__lv14 (wrap1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "namespace") (Wrap1 OUndef))))) (let ((__lv15 exclude_namespaces)) (and (not (is-OUndef (wrap1 (ite (is-OObj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) (select (obj2 (ite (is-OObj3 controller_input) (select (obj3 controller_input) "metadata") (Wrap2 (Wrap1 OUndef)))) "namespace") (Wrap1 OUndef))))) (not (= __lv14 OUndef)) (not (= __lv15 (Wrap1 OUndef))) (and (is-OArray1 __lv15) (not (is-OUndef __lv14)) (seq.contains (arr1 __lv15) (seq.unit __lv14))))))) (or (and true (= __out (OBoolean false))) (and (not true) (= __out OUndef))))))
+(define-fun violation_upd_1 ((obj OTypeD2)(__out OTypeD2)) Bool (= __out (OSetUnion2 (ite (is-OSet2 obj) obj (OSet2 ((as const (Array OTypeD1 Bool)) false))) (OSet2 (lambda ((__set_elem OTypeD1)) (violation_upd_1_wit __set_elem))))))
+(assert (= input.parameters (OObj2 (store (store (store (store ((as const (Array String OTypeD1)) (Wrap1 OUndef)) "exclude_label_key" (Wrap1 (OString "team"))) "exclude_label_value" (Wrap1 (OString "test-exempt"))) "exclude_namespaces" (OArray1 (seq.++ (seq.unit (OString "kube-system")) (seq.unit (OString "flux-system"))))) "regions" (OArray1 (seq.++ (seq.unit (OString "us-east-1")) (seq.unit (OString "eu-west-1"))))))))
+(assert (and (= input.review.object (OObj3 (store (store (store ((as const (Array String OTypeD2)) (Wrap2 (Wrap1 OUndef))) "kind" (Wrap2 (Wrap1 (OString "Bucket")))) "metadata" (OObj2 (store (store (store ((as const (Array String OTypeD1)) (Wrap1 OUndef)) "labels" input.review.object_obj) "name" (Wrap1 input.review.object_leaf)) "namespace" (Wrap1 (OString "flux-system"))))) "spec" (Wrap2 (OObj1 (store ((as const (Array String OTypeD0)) OUndef) "region" input.review.object_leaf_1)))))) (is-OObj1 input.review.object_obj) (forall ((aaaaa String)) (or (or (is-OString (select (obj1 input.review.object_obj) aaaaa)) (= (select (obj1 input.review.object_obj) aaaaa) OUndef)))) (is-OString input.review.object_leaf) (is-OString input.review.object_leaf_1)))
+(assert (let ((exclude_namespaces__cur_1 (ite (not (= exclude_namespaces__res_1 (Wrap1 OUndef))) exclude_namespaces__res_1 (Wrap1 OUndef)))) (and (exclude_namespaces_upd_1 (Wrap1 OUndef) exclude_namespaces__res_1) (= exclude_namespaces exclude_namespaces__cur_1))))
+(assert (let ((exclude_label_key__cur_1 (ite (not (= exclude_label_key__res_1 OUndef)) exclude_label_key__res_1 OUndef))) (and (exclude_label_key_upd_1 OUndef exclude_label_key__res_1) (= exclude_label_key exclude_label_key__cur_1))))
+(assert (let ((exclude_label_value__cur_1 (ite (not (= exclude_label_value__res_1 OUndef)) exclude_label_value__res_1 OUndef))) (and (exclude_label_value_upd_1 OUndef exclude_label_value__res_1) (= exclude_label_value exclude_label_value__cur_1))))
+(assert (let ((regions__cur_1 (ite (not (= regions__res_1 (Wrap1 OUndef))) regions__res_1 (Wrap1 OUndef)))) (and (regions_upd_1 (Wrap1 OUndef) regions__res_1) (= regions regions__cur_1))))
+(assert (let ((violation__cur_1 (ite (not (= violation__res_1 (Wrap2 (Wrap1 OUndef)))) violation__res_1 (Wrap2 (Wrap1 OUndef))))) (and (violation_upd_1 (Wrap2 (Wrap1 OUndef)) violation__res_1) (= violation violation__cur_1))))
+(assert (let ((controller_input__cur_1 (ite (not (= controller_input__res_1 (Wrap3 (Wrap2 (Wrap1 OUndef))))) controller_input__res_1 (Wrap3 (Wrap2 (Wrap1 OUndef)))))) (and (controller_input_upd_1 (Wrap3 (Wrap2 (Wrap1 OUndef))) controller_input__res_1) (= controller_input controller_input__cur_1))))
+(assert (let ((controller_spec__cur_1 (ite (not (= controller_spec__res_1 (Wrap1 OUndef))) controller_spec__res_1 (Wrap1 OUndef)))) (and (controller_spec_upd_1 (Wrap1 OUndef) controller_spec__res_1) (= controller_spec controller_spec__cur_1))))
+(assert (let ((isExcludedNamespace__cur_1 (ite (not (= isExcludedNamespace__res_1 OUndef)) isExcludedNamespace__res_1 OUndef))) (and (isExcludedNamespace_upd_1 OUndef isExcludedNamespace__res_1) (= isExcludedNamespace isExcludedNamespace__cur_1))))
+(assert (and (not (= violation (Wrap2 (Wrap1 OUndef)))) (not (= violation (Wrap2 (Wrap1 (OBoolean false))))) (or (not (is-OSet2 violation)) (not (= (set2 violation) ((as const (Array OTypeD1 Bool)) false))))))
+(check-sat)

@@ -23,6 +23,8 @@ if (Catch2_FOUND)
             util.cc
             formula.cpp
             ecma_regex.cpp
+            constraint-slices.cpp
+            axiom-replay.cpp
     )
 
     z3_add_install_tactic_rule(${z3_test_deps})

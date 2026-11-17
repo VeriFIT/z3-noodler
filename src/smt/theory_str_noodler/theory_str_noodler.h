@@ -44,6 +44,7 @@ Eternal glory to Yu-Fang.
 #include "length_decision_procedure.h"
 #include "unary_decision_procedure.h"
 #include "seq_elements.h"
+#include "axiom_replay.h"
 
 /**
  * NOTE: way how to print z3 formula in smt2 format (including the declaration)
@@ -110,6 +111,7 @@ namespace smt::noodler {
         int m_scope_level = 0;
         const theory_str_noodler_params& m_params;
         th_rewriter m_rewrite;
+        seq_rewriter m_seq_rewrite;
         arith_util m_util_a;
         seq_util m_util_s;
         seq_factory* m_seq_factory = nullptr;
@@ -137,6 +139,14 @@ namespace smt::noodler {
         std::vector<app_ref> axiomatized_len_axioms;
         obj_hashtable<expr> axiomatized_terms;
         obj_hashtable<expr> axiomatized_persist_terms;
+        expr_ref_vector m_persist_pins{m}; // keeps the keys of axiomatized_persist_terms alive
+
+        // axioms of terms in axiomatized_persist_terms (and of fresh variables in predicate_replace) are axiomatized
+        // only once, but Z3 deletes them by backtracking, so they are recorded and replayed (see AxiomReplay)
+        AxiomReplay m_axiom_replay;
+        using axiom_recorder = AxiomReplay::Recorder;
+        // records an added axiom if m_axiom_replay is recording
+        void record_axiom(const literal_vector& lits);
         ecma_cache m_ecma_cache;
         obj_hashtable<expr> propagated_string_theory; // expressions that were already processed by string_theory_propagation (to avoid looping)
         obj_hashtable<expr> m_has_length;          // is length applied
@@ -364,6 +374,7 @@ namespace smt::noodler {
          * @return the created fresh variable
          */
         expr_ref get_fresh_var_for_string_function(const std::string& var_name, expr* str_func) {
+            axiom_recorder recorder(m_axiom_replay);
             expr_ref res = mk_str_var_fresh(var_name, str_func->get_sort());
             predicate_replace.insert(str_func, res.get());
             add_axiom({mk_eq(res, str_func, false)});
@@ -418,15 +429,6 @@ namespace smt::noodler {
         void assign_not_contains(expr *e);
 
         void set_conflict(const literal_vector& ls);
-
-        /**
-         * @brief Construct a formula representing current conjunction of atomic string constraints currently 
-         * solved in final_check (atoms that are not relevant are omited). It includes (dis)equations, regexes, 
-         * and notcontains.
-         * 
-         * @return expr_ref Conjunction of atomic string constraints
-         */
-        expr_ref construct_refinement();
 
         /**
          * @brief Do relevant constraints contain generic (non-String) sequences?
@@ -629,6 +631,17 @@ namespace smt::noodler {
          */
         expr_ref filter_model_formula_to_length_vars(expr_ref model_formula);
 
+        /******************* BLOCKING INSTANCES (theory_str_noodler_blocking.cpp) *******************/
+
+        /**
+         * @brief Construct a formula representing current conjunction of atomic string constraints currently 
+         * solved in final_check (atoms that are not relevant are omited). It includes (dis)equations, regexes, 
+         * and notcontains.
+         * 
+         * @return expr_ref Conjunction of atomic string constraints
+         */
+        expr_ref construct_refinement();
+
         /**
          * @brief Blocks current SAT assignment for given @p len_formula
          * 
@@ -639,6 +652,31 @@ namespace smt::noodler {
          * TODO explain better
          */
         void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool is_overapprox = false);
+
+        /**
+         * @brief Block the current (unsatisfiable) instance by a lemma over an independent part of it, if possible.
+         *
+         * The relevant constraints are split into independent slices (see compute_independent_slices), where
+         * two constraints are connected iff they share a string variable. The conjunction is unsatisfiable iff some
+         * slice is unsatisfiable on its own, and the negation of such a slice is a valid lemma. Compared to blocking the whole instance (see construct_refinement),
+         * this lemma does not depend on the unrelated constraints, so it prunes much more of the search space.
+         *
+         * The slices are checked by the preprocessing of the main decision procedure (cheap, and it detects most
+         * of the conflicts). Instances with transducers, conversions, or rational relations are not sliced, since
+         * these relate variables in ways not visible in the constraints.
+         *
+         * @param instance the (unsatisfiable) instance built from all relevant constraints
+         * @return true if a slice was found unsatisfiable and blocked
+         */
+        bool block_unsat_slice(const Formula& instance);
+
+        /**
+         * @brief Block the current instance which is unsatisfiable on its own (i.e., regardless of lengths): the
+         * lemma is built from an unsatisfiable slice (see block_unsat_slice) or from the whole instance.
+         */
+        void block_unsat_instance(const Formula& instance, bool add_axiomatized, bool is_overapprox);
+
+        /******************* BLOCKING INSTANCES END *******************/
 
         /**
          * @brief Checks if the current instance is suitable for Nielsen decision procedure.
@@ -753,6 +791,26 @@ namespace smt::noodler {
         lbool sat_handling(expr_ref length_formula);
 
         /***************** FINAL_CHECK_EH HELPING FUNCTIONS END *******************/
+
+        /**
+         * @brief Is @p e a ground sequence value, i.e., a term built only from string literals, seq.empty,
+         * seq.unit of a value, and seq.++? Its value is fixed, independently of the current assignment.
+         */
+        bool is_ground_seq_value(expr* e) const;
+
+        /**
+         * @brief Check that all ground sequence values in the E-class of @p n denote the same sequence.
+         *
+         * The E-graph detects merging two distinct values only for unique values (see ast_manager::is_unique_value),
+         * which sequences are not (seq_decl_plugin::is_unique_value). Without this check, a class containing,
+         * e.g., "a" and "b" is detected only by the decision procedure in final_check_eh, which can learn just
+         * a lemma made of all relevant constraints. Here, the conflict is raised immediately and it is explained
+         * by the E-graph (the reason why the two ground values are in the same class), which is the minimal
+         * explanation of the conflict.
+         *
+         * @return true if a conflict was raised
+         */
+        bool check_ground_value_clash(enode* n);
 
         void collect_shared_vars(sbuffer<theory_var> & result) const;
 

@@ -277,7 +277,7 @@ namespace smt::noodler {
             // we want to kill it after preprocessing as it generates stronger theory lemma (negation of the string part).
             lbool result = main_dec_proc->preprocess(PreprocessType::PLAIN, this->var_eqs.get_equivalence_bt(aut_assignment, ctx, m_util_s));
             if (result == l_false) {
-                block_curr_len(expr_ref(m.mk_false(), m), false, true);
+                block_unsat_instance(instance, false, true);
             } else {
                 block_curr_len(lengths, true, true);
             }
@@ -313,7 +313,7 @@ namespace smt::noodler {
         if (result == l_false) {
             this->statistics.at("stabilization").num_solved_preprocess++;
             STRACE(str, tout << "Unsat from preprocessing" << std::endl);
-            block_curr_len(expr_ref(m.mk_false(), m), false, true); // we do not store for loop protection
+            block_unsat_instance(instance, false, true); // we do not store for loop protection
             return FC_CONTINUE;
         } // we do not check for l_true, because we will get it in get_another_solution() anyway TODO: should we check?
 
@@ -398,7 +398,7 @@ namespace smt::noodler {
 
                 if (!check_len_sat_with_context) {
                     // if we were not checking length satisfiability with the context, then the current string assignment must be unsatisfiable on its own => we can block it completely
-                    block_curr_len(expr_ref(m.mk_false(), m));
+                    block_unsat_instance(instance, true, false);
                 } else {
                     // If some solving states were skipped, an overapproximation was added to block_len
                     const bool overapprox = main_dec_proc->get_skipped_some_with_len_checks();
@@ -1017,78 +1017,6 @@ namespace smt::noodler {
             }
         }
         return expr_ref(mk_and(kept), m);
-    }
-
-    expr_ref theory_str_noodler::construct_refinement() {
-        context& ctx = get_context();
-
-        ast_manager& m = get_manager();
-        expr *refinement = nullptr;
-        STRACE(str, tout << "[Constructing refinement]\n";);
-        for (const auto& we : this->m_word_eq_todo_rel) {
-            // we create the equation according to we
-            expr *const e = ctx.mk_eq_atom(we.first, we.second);
-            refinement = refinement == nullptr ? e : m.mk_and(refinement, e);
-        }
-
-        literal_vector ls;
-        for (const auto& wi : this->m_word_diseq_todo_rel) {
-            expr_ref e(m.mk_not(ctx.mk_eq_atom(wi.first, wi.second)), m);
-            // e might not be internalized
-            if(!ctx.e_internalized(e)) {
-                ctx.internalize(e, false);
-            }
-            refinement = refinement == nullptr ? e : m.mk_and(refinement, e);
-        }
-        for (const auto& in : this->m_membership_todo_rel) {
-            app_ref in_app(m_util_s.re.mk_in_re(std::get<0>(in), std::get<1>(in)), m);
-            if(!std::get<2>(in)){
-                in_app = m.mk_not(in_app);
-                if(!ctx.e_internalized(in_app)) {
-                    ctx.internalize(in_app, false);
-                }
-            }
-            refinement = refinement == nullptr ? in_app : m.mk_and(refinement, in_app);
-        }
-        for (const auto& in : this->m_rat_membership_todo_rel) {
-            app_ref in_app(m_util_s.rat_rel.mk_in_rat(std::get<0>(in), std::get<1>(in),  std::get<2>(in)), m);
-            if(!std::get<3>(in)){
-                in_app = m.mk_not(in_app);
-                if(!ctx.e_internalized(in_app)) {
-                    ctx.internalize(in_app, false);
-                }
-            }
-            refinement = refinement == nullptr ? in_app : m.mk_and(refinement, in_app);
-        }
-        for(const auto& nc : this->m_not_contains_todo_rel) {
-            app_ref nc_app(m.mk_not(m_util_s.str.mk_contains(nc.first, nc.second)), m);
-            refinement = refinement == nullptr ? nc_app : m.mk_and(refinement, nc_app);
-        }
-        if (refinement != nullptr && seq_abstraction) {
-            // the solution relies also on (dis)equalities of elements of generic sequences
-            expr_ref_vector facts(m);
-            seq_abstraction->get_facts(facts);
-            for (expr* fact : facts) {
-                refinement = m.mk_and(refinement, fact);
-            }
-        }
-
-        return expr_ref(refinement, m);
-    }
-
-    void theory_str_noodler::block_curr_len(expr_ref len_formula, bool add_axiomatized, bool is_overapprox) {
-        STRACE(str_block, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
-
-        expr_ref refinement = construct_refinement();
-
-        if(m_params.m_loop_protect && add_axiomatized) {
-            this->axiomatized_instances.push_back({refinement, stored_instance{ .lengths = len_formula, .is_overapprox = is_overapprox}});
-        }
-        if (refinement != nullptr) {
-            set_input_has_quantifiers(expr_cases::has_quantifier(len_formula, m));
-            add_axiom(m.mk_or(m.mk_not(refinement), len_formula));
-        }
-        STRACE(str_block, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
     }
 
     bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, std::unordered_set<BasicTerm>& length_sensitive_vars) const {
