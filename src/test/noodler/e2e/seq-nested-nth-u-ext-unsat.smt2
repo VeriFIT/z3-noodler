@@ -1,0 +1,12 @@
+; nested sequences: x = y = [[]] by word equations, hence seq.nth_u(x,3) = seq.nth_u(y,3) contradicts a != 0.
+(set-info :smt-lib-version 2.6)
+(set-info :status unsat)
+(declare-const x (Seq (Seq Int)))
+(declare-const y (Seq (Seq Int)))
+(declare-const a Int)
+(assert (= (seq.nth x 3) (seq.unit 0)))
+(assert (= (seq.nth y 3) (seq.unit a)))
+(assert (not (= a 0)))
+(assert (= (seq.++ x (seq.unit (as seq.empty (Seq Int)))) (seq.++ (seq.unit (as seq.empty (Seq Int))) y)))
+(assert (= (seq.len x) 1))
+(check-sat)

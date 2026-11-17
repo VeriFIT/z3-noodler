@@ -550,6 +550,10 @@ namespace smt::noodler {
             if (!m_util_s.str.is_nth_u(n)) {
                 handle_nth(n);
             }
+            if (m_util_s.is_seq(n)) {
+                // element of a nested sequence (e.g., (Seq (Seq Int))) which is itself a sequence term
+                replace_by_fresh_seq_var(n);
+            }
         } else if (
             m_util_s.str.is_map(n) ||
             m_util_s.str.is_mapi(n) ||
@@ -577,17 +581,11 @@ namespace smt::noodler {
             // and everything else will be handled during final_check_eh
         } else {
             // if we got here it means that we got some uninterpreted string function (i.e. probably user declared), we just replace it with a fresh string variable
-            expr* e = n;
-            if (!m_util_s.is_seq(e)) {
+            if (!m_util_s.is_seq(n)) {
                 // not a string/sequence term (e.g., an element term), nothing to do
                 return;
             }
-            if (!axiomatized_persist_terms.contains(e)) {
-                axiomatized_persist_terms.insert(e);
-                expr_ref fresh = mk_str_var_fresh("uninter", e->get_sort());
-                predicate_replace.insert(e, fresh.get());
-                add_axiom({mk_eq(fresh, e, false)});
-            }
+            replace_by_fresh_seq_var(n);
         }
 
         if (initial_len_expressions.contains(n)) {
@@ -1037,6 +1035,13 @@ namespace smt::noodler {
      *
      * @param e seq.nth_i(s, i) or seq.nth(s, i)
      */
+    void theory_str_noodler::replace_by_fresh_seq_var(expr *e) {
+        SASSERT(m_util_s.is_seq(e));
+        if (!predicate_replace.contains(e)) {
+            get_fresh_var_for_string_function("uninter", e);
+        }
+    }
+
     void theory_str_noodler::handle_nth(expr *e) {
         if (axiomatized_persist_terms.contains(e)) { return; }
         axiomatized_persist_terms.insert(e);

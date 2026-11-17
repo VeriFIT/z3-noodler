@@ -41,6 +41,15 @@ namespace smt::noodler {
     final_check_status theory_str_noodler::final_check_eh(unsigned) {
         TRACE(str, tout << "final_check starts" << std::endl;);
 
+        // sequences that are arguments of the uninterpreted seq.nth_u must be decided as (dis)equal
+        // (checked before the shortcut for the last sat run, as new nth_u terms or classes might appear
+        // after it; in that case the decision procedure must be run again with the new (dis)equations)
+        if (mk_nth_u_extensionality_eqs() > 0) {
+            last_run_was_sat = false;
+            scope_with_last_run_was_sat = -1;
+            return FC_CONTINUE;
+        }
+
         if (last_run_was_sat) {
             // if we returned previously sat, then we should always return sat (final_check_eh should not be called again, but for some reason Z3 calls it)
             TRACE(str, tout << "Last run was sat on scope level " << scope_with_last_run_was_sat << "\n";);
@@ -1650,6 +1659,86 @@ namespace smt::noodler {
                         // relevant so the core solver may choose (dis)equalities later, and other theory reasoning
                         // can derive necessary consequences.
                     }
+                }
+            }
+        }
+        return result;
+    }
+
+    unsigned theory_str_noodler::mk_nth_u_extensionality_eqs() {
+        // relevant classes of seq.nth_u(s, i) represented by (root of s, root of i, root of seq.nth_u(s, i))
+        struct NthU { enode* seq; enode* idx; enode* app; };
+        std::vector<NthU> nths;
+        ptr_buffer<enode> to_unmark;
+        for (unsigned v = 0; v < get_num_vars(); ++v) {
+            enode* r = get_enode(v)->get_root();
+            if (r->is_marked() || !m_util_s.is_seq(r->get_sort())) {
+                continue;
+            }
+            r->set_mark();
+            to_unmark.push_back(r);
+            // parents of the root are the parents of all members of the class
+            for (enode* p : r->get_parents()) {
+                if (!m_util_s.str.is_nth_u(p->get_expr()) || p->get_arg(0)->get_root() != r || !ctx.is_relevant(p)) {
+                    continue;
+                }
+                enode* idx = p->get_arg(1)->get_root();
+                enode* app = p->get_root();
+                bool dup = false;
+                for (const NthU& o : nths) {
+                    if (o.seq == r && o.idx == idx && o.app == app) { dup = true; break; }
+                }
+                if (!dup) {
+                    nths.push_back({r, idx, app});
+                }
+            }
+        }
+        unmark_enodes(to_unmark.size(), to_unmark.data());
+
+        unsigned result = 0;
+        for (size_t k = 0; k < nths.size(); ++k) {
+            for (size_t l = k + 1; l < nths.size(); ++l) {
+                const NthU& a = nths[k];
+                const NthU& b = nths[l];
+                if (a.seq == b.seq || a.seq->get_sort() != b.seq->get_sort()) {
+                    // same sequence: the values can differ only by indices (handled by arithmetic)
+                    continue;
+                }
+                if (a.app == b.app) {
+                    // both applications have the same value, equal sequences cannot cause a conflict
+                    continue;
+                }
+                if (a.idx != b.idx && m.are_distinct(a.idx->get_expr(), b.idx->get_expr())) {
+                    // indices are distinct values (interpreted values are roots of their classes);
+                    // we cannot use ctx.is_diseq here, the disequation might be irrelevant and hence
+                    // ignored by the arithmetic solver
+                    continue;
+                }
+                app_ref eq(ctx.mk_eq_atom(a.seq->get_expr(), b.seq->get_expr()), m);
+                if (m.is_false(eq)) {
+                    // distinct values
+                    continue;
+                }
+                STRACE(str, tout << "nth_u extensionality: " << mk_pp(eq, m) << "\n";);
+                // We do not rely on ctx.is_diseq (the disequation might be irrelevant and then ignored
+                // by the decision procedure), we always use this specific equation atom.
+                if (!ctx.b_internalized(eq.get()) || !ctx.is_relevant(eq.get())) {
+                    ctx.internalize(eq.get(), false);
+                    ctx.mark_as_relevant(eq.get());
+                    result++;
+                    continue;
+                }
+                switch (ctx.get_assignment(eq.get())) {
+                    case l_false:
+                        // the disequation must be passed to the decision procedure
+                        ctx.mark_as_relevant(m.mk_not(eq));
+                        break;
+                    case l_true:
+                        // a and b are going to be merged
+                        break;
+                    default:
+                        result++;
+                        break;
                 }
             }
         }

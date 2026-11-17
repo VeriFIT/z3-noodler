@@ -1,0 +1,17 @@
+; seq.nth_u extensionality: as seq-int-nth-u-ext-unsat, the indices are equal only by arithmetic.
+(set-info :smt-lib-version 2.6)
+(set-info :status unsat)
+(declare-const x (Seq Int))
+(declare-const y (Seq Int))
+(declare-const i Int)
+(declare-const j Int)
+; indices equal only by arithmetic
+(assert (= (+ i 1) (+ j 1)))
+(assert (> i 3))
+(assert (= (seq.++ x (seq.unit 1)) (seq.++ (seq.unit 1) x)))
+(assert (= (seq.++ y (seq.unit 1)) (seq.++ (seq.unit 1) y)))
+(assert (= (seq.len x) 2))
+(assert (= (seq.len y) 2))
+(assert (= (seq.nth x i) 0))
+(assert (= (seq.nth y j) 2))
+(check-sat)

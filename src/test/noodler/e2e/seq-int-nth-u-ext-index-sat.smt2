@@ -1,0 +1,13 @@
+; seq.nth_u extensionality: equal lengths and equal out-of-bounds indices, different values of seq.nth.
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const x (Seq Int))
+(declare-const y (Seq Int))
+(declare-const i Int)
+(declare-const j Int)
+(assert (= (seq.len x) (seq.len y)))
+(assert (< (seq.len x) i))
+(assert (= i j))
+(assert (= (seq.nth x i) 0))
+(assert (= (seq.nth y j) 2))
+(check-sat)

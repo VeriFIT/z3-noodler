@@ -1,0 +1,15 @@
+; seq.nth_u extensionality: x and y must get different values, otherwise the uninterpreted
+; seq.nth_u(x,1) and seq.nth_u(y,1) cannot have different values (previously an invalid model x = y = [3]).
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const x (Seq Int))
+(declare-const y (Seq Int))
+(declare-const z (Seq Int))
+(declare-const a Int)
+(declare-const b Int)
+(assert (= (seq.nth y 1) 2))
+(assert (distinct 0 a))
+(assert (= a 2))
+(assert (= z (seq.unit b)))
+(assert (= (seq.nth x 1) 0))
+(check-sat)

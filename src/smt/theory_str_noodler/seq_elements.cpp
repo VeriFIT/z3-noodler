@@ -178,7 +178,9 @@ namespace smt::noodler {
                 for (ElemClass& elem_class : info.classes) {
                     if (m.is_bool(info.elem_sort)) {
                         lbool assignment = ctx.find_assignment(elem_class.rep);
-                        if (assignment == l_undef) {
+                        // the element must be relevant, otherwise its assignment need not be respected
+                        // by other theories (and hence by the model)
+                        if (assignment == l_undef || !ctx.is_relevant(elem_class.rep)) {
                             ctx.mark_as_relevant(elem_class.rep);
                             all_decided = false;
                         } else {
@@ -206,9 +208,13 @@ namespace smt::noodler {
                     enode* n1 = ctx.get_enode(info.classes[i].rep);
                     for (unsigned j = i + 1; j < info.classes.size(); ++j) {
                         enode* n2 = ctx.get_enode(info.classes[j].rep);
-                        if (m.are_distinct(n1->get_root()->get_expr(), n2->get_root()->get_expr()) || ctx.is_diseq(n1, n2)) {
+                        if (m.are_distinct(n1->get_root()->get_expr(), n2->get_root()->get_expr())) {
                             continue;
                         }
+                        // We cannot skip pairs with ctx.is_diseq(n1, n2): the disequation might come from
+                        // an irrelevant atom, which is ignored by the theory of the elements. ctx.assume_eq
+                        // makes the specific atom rep1 = rep2 relevant and returns false once it is
+                        // relevant and assigned (this atom is also used in the refinement facts).
                         if (ctx.assume_eq(n1, n2)) {
                             STRACE(str, tout << "seq elements: assuming equality " << mk_pp(n1->get_expr(), m) << " = " << mk_pp(n2->get_expr(), m) << std::endl;);
                             all_decided = false;

@@ -373,6 +373,11 @@ namespace smt::noodler {
         // methods for rewriting different predicates into something simpler that we can handle
         void handle_char_at(expr *e);
         void handle_nth(expr *e);
+        /**
+         * @brief Replace the sequence term @p e (that is not handled otherwise, e.g., an uninterpreted
+         * function or a sequence element of a nested sequence) by a fresh variable (with an axiom e = fresh).
+         */
+        void replace_by_fresh_seq_var(expr *e);
         void handle_substr(expr *e);
         void handle_index_of(expr *e);
         void handle_replace(expr *e);
@@ -752,6 +757,19 @@ namespace smt::noodler {
         void collect_shared_vars(sbuffer<theory_var> & result) const;
 
         unsigned mk_interface_eqs();
+
+        /**
+         * @brief Extensionality for the uninterpreted seq.nth_u.
+         *
+         * seq.nth_u(s, i) is an uninterpreted function, so in the model its value may depend only on the
+         * values of s and i. For two applications seq.nth_u(s1, i1), seq.nth_u(s2, i2) with i1, i2 possibly
+         * equal, the sequences s1, s2 must therefore be either equal in the E-graph (then congruence closure
+         * merges both applications) or disequal (then the decision procedure assigns them different values).
+         * The indices are handled by the arithmetic solver (they are shared with the sequence theory).
+         *
+         * @return the number of new equality atoms (if > 0, final check returns FC_CONTINUE)
+         */
+        unsigned mk_nth_u_extensionality_eqs();
     };
 }
 
