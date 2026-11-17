@@ -446,6 +446,18 @@ namespace smt::noodler {
         bool is_ground_generic_seq(expr* e) const;
 
         /**
+         * @brief Collect the seq.unit terms of a ground generic sequence @p e (in the right order) to @p units.
+         *
+         * @return false if @p e is not a ground generic sequence
+         */
+        bool get_ground_generic_seq_units(expr* e, ptr_vector<expr>& units) const;
+
+        /**
+         * @brief Create the generic sequence consisting of the units @p units[from], ..., @p units[from+len-1].
+         */
+        expr_ref mk_seq_from_units(sort* seq_sort, const ptr_vector<expr>& units, unsigned from, unsigned len);
+
+        /**
          * @brief Introduce string axioms for a formula @p ex. 
          * 
          * @param ex Formula whose terms should be inspected.
@@ -626,11 +638,20 @@ namespace smt::noodler {
         /**
          * @brief Checks if the current instance is suitable for Nielsen decision procedure.
          * 
+         * Regular memberships are allowed only if they constrain only lengths (see is_length_only_regex), their
+         * variables are then added to @p length_sensitive_vars (and their length constraints are checked in run_nielsen).
+         *
          * @param instance Current instance converted to Formula
-         * @param init_length_sensitive_vars Length variables
+         * @param[in,out] length_sensitive_vars Length variables
          * @return true <-> suitable for Nielsen-based decision procedure
          */
-        bool is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const;
+        bool is_nielsen_suitable(const Formula& instance, std::unordered_set<BasicTerm>& length_sensitive_vars) const;
+
+        /**
+         * @brief Is @p re a regex constraining only the length of words (built from re.allchar, re.all, epsilon and
+         * the empty language using concatenation, union, intersection, complement, iterations and loops)?
+         */
+        bool is_length_only_regex(expr* re) const;
 
         /**
          * @brief Check if the current instance is suitable for underapproximation.

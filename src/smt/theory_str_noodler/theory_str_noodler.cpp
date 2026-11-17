@@ -2022,6 +2022,14 @@ namespace smt::noodler {
             }
             return;
         }
+        // handle the case not(prefix x u) where u is a ground generic sequence (the same as for string literals)
+        if(ptr_vector<expr> units; get_ground_generic_seq_units(y, units)) {
+            literal lit_e = mk_literal(e);
+            for(unsigned i = 0; i <= units.size(); i++) {
+                add_axiom({lit_e, mk_literal(m.mk_not(mk_eq_atom(x, mk_seq_from_units(seq_sort, units, 0, i))))});
+            }
+            return;
+        }
         // not(prefix x y) -> x != y  where y = at ...
         // not(prefix x y) -> x != eps
         if(m_util_s.str.is_at(y)) {
@@ -2158,6 +2166,14 @@ namespace smt::noodler {
             for(size_t i = 0; i <= str.length(); i++) {
                 zstring substr = str.extract(i, str.length()-i);
                 add_axiom({lit_e, mk_literal(m.mk_not(mk_eq_atom(x, m_util_s.str.mk_string(substr))))});
+            }
+            return;
+        }
+        // handle the case not(suffix x u) where u is a ground generic sequence (the same as for string literals)
+        if(ptr_vector<expr> units; get_ground_generic_seq_units(y, units)) {
+            literal lit_e = mk_literal(e);
+            for(unsigned i = 0; i <= units.size(); i++) {
+                add_axiom({lit_e, mk_literal(m.mk_not(mk_eq_atom(x, mk_seq_from_units(seq_sort, units, i, units.size() - i))))});
             }
             return;
         }
@@ -2305,6 +2321,16 @@ namespace smt::noodler {
             }
             re = expr_ref(m_util_s.re.mk_in_re(y, re), m);
             add_axiom({mk_literal(e), ~mk_literal(re)});
+        } else if(ptr_vector<expr> units; get_ground_generic_seq_units(x, units) && units.size() <= 10) { // the same bound as for string literals
+            // for small ground generic sequences, we can unroll all possible subsequences (as for string literals)
+            expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_empty(seq_sort)), m);
+            for (unsigned i = 0; i < units.size(); i++) {
+                for (unsigned j = i + 1; j <= units.size(); j++) {
+                    re = m_util_s.re.mk_union(re, m_util_s.re.mk_to_re(mk_seq_from_units(seq_sort, units, i, j - i)));
+                }
+            }
+            re = expr_ref(m_util_s.re.mk_in_re(y, re), m);
+            add_axiom({mk_literal(e), ~mk_literal(re)});
         }
     }
 
@@ -2321,7 +2347,9 @@ namespace smt::noodler {
         VERIFY(m_util_s.str.is_contains(e, x, y));
 
         zstring s;
-        if(!m_util_s.str.is_string(y) && !is_ground_generic_seq(y) && !(m_util_s.str.is_string(x, s) && s.length() <= 10)) {
+        ptr_vector<expr> units;
+        if(!m_util_s.str.is_string(y) && !is_ground_generic_seq(y) && !(m_util_s.str.is_string(x, s) && s.length() <= 10)
+                && !(get_ground_generic_seq_units(x, units) && units.size() <= 10)) {
             // not(contains) was not axiomatized in handle_not_contains, we need to save it for solving in final_check
             m_not_contains_todo.push_back({{x, m},{y, m}});
         }
@@ -2955,20 +2983,37 @@ namespace smt::noodler {
 
 namespace smt::noodler {
     bool theory_str_noodler::is_ground_generic_seq(expr* e) const {
+        ptr_vector<expr> units;
+        return get_ground_generic_seq_units(e, units);
+    }
+
+    bool theory_str_noodler::get_ground_generic_seq_units(expr* e, ptr_vector<expr>& units) const {
         if (!m_util_s.str.is_non_string_sequence(e)) {
             return false;
         }
-        if (m_util_s.str.is_empty(e) || m_util_s.str.is_unit(e)) {
+        if (m_util_s.str.is_empty(e)) {
+            return true;
+        }
+        if (m_util_s.str.is_unit(e)) {
+            units.push_back(e);
             return true;
         }
         if (m_util_s.str.is_concat(e)) {
             for (expr* arg : *to_app(e)) {
-                if (!is_ground_generic_seq(arg)) {
+                if (!get_ground_generic_seq_units(arg, units)) {
                     return false;
                 }
             }
             return true;
         }
         return false;
+    }
+
+    expr_ref theory_str_noodler::mk_seq_from_units(sort* seq_sort, const ptr_vector<expr>& units, unsigned from, unsigned len) {
+        SASSERT(from + len <= units.size());
+        if (len == 0) {
+            return expr_ref(m_util_s.str.mk_empty(seq_sort), m);
+        }
+        return expr_ref(m_util_s.str.mk_concat(len, units.data() + from, seq_sort), m);
     }
 }

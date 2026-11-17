@@ -232,8 +232,13 @@ namespace smt::noodler {
         }
 
         // try Nielsen transformation (if enabled) to solve
-        if(m_params.m_try_nielsen && !has_gen_seq && is_nielsen_suitable(instance, init_length_sensitive_vars)) {
-            lbool result = run_nielsen(instance, aut_assignment, init_length_sensitive_vars);
+        // Nielsen is used also for generic sequences: it works only with the equations and its models consist only of
+        // the literals (symbols of elements) occurring in them, so they never contain symbols not representing elements.
+        // length-only memberships (e.g., x in re.allchar{2,} obtained from |x| >= 2) are handled as length constraints,
+        // their variables become length-sensitive for Nielsen
+        std::unordered_set<BasicTerm> nielsen_length_sensitive_vars = init_length_sensitive_vars;
+        if(m_params.m_try_nielsen && is_nielsen_suitable(instance, nielsen_length_sensitive_vars)) {
+            lbool result = run_nielsen(instance, aut_assignment, nielsen_length_sensitive_vars);
             if(result == l_true) {
                 return FC_DONE;
             } else if(result == l_false) {
@@ -1077,17 +1082,72 @@ namespace smt::noodler {
         STRACE(str_block, tout << __LINE__ << " leave " << __FUNCTION__ << std::endl;);
     }
 
-    bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, const std::unordered_set<BasicTerm>& init_length_sensitive_vars) const {
-        if(!this->m_membership_todo_rel.empty() || !this->m_not_contains_todo_rel.empty() || !this->m_conversion_todo.empty() || !this->m_word_diseq_todo_rel.empty() || instance.contains_pred_type(PredicateType::Transducer)) {
+    bool theory_str_noodler::is_nielsen_suitable(const Formula& instance, std::unordered_set<BasicTerm>& length_sensitive_vars) const {
+        if(!this->m_not_contains_todo_rel.empty() || !this->m_conversion_todo.empty() || !this->m_word_diseq_todo_rel.empty() || instance.contains_pred_type(PredicateType::Transducer)) {
             return false;
         }
 
-        if(init_length_sensitive_vars.size() > 0 && !instance.is_quadratic()) {
+        // Nielsen works only with equations; memberships constraining only lengths of variables occurring in the
+        // equations can be handled as length constraints (see run_nielsen)
+        std::unordered_set<BasicTerm> memb_vars;
+        if (!this->m_membership_todo_rel.empty()) {
+            const std::set<BasicTerm> instance_vars = instance.get_vars();
+            for (const auto& memb : this->m_membership_todo_rel) {
+                expr* var = std::get<0>(memb);
+                if (!util::is_variable(var) || !is_length_only_regex(std::get<1>(memb))) {
+                    return false;
+                }
+                BasicTerm var_bt = util::get_variable_basic_term(var);
+                if (!instance_vars.contains(var_bt)) {
+                    return false;
+                }
+                memb_vars.insert(var_bt);
+            }
+        }
+
+        if((length_sensitive_vars.size() > 0 || memb_vars.size() > 0) && !instance.is_quadratic()) {
             return false;
         }
 
         FormulaGraph incl = FormulaGraph::create_inclusion_graph(instance);
-        return incl.is_cyclic();
+        if (!incl.is_cyclic()) {
+            return false;
+        }
+        length_sensitive_vars.insert(memb_vars.begin(), memb_vars.end());
+        return true;
+    }
+
+    bool theory_str_noodler::is_length_only_regex(expr* re) const {
+        if (!is_app(re) || to_app(re)->get_family_id() != m_util_s.get_family_id()) {
+            return false;
+        }
+        app* re_app = to_app(re);
+        if (m_util_s.re.is_full_char(re_app) || m_util_s.re.is_full_seq(re_app) || m_util_s.re.is_empty(re_app)) {
+            return true;
+        }
+        if (expr* s = nullptr; m_util_s.re.is_to_re(re_app, s)) {
+            return m_util_s.str.is_empty(s);
+        }
+        switch (re_app->get_decl_kind()) {
+            case OP_RE_CONCAT:
+            case OP_RE_UNION:
+            case OP_RE_INTERSECT:
+            case OP_RE_COMPLEMENT:
+            case OP_RE_STAR:
+            case OP_RE_PLUS:
+            case OP_RE_OPTION:
+            case OP_RE_LOOP:
+            case OP_RE_POWER:
+                for (expr* arg : *re_app) {
+                    // non-regex arguments are the bounds of loops
+                    if (m_util_s.is_re(arg) && !is_length_only_regex(arg)) {
+                        return false;
+                    }
+                }
+                return true;
+            default:
+                return false;
+        }
     }
 
     bool theory_str_noodler::is_underapprox_suitable(const Formula& instance, const AutAssignment& aut_ass, const std::vector<TermConversion>& convs) const {
@@ -1131,10 +1191,17 @@ namespace smt::noodler {
         // if there are no length vars in the current string formula, we do not need to check with context
         bool check_len_sat_with_context = !init_length_sensitive_vars.empty();
 
+        // length constraints of (length-only) memberships, which are not handled by Nielsen (see is_nielsen_suitable)
+        expr_ref memb_lengths(m.mk_true(), m);
+        for (const auto& memb : this->m_membership_todo_rel) {
+            BasicTerm var = util::get_variable_basic_term(std::get<0>(memb));
+            memb_lengths = m.mk_and(memb_lengths, len_node_to_z3_formula(aut_assignment.get_lengths(var)));
+        }
+
         while (true) {
             lbool result = dec_proc->compute_next_solution();
             if (result == l_true) {
-                expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
+                expr_ref lengths(m.mk_and(len_node_to_z3_formula(dec_proc->get_lengths().first), memb_lengths), m);
                 if (check_len_sat(lengths, check_len_sat_with_context) == l_true) {
                     if (sat_handling(lengths) == l_true) {
                         this->statistics.at("nielsen").num_finish++;

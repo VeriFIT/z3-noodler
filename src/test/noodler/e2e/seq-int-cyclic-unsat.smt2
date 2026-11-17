@@ -1,0 +1,10 @@
+; Generic sequences (Seq Int): cyclic (quadratic) equation, unsat (solved by Nielsen).
+(set-info :smt-lib-version 2.6)
+(set-info :status unsat)
+(declare-const x (Seq Int))
+(declare-const a Int)
+(declare-const b Int)
+(assert (= (seq.++ (seq.unit a) x) (seq.++ x (seq.unit b))))
+(assert (>= (seq.len x) 2))
+(assert (not (= a b)))
+(check-sat)
