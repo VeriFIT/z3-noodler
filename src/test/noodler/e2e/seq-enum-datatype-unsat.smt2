@@ -1,0 +1,10 @@
+; Generic sequences over an enumeration datatype: x of length 2 cannot avoid all 3 values.
+(set-info :smt-lib-version 2.6)
+(set-info :status unsat)
+(declare-datatypes ((Color 0)) (((red) (green) (blue))))
+(declare-const x (Seq Color))
+(assert (= (seq.len x) 2))
+(assert (not (seq.contains x (seq.unit red))))
+(assert (not (seq.contains x (seq.unit green))))
+(assert (not (seq.contains x (seq.unit blue))))
+(check-sat)

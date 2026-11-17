@@ -1,10 +1,8 @@
 ; https://github.com/VeriFIT/z3-noodler/issues/424
 ; A formula mixing plain String constraints with a generic (non-String)
-; sequence sort must still be solved correctly: since only one theory can
-; handle the whole "seq" family per context, the presence of (Seq Int) must
-; make the whole family (Strings included) fall back to Z3's built-in
-; sequence theory rather than leaving the String part to noodler and the
-; (Seq Int) part unhandled.
+; sequence sort. Since only one theory can handle the whole "seq" family per
+; context, Noodler handles both the String part and the (Seq Int) part
+; (generic sequences are solved by the stabilization procedure).
 (set-info :smt-lib-version 2.6)
 (set-info :status sat)
 (declare-const x String)

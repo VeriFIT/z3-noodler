@@ -57,7 +57,7 @@ namespace smt::noodler::util {
     void check_limit(ast_manager& m);
 
     /**
-     * Check whether an @p expression is a string variable.
+     * Check whether an @p expression is a string (or generic sequence) variable.
      *
      * Function checks only the top-level expression and is not recursive.
      * Regex variables do not count as string variables.
@@ -82,10 +82,13 @@ namespace smt::noodler::util {
      * @param m_util_s Seq util for AST
      * @param pred_replace Replacement of predicate and functions
      * @param[out] terms Vector of found BasicTerm (in right order).
+     * @param unit_symbol Function returning the symbol of an element term of a generic sequence (argument of seq.unit);
+     *  if empty, seq.unit is not supported.
      *
      * TODO: Test.
      */
-    void collect_terms(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::vector<BasicTerm>& terms);
+    void collect_terms(app* ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::vector<BasicTerm>& terms,
+                       const std::function<unsigned(expr*)>& unit_symbol = {});
 
     /**
      * Convert variable in @c expr form to @c BasicTerm.

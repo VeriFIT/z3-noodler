@@ -61,7 +61,7 @@ namespace smt::noodler {
                     if (is_uninterp_const(to_app(e)->get_arg(0))) {
                         arith_str_apps.push_back(e);
                     }
-                } else if (!m_util_s.is_string(e->get_sort()) && util::is_variable(e)) {
+                } else if (!m_util_s.is_seq(e->get_sort()) && util::is_variable(e)) {
                     vars.push_back(e);
                 }
             }

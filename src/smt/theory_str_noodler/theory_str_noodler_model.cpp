@@ -18,15 +18,26 @@ namespace smt::noodler {
         }
     }
 
-    /// @brief Class for model generation of string variables that are in decision procedure dec_proc
+    /// @brief Class for model generation of string (or generic sequence) variables that are in decision procedure dec_proc
     class theory_str_noodler::noodler_var_value_proc : public model_value_proc {
         // the variable whose model we want to generate
         BasicTerm str_var;
+        // sort of the variable (String or generic sequence)
+        sort* var_sort;
         // all variables whose arithmetic model we need (if they are string, we need their length) to generate mdoel for str_var
         std::vector<BasicTerm> needed_vars;
+        // for generic sequences: enodes of elements whose values are needed to construct the model (see SeqElementAbstraction)
+        std::vector<enode*> elem_deps;
         theory_str_noodler& th;
     public:
-        noodler_var_value_proc(BasicTerm str_var, theory_str_noodler& th) : str_var(str_var), needed_vars(th.dec_proc->get_len_vars_for_model(str_var)), th(th) {}
+        noodler_var_value_proc(BasicTerm str_var, sort* var_sort, theory_str_noodler& th) : str_var(str_var), var_sort(var_sort), needed_vars(th.dec_proc->get_len_vars_for_model(str_var)), th(th) {
+            if (!th.m_util_s.is_string(var_sort)) {
+                if (!th.seq_abstraction) {
+                    util::throw_error("missing abstraction of elements for a model of a generic sequence");
+                }
+                th.seq_abstraction->get_model_dependencies(var_sort, elem_deps);
+            }
+        }
 
         void get_dependencies(buffer<model_value_dependency> & result) override {
             for (const BasicTerm& var : needed_vars) { // we assume that all needed_vars are either string or int variables
@@ -34,12 +45,15 @@ namespace smt::noodler {
                 expr_ref arith_var = util::basic_term_to_length_expr(var, th.var_name, th.m, th.m_util_s, th.m_util_a);
                 result.push_back(model_value_dependency(th.ctx.get_enode(arith_var)));
             }
+            for (enode* elem : elem_deps) {
+                result.push_back(model_value_dependency(elem));
+            }
         }
 
         app * mk_value(model_generator & m, expr_ref_vector const & values) override {
             // we create a function that takes some var from needed_vars and returns their model
             std::map<BasicTerm,rational> var_to_arith_model;
-            SASSERT(values.size() == needed_vars.size());
+            SASSERT(values.size() == needed_vars.size() + elem_deps.size());
             for (unsigned i = 0; i < needed_vars.size(); ++i) {
                 bool is_int;
                 rational val(0);
@@ -51,7 +65,15 @@ namespace smt::noodler {
                 }
             }
             zstring s = th.dec_proc->get_model(str_var, var_to_arith_model);
-            expr* v = th.m_util_s.str.mk_string(s);
+            expr* v;
+            if (th.m_util_s.is_string(var_sort)) {
+                v = th.m_util_s.str.mk_string(s);
+            } else {
+                // generic sequence, symbols represent elements
+                expr_ref seq_value = th.seq_abstraction->mk_seq_value(var_sort, s, values.data() + needed_vars.size(), elem_deps.size(), m);
+                th.m_model_values.push_back(seq_value);
+                v = seq_value;
+            }
             if (th.m_seq_factory) {
                 th.m_seq_factory->register_value(v);
             }
@@ -66,8 +88,9 @@ namespace smt::noodler {
         bool length_relevant = false; // do we actually need the length of str_var?
         seq_util& m_util_s;
         arith_util& m_util_a;
+        expr_ref m_value; // keeps the constructed value of a generic sequence alive
     public:
-        str_var_value_proc(expr* str_var, context& ctx, seq_util& m_util_s, arith_util& m_util_a) : str_var(str_var), m_util_s(m_util_s), m_util_a(m_util_a) {
+        str_var_value_proc(expr* str_var, context& ctx, seq_util& m_util_s, arith_util& m_util_a) : str_var(str_var), m_util_s(m_util_s), m_util_a(m_util_a), m_value(m_util_s.get_manager()) {
             if (ctx.e_internalized(m_util_s.str.mk_length(str_var))) {
                 str_var_length_enode = ctx.get_enode(m_util_s.str.mk_length(str_var));
                 length_relevant = ctx.is_relevant(str_var_length_enode);
@@ -82,6 +105,35 @@ namespace smt::noodler {
         }
     
         app * mk_value(model_generator & m, expr_ref_vector const & values) override {
+            sort* var_sort = str_var->get_sort();
+            if (!m_util_s.is_string(var_sort)) {
+                // generic sequence, its value is not important (only its length)
+                proto_model& mdl = m.get_model();
+                if (!length_relevant) {
+                    value_factory* vf = mdl.get_factory(m_util_s.get_family_id());
+                    if (auto* f = dynamic_cast<seq_factory*>(vf)) {
+                        if (expr* v = f->get_fresh_value(var_sort)) {
+                            return to_app(v);
+                        }
+                    }
+                    return m_util_s.str.mk_empty(var_sort);
+                }
+                bool is_int;
+                rational val(0);
+                SASSERT(values.size() == 1);
+                VERIFY(m_util_a.is_numeral(values[0], val, is_int) && is_int);
+                check_model_string_length(val, (std::stringstream() << mk_pp(str_var, m_util_s.get_manager())).str());
+                sort* elem_sort = nullptr;
+                VERIFY(m_util_s.is_seq(var_sort, elem_sort));
+                ptr_vector<expr> elems;
+                expr* some_value = mdl.get_some_value(elem_sort);
+                for (unsigned i = 0; i < val.get_unsigned(); ++i) {
+                    elems.push_back(some_value);
+                }
+                m_value = SeqElementAbstraction::mk_seq_from_elems(m_util_s.get_manager(), m_util_s, var_sort, elems);
+                mdl.register_value(m_value);
+                return to_app(m_value.get());
+            }
             if (!length_relevant) {
                 // because the length is not relevant, we can return any string; let the
                 // standard sequence factory pick a fresh value when available, to avoid
@@ -136,9 +188,11 @@ namespace smt::noodler {
     /// @brief Class for model generation of concatenation
     class theory_str_noodler::concat_var_value_proc : public model_value_proc {
         seq_util& m_util_s;
+        sort* m_concat_sort;
         svector<model_value_dependency> m_dependencies;
+        expr_ref m_value; // keeps the constructed value of a generic sequence alive
     public:
-        concat_var_value_proc(expr* str_concat, ast_manager& m, context& ctx, seq_util& m_util_s) : m_util_s(m_util_s) {
+        concat_var_value_proc(expr* str_concat, ast_manager& m, context& ctx, seq_util& m_util_s) : m_util_s(m_util_s), m_concat_sort(str_concat->get_sort()), m_value(m) {
             // for concatenation, we just recursively get the models for arguments and then concatenate them
             expr_ref_vector concats(m);
             enode* str_concat_enode = ctx.get_enode(str_concat);
@@ -162,6 +216,16 @@ namespace smt::noodler {
         }
     
         app * mk_value(model_generator & m, expr_ref_vector const & values) override {
+            if (!m_util_s.is_string(m_concat_sort)) {
+                // generic sequence, concatenate the elements of the models of arguments
+                ptr_vector<expr> elems;
+                for (auto value : values) {
+                    VERIFY(SeqElementAbstraction::get_elems_of_value(m_util_s, value, elems));
+                }
+                m_value = SeqElementAbstraction::mk_seq_from_elems(m_util_s.get_manager(), m_util_s, m_concat_sort, elems);
+                m.get_model().register_value(m_value);
+                return to_app(m_value.get());
+            }
             // concatenate the models of arguments
             zstring res;
             for (auto value : values) {
@@ -180,6 +244,35 @@ namespace smt::noodler {
     };
 
 
+    /// @brief Class for model generation of seq.unit of generic sequences (the value is given by the value of the element)
+    class theory_str_noodler::seq_unit_value_proc : public model_value_proc {
+        seq_util& m_util_s;
+        sort* m_unit_sort;
+        enode* m_elem;
+        expr_ref m_value; // keeps the constructed value alive
+    public:
+        seq_unit_value_proc(app* unit, context& ctx, seq_util& m_util_s) : m_util_s(m_util_s), m_unit_sort(unit->get_sort()), m_value(m_util_s.get_manager()) {
+            expr* elem = unit->get_arg(0);
+            if (!ctx.e_internalized(elem)) {
+                ctx.internalize(elem, false);
+            }
+            m_elem = ctx.get_enode(elem);
+        }
+
+        void get_dependencies(buffer<model_value_dependency> & result) override {
+            result.push_back(model_value_dependency(m_elem));
+        }
+
+        app * mk_value(model_generator & m, expr_ref_vector const & values) override {
+            SASSERT(values.size() == 1);
+            ptr_vector<expr> elems;
+            elems.push_back(values[0]);
+            m_value = SeqElementAbstraction::mk_seq_from_elems(m_util_s.get_manager(), m_util_s, m_unit_sort, elems);
+            m.get_model().register_value(m_value);
+            return to_app(m_value.get());
+        }
+    };
+
     bool theory_str_noodler::concat_has_arg_in_own_class(app* str_concat) const {
         enode* str_concat_root = ctx.get_enode(str_concat)->get_root();
         // the same flattening as in concat_var_value_proc
@@ -197,7 +290,7 @@ namespace smt::noodler {
         BasicTerm var = util::get_variable_basic_term(str_var);
         if (relevant_vars.contains(var)) {
             // for relevant (string) var, we get the model from the decision procedure that returned sat
-            return alloc(noodler_var_value_proc, var, *this);
+            return alloc(noodler_var_value_proc, var, str_var->get_sort(), *this);
         } else {
             // for non-relevant, we cannot get them from the decision procedure, but because they are not relevant, we can return anything (restricted by length)
             return alloc(str_var_value_proc, str_var, ctx, m_util_s, m_util_a);
@@ -255,6 +348,12 @@ namespace smt::noodler {
             return alloc(expr_wrapper_proc, tgt);
         } else if (util::is_str_variable(tgt, m_util_s)) {
             return model_of_string_var(tgt);
+        } else if (m_util_s.str.is_empty(tgt)) {
+            // empty generic sequence
+            return alloc(expr_wrapper_proc, tgt);
+        } else if (m_util_s.str.is_unit(tgt) && !m_util_s.is_string(tgt->get_sort())) {
+            // element of a generic sequence
+            return alloc(seq_unit_value_proc, tgt, ctx, m_util_s);
         } else if (m_util_s.str.is_concat(tgt)) {
             // check if tgt is not in a class of enodes that contain some string literal (see PR #174)
             enode* tgt_enode = ctx.get_enode(tgt);
@@ -314,6 +413,9 @@ namespace smt::noodler {
         if (!m_seq_factory) {
             m_seq_factory = alloc(seq_factory, m, m_util_s.get_family_id(), mg.get_model());
             mg.register_factory(m_seq_factory);
+        }
+        if (seq_abstraction) {
+            seq_abstraction->reset_model();
         }
     }
 

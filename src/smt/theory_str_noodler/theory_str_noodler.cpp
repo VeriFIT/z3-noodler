@@ -81,6 +81,7 @@ namespace smt::noodler {
 
     bool theory_str_noodler::internalize_term(app *const term) {
         context &ctx = get_context();
+        STRACE(str, tout << "internalize_term: " << mk_pp(term, m) << " (internalized: " << ctx.e_internalized(term) << ")" << std::endl;);
 
         if (m_util_s.str.is_in_re(term)) {
             if (!ctx.e_internalized(term->get_arg(0))) {
@@ -185,7 +186,7 @@ namespace smt::noodler {
                 continue;
             }
             visited.insert(e);
-            if (m.is_eq(e) && m_util_s.is_string(to_app(e)->get_arg(0)->get_sort())) {
+            if (m.is_eq(e) && m_util_s.is_seq(to_app(e)->get_arg(0)->get_sort())) {
                 ctx.mark_as_relevant(m.mk_not(e));
                 continue;
             }
@@ -265,7 +266,9 @@ namespace smt::noodler {
             m_util_s.str.is_replace_re(ex) ||
             m_util_s.str.is_update(ex) ||
             m_util_s.str.is_trim(ex) ||
-            m_util_s.str.is_delete(ex)
+            m_util_s.str.is_delete(ex) ||
+            m_util_s.str.is_nth_i(ex) ||
+            is_app_of(ex, m_util_s.get_family_id(), OP_SEQ_NTH)
         )) {
             ctx.mark_as_relevant(ex);
         }
@@ -277,9 +280,9 @@ namespace smt::noodler {
         propagated_string_theory.insert(ex);
 
         sort *expr_sort = ex->get_sort();
-        sort *str_sort = m_util_s.str.mk_string_sort();
 
-        if (expr_sort == str_sort) {
+        // string or generic sequence term
+        if (m_util_s.is_seq(expr_sort)) {
             enode *n = ctx.get_enode(ex);
             propagate_basic_string_axioms(n, var_lengths);
             if (is_app(ex) && m_util_s.str.is_concat(to_app(ex))) {
@@ -349,10 +352,9 @@ namespace smt::noodler {
 
         {
             sort *a_sort = str->get_expr()->get_sort();
-            sort *str_sort = m_util_s.str.mk_string_sort();
-            if (a_sort != str_sort) {
+            if (!m_util_s.is_seq(a_sort)) {
                 STRACE(str,
-                       tout << "WARNING: not setting up string axioms on non-string term " << mk_pp(str->get_expr(), m)
+                       tout << "WARNING: not setting up string axioms on non-sequence term " << mk_pp(str->get_expr(), m)
                             << std::endl;);
                 return;
             }
@@ -378,6 +380,13 @@ namespace smt::noodler {
             unsigned int l = strconst.length();
             expr_ref len(m_util_a.mk_numeral(rational(l), true), m);
 
+            expr_ref eq(mk_eq_atom(len_str, len), m);
+            add_axiom(eq);
+            return;
+        } else if (m_util_s.str.is_unit(a_str) || m_util_s.str.is_empty(a_str)) {
+            // len(seq.unit e) = 1 and len(seq.empty) = 0 for generic sequences (similarly as for string literals)
+            expr_ref len_str(m_util_s.str.mk_length(a_str), m);
+            expr_ref len(m_util_a.mk_int(m_util_s.str.is_unit(a_str) ? 1 : 0), m);
             expr_ref eq(mk_eq_atom(len_str, len), m);
             add_axiom(eq);
             return;
@@ -509,6 +518,8 @@ namespace smt::noodler {
             handle_index_of(n);
         } else if (m_util_s.str.is_replace(n)) { // str.replace
             handle_replace(n);
+        } else if((m_util_s.str.is_replace_all(n) || m_util_s.str.is_replace_re(n) || m_util_s.str.is_replace_re_all(n)) && !m_util_s.is_string(n->get_sort())) {
+            util::throw_error("unsupported sequence operation (seq.replace_all, seq.replace_re, seq.replace_re_all over generic sequences)");
         } else if(m_util_s.str.is_replace_all(n)) { // str.replace_all
             handle_replace_all(n);
         } else if(m_util_s.str.is_replace_re(n)) { // str.replace_re
@@ -534,6 +545,18 @@ namespace smt::noodler {
             handle_conversion(n);
         } else if (m_util_s.str.is_in_re_from_ecma2020(n)) { // str.in_re with re.from_ecma2020
             handle_ecma_re(n);
+        } else if (m_util_s.str.is_nth_i(n) || m_util_s.str.is_nth_u(n) || is_app_of(n, m_util_s.get_family_id(), OP_SEQ_NTH)) { // seq.nth
+            // seq.nth_u is seq.nth outside of the bounds of the sequence, it is an uninterpreted element term
+            if (!m_util_s.str.is_nth_u(n)) {
+                handle_nth(n);
+            }
+        } else if (
+            m_util_s.str.is_map(n) ||
+            m_util_s.str.is_mapi(n) ||
+            m_util_s.str.is_foldl(n) ||
+            m_util_s.str.is_foldli(n)
+        ) {
+            util::throw_error("unsupported sequence operation (seq.map, seq.mapi, seq.foldl, seq.foldli)");
         } else if (util::is_str_variable(n, m_util_s)) {
             BasicTerm var_for_n = util::get_variable_basic_term(n);
             SASSERT(!var_name.contains(var_for_n) || var_name.at(var_for_n) == n);
@@ -546,16 +569,22 @@ namespace smt::noodler {
             m_util_s.rat_rel.is_to_rat(n) || // str.to_rat
             m_util_s.str.is_in_rat(n) || // str.in_rat
             m_util_s.is_ratrel(n) || // one of rat. command or possibly RatRel variable
-            m_util_s.str.is_string(n) // string literal
+            m_util_s.str.is_string(n) || // string literal
+            m_util_s.str.is_unit(n) || // seq.unit (handled in final_check_eh, see SeqElementAbstraction)
+            m_util_s.str.is_empty(n) // seq.empty
         ) {
             // we do not need to handle these, concatenation is handled in the decision procedure (it is a basic term)
             // and everything else will be handled during final_check_eh
         } else {
             // if we got here it means that we got some uninterpreted string function (i.e. probably user declared), we just replace it with a fresh string variable
             expr* e = n;
+            if (!m_util_s.is_seq(e)) {
+                // not a string/sequence term (e.g., an element term), nothing to do
+                return;
+            }
             if (!axiomatized_persist_terms.contains(e)) {
                 axiomatized_persist_terms.insert(e);
-                expr_ref fresh = mk_str_var_fresh("uninter");
+                expr_ref fresh = mk_str_var_fresh("uninter", e->get_sort());
                 predicate_replace.insert(e, fresh.get());
                 add_axiom({mk_eq(fresh, e, false)});
             }
@@ -875,9 +904,10 @@ namespace smt::noodler {
 
         expr *s = nullptr, *i = nullptr;
         VERIFY(m_util_s.str.is_at(e, s, i));
+        sort* seq_sort = s->get_sort(); // sort of the sequence (String or generic sequence)
 
         expr_ref v = get_fresh_var_for_string_function("at", e);
-        expr_ref v_in_allchar(m_util_s.re.mk_in_re(v, m_util_s.re.mk_full_char(nullptr)), m);
+        expr_ref v_in_allchar(m_util_s.re.mk_in_re(v, mk_full_char_re(seq_sort)), m);
         expr_ref zero(m_util_a.mk_int(0), m);
         expr_ref one(m_util_a.mk_int(1), m);
         literal i_ge_0 = mk_literal(m_util_a.mk_ge(i, zero)); // i >= 0
@@ -908,7 +938,7 @@ namespace smt::noodler {
             int val = num.get_int32();
 
             // y = s[0].s[1]. ... .s[val].at_right
-            expr_ref y = mk_str_var_fresh("at_right");
+            expr_ref y = mk_str_var_fresh("at_right", seq_sort);
             for(int j = val; j >= 0; j--) {
                 // note that because we add s[j], handle_char_at will be called for each such j creating similar axioms for them
                 y = m_util_s.str.mk_concat(m_util_s.str.mk_at(s, m_util_a.mk_int(j)), y);
@@ -945,7 +975,7 @@ namespace smt::noodler {
             int val = num.get_int32();
 
             // y = at_left.s[val+|s|)].s[val+1+|s|]. ... .s[-1+|s|]
-            expr_ref y = mk_str_var_fresh("at_left");
+            expr_ref y = mk_str_var_fresh("at_left", seq_sort);
             for(int j = val; j < 0; j++) {
                 // note that because we add s[j+|s|], handle_char_at will be called for each such j creating similar axioms for them
                 y = m_util_s.str.mk_concat(y, m_util_s.str.mk_at(s, m_util_a.mk_add(m_util_a.mk_int(j), m_util_s.str.mk_length(s))));
@@ -968,8 +998,8 @@ namespace smt::noodler {
         // GENERAL CASE
 
         // creating concatenation xvy
-        expr_ref x = mk_str_var_fresh("at_left");
-        expr_ref y = mk_str_var_fresh("at_right");
+        expr_ref x = mk_str_var_fresh("at_left", seq_sort);
+        expr_ref y = mk_str_var_fresh("at_right", seq_sort);
         expr_ref xvy(m_util_s.str.mk_concat(x, v, y), m);
         string_theory_propagation(xvy);
 
@@ -987,6 +1017,59 @@ namespace smt::noodler {
         add_axiom({i_ge_0, mk_eq(v, emp, false)});
         // i >= |s| -> v = eps
         add_axiom({~i_ge_len_s, mk_eq(v, emp, false)});
+
+        // mark s and x as length expressions as |s| and |x| are used in the axioms
+        mark_expression_as_length(s);
+        mark_expression_as_length(x);
+    }
+
+    /**
+     * @brief Handle seq.nth(s,i) (both the interpreted seq.nth_i and the API version seq.nth).
+     *
+     * For seq.nth_i(s,i) = e (e is an element term), we add the following theory axioms:
+     * 0 <= i < |s| -> s = x.(seq.unit e).y
+     * 0 <= i < |s| -> |x| = i
+     * Outside of the bounds, the value of seq.nth is unconstrained (it is the uninterpreted seq.nth_u).
+     *
+     * For seq.nth(s,i) (if it was not rewritten by the rewriter), we add
+     * 0 <= i < |s| -> seq.nth(s,i) = seq.nth_i(s,i)
+     * !(0 <= i < |s|) -> seq.nth(s,i) = seq.nth_u(s,i)
+     *
+     * @param e seq.nth_i(s, i) or seq.nth(s, i)
+     */
+    void theory_str_noodler::handle_nth(expr *e) {
+        if (axiomatized_persist_terms.contains(e)) { return; }
+        axiomatized_persist_terms.insert(e);
+
+        STRACE(str, tout << "handle nth: " << mk_pp(e, m) << '\n';);
+
+        SASSERT(is_app(e) && to_app(e)->get_num_args() == 2);
+        expr *s = to_app(e)->get_arg(0), *i = to_app(e)->get_arg(1);
+        sort* seq_sort = s->get_sort();
+
+        expr_ref zero(m_util_a.mk_int(0), m);
+        literal i_ge_0 = mk_literal(m_util_a.mk_ge(i, zero)); // i >= 0
+        literal i_ge_len_s = mk_literal(m_util_a.mk_ge(mk_sub(i, m_util_s.str.mk_length(s)), zero)); // i >= |s|
+
+        if (!m_util_s.str.is_nth_i(e)) {
+            // seq.nth(s,i): split into seq.nth_i and seq.nth_u
+            expr_ref nth_i(m_util_s.str.mk_nth_i(s, i), m);
+            expr_ref nth_u(m_util_s.str.mk_nth_u(s, i), m);
+            add_axiom({~i_ge_0, i_ge_len_s, mk_eq(e, nth_i, false)});
+            add_axiom({i_ge_0, mk_eq(e, nth_u, false)});
+            add_axiom({~i_ge_len_s, mk_eq(e, nth_u, false)});
+            return;
+        }
+
+        expr_ref x = mk_str_var_fresh("nth_left", seq_sort);
+        expr_ref y = mk_str_var_fresh("nth_right", seq_sort);
+        expr_ref xuy(m_util_s.str.mk_concat(x, m_util_s.str.mk_unit(e), y), m);
+        string_theory_propagation(xuy);
+
+        // 0 <= i < |s| -> s = x.(seq.unit e).y
+        add_axiom({~i_ge_0, i_ge_len_s, mk_eq(s, xuy, false)});
+        // 0 <= i < |s| -> |x| = i
+        add_axiom({~i_ge_0, i_ge_len_s, mk_eq(i, m_util_s.str.mk_length(x), false)});
 
         // mark s and x as length expressions as |s| and |x| are used in the axioms
         mark_expression_as_length(s);
@@ -1026,13 +1109,14 @@ namespace smt::noodler {
 
         expr *s = nullptr, *i = nullptr, *l = nullptr;
         VERIFY(m_util_s.str.is_extract(e, s, i, l));
+        sort* seq_sort = s->get_sort(); // sort of the sequence (String or generic sequence)
 
         expr_ref v = get_fresh_var_for_string_function("substr", e);
 
         expr_ref zero(m_util_a.mk_int(0), m);
         expr_ref one(m_util_a.mk_int(1), m);
-        expr_ref eps(m_util_s.str.mk_string(""), m);
-        expr_ref re_allchar(m_util_s.re.mk_full_char(nullptr), m);
+        expr_ref eps(m_util_s.str.mk_empty(seq_sort), m);
+        expr_ref re_allchar(mk_full_char_re(seq_sort), m);
 
         expr_ref lv(m_util_s.str.mk_length(v), m);
         expr_ref ls(m_util_s.str.mk_length(s), m);
@@ -1098,8 +1182,8 @@ namespace smt::noodler {
         //   s != eps -> |y| = 1 (not completely neccessary, helps z3)
         //   s = eps -> v = eps
         if(rational num; m_util_a.is_zero(i) && expr_cases::is_num_plus_len(l, s, m, m_util_s, m_util_a, num) && num.is_minus_one()) {
-            expr_ref y = mk_str_var_fresh("post_substr");
-            expr_ref y_in_allchar(m_util_s.re.mk_in_re(y, m_util_s.re.mk_full_char(nullptr)), m);
+            expr_ref y = mk_str_var_fresh("post_substr", seq_sort);
+            expr_ref y_in_allchar(m_util_s.re.mk_in_re(y, mk_full_char_re(seq_sort)), m);
             expr_ref ly(m_util_s.str.mk_length(y), m);
             expr_ref vy(m_util_s.str.mk_concat(v, y), m);
             string_theory_propagation(vy);
@@ -1141,7 +1225,7 @@ namespace smt::noodler {
             // if i=0 there is nothing before v in the concatenation, so x=eps
             x = eps;
         } else {
-            x = mk_str_var_fresh("pre_substr");
+            x = mk_str_var_fresh("pre_substr", seq_sort);
 
             // stronger axioms: if i = t+n for some (positive) numeral n and expression t, then, if t>=0, we can split x to two parts x = x1.x2 where |x1|=t and |x2|=n
             //   t>=0 -> x2 in re.allchar^n
@@ -1152,7 +1236,7 @@ namespace smt::noodler {
                     unsigned n_value_unsigned = n_value.get_unsigned();
 
                     expr_ref x1 = x;
-                    expr_ref x2 = mk_str_var_fresh("in_substr");
+                    expr_ref x2 = mk_str_var_fresh("in_substr", seq_sort);
                     x = m_util_s.str.mk_concat(x1, x2);
 
                     // x2 in re.allchar^n
@@ -1203,9 +1287,9 @@ namespace smt::noodler {
             // If i + l >= |s|, we can set y to eps and we do not have to put v in length vars
             // as s=xv and the length of x is already handled by previous axioms (so v will be
             // automatically the rest of s).
-            y = expr_ref(m_util_s.str.mk_string(""), m);
+            y = expr_ref(m_util_s.str.mk_empty(seq_sort), m);
         } else {
-            y = mk_str_var_fresh("post_substr");
+            y = mk_str_var_fresh("post_substr", seq_sort);
             // If l is some (reasonably small) numeral, we can put
             //   - v in re.allchar^l, for the case 0 <= l <= |s|-i,
             //   - y=eps, for the case |s|-i < l.
@@ -1262,10 +1346,11 @@ namespace smt::noodler {
 
         expr* a = nullptr, *s = nullptr, *t = nullptr;
         VERIFY(m_util_s.str.is_replace(r, a, s, t));
+        sort* seq_sort = a->get_sort(); // sort of the sequence (String or generic sequence)
 
         expr_ref v = get_fresh_var_for_string_function("replace", r);
 
-        expr_ref eps(m_util_s.str.mk_string(""), m);
+        expr_ref eps(m_util_s.str.mk_empty(seq_sort), m);
         literal a_emp = mk_eq_empty(a);
         literal s_emp = mk_eq_empty(s);
 
@@ -1301,7 +1386,7 @@ namespace smt::noodler {
             // (str.subtr a 0 |a|-1) which is basically a[0:-1]
             expr_ref substr(m_util_s.str.mk_substr(a, m_util_a.mk_int(0), len_a_m1), m);
             // s in allchar
-            literal s_in_allchar = mk_literal(m_util_s.re.mk_in_re(s, m_util_s.re.mk_full_char(nullptr)));
+            literal s_in_allchar = mk_literal(m_util_s.re.mk_in_re(s, mk_full_char_re(seq_sort)));
 
             // s = eps -> v = t.a
             add_axiom({~s_emp, mk_eq(v, mk_concat(t, a), false)});
@@ -1369,8 +1454,8 @@ namespace smt::noodler {
             add_axiom({~cnt, mk_eq(m_util_s.str.mk_length(v), m_util_a.mk_sub(m_util_s.str.mk_length(a), m_util_a.mk_int(str_a.length() - str_b.length())), false)});
         }
 
-        expr_ref x = mk_str_var_fresh("replace_left");
-        expr_ref y = mk_str_var_fresh("replace_right");
+        expr_ref x = mk_str_var_fresh("replace_left", seq_sort);
+        expr_ref y = mk_str_var_fresh("replace_right", seq_sort);
         expr_ref xty = mk_concat(x, mk_concat(t, y));
         expr_ref xsy = mk_concat(x, mk_concat(s, y));
 
@@ -1419,6 +1504,7 @@ namespace smt::noodler {
 
         expr *s = nullptr, *t = nullptr, *offset = nullptr;
         VERIFY(m_util_s.str.is_index(i, t, s) || m_util_s.str.is_index(i, t, s, offset));
+        sort* seq_sort = t->get_sort(); // sort of the sequence (String or generic sequence)
 
         expr_ref minus_one(m_util_a.mk_int(-1), m);
         expr_ref zero(m_util_a.mk_int(0), m);
@@ -1435,8 +1521,8 @@ namespace smt::noodler {
         add_axiom({~t_eq_empty, s_eq_empty, i_eq_m1});
 
         if (!offset || m_util_a.is_zero(offset)) {
-            expr_ref x = mk_str_var_fresh("index_left");
-            expr_ref y = mk_str_var_fresh("index_right");
+            expr_ref x = mk_str_var_fresh("index_left", seq_sort);
+            expr_ref y = mk_str_var_fresh("index_right", seq_sort);
             expr_ref xsy(m_util_s.str.mk_concat(x, s, y), m);
             string_theory_propagation(xsy);
 
@@ -1476,8 +1562,8 @@ namespace smt::noodler {
             // offset >= |t| && offset <= |t| && s = eps -> indexof = offset
             add_axiom({~offset_ge_len, ~offset_le_len, ~s_eq_empty, i_eq_offset});
 
-            expr_ref x = mk_str_var_fresh("index_left_off");
-            expr_ref y = mk_str_var_fresh("index_right_off");
+            expr_ref x = mk_str_var_fresh("index_left_off", seq_sort);
+            expr_ref y = mk_str_var_fresh("index_right_off", seq_sort);
             expr_ref xy(m_util_s.str.mk_concat(x, y), m);
             string_theory_propagation(xy);
 
@@ -1503,6 +1589,7 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::tightest_prefix(expr* s, expr* x, std::vector<literal> neg_assumptions) {
+        sort* seq_sort = s->get_sort(); // sort of the sequence (String or generic sequence)
         literal x_eq_emp = mk_eq_empty(x);
 
         zstring str;
@@ -1527,14 +1614,14 @@ namespace smt::noodler {
             neg_assumptions.push_back(s_eq_emp);
 
             // not(s = eps) -> neg_assumptions || s = s1.s2
-            expr_ref s1 = mk_str_var_fresh("tightest_prefix_first");
-            expr_ref s2 = mk_str_var_fresh("tightest_prefix_last");
+            expr_ref s1 = mk_str_var_fresh("tightest_prefix_first", seq_sort);
+            expr_ref s2 = mk_str_var_fresh("tightest_prefix_last", seq_sort);
             expr_ref s1s2 = mk_concat(s1, s2);
             neg_assumptions.push_back(mk_literal(mk_eq_atom(s, s1s2)));
             add_axiom(neg_assumptions);
 
             // not(s = eps) -> neg_assumptions || s2 in re.allchar (is a single character)
-            expr_ref re(m_util_s.re.mk_in_re(s2, m_util_s.re.mk_full_char(nullptr)), m);
+            expr_ref re(m_util_s.re.mk_in_re(s2, mk_full_char_re(seq_sort)), m);
             neg_assumptions.back() = mk_literal(re);
             add_axiom(neg_assumptions);
 
@@ -1853,6 +1940,7 @@ namespace smt::noodler {
 
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_prefix(e, x, y));
+        sort* seq_sort = x->get_sort(); // sort of the sequence (String or generic sequence)
 
         expr * sub_str = nullptr, *sub_ind = nullptr, *sub_len = nullptr;
         rational val;
@@ -1864,7 +1952,7 @@ namespace smt::noodler {
             return;
         }
 
-        expr_ref fresh = mk_str_var_fresh("prefix");
+        expr_ref fresh = mk_str_var_fresh("prefix", seq_sort);
         expr_ref xs(m_util_s.str.mk_concat(x, fresh), m);
         // normalize the concatenation in the same way as mk_eq does for the equation below; otherwise both the original
         // and the normalized term become terms of the context and z3 can assign different values to equations with them
@@ -1893,6 +1981,7 @@ namespace smt::noodler {
 
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_prefix(e, x, y));
+        sort* seq_sort = x->get_sort(); // sort of the sequence (String or generic sequence)
 
         expr * sub_str = nullptr, *sub_ind = nullptr, *sub_len = nullptr;
         rational val;
@@ -1908,7 +1997,17 @@ namespace smt::noodler {
         if(m_util_s.str.is_string(x, str)) {
             expr_ref re(m_util_s.re.mk_in_re(y, m_util_s.re.mk_concat(
                 m_util_s.re.mk_to_re(m_util_s.str.mk_string(str)),
-                m_util_s.re.mk_star(m_util_s.re.mk_full_char(nullptr))
+                m_util_s.re.mk_star(mk_full_char_re(seq_sort))
+            ) ), m);
+            literal lit_e = mk_literal(e);
+            add_axiom({lit_e, ~mk_literal(re)});
+            return;
+        }
+        // handle the case not(prefix u y) where u is a ground generic sequence (e.g., (seq.unit 1))
+        if(is_ground_generic_seq(x)) {
+            expr_ref re(m_util_s.re.mk_in_re(y, m_util_s.re.mk_concat(
+                m_util_s.re.mk_to_re(x),
+                m_util_s.re.mk_star(mk_full_char_re(seq_sort))
             ) ), m);
             literal lit_e = mk_literal(e);
             add_axiom({lit_e, ~mk_literal(re)});
@@ -1927,17 +2026,17 @@ namespace smt::noodler {
         // not(prefix x y) -> x != eps
         if(m_util_s.str.is_at(y)) {
             literal lit_e = mk_literal(e);
-            expr_ref eps(m_util_s.str.mk_string(""), m);
+            expr_ref eps(m_util_s.str.mk_empty(seq_sort), m);
             add_axiom({ lit_e, mk_literal(m.mk_not(mk_eq_atom(x,y))) });
             add_axiom({ lit_e, mk_literal(m.mk_not(mk_eq_atom(x,eps))) });
             return;
         }
 
-        expr_ref p = mk_str_var_fresh("nprefix_left");
-        expr_ref mx = mk_str_var_fresh("nprefix_midx");
-        expr_ref my = mk_str_var_fresh("nprefix_midy");
-        expr_ref qx = mk_str_var_fresh("nprefix_rightx");
-        expr_ref qy = mk_str_var_fresh("nprefix_righty");
+        expr_ref p = mk_str_var_fresh("nprefix_left", seq_sort);
+        expr_ref mx = mk_str_var_fresh("nprefix_midx", seq_sort);
+        expr_ref my = mk_str_var_fresh("nprefix_midy", seq_sort);
+        expr_ref qx = mk_str_var_fresh("nprefix_rightx", seq_sort);
+        expr_ref qy = mk_str_var_fresh("nprefix_righty", seq_sort);
 
         expr_ref pmx(m_util_s.str.mk_concat(p, mx), m);
         string_theory_propagation(pmx);
@@ -1962,8 +2061,8 @@ namespace smt::noodler {
         literal y_eq_pmq = mk_eq(y,pmyqy,false);
         literal eq_mx_my = mk_literal(m.mk_not(ctx.mk_eq_atom(mx,my)));
 
-        expr_ref rex(m_util_s.re.mk_in_re(mx, m_util_s.re.mk_full_char(nullptr)), m);
-        expr_ref rey(m_util_s.re.mk_in_re(my, m_util_s.re.mk_full_char(nullptr)), m);
+        expr_ref rex(m_util_s.re.mk_in_re(mx, mk_full_char_re(seq_sort)), m);
+        expr_ref rey(m_util_s.re.mk_in_re(my, mk_full_char_re(seq_sort)), m);
 
         literal lit_e = mk_literal(e);
         literal len_y_gt_len_x = mk_literal(m.mk_not(len_x_gt_len_y));
@@ -2000,8 +2099,9 @@ namespace smt::noodler {
 
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_suffix(e, x, y));
+        sort* seq_sort = x->get_sort(); // sort of the sequence (String or generic sequence)
 
-        expr_ref fresh = mk_str_var_fresh("suffix");
+        expr_ref fresh = mk_str_var_fresh("suffix", seq_sort);
         expr_ref px(m_util_s.str.mk_concat(fresh, x), m);
         // normalize the concatenation (see handle_prefix)
         m_rewrite(px);
@@ -2029,13 +2129,24 @@ namespace smt::noodler {
 
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_suffix(e, x, y));
+        sort* seq_sort = x->get_sort(); // sort of the sequence (String or generic sequence)
 
         zstring str;
         // handle the case not(suffix "ABC" y)
         if(m_util_s.str.is_string(x, str)) {
             expr_ref re(m_util_s.re.mk_in_re(y, m_util_s.re.mk_concat(
-                m_util_s.re.mk_star(m_util_s.re.mk_full_char(nullptr)),
+                m_util_s.re.mk_star(mk_full_char_re(seq_sort)),
                 m_util_s.re.mk_to_re(m_util_s.str.mk_string(str))
+            ) ), m);
+            literal lit_e = mk_literal(e);
+            add_axiom({lit_e, ~mk_literal(re)});
+            return;
+        }
+        // handle the case not(suffix u y) where u is a ground generic sequence (e.g., (seq.unit 1))
+        if(is_ground_generic_seq(x)) {
+            expr_ref re(m_util_s.re.mk_in_re(y, m_util_s.re.mk_concat(
+                m_util_s.re.mk_star(mk_full_char_re(seq_sort)),
+                m_util_s.re.mk_to_re(x)
             ) ), m);
             literal lit_e = mk_literal(e);
             add_axiom({lit_e, ~mk_literal(re)});
@@ -2051,11 +2162,11 @@ namespace smt::noodler {
             return;
         }
 
-        expr_ref q = mk_str_var_fresh("nsuffix_right");
-        expr_ref mx = mk_str_var_fresh("nsuffix_midx");
-        expr_ref my = mk_str_var_fresh("nsuffix_midy");
-        expr_ref px = mk_str_var_fresh("nsuffix_leftx");
-        expr_ref py = mk_str_var_fresh("nsuffix_lefty");
+        expr_ref q = mk_str_var_fresh("nsuffix_right", seq_sort);
+        expr_ref mx = mk_str_var_fresh("nsuffix_midx", seq_sort);
+        expr_ref my = mk_str_var_fresh("nsuffix_midy", seq_sort);
+        expr_ref px = mk_str_var_fresh("nsuffix_leftx", seq_sort);
+        expr_ref py = mk_str_var_fresh("nsuffix_lefty", seq_sort);
 
         expr_ref len_x_gt_len_y{m_util_a.mk_gt(m_util_a.mk_sub(m_util_s.str.mk_length(x),m_util_s.str.mk_length(y)), m_util_a.mk_int(0)),m};
         literal len_y_gt_len_x = mk_literal(len_x_gt_len_y);
@@ -2073,8 +2184,8 @@ namespace smt::noodler {
         literal eq_mx_my = mk_literal(m.mk_not(ctx.mk_eq_atom(mx,my)));
         literal lit_e = mk_literal(e);
 
-        expr_ref rex(m_util_s.re.mk_in_re(mx, m_util_s.re.mk_full_char(nullptr)), m);
-        expr_ref rey(m_util_s.re.mk_in_re(my, m_util_s.re.mk_full_char(nullptr)), m);
+        expr_ref rex(m_util_s.re.mk_in_re(mx, mk_full_char_re(seq_sort)), m);
+        expr_ref rey(m_util_s.re.mk_in_re(my, mk_full_char_re(seq_sort)), m);
 
         // not(e) && |x| <= |y| -> x = px.mx.q
         add_axiom({lit_e, len_y_gt_len_x, x_eq_pmq});
@@ -2110,6 +2221,7 @@ namespace smt::noodler {
 
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_contains(e, x, y));
+        sort* seq_sort = x->get_sort(); // sort of the sequence (String or generic sequence)
 
         // if contains is of the form (str.contains (str.substr value2 0 (+ n (str.indexof value2 lit 0))) lit)
         // with lit a string literal and n >= |lit|, derive simpler constraints: the constraint is
@@ -2129,7 +2241,7 @@ namespace smt::noodler {
             return;
         // if contains is of the form (str.constains strX (str.at ...)) rewrite to a regular constaint ((str.at ...) \in union of chars of strX)
         } else if (m_util_s.str.is_at(y) && m_util_s.str.is_string(x, str) && str.length() > 0) {
-            expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_string("")), m);
+            expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_empty(seq_sort)), m);
             for(size_t i = 0; i < str.length(); i++) {
                 re = m_util_s.re.mk_union(re, m_util_s.re.mk_to_re(m_util_s.str.mk_string(str[i])));
             }
@@ -2139,8 +2251,8 @@ namespace smt::noodler {
             return;
         }
 
-        expr_ref p = mk_str_var_fresh("contains_left");
-        expr_ref s = mk_str_var_fresh("contains_right");
+        expr_ref p = mk_str_var_fresh("contains_left", seq_sort);
+        expr_ref s = mk_str_var_fresh("contains_right", seq_sort);
         expr_ref pys(m_util_s.str.mk_concat(m_util_s.str.mk_concat(p, y), s), m);
 
         string_theory_propagation(pys);
@@ -2164,18 +2276,27 @@ namespace smt::noodler {
         expr* cont = this->m.mk_not(e);
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_contains(e, x, y));
+        sort* seq_sort = x->get_sort(); // sort of the sequence (String or generic sequence)
 
         zstring s;
         if(m_util_s.str.is_string(y, s)) {
-            expr_ref re(m_util_s.re.mk_in_re(x, m_util_s.re.mk_concat(m_util_s.re.mk_star(m_util_s.re.mk_full_char(nullptr)),
+            expr_ref re(m_util_s.re.mk_in_re(x, m_util_s.re.mk_concat(m_util_s.re.mk_star(mk_full_char_re(seq_sort)),
                 m_util_s.re.mk_concat(m_util_s.re.mk_to_re(m_util_s.str.mk_string(s)),
-                m_util_s.re.mk_star(m_util_s.re.mk_full_char(nullptr)))) ), m);
+                m_util_s.re.mk_star(mk_full_char_re(seq_sort)))) ), m);
+
+            add_axiom({mk_literal(e), ~mk_literal(re)});
+            add_axiom({mk_literal(cont), mk_literal(re)});
+        } else if(is_ground_generic_seq(y)) {
+            // y is a ground generic sequence (e.g., (seq.unit 1)), we can use a regex in the same way as for string literals
+            expr_ref re(m_util_s.re.mk_in_re(x, m_util_s.re.mk_concat(m_util_s.re.mk_star(mk_full_char_re(seq_sort)),
+                m_util_s.re.mk_concat(m_util_s.re.mk_to_re(y),
+                m_util_s.re.mk_star(mk_full_char_re(seq_sort)))) ), m);
 
             add_axiom({mk_literal(e), ~mk_literal(re)});
             add_axiom({mk_literal(cont), mk_literal(re)});
         } else if(m_util_s.str.is_string(x, s) && s.length() <= 10) { // the number 10 is arbitrary, can be tuned (needs to be changed also in assign_not_contains)
             // for small string literals s, we can unroll all possible substrings of s and put that y cannot be any of them
-            expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_string("")), m);
+            expr_ref re(m_util_s.re.mk_to_re(m_util_s.str.mk_empty(seq_sort)), m);
             for (unsigned i = 0; i < s.length(); i++) {
                 for (unsigned j = i + 1; j <= s.length(); j++) {
                     expr_ref substr(m_util_s.re.mk_to_re(m_util_s.str.mk_string(s.extract(i, j - i))), m);
@@ -2200,7 +2321,7 @@ namespace smt::noodler {
         VERIFY(m_util_s.str.is_contains(e, x, y));
 
         zstring s;
-        if(!m_util_s.str.is_string(y) && !(m_util_s.str.is_string(x, s) && s.length() <= 10)) {
+        if(!m_util_s.str.is_string(y) && !is_ground_generic_seq(y) && !(m_util_s.str.is_string(x, s) && s.length() <= 10)) {
             // not(contains) was not axiomatized in handle_not_contains, we need to save it for solving in final_check
             m_not_contains_todo.push_back({{x, m},{y, m}});
         }
@@ -2393,6 +2514,7 @@ namespace smt::noodler {
 
         expr *s = nullptr, *re = nullptr;
         VERIFY(m_util_s.str.is_in_re(e, s, re));
+        sort* seq_sort = s->get_sort(); // sort of the sequence (String or generic sequence)
 
         // Memberships over (re.from_ecma2020 ...) are handled via axioms that relate them
         // to (str.to_re ...) and should not be sent to the decision procedure.
@@ -2408,7 +2530,7 @@ namespace smt::noodler {
             if(this->predicate_replace.contains(re_constr)) {
                 var = expr_ref(this->predicate_replace[re_constr], m);
             } else {
-                var = mk_str_var_fresh("revar");
+                var = mk_str_var_fresh("revar", seq_sort);
                 this->predicate_replace.insert(re_constr.get(), var.get());
             }
 
@@ -2490,6 +2612,19 @@ namespace smt::noodler {
         expr_ref_vector len_arg(m);
         expr_ref ex_rewritten(m);
         m_rewrite(ex, ex_rewritten);
+        // sort of the sequences whose lengths are in len_arg (nullptr if they do not have the same sort, then we cannot concatenate them)
+        auto get_len_arg_sort = [&]() -> sort* {
+            if (len_arg.empty()) {
+                return m_util_s.mk_string_sort();
+            }
+            sort* res = len_arg.get(0)->get_sort();
+            for (expr* arg : len_arg) {
+                if (arg->get_sort() != res) {
+                    return nullptr;
+                }
+            }
+            return res;
+        };
         if(expr_cases::is_len_num_eq(ex, m, m_util_s, m_util_a, len_arg, val) && val < MAX_NUM) {
             if (val < 0) {
                 // The sum of lengths should be equal negative number, which is not possible.
@@ -2502,12 +2637,12 @@ namespace smt::noodler {
                 // but it doesn't work for some reason, it resulted in some unknowns
                 // even though decision procedure finished, so we better give up
                 return false;
-            } else if (len_arg.size() <= MAX_VARS) {
-                expr_ref re(m_util_s.re.mk_full_char(nullptr), m);
+            } else if (sort* seq_sort = get_len_arg_sort(); seq_sort != nullptr && len_arg.size() <= MAX_VARS) {
+                expr_ref re(mk_full_char_re(seq_sort), m);
                 for(rational i{1}; i < val; i++) {
-                    re = m_util_s.re.mk_concat(re, m_util_s.re.mk_full_char(nullptr));
+                    re = m_util_s.re.mk_concat(re, mk_full_char_re(seq_sort));
                 }
-                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
+                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, seq_sort), re), m);
                 m_rewrite(in_re);
                 add_axiom({~mk_literal(ex_rewritten), mk_literal(in_re)});
                 return true;
@@ -2528,14 +2663,19 @@ namespace smt::noodler {
                 }
                 // if val is smaller than len_arg, then this expression just say that the length of len_arg is larger or equal than 0 -> it is useless
                 return true;
-            } else if (len_arg.size() <= MAX_VARS) {
-                expr_ref re(
-                    val_is_larger ? 
-                        m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
-                        m_util_s.re.mk_loop(m_util_s.re.mk_full_char(nullptr), m_util_a.mk_int(val)),
-                    m
-                );
-                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, nullptr), re), m);
+            } else if (sort* seq_sort = get_len_arg_sort(); seq_sort != nullptr && len_arg.size() <= MAX_VARS) {
+                expr_ref re(m);
+                if (m_util_s.is_string(seq_sort)) {
+                    re = val_is_larger ?
+                        m_util_s.re.mk_loop(mk_full_char_re(seq_sort), m_util_a.mk_int(0), m_util_a.mk_int(val)) :
+                        m_util_s.re.mk_loop(mk_full_char_re(seq_sort), m_util_a.mk_int(val));
+                } else {
+                    // re.loop with integer terms as bounds is allowed only for strings, we use numeral parameters for generic sequences
+                    re = val_is_larger ?
+                        m_util_s.re.mk_loop(mk_full_char_re(seq_sort), 0, val.get_unsigned()) :
+                        m_util_s.re.mk_loop(mk_full_char_re(seq_sort), val.get_unsigned());
+                }
+                expr_ref in_re(m_util_s.re.mk_in_re(m_util_s.str.mk_concat(len_arg, seq_sort), re), m);
                 m_rewrite(in_re);
                 add_axiom({~mk_literal(ex_rewritten), mk_literal(in_re)});
                 return true;
@@ -2773,7 +2913,8 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::mark_expression_as_length(expr *e) {
-        if(m_util_s.str.is_string(e)) {
+        if(m_util_s.str.is_string(e) || m_util_s.str.is_unit(e) || m_util_s.str.is_empty(e)) {
+            // literals have fixed length
             return;
         }
 
@@ -2809,5 +2950,25 @@ namespace smt::noodler {
             os << " " << mk_pp(e,m);
         }
         os << std::endl;
+    }
+}
+
+namespace smt::noodler {
+    bool theory_str_noodler::is_ground_generic_seq(expr* e) const {
+        if (!m_util_s.str.is_non_string_sequence(e)) {
+            return false;
+        }
+        if (m_util_s.str.is_empty(e) || m_util_s.str.is_unit(e)) {
+            return true;
+        }
+        if (m_util_s.str.is_concat(e)) {
+            for (expr* arg : *to_app(e)) {
+                if (!is_ground_generic_seq(arg)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
     }
 }

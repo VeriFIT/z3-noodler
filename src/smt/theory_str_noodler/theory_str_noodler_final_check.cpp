@@ -55,6 +55,7 @@ namespace smt::noodler {
         }
 
         dec_proc = nullptr;
+        seq_abstraction = nullptr;
         relevant_vars.clear();
         scope_with_last_run_was_sat = -1;
 
@@ -100,6 +101,14 @@ namespace smt::noodler {
             return FC_GIVEUP;
         } // for true case it means we need to solve string constraints to get final solution
 
+        // Generic sequences (Seq T) are handled only by the main stabilization-based decision procedure, where
+        // the elements are abstracted by symbols (see SeqElementAbstraction).
+        const bool has_gen_seq = relevant_has_generic_seq();
+        if (has_gen_seq && !prepare_seq_abstraction()) {
+            // some (dis)equalities of elements need to be decided first
+            return FC_CONTINUE;
+        }
+
         /***************************** SOLVE WORD (DIS)EQUATIONS + REGULAR MEMBERSHIPS ******************************/
 
         // cache for storing already solved instances. For each instance we store the length formula obtained from the decision procedure.
@@ -131,7 +140,7 @@ namespace smt::noodler {
         // As a heuristic, for the case we have exactly one constraint, which is of type 'x (not)in RE', we use universality/emptiness
         // checking of the regex (using some heuristics) instead of constructing the automaton of RE. The construction (especially complement)
         // can sometimes blow up, so the check should be faster.
-        if(m_params.m_try_memb_heur && this->m_membership_todo_rel.size() == 1 && !contains_word_equations && !contains_word_disequations && !contains_conversions && this->m_not_contains_todo_rel.empty() && this->m_rat_membership_todo_rel.empty()
+        if(m_params.m_try_memb_heur && !has_gen_seq && this->m_membership_todo_rel.size() == 1 && !contains_word_equations && !contains_word_disequations && !contains_conversions && this->m_not_contains_todo_rel.empty() && this->m_rat_membership_todo_rel.empty()
                 && this->len_vars.empty() // TODO: handle length vars that are not x (i.e., there are no string constraints on them, other than length ones, we just need to compute arith model)
         ) {
             const auto& reg_data = this->m_membership_todo_rel[0];
@@ -159,7 +168,7 @@ namespace smt::noodler {
             }
         }
 
-        if (m_params.m_try_memb_heur && is_mult_membership_suitable()) {
+        if (m_params.m_try_memb_heur && !has_gen_seq && is_mult_membership_suitable()) {
             lbool result = run_mult_membership_heur();
             if(result == l_true) {
                 return FC_DONE;
@@ -202,7 +211,7 @@ namespace smt::noodler {
 
 
         // There is only one symbol in the equation. The system is SAT iff lengths are SAT
-        if(m_params.m_try_unary_proc && symbols_in_formula.size() == 2 && !contains_conversions && !contains_transducers && this->m_not_contains_todo_rel.size() == 0 && UnaryDecisionProcedure::is_suitable(instance, aut_assignment)) { // dummy symbol + 1
+        if(m_params.m_try_unary_proc && !has_gen_seq && symbols_in_formula.size() == 2 && !contains_conversions && !contains_transducers && this->m_not_contains_todo_rel.size() == 0 && UnaryDecisionProcedure::is_suitable(instance, aut_assignment)) { // dummy symbol + 1
             lbool result = run_length_sat(instance, aut_assignment, init_length_sensitive_vars, conversions);
             if(result == l_true) {
                 return FC_DONE;
@@ -212,7 +221,7 @@ namespace smt::noodler {
         }
 
         // try a heuristic based procedure for disequations only
-        if (contains_word_disequations && this->m_conversion_todo.empty() && this->m_not_contains_todo_rel.empty() && this->m_rat_membership_todo_rel.empty()
+        if (contains_word_disequations && !has_gen_seq && this->m_conversion_todo.empty() && this->m_not_contains_todo_rel.empty() && this->m_rat_membership_todo_rel.empty()
             && DiseqLengthHeuristicProcedure::is_suitable(instance, aut_assignment)) {
             lbool result = run_diseq_length_heur(instance, aut_assignment, init_length_sensitive_vars);
             if (result == l_true) {
@@ -223,7 +232,7 @@ namespace smt::noodler {
         }
 
         // try Nielsen transformation (if enabled) to solve
-        if(m_params.m_try_nielsen && is_nielsen_suitable(instance, init_length_sensitive_vars)) {
+        if(m_params.m_try_nielsen && !has_gen_seq && is_nielsen_suitable(instance, init_length_sensitive_vars)) {
             lbool result = run_nielsen(instance, aut_assignment, init_length_sensitive_vars);
             if(result == l_true) {
                 return FC_DONE;
@@ -264,7 +273,7 @@ namespace smt::noodler {
 
         // now we know that the initial formula is length-satisfiable
         // try length-based decision procedure (if enabled) to solve
-        if(m_params.m_try_length_proc && contains_eqs_and_diseqs_only && !contains_transducers && LengthDecisionProcedure::is_suitable(instance, aut_assignment)) {
+        if(m_params.m_try_length_proc && !has_gen_seq && contains_eqs_and_diseqs_only && !contains_transducers && LengthDecisionProcedure::is_suitable(instance, aut_assignment)) {
             lbool result = run_length_proc(instance, aut_assignment, init_length_sensitive_vars);
             if(result == l_true) {
                 return FC_DONE;
@@ -274,7 +283,7 @@ namespace smt::noodler {
         }
 
         // try underapproximation (if enabled) to solve
-        if(m_params.m_underapproximation && is_underapprox_suitable(instance, aut_assignment, conversions)) {
+        if(m_params.m_underapproximation && !has_gen_seq && is_underapprox_suitable(instance, aut_assignment, conversions)) {
             STRACE(str, tout << "Try underapproximation" << std::endl);
             if (solve_underapprox(instance, aut_assignment, init_length_sensitive_vars, conversions) == l_true) {
                 STRACE(str, tout << "Sat from underapproximation" << std::endl;);
@@ -564,8 +573,9 @@ namespace smt::noodler {
         SASSERT(eq->get_arg(1));
 
         std::vector<BasicTerm> left, right;
-        util::collect_terms(to_app(eq->get_arg(0)), m, this->m_util_s, this->predicate_replace, left);
-        util::collect_terms(to_app(eq->get_arg(1)), m, this->m_util_s, this->predicate_replace, right);
+        const auto unit_symbol = get_unit_symbol_fn();
+        util::collect_terms(to_app(eq->get_arg(0)), m, this->m_util_s, this->predicate_replace, left, unit_symbol);
+        util::collect_terms(to_app(eq->get_arg(1)), m, this->m_util_s, this->predicate_replace, right, unit_symbol);
 
         return Predicate(ptype, std::vector<std::vector<BasicTerm>>{left, right});
     }
@@ -622,8 +632,9 @@ namespace smt::noodler {
         // construct not contains predicates
         for(const auto& not_contains : this->m_not_contains_todo_rel) {
             std::vector<BasicTerm> left, right;
-            util::collect_terms(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, left);
-            util::collect_terms(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, right);
+            const auto unit_symbol = get_unit_symbol_fn();
+            util::collect_terms(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, left, unit_symbol);
+            util::collect_terms(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, right, unit_symbol);
             // gather transducer constraints occurring in the concatenation
             regex::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
             regex::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
@@ -686,6 +697,11 @@ namespace smt::noodler {
         // If we have to_real/from_real, we also add '.', so that decimal point is not represented by dummy symbol
         if (contains_real_conversion) { symbols_in_formula.insert(AutAssignment::REAL_NUMBER_DELIMITER); }
 
+        // symbols representing elements of generic sequences
+        if (seq_abstraction) {
+            seq_abstraction->assign_symbols(symbols_in_formula);
+        }
+
         // we also insert dummy symbol representing all symbols NOT occurring in formula (but only if we do not have ALL symbols in formula)
         symbols_in_formula.insert_dummy_if_not_full();
 
@@ -707,7 +723,9 @@ namespace smt::noodler {
 
             // If the regular constraint is in a negative form, create a complement of the regular expression instead.
             const bool make_complement{ !std::get<2>(membership) };
-            std::shared_ptr<const mata::nfa::Nfa> nfa = nfa_constructor.conv_to_nfa(to_app(std::get<1>(membership)), m_util_s, m, alph, make_complement, make_complement);
+            // regexes over generic sequences are translated to string regexes over the symbols representing elements
+            const expr_ref regex = seq_abstraction ? seq_abstraction->translate_regex(std::get<1>(membership)) : std::get<1>(membership);
+            std::shared_ptr<const mata::nfa::Nfa> nfa = nfa_constructor.conv_to_nfa(to_app(regex), m_util_s, m, alph, make_complement, make_complement);
             auto aut_ass_it{ aut_assignment.find(term) };
             if (aut_ass_it != aut_assignment.end()) {
                 // This variable already has some regular constraints. Hence, we create an intersection of the new one
@@ -740,6 +758,28 @@ namespace smt::noodler {
                         aut_assignment.emplace(var_or_literal, std::make_shared<mata::nfa::Nfa>(std::move(nfa)));
                     }
                 }
+            }
+        }
+
+        // sequences over finite element sorts can contain only the symbols representing the values of the sort
+        if (seq_abstraction) {
+            for (auto& [var, nfa] : aut_assignment) {
+                if (!var.is_variable()) {
+                    continue;
+                }
+                auto var_expr_it = var_name.find(var);
+                if (var_expr_it == var_name.end()) {
+                    util::throw_error("unknown sort of a variable in a formula with generic sequences");
+                }
+                sort* var_sort = var_expr_it->second->get_sort();
+                if (!seq_abstraction->is_finite_seq_sort(var_sort)) {
+                    continue;
+                }
+                mata::nfa::Nfa elems_star(1, {0}, {0});
+                for (mata::Symbol s : seq_abstraction->get_finite_symbols(var_sort)) {
+                    elems_star.delta.add(0, s, 0);
+                }
+                nfa = std::make_shared<mata::nfa::Nfa>(mata::nfa::reduce(mata::nfa::intersection(*nfa, elems_star)));
             }
         }
 
@@ -1009,6 +1049,14 @@ namespace smt::noodler {
         for(const auto& nc : this->m_not_contains_todo_rel) {
             app_ref nc_app(m.mk_not(m_util_s.str.mk_contains(nc.first, nc.second)), m);
             refinement = refinement == nullptr ? nc_app : m.mk_and(refinement, nc_app);
+        }
+        if (refinement != nullptr && seq_abstraction) {
+            // the solution relies also on (dis)equalities of elements of generic sequences
+            expr_ref_vector facts(m);
+            seq_abstraction->get_facts(facts);
+            for (expr* fact : facts) {
+                refinement = m.mk_and(refinement, fact);
+            }
         }
 
         return expr_ref(refinement, m);
@@ -1477,7 +1525,7 @@ namespace smt::noodler {
                 continue;
             }
 
-            if (!ctx.is_relevant(r) || !((r->get_expr()->get_kind() == ast_kind::AST_APP || r->get_expr()->get_kind() == ast_kind::AST_VAR )) || m_util_s.str.mk_string_sort() != r->get_sort()) {
+            if (!ctx.is_relevant(r) || !((r->get_expr()->get_kind() == ast_kind::AST_APP || r->get_expr()->get_kind() == ast_kind::AST_VAR )) || !m_util_s.is_seq(r->get_sort())) {
                 continue;
             }
             // is variable shared among theories?
@@ -1511,6 +1559,10 @@ namespace smt::noodler {
                 theory_var v2 = *it2;
                 enode * n2 = get_enode(v2);
                 sort * s2 = n2->get_expr()->get_sort();
+                if (n1->get_expr()->get_sort() != s2) {
+                    // shared variables of different (sequence) sorts
+                    continue;
+                }
                 app * eq = ctx.mk_eq_atom(n1->get_expr(), n2->get_expr());
 
                 // disequation of inter-theory variables are always relevant
@@ -1535,5 +1587,77 @@ namespace smt::noodler {
             }
         }
         return result;
+    }
+}
+
+namespace smt::noodler {
+    bool theory_str_noodler::relevant_has_generic_seq() const {
+        auto is_gen = [this](expr* e) {
+            return m_util_s.str.is_non_string_sequence(e);
+        };
+        for (const auto& eq : m_word_eq_todo_rel) {
+            if (is_gen(eq.first) || is_gen(eq.second)) return true;
+        }
+        for (const auto& diseq : m_word_diseq_todo_rel) {
+            if (is_gen(diseq.first) || is_gen(diseq.second)) return true;
+        }
+        for (const auto& memb : m_membership_todo_rel) {
+            if (is_gen(std::get<0>(memb))) return true;
+        }
+        for (const auto& nc : m_not_contains_todo_rel) {
+            if (is_gen(nc.first) || is_gen(nc.second)) return true;
+        }
+        return false;
+    }
+
+    bool theory_str_noodler::prepare_seq_abstraction() {
+        seq_abstraction = std::make_shared<SeqElementAbstraction>(m, m_util_s, ctx);
+        for (const auto& eq : m_word_eq_todo_rel) {
+            seq_abstraction->collect(eq.first);
+            seq_abstraction->collect(eq.second);
+        }
+        for (const auto& diseq : m_word_diseq_todo_rel) {
+            seq_abstraction->collect(diseq.first);
+            seq_abstraction->collect(diseq.second);
+        }
+        for (const auto& memb : m_membership_todo_rel) {
+            seq_abstraction->collect(std::get<0>(memb));
+            seq_abstraction->collect(std::get<1>(memb));
+        }
+        for (const auto& nc : m_not_contains_todo_rel) {
+            seq_abstraction->collect(nc.first);
+            seq_abstraction->collect(nc.second);
+        }
+        for (const auto& rat_memb : m_rat_membership_todo_rel) {
+            seq_abstraction->collect(std::get<0>(rat_memb));
+            seq_abstraction->collect(std::get<1>(rat_memb));
+        }
+        // sorts of variables replacing functions are not visible in the constraints
+        for (const auto& [var, var_expr] : var_name) {
+            if (m_util_s.is_seq(var_expr->get_sort())) {
+                seq_abstraction->register_seq_sort(var_expr->get_sort());
+            }
+        }
+
+        bool decided = seq_abstraction->build_classes([this](expr* elem, const ptr_vector<expr>& values) {
+            std::vector<literal> clause;
+            for (expr* value : values) {
+                clause.push_back(mk_eq(elem, value, false));
+            }
+            STRACE(str, tout << "seq elements: element " << mk_pp(elem, m) << " must be equal to some value of its sort" << std::endl;);
+            add_axiom(clause);
+        });
+        if (!decided) {
+            seq_abstraction = nullptr;
+        }
+        return decided;
+    }
+
+    std::function<unsigned(expr*)> theory_str_noodler::get_unit_symbol_fn() const {
+        if (!seq_abstraction) {
+            return {};
+        }
+        std::shared_ptr<SeqElementAbstraction> abstraction = seq_abstraction;
+        return [abstraction](expr* elem) -> unsigned { return abstraction->get_symbol(elem); };
     }
 }

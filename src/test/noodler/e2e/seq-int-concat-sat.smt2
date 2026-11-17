@@ -1,0 +1,11 @@
+; Generic sequences (Seq Int) solved by Noodler.
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const s (Seq Int))
+(declare-const t (Seq Int))
+(declare-const a Int)
+(assert (= (seq.++ s (seq.unit 1)) (seq.++ (seq.unit a) t)))
+(assert (= (seq.len s) 3))
+(assert (not (= s t)))
+(assert (> a 10))
+(check-sat)

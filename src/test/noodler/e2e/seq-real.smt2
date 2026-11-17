@@ -1,0 +1,11 @@
+; Generic sequences over Real.
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const x (Seq Real))
+(declare-const y (Seq Real))
+(declare-const r Real)
+(assert (= (seq.++ x (seq.unit r)) (seq.++ (seq.unit 0.5) y)))
+(assert (> (seq.len x) 1))
+(assert (not (= r 0.5)))
+(assert (not (seq.contains y (seq.unit 0.5))))
+(check-sat)

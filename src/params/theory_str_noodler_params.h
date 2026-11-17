@@ -22,6 +22,11 @@ struct theory_str_noodler_params {
     bool m_postpone_diseqs_stabilization = true;
     bool m_try_premature_len_checks = true;
     bool m_enable_warnings = false;
+    /** @brief Whether Z3-Noodler handles also generic (non-String) sequences, e.g. (Seq Int).
+    *
+    *  If false, problems containing generic sequences fall back to Z3's theory_seq (for the whole seq family).
+    */
+    bool m_noodler_seq = true;
 
     /** @brief Whether to use regex engine semantics when generating ECMA regex constraints.
     *

@@ -1,0 +1,10 @@
+; Generic sequences (Seq Int) with regular constraints.
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const s (Seq Int))
+(declare-const a Int)
+(assert (seq.in.re s (re.* (re.union (seq.to.re (seq.unit 1)) (seq.to.re (seq.++ (seq.unit 2) (seq.unit a)))))))
+(assert (not (seq.in.re s (re.++ (as re.all (RegEx (Seq Int))) (seq.to.re (seq.unit 1))))))
+(assert (= (seq.len s) 5))
+(assert (> a 100))
+(check-sat)

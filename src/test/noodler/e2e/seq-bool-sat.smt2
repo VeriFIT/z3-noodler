@@ -1,0 +1,11 @@
+; Generic sequences over Bool solved by Noodler.
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const x (Seq Bool))
+(declare-const y (Seq Bool))
+(declare-const p Bool)
+(assert (= (seq.len x) 2))
+(assert (not (= x y)))
+(assert (= (seq.++ x (seq.unit p)) (seq.++ (seq.unit true) y)))
+(assert (not p))
+(check-sat)

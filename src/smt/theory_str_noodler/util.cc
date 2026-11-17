@@ -46,23 +46,33 @@ namespace smt::noodler::util {
     }
 
     bool is_str_variable(const expr* expression, const seq_util& m_util_s) {
-        return m_util_s.is_string(expression->get_sort()) && is_variable(expression);
+        return m_util_s.is_seq(expression->get_sort()) && is_variable(expression);
     }
 
-    void collect_terms(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::vector<BasicTerm>& terms) {
+    void collect_terms(app* const ex, ast_manager& m, const seq_util& m_util_s, obj_map<expr, expr*>& pred_replace, std::vector<BasicTerm>& terms,
+                       const std::function<unsigned(expr*)>& unit_symbol) {
         if (m_util_s.str.is_string(ex)) { // string literals
             terms.emplace_back(BasicTermType::Literal, ex->get_parameter(0).get_zstring());
+        } else if (m_util_s.str.is_empty(ex)) { // empty generic sequence
+            terms.emplace_back(BasicTermType::Literal, zstring());
+        } else if (m_util_s.str.is_unit(ex) && unit_symbol) { // element of a generic sequence, represented by its symbol
+            terms.emplace_back(BasicTermType::Literal, zstring(unit_symbol(ex->get_arg(0))));
         } else if (is_variable(ex)) { // string variables
             terms.emplace_back(get_variable_basic_term(ex));
         } else if (m_util_s.str.is_concat(ex)) { // concatenation
             SASSERT(ex->get_num_args() == 2);
             app *a_x = to_app(ex->get_arg(0));
             app *a_y = to_app(ex->get_arg(1));
-            collect_terms(a_x, m, m_util_s, pred_replace, terms);
-            collect_terms(a_y, m, m_util_s, pred_replace, terms);
+            collect_terms(a_x, m, m_util_s, pred_replace, terms, unit_symbol);
+            collect_terms(a_y, m, m_util_s, pred_replace, terms, unit_symbol);
         } else { // other expressions, should be replaced by some variable
-            expr* rpl = pred_replace.find(ex); // dies if it is not found
-            collect_terms(to_app(rpl), m, m_util_s, pred_replace, terms);
+            expr* rpl = nullptr;
+            if (!pred_replace.find(ex, rpl)) {
+                std::stringstream ss;
+                ss << mk_pp(ex, m);
+                throw_error("unsupported string/sequence term " + ss.str());
+            }
+            collect_terms(to_app(rpl), m, m_util_s, pred_replace, terms, unit_symbol);
         }
     }
 
@@ -82,8 +92,8 @@ namespace smt::noodler::util {
         auto known_it = known_vars.find(var);
         if (known_it != known_vars.end()) {
             expr_ref known_expr = known_it->second;
-            if (m_util_s.is_string(known_expr->get_sort())) {
-                // for string variables we want its length
+            if (m_util_s.is_seq(known_expr->get_sort())) {
+                // for string (or generic sequence) variables we want its length
                 return expr_ref(m_util_s.str.mk_length(known_expr), m);
             }
             return known_expr;

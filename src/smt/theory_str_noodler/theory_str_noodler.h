@@ -43,6 +43,7 @@ Eternal glory to Yu-Fang.
 #include "counter_automaton.h"
 #include "length_decision_procedure.h"
 #include "unary_decision_procedure.h"
+#include "seq_elements.h"
 
 /**
  * NOTE: way how to print z3 formula in smt2 format (including the declaration)
@@ -207,10 +208,15 @@ namespace smt::noodler {
         // Stuff for model generation
         std::set<BasicTerm> relevant_vars; // vars that are in the formula used in decision procedure (we cannot used dec_proc to generate models for those that are not in here)
         std::shared_ptr<AbstractDecisionProcedure> dec_proc = nullptr; // keeps the decision procedure that returned sat
+        // abstraction of elements of generic sequences (Seq T) by symbols used in the last final check (nullptr if there are no generic sequences)
+        std::shared_ptr<SeqElementAbstraction> seq_abstraction = nullptr;
+        // keeps alive model values of generic sequences created during model generation
+        expr_ref_vector m_model_values{m};
         // classes for creating model dependencies, see their usage in mk_value
         class noodler_var_value_proc; // for noodler vars used in decision procedure
         class str_var_value_proc; // for string vars (whose length is important) that are not used in decision procedure
         class concat_var_value_proc; // for concatenation
+        class seq_unit_value_proc; // for seq.unit of generic sequences
 
     public:
         char const * get_name() const override { return "noodler"; }
@@ -237,6 +243,8 @@ namespace smt::noodler {
         model_value_proc *mk_value(enode *n, model_generator& mg) override;
         void init_model(model_generator& m) override;
         void finalize_model(model_generator& mg) override;
+        /// Include interpretation of seq.nth_u (uninterpreted values of seq.nth outside of the bounds) into models.
+        bool include_func_interp(func_decl* f) override { return m_util_s.str.is_nth_u(f); }
 
         /**
          * @brief Collect statistics (called at the end of the run)
@@ -287,14 +295,29 @@ namespace smt::noodler {
         }
 
         /**
-         * @brief Create a fresh Z3 string variable with a given @p name followed by a unique suffix.
+         * @brief Create a fresh Z3 string (or sequence) variable with a given @p name followed by a unique suffix.
          *
          * @param name Infix of the name (rest is added to get a unique name)
+         * @param seq_sort Sort of the variable (String if nullptr), must be a sequence sort
          */
-        expr_ref mk_str_var_fresh(const std::string& name) {
+        expr_ref mk_str_var_fresh(const std::string& name, sort* seq_sort = nullptr) {
+            if (seq_sort == nullptr) {
+                seq_sort = m_util_s.mk_string_sort();
+            }
+            SASSERT(m_util_s.is_seq(seq_sort));
             // according to SMT-LIB standard, variable names starting with '@' are reserved for internal use
-            app* fresh_var = m.mk_fresh_const("@" + name, m_util_s.mk_string_sort(), true); // need to be skolem, because it seems they are not printed for models
+            app* fresh_var = m.mk_fresh_const("@" + name, seq_sort, true); // need to be skolem, because it seems they are not printed for models
             return expr_ref(fresh_var, m);
+        }
+
+        /**
+         * @brief Create regex re.allchar over the elements of the sequence sort @p seq_sort (String if nullptr).
+         */
+        app* mk_full_char_re(sort* seq_sort = nullptr) {
+            if (seq_sort == nullptr) {
+                return m_util_s.re.mk_full_char(nullptr);
+            }
+            return m_util_s.re.mk_full_char(m_util_s.re.mk_re(seq_sort));
         }
 
         /// If ihq is true, sets input_has_quantifiers and m_produce_models to true, otherwise do nothing
@@ -341,7 +364,7 @@ namespace smt::noodler {
          * @return the created fresh variable
          */
         expr_ref get_fresh_var_for_string_function(const std::string& var_name, expr* str_func) {
-            expr_ref res = mk_str_var_fresh(var_name);
+            expr_ref res = mk_str_var_fresh(var_name, str_func->get_sort());
             predicate_replace.insert(str_func, res.get());
             add_axiom({mk_eq(res, str_func, false)});
             return res;
@@ -349,6 +372,7 @@ namespace smt::noodler {
 
         // methods for rewriting different predicates into something simpler that we can handle
         void handle_char_at(expr *e);
+        void handle_nth(expr *e);
         void handle_substr(expr *e);
         void handle_index_of(expr *e);
         void handle_replace(expr *e);
@@ -398,6 +422,28 @@ namespace smt::noodler {
          * @return expr_ref Conjunction of atomic string constraints
          */
         expr_ref construct_refinement();
+
+        /**
+         * @brief Do relevant constraints contain generic (non-String) sequences?
+         */
+        bool relevant_has_generic_seq() const;
+
+        /**
+         * @brief Build the abstraction of elements of generic sequences (seq_abstraction) for relevant constraints.
+         *
+         * @return false if some (dis)equalities of elements had to be decided first (final_check should return FC_CONTINUE)
+         */
+        bool prepare_seq_abstraction();
+
+        /**
+         * @brief Function returning symbols for element terms of generic sequences (empty if there are no generic sequences).
+         */
+        std::function<unsigned(expr*)> get_unit_symbol_fn() const;
+
+        /**
+         * @brief Is @p e a ground generic (non-String) sequence, i.e., a concatenation of seq.unit and seq.empty?
+         */
+        bool is_ground_generic_seq(expr* e) const;
 
         /**
          * @brief Introduce string axioms for a formula @p ex. 

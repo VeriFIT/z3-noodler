@@ -1,0 +1,11 @@
+; Generic sequences over a finite sort: there are only two sequences of length 1 over Bool.
+(set-info :smt-lib-version 2.6)
+(set-info :status unsat)
+(declare-const x (Seq Bool))
+(declare-const y (Seq Bool))
+(declare-const z (Seq Bool))
+(assert (= (seq.len x) 1))
+(assert (= (seq.len y) 1))
+(assert (= (seq.len z) 1))
+(assert (distinct x y z))
+(check-sat)
