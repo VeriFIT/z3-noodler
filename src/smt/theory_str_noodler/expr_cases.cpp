@@ -262,20 +262,8 @@ bool is_to_int_leq_or_geq(expr* e, ast_manager& m, seq_util& m_util_s, arith_uti
 }
 
 bool has_quantifier(expr* e, ast_manager& m) {
-    if (is_quantifier(e)) {
-        return true;
-    }
-    if (is_app(e)) {
-        app *app_term = to_app(e);
-        unsigned num_args = app_term->get_num_args();
-        for (unsigned i = 0; i < num_args; i++) {
-            if (has_quantifier(app_term->get_arg(i), m)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
+    // the flag is maintained by the AST nodes (constant time)
+    return ::has_quantifiers(e);
 }
 
 }

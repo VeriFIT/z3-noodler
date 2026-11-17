@@ -103,7 +103,11 @@ namespace smt::noodler::regex {
         return current_symbol;
     }
 
-    void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet) {
+    /**
+     * Extract the symbols occurring directly in @p ex (string literal or range) into @p alphabet, and push the
+     * subexpressions that need to be inspected to @p todo.
+     */
+    static void extract_symbols_from_node(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet, ptr_vector<expr>& todo) {
         if (m_util_s.str.is_string(ex)) {
             auto ex_app{ to_app(ex) };
             SASSERT(ex_app->get_num_parameters() == 1);
@@ -140,12 +144,28 @@ namespace smt::noodler::regex {
                 ++current_value;
             }
         } else {
-            // For all other options recursively traverse the AST to find symbols.
-            for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
-                SASSERT(is_app(ex_app->get_arg(i)));
-                app *arg = to_app(ex_app->get_arg(i));
-                extract_symbols(arg, m_util_s, alphabet);
+            // For all other options traverse the AST to find symbols.
+            for (expr* arg : *ex_app) {
+                SASSERT(is_app(arg));
+                todo.push_back(arg);
             }
+        }
+    }
+
+    void extract_symbols(expr* const ex, const seq_util& m_util_s, Alphabet& alphabet) {
+        // iterative DFS visiting each subterm once (the expression is a DAG, a recursive traversal without
+        // remembering visited subterms is exponential in the presence of sharing)
+        ptr_vector<expr> todo;
+        obj_hashtable<expr> visited;
+        todo.push_back(ex);
+        while (!todo.empty()) {
+            expr* e = todo.back();
+            todo.pop_back();
+            if (visited.contains(e)) {
+                continue;
+            }
+            visited.insert(e);
+            extract_symbols_from_node(e, m_util_s, alphabet, todo);
         }
     }
 

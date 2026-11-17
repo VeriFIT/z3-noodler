@@ -105,26 +105,36 @@ namespace smt::noodler::util {
     }
 
     void get_len_exprs(expr* const ex, const seq_util& m_util_s, ast_manager& m, obj_hashtable<app>& res) {
+        // iterative DFS visiting each subterm once (the formula is a DAG, a recursive traversal without
+        // remembering visited subterms is exponential in the presence of sharing)
+        ptr_vector<expr> todo;
+        obj_hashtable<expr> visited;
+        todo.push_back(ex);
+        while (!todo.empty()) {
+            expr* e = todo.back();
+            todo.pop_back();
+            if (visited.contains(e)) {
+                continue;
+            }
+            visited.insert(e);
 
-        if(is_quantifier(ex)) {
-            quantifier* qf = to_quantifier(ex);
-            get_len_exprs(qf->get_expr(), m_util_s, m, res);
-            return;
-        }
-        // quantified variable
-        if(is_var(ex)) {
-            return;
-        }
-
-        if(m_util_s.str.is_length(ex)) {
-            res.insert(to_app(ex));
-            return;
-        }
-
-        SASSERT(is_app(ex));
-        app *ex_app = to_app(ex);
-        for(unsigned i = 0; i < ex_app->get_num_args(); i++) {
-            get_len_exprs(ex_app->get_arg(i), m_util_s, m, res);
+            if (is_quantifier(e)) {
+                todo.push_back(to_quantifier(e)->get_expr());
+                continue;
+            }
+            // quantified variable
+            if (is_var(e)) {
+                continue;
+            }
+            if (m_util_s.str.is_length(e)) {
+                // the argument of str.len is not inspected further
+                res.insert(to_app(e));
+                continue;
+            }
+            SASSERT(is_app(e));
+            for (expr* arg : *to_app(e)) {
+                todo.push_back(arg);
+            }
         }
     }
 
@@ -566,16 +576,7 @@ namespace smt::noodler::util {
     }
 
     bool has_quantifiers(ast_manager& m, expr* e) {
-        struct has_quantifier_proc {
-            bool found = false;
-            void operator()(expr* e) {
-                if (is_quantifier(e))
-                    found = true;
-            }
-        };
-
-        has_quantifier_proc proc;
-        for_each_expr(proc, e);
-        return proc.found;
+        // the flag is maintained by the AST nodes (constant time)
+        return ::has_quantifiers(e);
     }
 }

@@ -230,3 +230,67 @@ TEST_CASE("theory_str_noodler::util") {
         }
     }
 }
+
+TEST_CASE("util::get_len_exprs", "[noodler]") {
+    ast_manager m;
+    reg_decl_plugins(m);
+    seq_util m_util_s(m);
+    arith_util m_util_a(m);
+    sort* str_sort = m_util_s.str.mk_string_sort();
+    expr_ref x(m.mk_const("x", str_sort), m);
+    expr_ref y(m.mk_const("y", str_sort), m);
+    expr_ref len_x(m_util_s.str.mk_length(x), m);
+    // str.len inside the argument of str.len is not collected
+    expr_ref len_nested(m_util_s.str.mk_length(m_util_s.str.mk_at(y, m_util_s.str.mk_length(x))), m);
+
+    SECTION("collects length terms, not inside str.len") {
+        expr_ref f(m.mk_and(m_util_a.mk_le(len_x, m_util_a.mk_int(3)), m_util_a.mk_ge(len_nested, m_util_a.mk_int(1))), m);
+        obj_hashtable<app> res;
+        util::get_len_exprs(f, m_util_s, m, res);
+        CHECK(res.size() == 2);
+        CHECK(res.contains(to_app(len_x.get())));
+        CHECK(res.contains(to_app(len_nested.get())));
+    }
+
+    SECTION("heavily shared DAG is traversed in linear time") {
+        // t_0 = |x|, t_{i+1} = t_i + t_i: as a tree, t_200 has 2^200 leaves
+        expr_ref t(len_x, m);
+        for (unsigned i = 0; i < 200; ++i) {
+            t = m_util_a.mk_add(t, t);
+        }
+        expr_ref f(m_util_a.mk_le(t, m_util_a.mk_int(10)), m);
+        obj_hashtable<app> res;
+        util::get_len_exprs(f, m_util_s, m, res);
+        CHECK(res.size() == 1);
+        CHECK(res.contains(to_app(len_x.get())));
+    }
+}
+
+TEST_CASE("regex::extract_symbols", "[noodler]") {
+    ast_manager m;
+    reg_decl_plugins(m);
+    seq_util m_util_s(m);
+    expr_ref x(m.mk_const("x", m_util_s.str.mk_string_sort()), m);
+
+    SECTION("literals and ranges, variables skipped") {
+        expr_ref re(m_util_s.re.mk_union(m_util_s.re.mk_to_re(m_util_s.str.mk_string("ab")),
+                                         m_util_s.re.mk_range(m_util_s.str.mk_string("x"), m_util_s.str.mk_string("z"))), m);
+        regex::Alphabet alph;
+        regex::extract_symbols(re, m_util_s, alph);
+        CHECK(alph == regex::Alphabet{ 'a', 'b', 'x', 'y', 'z' });
+        regex::Alphabet alph_var;
+        regex::extract_symbols(m_util_s.str.mk_concat(x, m_util_s.str.mk_string("c")), m_util_s, alph_var);
+        CHECK(alph_var == regex::Alphabet{ 'c' });
+    }
+
+    SECTION("heavily shared DAG is traversed in linear time") {
+        // r_0 = "a", r_{i+1} = r_i r_i: as a tree, r_200 has 2^200 leaves
+        expr_ref r(m_util_s.re.mk_to_re(m_util_s.str.mk_string("a")), m);
+        for (unsigned i = 0; i < 200; ++i) {
+            r = m_util_s.re.mk_concat(r, r);
+        }
+        regex::Alphabet alph;
+        regex::extract_symbols(r, m_util_s, alph);
+        CHECK(alph == regex::Alphabet{ 'a' });
+    }
+}
