@@ -1,0 +1,110 @@
+{
+  "solver": "Z3 version 5.1.0 - 64 bit - build hashcode ccf9f8e330e880b293e1f67df46d093f1550ae1e - mata hashcode d28368a6957a1606162aea3fbe77345f6e1e13d5",
+  "cases": {
+    "cpython-3.11.2": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun c0_or_space () RegLan\n    (re.range \"\\u{0}\" \" \"))\n  (define-fun rest () String\n    \"JAVASCRIPT:alert(1)\")\n  (define-fun scheme () String\n    (let ((a!1 (str.replace_all (str.replace_all (str.replace_all url \"\\u{9}\" \"\")\n                                             \"\\u{d}\"\n                                             \"\")\n                            \"\\u{a}\"\n                            \"\"))\n      (a!2 (re.union (re.union (re.union (re.range \"a\" \"z\") (re.range \"A\" \"Z\"))\n                               (re.range \"0\" \"9\"))\n                     (str.to_re \"+\"))))\n(let ((a!3 (re.* (re.union (re.union a!2 (str.to_re \"-\")) (str.to_re \".\")))))\n(let ((a!4 (str.in_re (str.substr a!1 0 (str.indexof a!1 \":\" 0))\n                      (re.++ (re.union (re.range \"a\" \"z\") (re.range \"A\" \"Z\"))\n                             a!3))))\n  (ite (and (str.contains a!1 \":\") a!4)\n       (str.to_lower (str.substr a!1 0 (str.indexof a!1 \":\" 0)))\n       \"\")))))\n  (define-fun lead () String\n    \"\\u{0}\")\n  (define-fun url () String\n    \"\\u{0}JAVASCRIPT:alert(1)\")\n)",
+      "seconds": 2.085
+    },
+    "cpython-3.11.4": {
+      "answer": "unsat",
+      "output": "unsat",
+      "seconds": 3.389
+    },
+    "ipaddress-3.9.4": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun host () String\n    \"012.00.070.100\")\n  (define-fun o4 () String\n    \"100\")\n  (define-fun o2 () String\n    \"00\")\n  (define-fun o1 () String\n    \"012\")\n  (define-fun o3 () String\n    \"070\")\n)",
+      "seconds": 0.555
+    },
+    "ipaddress-3.9.5": {
+      "answer": "unsat",
+      "output": "unsat",
+      "seconds": 0.028
+    },
+    "jinja-3.1.2": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun key () String\n    \"\\u{9}onmouseover\")\n)",
+      "seconds": 0.038
+    },
+    "jinja-3.1.3": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun key () String\n    \"/onmouseover\")\n)",
+      "seconds": 0.026
+    },
+    "jinja-3.1.4": {
+      "answer": "unsat",
+      "output": "unsat",
+      "seconds": 0.04
+    },
+    "open-redirect-backslash": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun u () String\n    (str.replace_all url \"\\\" \"/\"))\n  (define-fun url () String\n    \"/\\u{9}//\")\n)",
+      "seconds": 0.028
+    },
+    "open-redirect-fixed": {
+      "answer": "unsat",
+      "output": "unsat",
+      "seconds": 0.032
+    },
+    "open-redirect": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun url () String\n    \"/\\u{9}/\")\n)",
+      "seconds": 0.035
+    },
+    "path-traversal-fixed": {
+      "answer": "unsat",
+      "output": "unsat",
+      "seconds": 0.023
+    },
+    "path-traversal-twice": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun name () String\n    \"......///.\")\n)",
+      "seconds": 0.026
+    },
+    "path-traversal": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun cleaned () String\n    (str.replace_all name \"../\" \"\"))\n  (define-fun name () String\n    \"....//.\")\n)",
+      "seconds": 0.024
+    },
+    "sql-escape-fixed": {
+      "answer": "unsat",
+      "output": "unsat",
+      "seconds": 0.023
+    },
+    "sql-escape": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun escaped () String\n    (str.replace_all name \"'\" \"\\'\"))\n  (define-fun name () String\n    \"\\' OR 1=1 -- \")\n)",
+      "seconds": 0.025
+    },
+    "sql-truncate": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun cut () String\n    (str.substr (str.replace_all (str.replace_all name \"\\\" \"\\\\\") \"'\" \"\\'\") 0 16))\n  (define-fun name () String\n    \"'''''''a'a\")\n  (define-fun escaped () String\n    (str.replace_all (str.replace_all name \"\\\" \"\\\\\") \"'\" \"\\'\"))\n)",
+      "seconds": 0.043
+    },
+    "url-allowlist-fixed": {
+      "answer": "unsat",
+      "output": "unsat",
+      "seconds": 0.036
+    },
+    "url-allowlist": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun host () String\n    \"api-example.com\")\n  (define-fun url () String\n    \"https://api-example.com/\")\n  (define-fun path () String\n    \"\")\n)",
+      "seconds": 0.036
+    },
+    "xss-escape": {
+      "answer": "unsat",
+      "output": "unsat",
+      "seconds": 0.024
+    },
+    "xss-strip-nested": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun comment () String\n    \"<<SCRIPT>SCRIPT><<SCRIPT>\")\n  (define-fun out () String\n    (str.replace_all (str.to_lower comment) \"<script>\" \"\"))\n)",
+      "seconds": 0.233
+    },
+    "xss-strip": {
+      "answer": "sat",
+      "output": "sat\n(\n  (define-fun comment () String\n    \"<<script>SCRIPT><<script>\")\n  (define-fun out () String\n    (str.replace_all comment \"<script>\" \"\"))\n)",
+      "seconds": 0.139
+    }
+  }
+}

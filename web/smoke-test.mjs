@@ -80,6 +80,19 @@ const tests = [
   },
 ];
 
+// The queries of the "Finding bugs" page (web/bugs): each must still give the answer recorded
+// from a native build in web/bugs/cases/results.json, which the page shows.
+const casesDir = path.join(import.meta.dirname, 'bugs', 'cases');
+const recorded = JSON.parse(fs.readFileSync(path.join(casesDir, 'results.json'), 'utf8')).cases;
+for (const [name, { answer }] of Object.entries(recorded)) {
+  tests.push({
+    name: `bugs/cases/${name}.smt2 (${answer})`,
+    args: ['model=true'],
+    input: fs.readFileSync(path.join(casesDir, `${name}.smt2`), 'utf8'),
+    check: out => out.split('\n')[0].trim() === answer,
+  });
+}
+
 let failed = 0;
 for (const t of tests) {
   const start = performance.now();

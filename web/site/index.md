@@ -1,7 +1,7 @@
 ---
 ---
 
-[Home](index.md) · [Installation](installation.md) · [Usage](usage.md) · [Publications](publications.md) · [Playground](playground/)
+[Home](index.md) · [Installation](installation.md) · [Usage](usage.md) · [Publications](publications.md) · [Playground](playground/) · [Finding bugs](bugs/)
 
 **Z3-Noodler** is an SMT solver for string constraints such as those that occur in symbolic execution and analysis of programs, reasoning about configuration files of cloud services and smart contracts. It is a fork of [Z3](https://github.com/Z3Prover/z3) in which the solver for the theory of strings is replaced by an automata-based one, with automata handled by the [Mata](https://github.com/VeriFIT/mata) library.
 
@@ -51,6 +51,10 @@ sat
 ```
 
 Continue with [Installation](installation.md) and [Usage](usage.md), or paste the example into the [playground](playground/).
+
+## Finding bugs
+
+**[Finding bugs in string-handling code](bugs/)** shows Z3-Noodler on real vulnerabilities (CVEs in Jinja2 and CPython) and classic bug patterns (path traversal, XSS, open redirect, SSRF and SQL injection): for each vulnerable version it finds an exploit, and for each fix it proves that no exploit exists.
 
 ## Links
 

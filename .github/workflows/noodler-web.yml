@@ -194,6 +194,11 @@ jobs:
       - name: Smoke test
         run: node web/smoke-test.mjs web/site/playground
 
+      # The "Finding bugs" page (web/site/bugs) is generated from the queries and the answers recorded in
+      # web/bugs; the smoke test above has checked that the solver still gives those answers.
+      - name: Build the "Finding bugs" page
+        run: python3 web/bugs/build.py web/site/bugs
+
       # The same builder (github-pages gem: Jekyll 3.10, the Minimal theme, GitHub's plugins) that
       # GitHub uses for sites deployed from a branch; also validates the site in pull requests.
       # web/site/playground (including the files built above) is copied to _site/playground.
