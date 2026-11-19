@@ -1,37 +1,18 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Z3-Noodler in the browser</title>
-<meta name="description" content="Run Z3-Noodler, an SMT solver for string constraints, in your browser via WebAssembly. Your input never leaves your machine.">
-<meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="style.css">
-</head>
-<body>
-<a class="skip-link" href="#editor-input">Skip to the editor</a>
-
-<header class="site-header">
-  <div class="brand">
-    <div class="brand-text">
-      <h1>Z3-Noodler</h1>
-      <p class="tagline">An SMT solver for string constraints, running entirely in your browser via WebAssembly. Nothing you type leaves your machine.</p>
-    </div>
-  </div>
-  <nav class="project" aria-label="Project">
-    <p class="build" id="build-info">Reading build information…</p>
-    <ul class="links">
-      <li><a href="../"><span aria-hidden="true">← </span>Z3-Noodler home</a></li>
-      <li><a href="https://github.com/VeriFIT/z3-noodler">Source on GitHub</a></li>
-      <li><a href="../publications.html">Publications</a></li>
-      <li><a href="https://github.com/VeriFIT/z3-noodler/issues">Report an issue</a></li>
-    </ul>
-  </nav>
-</header>
+---
+title: Playground
+description: Run Z3-Noodler, an SMT solver for string constraints, in your browser via WebAssembly. Your input never leaves your machine.
+wide: true
+extra_css: [style.css]
+---
+<div class="app-intro">
+  <h1>Playground</h1>
+  <p class="tagline">Z3-Noodler running entirely in your browser via WebAssembly. Nothing you type leaves your machine.</p>
+  <p class="build" id="build-info">Reading build information…</p>
+</div>
 
 <div class="notice" id="notice" role="alert" hidden></div>
 
-<main class="workspace">
+<div class="workspace">
   <section class="pane editor-pane" aria-labelledby="input-heading">
     <div class="pane-head">
       <h2 id="input-heading" class="pane-title">Input</h2>
@@ -117,9 +98,9 @@
       </div>
     </div>
   </section>
-</main>
+</div>
 
-<footer class="site-footer">
+<section class="app-notes" aria-label="About the playground">
   <div class="footer-grid">
     <section>
       <h2>Limitations</h2>
@@ -134,7 +115,7 @@
       <p>Open an issue on <a href="https://github.com/VeriFIT/z3-noodler/issues">GitHub</a>. Include a Share link: it contains your input and the options you used.</p>
     </section>
   </div>
-</footer>
+</section>
 
 <script nomodule>
   document.getElementById('notice').hidden = false;
@@ -142,5 +123,3 @@
 </script>
 <script src="examples.js"></script>
 <script type="module" src="app.js"></script>
-</body>
-</html>

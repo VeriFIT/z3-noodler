@@ -2,8 +2,6 @@
 title: Publications
 ---
 
-[Home](index.md) · [Installation](installation.md) · [Usage](usage.md) · [Publications](publications.md) · [Playground](playground/) · [Finding bugs](bugs/)
-
 # Publications
 
 ## How to cite

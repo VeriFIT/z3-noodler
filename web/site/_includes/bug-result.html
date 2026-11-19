@@ -1,0 +1,25 @@
+{%- comment -%}
+  The result of one query of the "Finding bugs" page, from _data/bugs.json (written by
+  web/bugs/run-cases.sh): the answer, the model (only the variables in `show`, a comma-separated
+  list, if given), the time, the SMT-LIB query and a link that opens it in the playground.
+  Usage: {% include bug-result.html case="jinja-3.1.2" show="key" %}
+{%- endcomment -%}
+{%- assign c = site.data.bugs.cases[include.case] -%}
+{%- assign show = include.show | split: "," -%}
+<div class="bug-result">
+<div class="bug-result-head">
+{%- if c.answer == "sat" -%}<span class="verdict verdict-bug">sat · bug found</span>
+{%- elsif c.answer == "unsat" -%}<span class="verdict verdict-safe">unsat · proved safe</span>
+{%- else -%}<span class="verdict verdict-unknown">{{ c.answer | escape }}</span>{%- endif -%}
+<span class="bug-time">Z3-Noodler · {{ c.seconds | round: 2 }} s</span>
+</div>
+{%- if c.model.size > 0 %}
+<div class="bug-model">
+{%- for p in c.model -%}{%- if include.show == nil or show contains p[0] %}
+<div><span class="var">{{ p[0] | escape }}</span> = <span class="val">{{ p[1] | escape }}</span></div>
+{%- endif -%}{%- endfor %}
+</div>
+{%- endif %}
+<details><summary>SMT-LIB query <span class="file">cases/{{ include.case }}.smt2</span></summary><pre class="smt"><code>{{ c.query | escape | strip }}</code></pre></details>
+<a class="run-link" href="{{ '/playground/' | relative_url }}{{ c.playground }}">Run in the playground ↗</a>
+</div>

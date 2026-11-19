@@ -2,8 +2,6 @@
 title: Usage
 ---
 
-[Home](index.md) · [Installation](installation.md) · [Usage](usage.md) · [Publications](publications.md) · [Playground](playground/) · [Finding bugs](bugs/)
-
 # Usage
 
 Z3-Noodler is used like Z3: it reads SMT-LIB 2 and accepts Z3's command-line options and parameters. The examples assume the binary is installed as `z3-noodler` ([Installation](installation.md)); after a build from source it is `build/z3`.
