@@ -25,6 +25,7 @@ if (Catch2_FOUND)
             ecma_regex.cpp
             constraint-slices.cpp
             axiom-replay.cpp
+            lia-projection.cpp
     )
 
     z3_add_install_tactic_rule(${z3_test_deps})

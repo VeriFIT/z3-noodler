@@ -39,7 +39,20 @@ namespace smt::noodler {
      *          it finishes wihtout result
      */
     final_check_status theory_str_noodler::final_check_eh(unsigned) {
+        final_check_status status = solve_string_constraints();
+        if (status == FC_DONE && mk_interface_eqs() > 0) {
+            // the string constraints are satisfied, but the search needs to decide the equalities of shared terms
+            // first (their merging may change the string constraints, so they need to be solved again)
+            last_run_was_sat = false;
+            scope_with_last_run_was_sat = -1;
+            return FC_CONTINUE;
+        }
+        return status;
+    }
+
+    final_check_status theory_str_noodler::solve_string_constraints() {
         TRACE(str, tout << "final_check starts" << std::endl;);
+        invalidate_arith_projection();
 
         // sequences that are arguments of the uninterpreted seq.nth_u must be decided as (dis)equal
         // (checked before the shortcut for the last sat run, as new nth_u terms or classes might appear
@@ -56,19 +69,13 @@ namespace smt::noodler {
             return FC_DONE;
         }
 
-        // create equalities among inter-theory shared variables
-        // if any new equality is added, we return FC_CONTINUE to re-run the solver
-        unsigned num_eqs = mk_interface_eqs();
-        if(num_eqs > 0) {
-            return FC_CONTINUE;
-        }
-
         dec_proc = nullptr;
         seq_abstraction = nullptr;
         relevant_vars.clear();
         scope_with_last_run_was_sat = -1;
 
         remove_irrelevant_constr();
+        remove_constraints_of_fresh_classes();
         STRACE(str,
             tout << "Relevant predicates:" << std::endl;
             tout << "  eqs(" << this->m_word_eq_todo_rel.size() << "):" << std::endl;
@@ -119,6 +126,14 @@ namespace smt::noodler {
         }
 
         /***************************** SOLVE WORD (DIS)EQUATIONS + REGULAR MEMBERSHIPS ******************************/
+
+        // the instance being solved (the key of the pending candidate solution and of the skipped procedures)
+        m_current_key = construct_refinement();
+
+        // a candidate solution whose guarded length formula was decided by the main context (see sat_handling)
+        if (final_check_status pending_status; handle_pending_len_candidate(pending_status)) {
+            return pending_status;
+        }
 
         // cache for storing already solved instances. For each instance we store the length formula obtained from the decision procedure.
         // if we get an instance that we have already solved, we use this stored length formula (if we run the procedure
@@ -220,7 +235,7 @@ namespace smt::noodler {
 
 
         // There is only one symbol in the equation. The system is SAT iff lengths are SAT
-        if(m_params.m_try_unary_proc && !has_gen_seq && symbols_in_formula.size() == 2 && !contains_conversions && !contains_transducers && this->m_not_contains_todo_rel.size() == 0 && UnaryDecisionProcedure::is_suitable(instance, aut_assignment)) { // dummy symbol + 1
+        if(m_params.m_try_unary_proc && !is_len_source_skipped(LenCandidateSource::UNARY) && !has_gen_seq && symbols_in_formula.size() == 2 && !contains_conversions && !contains_transducers && this->m_not_contains_todo_rel.size() == 0 && UnaryDecisionProcedure::is_suitable(instance, aut_assignment)) { // dummy symbol + 1
             lbool result = run_length_sat(instance, aut_assignment, init_length_sensitive_vars, conversions);
             if(result == l_true) {
                 return FC_DONE;
@@ -230,7 +245,7 @@ namespace smt::noodler {
         }
 
         // try a heuristic based procedure for disequations only
-        if (contains_word_disequations && !has_gen_seq && this->m_conversion_todo.empty() && this->m_not_contains_todo_rel.empty() && this->m_rat_membership_todo_rel.empty()
+        if (contains_word_disequations && !is_len_source_skipped(LenCandidateSource::DISEQ_HEUR) && !has_gen_seq && this->m_conversion_todo.empty() && this->m_not_contains_todo_rel.empty() && this->m_rat_membership_todo_rel.empty()
             && DiseqLengthHeuristicProcedure::is_suitable(instance, aut_assignment)) {
             lbool result = run_diseq_length_heur(instance, aut_assignment, init_length_sensitive_vars);
             if (result == l_true) {
@@ -246,7 +261,7 @@ namespace smt::noodler {
         // length-only memberships (e.g., x in re.allchar{2,} obtained from |x| >= 2) are handled as length constraints,
         // their variables become length-sensitive for Nielsen
         std::unordered_set<BasicTerm> nielsen_length_sensitive_vars = init_length_sensitive_vars;
-        if(m_params.m_try_nielsen && is_nielsen_suitable(instance, nielsen_length_sensitive_vars)) {
+        if(m_params.m_try_nielsen && !is_len_source_skipped(LenCandidateSource::NIELSEN) && is_nielsen_suitable(instance, nielsen_length_sensitive_vars)) {
             lbool result = run_nielsen(instance, aut_assignment, nielsen_length_sensitive_vars);
             if(result == l_true) {
                 return FC_DONE;
@@ -287,7 +302,7 @@ namespace smt::noodler {
 
         // now we know that the initial formula is length-satisfiable
         // try length-based decision procedure (if enabled) to solve
-        if(m_params.m_try_length_proc && !has_gen_seq && contains_eqs_and_diseqs_only && !contains_transducers && LengthDecisionProcedure::is_suitable(instance, aut_assignment)) {
+        if(m_params.m_try_length_proc && !is_len_source_skipped(LenCandidateSource::LENGTH) && !has_gen_seq && contains_eqs_and_diseqs_only && !contains_transducers && LengthDecisionProcedure::is_suitable(instance, aut_assignment)) {
             lbool result = run_length_proc(instance, aut_assignment, init_length_sensitive_vars);
             if(result == l_true) {
                 return FC_DONE;
@@ -297,11 +312,15 @@ namespace smt::noodler {
         }
 
         // try underapproximation (if enabled) to solve
-        if(m_params.m_underapproximation && !has_gen_seq && is_underapprox_suitable(instance, aut_assignment, conversions)) {
+        if(m_params.m_underapproximation && !is_len_source_skipped(LenCandidateSource::UNDERAPPROX) && !has_gen_seq && is_underapprox_suitable(instance, aut_assignment, conversions)) {
             STRACE(str, tout << "Try underapproximation" << std::endl);
-            if (solve_underapprox(instance, aut_assignment, init_length_sensitive_vars, conversions) == l_true) {
+            lbool underapprox_result = solve_underapprox(instance, aut_assignment, init_length_sensitive_vars, conversions);
+            if (underapprox_result == l_true) {
                 STRACE(str, tout << "Sat from underapproximation" << std::endl;);
                 return FC_DONE;
+            } else if (underapprox_result == l_false) {
+                // the candidate solution is decided by the main context (see sat_handling)
+                return FC_CONTINUE;
             }
             STRACE(str, tout << "Underapproximation did not help\n";);
         }
@@ -331,56 +350,60 @@ namespace smt::noodler {
         dec_proc->init_computation();
         this->statistics.at("stabilization").num_start++;
 
-        expr_ref block_len(m.mk_false(), m);
+        return run_main_enumeration(std::make_shared<MainEnumState>(m, main_dec_proc, instance, check_len_sat_with_context));
+    }
 
-        auto check_lens_with_precision = [this, &lengths, &block_len, &check_len_sat_with_context]() {
+    final_check_status theory_str_noodler::run_main_enumeration(const std::shared_ptr<MainEnumState>& st) {
+        dec_proc = st->dec_proc;
+
+        auto check_lens_with_precision = [this, st]() {
             auto [noodler_lengths, precision] = dec_proc->get_lengths();
 
-            lengths = len_node_to_z3_formula(noodler_lengths);
-            m_rewrite(lengths);
+            st->lengths = len_node_to_z3_formula(noodler_lengths);
+            m_rewrite(st->lengths);
 
             STRACE(str_print_notcontains_lia,
                 std::ofstream out_file("./not-contains-lia.smt2");
-                write_z3_expr_into_stream(this->m, out_file, lengths);
+                write_z3_expr_into_stream(this->m, out_file, st->lengths);
                 out_file.close();
             );
 
-            lbool sat = check_len_sat(lengths, check_len_sat_with_context);
+            lbool sat = check_len_sat(st->lengths, st->check_len_sat_with_context);
             return std::pair<lbool, LenNodePrecision>(sat, precision);
         };
-        auto check_lens = [&check_lens_with_precision, this, &lengths, &block_len, &check_len_sat_with_context](bool add_to_block) -> lbool {
+        auto check_lens = [&check_lens_with_precision, this, st](bool add_to_block) -> lbool {
             auto [is_lengths_sat, precision] = check_lens_with_precision();
             if (add_to_block && is_lengths_sat == l_false) {
-                block_len = m.mk_or(block_len, lengths);
+                st->block_len = m.mk_or(st->block_len, st->lengths);
             }
             return is_lengths_sat;
         };
 
         while (true) {
             util::check_limit(m);
-            result = main_dec_proc->compute_next_solution_with_len_checks(check_lens);
+            lbool result = st->dec_proc->compute_next_solution_with_len_checks(check_lens);
             if (result == l_true) {
                 auto [is_lengths_sat, precision] = check_lens_with_precision();
 
                 if (is_lengths_sat == l_true) {
-                    STRACE(str, tout << "len sat " << mk_pp(lengths, m) << std::endl;);
-                    lbool result_of_sat_handling = sat_handling(lengths);
+                    STRACE(str, tout << "len sat " << mk_pp(st->lengths, m) << std::endl;);
+                    lbool result_of_sat_handling = sat_handling(st->lengths, LenCandidateSource::MAIN, false, precision, st);
                     if (result_of_sat_handling == l_true) {
-                        if(precision == LenNodePrecision::OVERAPPROX) {
-                            ctx.get_fparams().is_overapprox = true;
-                        }
-
                         this->statistics.at("stabilization").num_finish++;
                         return FC_DONE;
+                    } else if (result_of_sat_handling == l_undef) {
+                        // the main context decides whether the length formula is consistent (see handle_pending_len_candidate)
+                        this->statistics.at("stabilization").num_finish++;
+                        return FC_CONTINUE;
                     } else {
-                        is_lengths_sat = result_of_sat_handling;
-                        check_len_sat_with_context = true;
+                        is_lengths_sat = l_false;
+                        st->check_len_sat_with_context = true;
                     }
                 }
-                
+
                 if (is_lengths_sat == l_false) {
-                    STRACE(str, tout << "len unsat " <<  mk_pp(lengths, m) << std::endl;);
-                    block_len = m.mk_or(block_len, lengths);
+                    STRACE(str, tout << "len unsat " <<  mk_pp(st->lengths, m) << std::endl;);
+                    st->block_len = m.mk_or(st->block_len, st->lengths);
 
                     if(precision == LenNodePrecision::UNDERAPPROX) {
                         ctx.get_fparams().is_underapprox = true;
@@ -394,16 +417,16 @@ namespace smt::noodler {
             } else if (result == l_false) {
                 // we did not find a solution (with satisfiable length constraints)
                 // we need to block current assignment
-                STRACE(str, tout << "assignment unsat " << mk_pp(block_len, m) << std::endl;);
+                STRACE(str, tout << "assignment unsat " << mk_pp(st->block_len, m) << std::endl;);
 
-                if (!check_len_sat_with_context) {
+                if (!st->check_len_sat_with_context) {
                     // if we were not checking length satisfiability with the context, then the current string assignment must be unsatisfiable on its own => we can block it completely
-                    block_unsat_instance(instance, true, false);
+                    block_unsat_instance(st->instance, true, false);
                 } else {
                     // If some solving states were skipped, an overapproximation was added to block_len
-                    const bool overapprox = main_dec_proc->get_skipped_some_with_len_checks();
+                    const bool overapprox = st->dec_proc->get_skipped_some_with_len_checks();
 
-                    block_curr_len(block_len, true, overapprox);
+                    block_curr_len(st->block_len, true, overapprox);
                 }
                 this->statistics.at("stabilization").num_finish++;
                 return FC_CONTINUE;
@@ -413,6 +436,82 @@ namespace smt::noodler {
                 return FC_GIVEUP;
             }
         }
+    }
+
+    unsigned theory_str_noodler::remove_constraints_of_fresh_classes() {
+        // the class (root in the e-graph) of a side that is a single term (nullptr for a concatenation)
+        auto side_class = [&](expr* e) -> enode* {
+            if (m_util_s.str.is_concat(e) || !ctx.e_internalized(e)) {
+                return nullptr;
+            }
+            return ctx.get_enode(e)->get_root();
+        };
+
+        // classes used elsewhere than as a whole side of a disequation or in an equation inside the class
+        obj_hashtable<enode> used;
+        std::function<void(expr*)> use = [&](expr* e) {
+            if (m_util_s.str.is_concat(e)) {
+                for (expr* arg : *to_app(e)) {
+                    use(arg);
+                }
+            } else if (ctx.e_internalized(e)) {
+                used.insert(ctx.get_enode(e)->get_root());
+            }
+        };
+        for (const auto& [l, r] : m_word_eq_todo_rel) {
+            if (enode* c = side_class(l); c == nullptr || c != side_class(r)) {
+                use(l);
+                use(r);
+            }
+        }
+        for (const auto& [l, r] : m_word_diseq_todo_rel) {
+            if (side_class(l) == nullptr) use(l);
+            if (side_class(r) == nullptr) use(r);
+        }
+        for (const auto& memb : m_membership_todo_rel) {
+            use(std::get<0>(memb));
+        }
+        for (const auto& memb : m_rat_membership_todo_rel) {
+            use(std::get<0>(memb));
+            use(std::get<1>(memb));
+        }
+        for (const auto& nc : m_not_contains_todo_rel) {
+            use(nc.first);
+            use(nc.second);
+        }
+        for (const TermConversion& conv : m_conversion_todo) {
+            auto it = var_name.find(conv.string_var);
+            if (it == var_name.end()) {
+                return 0; // cannot find the class of the converted variable
+            }
+            use(it->second);
+        }
+        // a class that is not used by the other constraints becomes fresh once its constraints are removed
+        auto fresh = [&](enode* c) {
+            return c != nullptr && !used.contains(c) && has_fresh_shape(c);
+        };
+
+        unsigned removed = 0;
+        vector<expr_pair> kept_diseqs;
+        for (const auto& diseq : m_word_diseq_todo_rel) {
+            enode* lc = side_class(diseq.first);
+            enode* rc = side_class(diseq.second);
+            if (lc != rc && surely_different_values(lc, rc, fresh)) {
+                STRACE(str, tout << "removed disequation: " << mk_pp(diseq.first, m) << " != " << mk_pp(diseq.second, m) << std::endl;);
+                ++removed;
+            } else {
+                kept_diseqs.push_back(diseq);
+            }
+        }
+        m_word_diseq_todo_rel = std::move(kept_diseqs);
+        vector<expr_pair> kept_eqs;
+        for (const auto& eq : m_word_eq_todo_rel) {
+            if (enode* c = side_class(eq.first); c == nullptr || c != side_class(eq.second) || !fresh(c)) {
+                kept_eqs.push_back(eq);
+            }
+        }
+        m_word_eq_todo_rel = std::move(kept_eqs);
+        return removed;
     }
 
     bool theory_str_noodler::is_foreign_theory_term(expr* e) const {
@@ -925,13 +1024,38 @@ namespace smt::noodler {
         while (main_dec_proc->compute_next_solution_with_len_checks(check_lens) == l_true) {
             expr_ref lengths = len_node_to_z3_formula(dec_proc->get_lengths().first);
             if (check_len_sat(lengths, check_with_context) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
-                if (sat_handling(lengths) == l_true) {
+                lbool res = sat_handling(lengths, LenCandidateSource::UNDERAPPROX, false, LenNodePrecision::UNDERAPPROX);
+                if (res == l_true) {
                     this->statistics.at("underapprox").num_finish++;
                     return l_true;
+                } else if (res == l_undef) {
+                    this->statistics.at("underapprox").num_finish++;
+                    return l_false; // pending, decided by the main context
                 }
             }
         }
         return l_undef;
+    }
+
+    const expr_ref_vector& theory_str_noodler::get_arith_projection() {
+        if (!m_arith_projection_valid) {
+            m_arith_projection.reset();
+            collect_arith_projection(ctx, m_arith_projection);
+            m_arith_projection_valid = true;
+        }
+        return m_arith_projection;
+    }
+
+    kernel& theory_str_noodler::get_arith_kernel() {
+        if (!m_arith_kernel) {
+            m_arith_kernel_params = get_fparams();
+            m_arith_kernel_params.m_string_solver = symbol("none");
+            m_arith_kernel = alloc(kernel, m, m_arith_kernel_params);
+            for (expr* e : get_arith_projection()) {
+                m_arith_kernel->assert_expr(e);
+            }
+        }
+        return *m_arith_kernel;
     }
 
     lbool theory_str_noodler::check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core, expr_ref* model_formula, bool check_with_clauses) {
@@ -945,8 +1069,20 @@ namespace smt::noodler {
         bool compute_model = (model_formula != nullptr);
         bool compute_unsat_core = (unsat_core != nullptr);
 
-        bool has_quantifier = expr_cases::has_quantifier(len_formula, m) || (check_with_context && this->input_has_quantifiers);
+        const bool len_has_quantifier = expr_cases::has_quantifier(len_formula, m);
         m_rewrite(len_formula);
+
+        if (check_with_context && !check_with_clauses && !len_has_quantifier && !compute_unsat_core && !compute_model) {
+            // the usual case: check the length formula with the arithmetic projection of the context (see
+            // collect_arith_projection), which is all the context knows about arithmetic terms, using the
+            // incremental solver of the current final check (the length formula is an assumption)
+            expr* assumption = len_formula.get();
+            lbool ret = get_arith_kernel().check(1, &assumption);
+            STRACE(str, tout << "ret (incremental): " << ret << std::endl;);
+            return ret;
+        }
+
+        bool has_quantifier = len_has_quantifier || (check_with_context && this->input_has_quantifiers);
         std::unique_ptr<lia_solver> solver;
         if (has_quantifier) {
             solver = std::make_unique<quant_lia_solver>(get_manager());
@@ -1140,9 +1276,13 @@ namespace smt::noodler {
             if (result == l_true) {
                 expr_ref lengths(m.mk_and(len_node_to_z3_formula(dec_proc->get_lengths().first), memb_lengths), m);
                 if (check_len_sat(lengths, check_len_sat_with_context) == l_true) {
-                    if (sat_handling(lengths) == l_true) {
+                    lbool res = sat_handling(lengths, LenCandidateSource::NIELSEN, false, LenNodePrecision::PRECISE);
+                    if (res == l_true) {
                         this->statistics.at("nielsen").num_finish++;
                         return l_true;
+                    } else if (res == l_undef) {
+                        this->statistics.at("nielsen").num_finish++;
+                        return l_false; // pending, decided by the main context
                     } else {
                         STRACE(str, tout << "nielsen len unsat" <<  mk_pp(lengths, m) << std::endl;);
                         block_len = m.mk_or(block_len, lengths);
@@ -1194,10 +1334,14 @@ namespace smt::noodler {
             expr_ref lengths = len_node_to_z3_formula(formula);
             lbool len_sat = check_len_sat(lengths, check_len_sat_with_context);
             if (len_sat == l_true) {
-                if (sat_handling(lengths) == l_true) {
+                lbool res = sat_handling(lengths, LenCandidateSource::LENGTH, precision != LenNodePrecision::UNDERAPPROX, precision);
+                if (res == l_true) {
                     this->statistics.at("length").num_finish++;
                     STRACE(str, tout << "len: sat from lengths:" <<  mk_pp(lengths, m) << std::endl;);
                     return l_true;
+                } else if (res == l_undef) {
+                    this->statistics.at("length").num_finish++;
+                    return l_false; // pending, decided by the main context
                 } else {
                     len_sat = l_false;
                     check_len_sat_with_context = true;
@@ -1324,10 +1468,14 @@ namespace smt::noodler {
         (void)precision; // precision is always underapprox for this procedure
 
         if (check_len_sat(lengths, !init_length_sensitive_vars.empty()) == l_true) { // if there are no length vars in the current string formula, we do not need to check with context
-            if (sat_handling(lengths) == l_true) {
+            lbool res = sat_handling(lengths, LenCandidateSource::DISEQ_HEUR, false, LenNodePrecision::UNDERAPPROX);
+            if (res == l_true) {
                 this->statistics.at("diseq-length-heur").num_finish++;
                 STRACE(str, tout << "Solved by diseq-length heuristic: SAT" << std::endl;);
                 return l_true;
+            } else if (res == l_undef) {
+                this->statistics.at("diseq-length-heur").num_finish++;
+                return l_false; // pending, decided by the main context
             }
         }
         return l_undef;
@@ -1406,8 +1554,11 @@ namespace smt::noodler {
         lbool len_sat = check_len_sat(lengths, check_len_sat_with_context);
         if (len_sat == l_true) {
             STRACE(str, tout << "Sat from unary procedure with LIA formula: " << mk_pp(lengths, m) << std::endl);
-            if (sat_handling(lengths) == l_true) {
+            lbool res = sat_handling(lengths, LenCandidateSource::UNARY, true, LenNodePrecision::PRECISE);
+            if (res == l_true) {
                 return l_true;
+            } else if (res == l_undef) {
+                return l_false; // pending, decided by the main context
             } else {
                 len_sat = l_false;
                 check_len_sat_with_context = true;
@@ -1425,7 +1576,8 @@ namespace smt::noodler {
         return l_undef;
     }
 
-    lbool theory_str_noodler::sat_handling(expr_ref length_formula) {
+    lbool theory_str_noodler::sat_handling(expr_ref length_formula, LenCandidateSource source, bool complete, LenNodePrecision precision,
+                                           std::shared_ptr<MainEnumState> main_state, bool use_limits) {
         // TODO: using model from external solvers for quantifiers needs some more testing, so it is not enabled for now
         #if 0
         if (expr_cases::has_quantifier(length_formula, m) || this->input_has_quantifiers) {
@@ -1442,7 +1594,10 @@ namespace smt::noodler {
         }
         #endif
 
-        if (m_params.m_produce_models) {
+        expr_ref base_len = length_formula;
+        bool limited = false;
+
+        if (use_limits && m_params.m_produce_models) {
             // If we want to produce models, we would like to limit the lengths more significantly,
             // so that Z3 arith solver does not give us some large numbers (for example it can give 60000
             // and returning such a long model can take a long time).
@@ -1480,6 +1635,7 @@ namespace smt::noodler {
                     // we can limit the lengths => add it to the resulting length formula
                     STRACE(str_sat_handling, tout << "sat\n");
                     length_formula = length_formula_underapprox;
+                    limited = true;
                     break;
                 } else {
                     STRACE(str_sat_handling, tout << "unsat\n");
@@ -1487,18 +1643,171 @@ namespace smt::noodler {
             }
         }
 
-        last_run_was_sat = true;
-        scope_with_last_run_was_sat = m_scope_level;
         m_rewrite(length_formula);
-        if (this->input_has_quantifiers || expr_cases::has_quantifier(length_formula, m)) {
-            // for the quantified formulae, we must avoid add_axiom as 
-            // adding axioms leads to unknown immediately (fails in the internalization). Probably add_axiom interferes with quantifier instantiation.
-            ctx.assert_expr(length_formula);
-            ctx.internalize_assertions();
-        } else {
-            add_axiom(length_formula);
+        if (m.is_true(length_formula)) {
+            // nothing to check
+            last_run_was_sat = true;
+            scope_with_last_run_was_sat = m_scope_level;
+            if (precision == LenNodePrecision::OVERAPPROX) {
+                ctx.get_fparams().is_overapprox = true;
+            }
+            return l_true;
         }
-        return l_true;
+        if (m.is_false(length_formula)) {
+            return l_false;
+        }
+
+        // L holds only for this solution, it cannot be added as an axiom (learned clauses depending on it would
+        // be invalid) --> add (not g or L) for a fresh guard g, which the main context decides
+        auto pending = std::make_unique<PendingLenCandidate>(m);
+        pending->key = construct_refinement();
+        pending->guard = m.mk_fresh_const("noodler_len_guard", m.mk_bool_sort());
+        add_guarded_len_formula(pending->guard, length_formula, pending->len_atom, pending->len_sign);
+        pending->base_len = base_len;
+        pending->limited = limited;
+        pending->source = source;
+        pending->complete = complete;
+        pending->precision = precision;
+        pending->scope_level = m_scope_level;
+        pending->dec_proc = dec_proc;
+        pending->relevant_vars = relevant_vars;
+        pending->seq_abstraction = seq_abstraction;
+        pending->main_state = std::move(main_state);
+        STRACE(str, tout << "pending length formula guarded by " << mk_pp(pending->guard, m) << ": " << mk_pp(length_formula, m) << std::endl;);
+        m_pending_len = std::move(pending);
+        return l_undef;
+    }
+
+    void theory_str_noodler::add_guarded_len_formula(expr* guard, expr* length_formula, expr_ref& len_atom, bool& len_sign) {
+        if (expr_cases::has_quantifier(length_formula, m)) {
+            // quantified formulae (e.g., from not-contains) need the preprocessing of asserted formulae (internalization
+            // of existential quantifiers is not supported); (g -> L) is asserted only in the current scope
+            set_input_has_quantifiers(true);
+            ctx.assert_expr(m.mk_implies(guard, length_formula));
+            ctx.internalize_assertions();
+            if (!ctx.b_internalized(guard)) {
+                ctx.internalize(guard, false);
+            }
+            len_atom = nullptr;
+            len_sign = false;
+        } else {
+            // the clause is valid on its own (g is fresh), so it is replayed after backtracking
+            axiom_recorder recorder(m_axiom_replay);
+            literal len_lit = mk_literal(length_formula);
+            literal guard_lit = mk_literal(guard);
+            add_axiom({~guard_lit, len_lit});
+            len_atom = ctx.bool_var2expr(len_lit.var());
+            len_sign = len_lit.sign();
+        }
+        if (!m_len_guards.contains(guard)) {
+            m_len_guards.insert(guard);
+            m_len_guards_pin.push_back(guard);
+        }
+        apply_len_guard_hints(guard);
+    }
+
+    void theory_str_noodler::apply_len_guard_hints(expr* guard) {
+        if (!ctx.b_internalized(guard)) {
+            return;
+        }
+        bool_var v = ctx.get_bool_var(guard);
+        ctx.mark_as_relevant(v);
+        if (ctx.get_assignment(v) == l_undef) {
+            // decide the guard before the atoms of the length formula, trying true first
+            ctx.set_true_first_flag(v);
+            ctx.inc_bvar_activity(v, 1000.0);
+        }
+    }
+
+    bool theory_str_noodler::handle_pending_len_candidate(final_check_status& status) {
+        if (!m_pending_len) {
+            return false;
+        }
+        if (!m_current_key || m_pending_len->key != m_current_key || !ctx.b_internalized(m_pending_len->guard)) {
+            // the instance changed (or the guard was removed by backtracking) --> solve the current instance
+            STRACE(str, tout << "pending length candidate dropped" << std::endl;);
+            m_pending_len = nullptr;
+            return false;
+        }
+        lbool guard_val = ctx.get_assignment(m_pending_len->guard.get());
+        if (guard_val == l_true) {
+            if (m_pending_len->len_atom) {
+                lbool len_val = ctx.b_internalized(m_pending_len->len_atom) ? ctx.get_assignment(m_pending_len->len_atom.get()) : l_undef;
+                if (m_pending_len->len_sign) {
+                    len_val = ~len_val;
+                }
+                if (len_val != l_true) {
+                    // cannot happen while the guarded clause is present
+                    STRACE(str, tout << "pending length candidate dropped (length formula not true)" << std::endl;);
+                    m_pending_len = nullptr;
+                    return false;
+                }
+            }
+            // the length formula holds in the context --> the solution is accepted
+            STRACE(str, tout << "pending length candidate accepted (" << mk_pp(m_pending_len->guard, m) << ")" << std::endl;);
+            dec_proc = m_pending_len->dec_proc;
+            relevant_vars = m_pending_len->relevant_vars;
+            seq_abstraction = m_pending_len->seq_abstraction;
+            if (m_pending_len->precision == LenNodePrecision::OVERAPPROX) {
+                ctx.get_fparams().is_overapprox = true;
+            }
+            last_run_was_sat = true;
+            scope_with_last_run_was_sat = m_scope_level;
+            // the decision procedure may be modified by the model generation, it cannot be resumed anymore
+            m_pending_len = nullptr;
+            status = FC_DONE;
+            return true;
+        }
+        if (guard_val == l_undef) {
+            // should not happen at final check
+            m_pending_len = nullptr;
+            return false;
+        }
+
+        // the length formula is inconsistent with the context --> continue with the next candidate
+        std::unique_ptr<PendingLenCandidate> pending = std::move(m_pending_len);
+        STRACE(str, tout << "pending length candidate rejected (" << mk_pp(pending->guard, m) << ")" << std::endl;);
+        dec_proc = pending->dec_proc;
+        relevant_vars = pending->relevant_vars;
+        seq_abstraction = pending->seq_abstraction;
+        if (pending->limited) {
+            // only the length formula with the length limits for model generation was rejected, try it without them
+            lbool res = sat_handling(pending->base_len, pending->source, pending->complete, pending->precision, pending->main_state, false);
+            if (res == l_true) {
+                status = FC_DONE;
+                return true;
+            }
+            if (res == l_undef) {
+                status = FC_CONTINUE;
+                return true;
+            }
+        }
+        if (pending->source == LenCandidateSource::MAIN) {
+            SASSERT(pending->main_state);
+            // as for a length formula inconsistent with the context in run_main_enumeration
+            if (pending->precision == LenNodePrecision::UNDERAPPROX) {
+                ctx.get_fparams().is_underapprox = true;
+            }
+            pending->main_state->block_len = m.mk_or(pending->main_state->block_len, pending->base_len);
+            pending->main_state->check_len_sat_with_context = true;
+            status = run_main_enumeration(pending->main_state);
+            return true;
+        }
+        if (pending->complete) {
+            // the length formula characterizes all solutions of the instance, and it is inconsistent with the context
+            block_curr_len(pending->base_len);
+            status = FC_CONTINUE;
+            return true;
+        }
+        // the procedure is incomplete --> skip it for this instance and continue with the next procedures
+        if (m_skip_len_key != m_current_key) {
+            m_skip_len_key = m_current_key;
+            m_skipped_len_sources.clear();
+        }
+        m_skipped_len_sources.insert(pending->source);
+        dec_proc = nullptr;
+        relevant_vars.clear();
+        return false;
     }
 
     expr_ref theory_str_noodler::len_node_to_z3_formula(const LenNode &node) {
@@ -1545,48 +1854,71 @@ namespace smt::noodler {
         unmark_enodes(to_unmark.size(), to_unmark.data());
     }
 
+    expr* theory_str_noodler::get_class_value(enode* n) const {
+        for (enode* member : *n->get_root()) {
+            if (is_ground_seq_value(member->get_expr())) {
+                return member->get_expr();
+            }
+        }
+        return nullptr;
+    }
+
+    bool theory_str_noodler::has_fresh_shape(enode* n) const {
+        enode* root = n->get_root();
+        if (!m_util_s.is_string(root->get_expr()->get_sort())) {
+            return false;
+        }
+        for (enode* member : *root) {
+            expr* e = member->get_expr();
+            if (is_app(e) && to_app(e)->get_family_id() == m_util_s.get_family_id()) {
+                // a literal, a concatenation, or a string function (e.g., str.replace_all) has a value determined by
+                // its arguments
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool theory_str_noodler::is_fresh_class(enode* n) const {
+        if (!has_fresh_shape(n)) {
+            return false;
+        }
+        for (enode* member : *n->get_root()) {
+            expr* var = member->get_expr();
+            predicate_replace.find(var, var);
+            if (util::is_variable(var) && relevant_vars.contains(util::get_variable_basic_term(var))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     unsigned theory_str_noodler::mk_interface_eqs() {
         sbuffer<theory_var> roots;
         collect_shared_vars(roots);
-        // count the number of new equalities added
-        // for result > 0 we immediately return FC_CONTINUE in final_check
         unsigned result = 0;
-        sbuffer<theory_var>::iterator it1  = roots.begin();
-        sbuffer<theory_var>::iterator end1 = roots.end();
-        for (; it1 != end1; ++it1) {
-            STRACE(str, tout << "mk_interface_eqs: processing: v" << *it1 << "\n";);
-            theory_var  v1 = *it1;
-            enode *     n1 = get_enode(v1);
-            sbuffer<theory_var>::iterator it2 = it1;
-            ++it2;
-            for (; it2 != end1; ++it2) {
-                theory_var v2 = *it2;
-                enode * n2 = get_enode(v2);
-                sort * s2 = n2->get_expr()->get_sort();
-                if (n1->get_expr()->get_sort() != s2) {
+        for (unsigned i = 0; i < roots.size(); ++i) {
+            enode* n1 = get_enode(roots[i]);
+            for (unsigned j = i + 1; j < roots.size(); ++j) {
+                enode* n2 = get_enode(roots[j]);
+                if (n1->get_expr()->get_sort() != n2->get_expr()->get_sort()) {
                     // shared variables of different (sequence) sorts
                     continue;
                 }
-                app * eq = ctx.mk_eq_atom(n1->get_expr(), n2->get_expr());
-
-                // disequation of inter-theory variables are always relevant
-                if(ctx.is_diseq(n1, n2)) {
-                    ctx.mark_as_relevant(m.mk_not(eq));
+                if (ctx.is_diseq(n1, n2)) {
+                    // disequation of inter-theory variables are always relevant
+                    ctx.mark_as_relevant(m.mk_not(ctx.mk_eq_atom(n1->get_expr(), n2->get_expr())));
                     continue;
                 }
-
-                // it is not equality neither disequality in the context
-                if (!ctx.is_diseq(n1, n2) && !ctx.is_eq(n1, n2)) {
-                    if (!ctx.b_internalized(eq) || !ctx.is_relevant(eq)) {
-                        result++;
-                        ctx.internalize(eq, false);
-                        ctx.mark_as_relevant(eq);
-                        // Previously we added the equality as a theory axiom here (add_axiom(eq)).
-                        // This forced all interface pairs to become equal immediately, preventing the SAT core
-                        // from exploring assignments where they differ. Instead we only internalize and mark it
-                        // relevant so the core solver may choose (dis)equalities later, and other theory reasoning
-                        // can derive necessary consequences.
-                    }
+                if (ctx.is_eq(n1, n2)) {
+                    continue;
+                }
+                if (surely_different_values(n1->get_root(), n2->get_root(), [this](enode* c) { return is_fresh_class(c); })) {
+                    continue;
+                }
+                if (ctx.assume_eq(n1, n2)) {
+                    STRACE(str, tout << "mk_interface_eqs: " << mk_pp(n1->get_expr(), m) << " = " << mk_pp(n2->get_expr(), m) << std::endl;);
+                    ++result;
                 }
             }
         }

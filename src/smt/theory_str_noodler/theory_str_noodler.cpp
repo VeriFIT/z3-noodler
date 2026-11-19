@@ -717,16 +717,47 @@ namespace smt::noodler {
         return false;
     }
 
-    bool theory_str_noodler::check_ground_value_clash(enode* n) {
+    bool theory_str_noodler::ground_values_differ(expr* a, expr* b) {
         // two values (e.g., elements of ground sequences) that are surely different
-        auto values_differ = [this](expr* a, expr* b) {
-            zstring sa, sb;
-            if (m_util_s.str.is_string(a, sa) && m_util_s.str.is_string(b, sb)) {
-                return sa != sb;
+        auto values_differ = [this](expr* x, expr* y) {
+            zstring sx, sy;
+            if (m_util_s.str.is_string(x, sx) && m_util_s.str.is_string(y, sy)) {
+                return sx != sy;
             }
-            return m.are_distinct(a, b);
+            return m.are_distinct(x, y);
         };
+        expr_ref_pair_vector elem_eqs(m);
+        bool change = false;
+        // reduce_eq returns false if the two sequences cannot be equal, otherwise it reduces their
+        // equality to equalities of their elements
+        if (!m_seq_rewrite.reduce_eq(a, b, elem_eqs, change)) {
+            return true;
+        }
+        for (unsigned i = 0; i < elem_eqs.size(); ++i) {
+            if (values_differ(elem_eqs.get(i).first, elem_eqs.get(i).second)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
+    bool theory_str_noodler::surely_different_values(enode* c1, enode* c2, const std::function<bool(enode*)>& fresh) {
+        if (c1 == nullptr || c2 == nullptr) {
+            // a fresh class gets a value different from the values of all other terms
+            return (c1 != nullptr && fresh(c1)) || (c2 != nullptr && fresh(c2));
+        }
+        if (c1 == c2) {
+            return false;
+        }
+        if (fresh(c1) || fresh(c2)) {
+            return true;
+        }
+        expr* v1 = get_class_value(c1);
+        expr* v2 = get_class_value(c2);
+        return v1 != nullptr && v2 != nullptr && ground_values_differ(v1, v2);
+    }
+
+    bool theory_str_noodler::check_ground_value_clash(enode* n) {
         // it suffices to compare all ground values of the class with one of them
         enode* first = nullptr;
         for (enode* e : *n->get_root()) {
@@ -737,15 +768,7 @@ namespace smt::noodler {
                 first = e;
                 continue;
             }
-            expr_ref_pair_vector elem_eqs(m);
-            bool change = false;
-            // reduce_eq returns false if the two sequences cannot be equal, otherwise it reduces their
-            // equality to equalities of their elements
-            bool clash = !m_seq_rewrite.reduce_eq(first->get_expr(), e->get_expr(), elem_eqs, change);
-            for (unsigned i = 0; !clash && i < elem_eqs.size(); ++i) {
-                clash = values_differ(elem_eqs.get(i).first, elem_eqs.get(i).second);
-            }
-            if (clash) {
+            if (ground_values_differ(first->get_expr(), e->get_expr())) {
                 STRACE(str, tout << "ground value clash: " << mk_pp(first->get_expr(), m) << " = " << mk_pp(e->get_expr(), m) << std::endl;);
                 // the conflict is explained by the E-graph (why first and e are in the same class)
                 enode_pair eq(first, e);
@@ -804,12 +827,13 @@ namespace smt::noodler {
     }
 
     void theory_str_noodler::propagate() {
-        // replay the axioms of persistently axiomatized terms that were deleted by backtracking
-        // (they are recorded again, so that they are replayed also after the next backtracking)
+        // replay the axioms of persistently axiomatized terms and the guarded length formulas that were deleted
+        // by backtracking (they are recorded again, so that they are replayed also after the next backtracking)
         axiom_recorder recorder(m_axiom_replay);
         for (const expr_ref_vector& clause : m_axiom_replay.take_pending()) {
             STRACE(str, tout << "replay axiom: " << clause << std::endl;);
             std::vector<literal> lits;
+            ptr_vector<expr> guards;
             for (expr* e : clause) {
                 expr* atom = e;
                 bool negated = m.is_not(e, atom);
@@ -818,14 +842,22 @@ namespace smt::noodler {
                 }
                 literal l = ctx.get_literal(atom);
                 lits.push_back(negated ? ~l : l);
+                if (m_len_guards.contains(atom)) {
+                    guards.push_back(atom);
+                }
             }
             add_axiom(lits);
+            // the decision hints of length guards are undone by backtracking
+            for (expr* guard : guards) {
+                apply_len_guard_hints(guard);
+            }
         }
     }
 
     void theory_str_noodler::push_scope_eh() {
         theory::push_scope_eh();
         m_scope_level += 1;
+        invalidate_arith_projection();
         m_word_eq_todo.push_scope();
         m_lang_eq_todo.push_scope();
         m_lang_diseq_todo.push_scope();
@@ -843,6 +875,11 @@ namespace smt::noodler {
         axiomatized_terms.reset();
         propagated_string_theory.reset();
         m_scope_level -= num_scopes;
+        invalidate_arith_projection();
+        // a quantified guarded length formula is asserted only in its scope (it is not replayed)
+        if (m_pending_len && !m_pending_len->len_atom && m_scope_level < m_pending_len->scope_level) {
+            m_pending_len = nullptr;
+        }
         // Axioms added above the new scope level are deleted by Z3 (as all theory axioms added during the search),
         // but the terms they axiomatize stay marked as axiomatized (see axiomatized_persist_terms). We hence
         // replay these axioms (with the same fresh variables) in propagate().

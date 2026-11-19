@@ -222,9 +222,75 @@ namespace smt::noodler {
         std::shared_ptr<SeqElementAbstraction> seq_abstraction = nullptr;
         // keeps alive model values of generic sequences created during model generation
         expr_ref_vector m_model_values{m};
+
+        // arithmetic projection of the current context (see collect_arith_projection), computed at most once per
+        // final check (the assignment does not change during it); used as the context of length checks
+        expr_ref_vector m_arith_projection{m};
+        bool m_arith_projection_valid = false;
+        // incremental solver with the arithmetic projection asserted (built at most once per final check, the length
+        // formulae are checked as assumptions)
+        smt_params m_arith_kernel_params;
+        scoped_ptr<kernel> m_arith_kernel;
+
+        /*** GUARDED LENGTH FORMULAS ***/
+        // When a decision procedure finds a solution whose length formula L is satisfiable in (the arithmetic
+        // projection of) the current context, L is not added as an axiom (it holds only for this solution, so
+        // learned clauses depending on it would not be valid). Instead, the clause (not g or L) with a fresh guard
+        // literal g is added and the search decides g (trying true first). The next final check accepts the
+        // solution if g (and L) is true, or continues with the next candidate if g is false (L is inconsistent
+        // with the context). See sat_handling and handle_pending_len_candidate.
+
+        /// Which procedure produced the candidate solution.
+        enum class LenCandidateSource { MAIN, NIELSEN, UNARY, LENGTH, DISEQ_HEUR, UNDERAPPROX };
+
+        /// The state of the main decision procedure loop, so that the enumeration of solutions can be resumed.
+        struct MainEnumState {
+            std::shared_ptr<DecisionProcedure> dec_proc;
+            Formula instance;
+            expr_ref lengths; // length formula of the last solution
+            expr_ref block_len; // disjunction of the length formulas of solutions inconsistent with the context
+            bool check_len_sat_with_context;
+
+            MainEnumState(ast_manager& m, std::shared_ptr<DecisionProcedure> dec_proc, Formula instance, bool check_len_sat_with_context)
+                : dec_proc(std::move(dec_proc)), instance(std::move(instance)), lengths(m), block_len(m.mk_false(), m),
+                  check_len_sat_with_context(check_len_sat_with_context) {}
+        };
+
+        /// A candidate solution whose guarded length formula is decided by the main context.
+        struct PendingLenCandidate {
+            expr_ref key; // the instance (construct_refinement) the candidate solves
+            expr_ref guard; // the guard g of (not g or L)
+            expr_ref len_atom; // atom of the literal of L (nullptr if L is quantified and asserted as (g -> L))
+            bool len_sign = false; // sign of the literal of L
+            expr_ref base_len; // L without the length limits for model generation
+            bool limited = false; // L contains the length limits for model generation (see sat_handling)
+            LenCandidateSource source;
+            bool complete; // base_len is the exact length characterization of the instance
+            LenNodePrecision precision;
+            unsigned scope_level; // scope level at which the guarded formula was added
+            // what is needed to generate the model if the candidate is accepted
+            std::shared_ptr<AbstractDecisionProcedure> dec_proc;
+            std::set<BasicTerm> relevant_vars;
+            std::shared_ptr<SeqElementAbstraction> seq_abstraction;
+            std::shared_ptr<MainEnumState> main_state; // set if source == MAIN
+
+            PendingLenCandidate(ast_manager& m) : key(m), guard(m), len_atom(m), base_len(m) {}
+        };
+        std::unique_ptr<PendingLenCandidate> m_pending_len;
+        // guards of length formulas (used to repeat the decision hints when their clauses are replayed)
+        obj_hashtable<expr> m_len_guards;
+        expr_ref_vector m_len_guards_pin{m};
+        // procedures whose candidate was rejected for the instance m_skip_len_key
+        expr_ref m_skip_len_key{m};
+        std::set<LenCandidateSource> m_skipped_len_sources;
+        // the instance of the current final check (construct_refinement), computed after the relevant constraints
+        expr_ref m_current_key{m};
+        /*** GUARDED LENGTH FORMULAS END ***/
         // classes for creating model dependencies, see their usage in mk_value
         class noodler_var_value_proc; // for noodler vars used in decision procedure
         class str_var_value_proc; // for string vars (whose length is important) that are not used in decision procedure
+        // counter of the words created by mk_unique_model_word in the current model
+        unsigned m_unique_model_counter = 0;
         class concat_var_value_proc; // for concatenation
         class seq_unit_value_proc; // for seq.unit of generic sequences
 
@@ -250,6 +316,12 @@ namespace smt::noodler {
         void restart_eh() override;
         void reset_eh() override;
         final_check_status final_check_eh(unsigned level) override;
+
+        /**
+         * @brief Decide the satisfiability of the relevant string constraints (the body of final_check_eh without the
+         * equalities of terms shared with other theories, see mk_interface_eqs).
+         */
+        final_check_status solve_string_constraints();
         model_value_proc *mk_value(enode *n, model_generator& mg) override;
         void init_model(model_generator& m) override;
         void finalize_model(model_generator& mg) override;
@@ -518,6 +590,24 @@ namespace smt::noodler {
         void remove_irrelevant_constr();
 
         /**
+         * @brief Remove the relevant constraints that hold because their classes surely get different values in the
+         * model (see surely_different_values), so that the decision procedure does not need to solve them.
+         *
+         * A class (of the e-graph) that has a fresh shape (see has_fresh_shape) and occurs only as a whole side of
+         * disequations and in equations inside the class (e.g., aliases x = y) is not needed by the decision
+         * procedure: its disequations and equations are removed, and it becomes fresh (see is_fresh_class). The
+         * disequations of two classes with different values are removed as well. Such disequations come in large
+         * numbers from other theories (e.g., arrays or datatypes indexed by strings decide the indices to be
+         * pairwise different).
+         *
+         * The instance with and without the removed constraints is equisatisfiable (models of fresh classes are
+         * unique, see mk_unique_model_word), and an unsatisfiable instance without them gives a stronger valid lemma.
+         *
+         * @return The number of removed disequations
+         */
+        unsigned remove_constraints_of_fresh_classes();
+
+        /**
          * @brief Check if @p e is rooted by a function symbol that does not belong to the string/seq
          * theory (and is not a plain variable/uninterpreted/recursive function), e.g. an array `select`.
          *
@@ -614,6 +704,24 @@ namespace smt::noodler {
          * (if it is sat), restricted to variables that dec_proc actually needs for model construction -- see filter_model_formula_to_length_vars.
          */
         lbool check_len_sat(expr_ref len_formula, bool check_with_context, expr_ref* unsat_core=nullptr, expr_ref* model_formula=nullptr, bool check_with_clauses = false);
+
+        /**
+         * @brief Get the arithmetic projection of the current context (see collect_arith_projection), cached
+         * for the current final check.
+         */
+        const expr_ref_vector& get_arith_projection();
+
+        /**
+         * @brief Get the incremental solver with the arithmetic projection of the current context asserted (see
+         * get_arith_projection), cached for the current final check.
+         */
+        kernel& get_arith_kernel();
+
+        /// @brief Invalidate the cached arithmetic projection and its solver (the assignment changes).
+        void invalidate_arith_projection() {
+            m_arith_projection_valid = false;
+            m_arith_kernel = nullptr;
+        }
 
         /**
          * @brief Restrict @p model_formula (a conjunction of equations "variable = value" produced by check_len_sat) to only those
@@ -782,13 +890,57 @@ namespace smt::noodler {
                                 std::vector<TermConversion> conversions);
 
         /**
-         * @brief This function should always be called after decision procedure decides SAT with non-trivial length formula
-         * 
-         * It pushes the length formula into Z3, so that we can generate correct model.
-         * 
-         * @param length_formula - formula with which we got sat
+         * @brief This function should always be called after a decision procedure (stored in dec_proc) finds a
+         * solution whose length formula @p length_formula is satisfiable with the (arithmetic projection of the) context.
+         *
+         * The length formula is passed to Z3 guarded by a fresh literal g as (not g or L) and the solution becomes
+         * pending: the main context decides g (trying true first) and the next final check accepts or rejects the
+         * solution (see handle_pending_len_candidate).
+         *
+         * @param length_formula Length formula L of the solution
+         * @param source Which procedure produced the solution
+         * @param complete Is @p length_formula the exact length characterization of the instance (all solutions)?
+         * @param precision Precision of @p length_formula
+         * @param main_state State of the main decision procedure loop (for source MAIN)
+         * @param use_limits Try to limit the lengths for model generation
+         * @return l_true if the solution is accepted right away (L is trivially true), l_undef if it is pending
+         * (the caller should return FC_CONTINUE), l_false if it is rejected (L is false)
          */
-        lbool sat_handling(expr_ref length_formula);
+        lbool sat_handling(expr_ref length_formula, LenCandidateSource source, bool complete, LenNodePrecision precision,
+                           std::shared_ptr<MainEnumState> main_state = nullptr, bool use_limits = true);
+
+        /**
+         * @brief Add the guarded length formula (not @p guard or @p length_formula) to Z3 and give the decision hints for @p guard.
+         *
+         * @param[out] len_atom The atom of the literal of @p length_formula (nullptr if it is quantified)
+         * @param[out] len_sign The sign of the literal of @p length_formula
+         */
+        void add_guarded_len_formula(expr* guard, expr* length_formula, expr_ref& len_atom, bool& len_sign);
+
+        /**
+         * @brief Let the search decide the length guard @p guard first, trying true (relevancy, true-first flag, activity).
+         */
+        void apply_len_guard_hints(expr* guard);
+
+        /**
+         * @brief Accept or reject the pending candidate solution (see sat_handling) for the current instance.
+         *
+         * @param[out] status The result of the final check if the pending candidate decides it
+         * @return true if @p status should be returned by final_check_eh
+         */
+        bool handle_pending_len_candidate(final_check_status& status);
+
+        /**
+         * @brief Run (or resume) the enumeration of solutions of the main decision procedure.
+         */
+        final_check_status run_main_enumeration(const std::shared_ptr<MainEnumState>& st);
+
+        /**
+         * @brief Was the candidate of the procedure @p source rejected for the current instance?
+         */
+        bool is_len_source_skipped(LenCandidateSource source) const {
+            return m_current_key && m_skip_len_key == m_current_key && m_skipped_len_sources.contains(source);
+        }
 
         /***************** FINAL_CHECK_EH HELPING FUNCTIONS END *******************/
 
@@ -812,9 +964,59 @@ namespace smt::noodler {
          */
         bool check_ground_value_clash(enode* n);
 
+        /**
+         * @brief Are the ground sequence values @p a and @p b (see is_ground_seq_value) surely different?
+         */
+        bool ground_values_differ(expr* a, expr* b);
+
         void collect_shared_vars(sbuffer<theory_var> & result) const;
 
+        /**
+         * @brief Let the search decide the equalities of the terms shared with other theories (model-based theory
+         * combination, as in theory_seq): for every pair of classes of shared terms that are neither equal nor
+         * disequal, the equality is created and the search tries it as true first (ctx.assume_eq). Pairs of
+         * classes containing different ground values are skipped, as they get different values in every model.
+         *
+         * It is called only when the string constraints are satisfied (see final_check_eh), so the arrangement of
+         * the shared terms is not explored in branches where the string constraints are unsatisfiable.
+         *
+         * @return The number of equalities that the search needs to decide
+         */
         unsigned mk_interface_eqs();
+
+        /**
+         * @brief Create a word of length @p length for the model of a string term not used by the decision procedure.
+         *
+         * Non-empty words are pairwise different (within one model) and they consist of symbols from a reserved
+         * range in the middle of the character range, which do not occur in the models computed by the decision
+         * procedures. Hence such a term gets a value different from the values of all other terms (see
+         * remove_constraints_of_fresh_classes and mk_interface_eqs, which rely on this).
+         */
+        zstring mk_unique_model_word(unsigned length);
+
+        /// @brief A ground value (see is_ground_seq_value) in the class of @p n, nullptr if there is none.
+        expr* get_class_value(enode* n) const;
+
+        /**
+         * @brief Does the class of @p n consist only of uninterpreted string terms (string variables, terms of other
+         * theories, uninterpreted functions)? Literals, concatenations and string functions are interpreted (their
+         * values are determined by their arguments), so a class containing them does not have a fresh shape.
+         */
+        bool has_fresh_shape(enode* n) const;
+
+        /**
+         * @brief Is the class of @p n fresh, i.e., of a fresh shape and not used by the decision procedure? Its
+         * model is then a word different from the values of all other terms (see mk_unique_model_word), as in
+         * the model construction of other theories for unconstrained classes.
+         */
+        bool is_fresh_class(enode* n) const;
+
+        /**
+         * @brief Do the classes @p c1 and @p c2 surely get different values in the model? It is the case if one of
+         * them is fresh (by @p fresh) or if they contain different ground values. A nullptr class (a term that is not
+         * a single class, e.g., a concatenation) is not fresh and has no ground value.
+         */
+        bool surely_different_values(enode* c1, enode* c2, const std::function<bool(enode*)>& fresh);
 
         /**
          * @brief Extensionality for the uninterpreted seq.nth_u.

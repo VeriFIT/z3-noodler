@@ -20,6 +20,16 @@ namespace smt::noodler {
      * (`compute_model_formula`/`compute_unsat_core`). Subclasses only need to implement `check_sat`,
      * using those helpers around whatever concrete sub-kernel/tactic-solver they drive.
      */
+    /**
+     * @brief Collect the arithmetic projection of the current context of @p ctx into @p out: the relevant assigned
+     * literals over arithmetic atoms (with their polarity) and the equalities between relevant arithmetic terms in
+     * the same equivalence class of the e-graph. Non-arithmetic subterms (e.g., str.len(x), selects) are opaque.
+     *
+     * At a final check, this is everything the context knows about arithmetic terms: quantified formulas
+     * contribute only through their instances, which are a part of the assignment.
+     */
+    void collect_arith_projection(context& ctx, expr_ref_vector& out);
+
     class lia_solver {
     protected:
         ast_manager& m;

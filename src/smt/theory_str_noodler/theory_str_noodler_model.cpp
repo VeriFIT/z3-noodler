@@ -89,8 +89,9 @@ namespace smt::noodler {
         seq_util& m_util_s;
         arith_util& m_util_a;
         expr_ref m_value; // keeps the constructed value of a generic sequence alive
+        theory_str_noodler& th;
     public:
-        str_var_value_proc(expr* str_var, context& ctx, seq_util& m_util_s, arith_util& m_util_a) : str_var(str_var), m_util_s(m_util_s), m_util_a(m_util_a), m_value(m_util_s.get_manager()) {
+        str_var_value_proc(expr* str_var, context& ctx, seq_util& m_util_s, arith_util& m_util_a, theory_str_noodler& th) : str_var(str_var), m_util_s(m_util_s), m_util_a(m_util_a), m_value(m_util_s.get_manager()), th(th) {
             if (ctx.e_internalized(m_util_s.str.mk_length(str_var))) {
                 str_var_length_enode = ctx.get_enode(m_util_s.str.mk_length(str_var));
                 length_relevant = ctx.is_relevant(str_var_length_enode);
@@ -173,8 +174,8 @@ namespace smt::noodler {
                 // )
                 check_model_string_length(val, (std::stringstream() << mk_pp(str_var, m_util_s.get_manager())).str());
                 unsigned len = val.get_unsigned();
-                std::vector<unsigned> res(len, 'a');
-                expr* v = m_util_s.str.mk_string(zstring(res.size(), res.data()));
+                // a word of the given length different from the values of all other terms (see mk_unique_model_word)
+                expr* v = m_util_s.str.mk_string(th.mk_unique_model_word(len));
                 proto_model& mdl = m.get_model();
                 value_factory* vf = mdl.get_factory(m_util_s.get_family_id());
                 if (auto* f = dynamic_cast<seq_factory*>(vf)) {
@@ -293,7 +294,7 @@ namespace smt::noodler {
             return alloc(noodler_var_value_proc, var, str_var->get_sort(), *this);
         } else {
             // for non-relevant, we cannot get them from the decision procedure, but because they are not relevant, we can return anything (restricted by length)
-            return alloc(str_var_value_proc, str_var, ctx, m_util_s, m_util_a);
+            return alloc(str_var_value_proc, str_var, ctx, m_util_s, m_util_a, *this);
         }
     }
 
@@ -408,8 +409,29 @@ namespace smt::noodler {
         }
     }
 
+    zstring theory_str_noodler::mk_unique_model_word(unsigned length) {
+        if (length == 0) {
+            return zstring();
+        }
+        // symbols from the middle of the character range: the decision procedures use symbols of the formula and
+        // the first unused "nice" symbols (see Alphabet::get_unused_symbol), the symbols of elements of generic
+        // sequences are allocated from the top (see SeqElementAbstraction)
+        const unsigned max_char = zstring::max_char();
+        const unsigned base = (max_char + 1) / 2;
+        const unsigned num_symbols = std::max(1u, std::min(4096u, (max_char + 1) / 4));
+        // the counter written in base num_symbols (least significant digit first), padded by the first symbol
+        unsigned counter = m_unique_model_counter++;
+        std::vector<unsigned> word(length, base);
+        for (unsigned i = 0; i < length && counter > 0; ++i) {
+            word[i] = base + counter % num_symbols;
+            counter /= num_symbols;
+        }
+        return zstring(word.size(), word.data());
+    }
+
     void theory_str_noodler::init_model(model_generator &mg) {
         STRACE(str, tout << "init_model\n");
+        m_unique_model_counter = 0;
         if (!m_seq_factory) {
             m_seq_factory = alloc(seq_factory, m, m_util_s.get_family_id(), mg.get_model());
             mg.register_factory(m_seq_factory);

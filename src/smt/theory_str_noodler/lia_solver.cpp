@@ -1,5 +1,6 @@
 #include "ast/ast_pp.h"
 #include "ast/for_each_expr.h"
+#include "ast/arith_decl_plugin.h"
 #include "smt/theory_str_noodler/lia_solver.h"
 
 namespace smt::noodler {
@@ -78,6 +79,45 @@ namespace smt::noodler {
             expr_ref res = eval_arith_str_func(to_app(a), mdl);
             STRACE(str_lia, tout << "Model for " << mk_pp(a, m) << " is " << mk_pp(res, m) << std::endl;);
             model_formula = m.mk_and(model_formula, m.mk_eq(a, res));
+        }
+    }
+
+    void collect_arith_projection(context& ctx, expr_ref_vector& out) {
+        ast_manager& m = ctx.get_manager();
+        arith_util m_util_a(m);
+        const family_id arith_fid = m_util_a.get_family_id();
+        auto is_arith_atom = [&](expr* atom) {
+            expr *lhs, *rhs;
+            if (m.is_eq(atom, lhs, rhs)) {
+                return m_util_a.is_int_real(lhs);
+            }
+            // <=, >=, <, >, is_int, divisibility, ...
+            return is_app(atom) && to_app(atom)->get_family_id() == arith_fid;
+        };
+
+        // assigned arithmetic literals (of both polarities); the relevancy is tested on the atom, as the
+        // negation of an atom is usually not marked as relevant itself
+        expr_ref_vector assignments(m);
+        ctx.get_assignments(assignments);
+        for (expr* lit : assignments) {
+            expr* atom = lit;
+            m.is_not(lit, atom);
+            if (is_arith_atom(atom) && ctx.is_relevant(atom)) {
+                STRACE(str_lia, tout << "arith projection from assignment: " << mk_pp(lit, m) << std::endl);
+                out.push_back(lit);
+            }
+        }
+
+        // equalities between arithmetic terms known to the e-graph (e.g., derived by congruence), which do
+        // not need to occur as literals
+        for (enode* n : ctx.enodes()) {
+            expr* e = n->get_expr();
+            enode* root = n->get_root();
+            if (root != n && m_util_a.is_int_real(e) && ctx.is_relevant(e)) {
+                expr_ref eq(m.mk_eq(e, root->get_expr()), m);
+                STRACE(str_lia, tout << "arith projection from e-graph: " << eq << std::endl);
+                out.push_back(eq);
+            }
         }
     }
 

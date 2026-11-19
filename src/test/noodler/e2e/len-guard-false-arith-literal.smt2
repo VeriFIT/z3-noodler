@@ -1,0 +1,10 @@
+; The length check must see the false arithmetic literal (<= (str.len x) 5).
+(set-info :status sat)
+(declare-fun x () String)
+(declare-fun y () String)
+(declare-fun n () Int)
+(assert (= x (str.++ y y)))
+(assert (str.in_re x (re.+ (str.to_re "a"))))
+(assert (or (not (<= (str.len x) 5)) (= n 7)))
+(assert (not (= n 7)))
+(check-sat)
