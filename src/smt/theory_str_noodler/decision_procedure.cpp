@@ -27,16 +27,25 @@ namespace smt::noodler {
                            << "Getting another solution"
                            << "------------------------" << std::endl;);
 
+        // The conversions are checked on the input only: the conversion handler is reinitialized with the
+        // conversions of each checked solving state, which include the TO_CODE conversions created by replacing
+        // disequations, and those must not disable the checks (issue #520).
         bool len_checks_enabled = check_lens != nullptr &&
                                   m_params.m_try_premature_len_checks &&
-                                  !conversion_handler.are_there_any_conversions() &&
-                                  not_contains.get_predicates().empty() &&
-                                  (!this->m_params.m_postpone_diseqs_stabilization || !this->input_contains_disequations);
+                                  !this->input_contains_conversions &&
+                                  not_contains.get_predicates().empty();
         while (!is_worklist_empty()) {
             util::check_limit(m);
             SolvingState element_to_process = pop_from_worklist();
 
+            // The premature check overapproximates the lengths of the solving state, so it cannot be done while the
+            // state has postponed disequations that get_lengths underapproximates by |lhs| != |rhs|. This is decided
+            // per state: after the disequations are translated to equations, the checks are sound again (issue #520).
+            const bool has_underapproximated_diseqs = this->m_params.m_postpone_diseqs_stabilization &&
+                                                      !element_to_process.postponed_disequations.get_predicates().empty();
+
             if (len_checks_enabled &&
+                !has_underapproximated_diseqs &&
                 !element_to_process.predicates_to_process.empty() &&
                 element_to_process.transducers.empty() &&
                 element_to_process.has_siblings) {
@@ -602,7 +611,11 @@ namespace smt::noodler {
         if(this->m_params.m_ca_constr) {
             conjuncts.push_back(get_formula_for_ca_diseqs());
         }
-        if (!solution.postponed_disequations.get_predicates().empty()) {
+        // The |lhs| != |rhs| underapproximation is used only when postponing disequations, where an unsat
+        // result leads to translating them to equations. Without postponing, the disequations are kept only
+        // in CA mode, whose formula encodes them precisely; the underapproximation would mask its mismatch
+        // case and make equal-length disequations unsatisfiable (issue #479).
+        if (this->m_params.m_postpone_diseqs_stabilization && !solution.postponed_disequations.get_predicates().empty()) {
             conjuncts.push_back(solution.get_disequations_underapprox_length_formula());
             // For postponed disequations we currently encode only |lhs| != |rhs|.
             // This is an underapproximation of string disequality and must not be
@@ -900,17 +913,12 @@ namespace smt::noodler {
         Formula equations_and_transducers;
         std::vector<Predicate> disequalities_to_replace;
 
-        this->input_contains_disequations = false;
         bool has_transducers = false;
 
         for (auto const &pred : formula.get_predicates()) {
             if (pred.is_equation()) {
                 equations_and_transducers.add_predicate(pred);
             } else if (pred.is_inequation()) {
-                // if there are some disequations, we cannot use the heuristic for pruning solving 
-                // states based on lengths becase the heuristic performs over-approximation but the 
-                // postponing disequalities involves under-approximation
-                this->input_contains_disequations = true;
                 // If we solve diesquations using CA --> we store the disequations to be solved later on
                 if (this->m_params.m_ca_constr || this->m_params.m_postpone_diseqs_stabilization) {
                     // we store postponed disequations to this->disequations
@@ -945,6 +953,8 @@ namespace smt::noodler {
         init_solving_state.substitution_map = std::move(this->init_substitution_map);
         init_solving_state.postponed_disequations = this->disequations;
         init_solving_state.conversions = this->conversion_handler.get_conversions();
+        // the conversion handler still contains only the input conversions here (no get_lengths was called yet)
+        this->input_contains_conversions = this->conversion_handler.are_there_any_conversions();
 
         // Replace disequalities using SolvingState::replace_disequality
         for (const Predicate& diseq : disequalities_to_replace) {

@@ -204,11 +204,25 @@ namespace {
 
         lbool check_sat_core2(unsigned num_assumptions, expr * const * assumptions) override {
             TRACE(solver_na2as, tout << "smt_solver::check_sat_core:\n"; for (unsigned i = 0; i < num_assumptions; ++i) tout << mk_pp(assumptions[i], m) << "\n";);
-            return m_context.check(num_assumptions, assumptions);
+            return check_approximation(m_context.check(num_assumptions, assumptions));
         }
 
         lbool check_sat_cc_core(expr_ref_vector const& cube, vector<expr_ref_vector> const& clauses) override {
-            return m_context.check(cube, clauses);
+            return check_approximation(m_context.check(cube, clauses));
+        }
+
+        /**
+         * Noodler: an unsat answer obtained using an underapproximation (or a sat answer obtained using
+         * an overapproximation) is not conclusive. Mirrors the check in smt_tactic_core.cpp for the
+         * incremental path (push/pop, check-sat-assuming, API solvers).
+         */
+        lbool check_approximation(lbool r) {
+            smt_params const& fp = m_context.get_context().get_fparams();
+            if ((r == l_false && fp.is_underapprox) || (r == l_true && fp.is_overapprox)) {
+                m_context.set_reason_unknown(r == l_false ? "string underapproximation" : "string overapproximation");
+                return l_undef;
+            }
+            return r;
         }
 
         void get_levels(ptr_vector<expr> const& vars, unsigned_vector& depth) override {

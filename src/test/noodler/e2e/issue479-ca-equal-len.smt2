@@ -1,0 +1,8 @@
+(set-info :status sat)
+(set-option :smt.str.ca_constr true)
+(set-option :smt.str.postpone_diseqs_stabilization false)
+(declare-fun x () String)
+(declare-fun y () String)
+(assert (not (= x y)))
+(assert (= (str.len x) (str.len y)))
+(check-sat)

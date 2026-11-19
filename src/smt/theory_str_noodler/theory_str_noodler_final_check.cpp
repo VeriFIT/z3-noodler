@@ -328,11 +328,19 @@ namespace smt::noodler {
         auto check_lens = [&check_lens_with_precision, this, &lengths, &block_len, &check_len_sat_with_context](bool add_to_block) -> lbool {
             auto [is_lengths_sat, precision] = check_lens_with_precision();
             if (add_to_block && is_lengths_sat == l_false) {
+                if (precision == LenNodePrecision::UNDERAPPROX) {
+                    // premature check (add_to_block): an unsat underapproximation does not justify
+                    // pruning the solving state, so report it as undecided (issue #479)
+                    return l_undef;
+                }
                 block_len = m.mk_or(block_len, lengths);
             }
             return is_lengths_sat;
         };
 
+        // true if some branch was left undecided (unsat underapproximation or unknown LIA result); the lemma blocking
+        // the current assignment is then not sound on its own and the context must not report unsat (issue #436)
+        bool undecided_branch = false;
         while (true) {
             util::check_limit(m);
             result = main_dec_proc->compute_next_solution_with_len_checks(check_lens);
@@ -344,7 +352,7 @@ namespace smt::noodler {
                     lbool result_of_sat_handling = sat_handling(lengths);
                     if (result_of_sat_handling == l_true) {
                         if(precision == LenNodePrecision::OVERAPPROX) {
-                            ctx.get_fparams().is_overapprox = true;
+                            raise_approx_flag(false);
                         }
 
                         this->statistics.at("stabilization").num_finish++;
@@ -360,13 +368,13 @@ namespace smt::noodler {
                     block_len = m.mk_or(block_len, lengths);
 
                     if(precision == LenNodePrecision::UNDERAPPROX) {
-                        ctx.get_fparams().is_underapprox = true;
+                        undecided_branch = true;
                     }
                 } else {
                     // The solver returned `l_undef`. As not-contains predicates are being reduced to quantified LIA, we are using a solver with quantified instantiation
                     // that is incomplete and it might return `l_undef` (unknown) on some branches. We want to continue exploring other branches, hoping that some other
-                    // might get solved. Hence we set is_underapprox = true - we don't really know whether this branch has contained any solutions.
-                    ctx.get_fparams().is_underapprox = true;
+                    // might get solved. The branch stays undecided (we do not know whether it contains solutions), so the blocking lemma is not sound on its own.
+                    undecided_branch = true;
                 }
             } else if (result == l_false) {
                 // we did not find a solution (with satisfiable length constraints)
@@ -375,12 +383,12 @@ namespace smt::noodler {
 
                 if (!check_len_sat_with_context) {
                     // if we were not checking length satisfiability with the context, then the current string assignment must be unsatisfiable on its own => we can block it completely
-                    block_curr_len(expr_ref(m.mk_false(), m));
+                    block_curr_len(expr_ref(m.mk_false(), m), true, false, undecided_branch);
                 } else {
                     // If some solving states were skipped, an overapproximation was added to block_len
                     const bool overapprox = main_dec_proc->get_skipped_some_with_len_checks();
 
-                    block_curr_len(block_len, true, overapprox);
+                    block_curr_len(block_len, true, overapprox, undecided_branch);
                 }
                 this->statistics.at("stabilization").num_finish++;
                 return FC_CONTINUE;
@@ -1014,13 +1022,28 @@ namespace smt::noodler {
         return expr_ref(refinement, m);
     }
 
-    void theory_str_noodler::block_curr_len(expr_ref len_formula, bool add_axiomatized, bool is_overapprox) {
+    void theory_str_noodler::raise_approx_flag(bool underapprox) {
+        if (underapprox) {
+            ctx.get_fparams().is_underapprox = true;
+        } else {
+            ctx.get_fparams().is_overapprox = true;
+        }
+        const int base_level = static_cast<int>(ctx.get_base_level());
+        if (approx_flags_base_level == -1 || base_level < approx_flags_base_level) {
+            approx_flags_base_level = base_level;
+        }
+    }
+
+    void theory_str_noodler::block_curr_len(expr_ref len_formula, bool add_axiomatized, bool is_overapprox, bool is_underapprox) {
         STRACE(str_block, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
 
         expr_ref refinement = construct_refinement();
 
+        if (is_underapprox) {
+            raise_approx_flag(true);
+        }
         if(m_params.m_loop_protect && add_axiomatized) {
-            this->axiomatized_instances.push_back({refinement, stored_instance{ .lengths = len_formula, .is_overapprox = is_overapprox}});
+            this->axiomatized_instances.push_back({refinement, stored_instance{ .lengths = len_formula, .is_overapprox = is_overapprox, .is_underapprox = is_underapprox}});
         }
         if (refinement != nullptr) {
             set_input_has_quantifiers(expr_cases::has_quantifier(len_formula, m));
@@ -1296,6 +1319,7 @@ namespace smt::noodler {
             for (const auto &pr : this->axiomatized_instances) {
                 if (pr.first == refine) {
                     len_formula = pr.second.lengths;
+                    const bool reused_underapprox = pr.second.is_underapprox;
                     overapprox_only = overapprox_only && pr.second.is_overapprox;
                     found = true;
                     STRACE(str,
@@ -1311,7 +1335,7 @@ namespace smt::noodler {
                         for (const auto& len_var : len_vars) {
                             len_formula = m.mk_and(len_formula, m.mk_eq(m_util_s.str.mk_length(len_var), m_util_a.mk_int(-1)));
                         }
-                        block_curr_len(len_formula, false);
+                        block_curr_len(len_formula, false, false, reused_underapprox);
                         return l_false;
                     } else {
                         // otherwise we find unsat core of the current assignment with the len_formula and add this unsat core as a theory lemma.
@@ -1321,7 +1345,7 @@ namespace smt::noodler {
                             set_input_has_quantifiers(expr_cases::has_quantifier(unsat_core, m));
                             ctx.internalize(unsat_core.get(), true);
                             add_axiom({mk_literal(unsat_core)});
-                            block_curr_len(len_formula, false);
+                            block_curr_len(len_formula, false, false, reused_underapprox);
                             STRACE(str, tout << "loop-protection: unsat " << std::endl;);
                             return l_false;
                         }

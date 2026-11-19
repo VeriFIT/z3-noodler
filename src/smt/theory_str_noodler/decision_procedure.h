@@ -132,8 +132,9 @@ namespace smt::noodler {
         // the length formula from preprocessing, get_lengths should create conjunct with it
         LenNode preprocessing_len_formula = LenNode(LenFormulaType::TRUE,{});
 
-        // remembers whether the input formula passed to init_computation() contained any disequation
-        bool input_contains_disequations = false;
+        // remembers whether the input passed to init_computation() contained any conversion (the conversion handler
+        // is later reinitialized with the conversions of solving states, which include those created from disequations)
+        bool input_contains_conversions = false;
 
         // Becomes true if some solving states get skipped because their premature length checks are unsat
         bool skipped_some_with_len_checks = false;

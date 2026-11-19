@@ -65,6 +65,7 @@ namespace smt::noodler {
         struct stored_instance {
             expr_ref lengths; // length formula 
             bool is_overapprox; // is the formula an overapproximation? (obtained from initial or premature length checking)
+            bool is_underapprox = false; // was the lemma derived from an underapproximation? (reusing it requires raising the is_underapprox flag)
             // TODO we could also keep here the decision procedure and immediately get the model when loop protection gets sat
         };
 
@@ -179,6 +180,10 @@ namespace smt::noodler {
         bool last_run_was_sat = false;
         // the scope at which the last run was sat (so if we pop behind this scope, we have to forget that the last run was sat)
         int scope_with_last_run_was_sat = -1;
+
+        // the lowest base (user) scope level at which the is_underapprox/is_overapprox flags of the context
+        // were raised (-1 if they were not); lemmas derived from approximations live until a pop below this level
+        int approx_flags_base_level = -1;
 
         unsigned num_of_solving_final_checks = 0; // number of final checks that lead to solving string formula (i.e. not solved by loop protection nor by language (dis)equalities)
         std::map<std::string, DecProcStats> statistics {
@@ -572,10 +577,20 @@ namespace smt::noodler {
          * @param len_formula Length formula corresponding to the current instance
          * @param add_axiomatized Add item to the vector of axiomatized instances (for the loop protection)
          * @param is_overapprox Was the length formula obtained from the initial or premature length checking (for the loop protection)
-         * 
+         * @param is_underapprox Was the lemma derived from an underapproximation (it is unsound on its own, the context flag
+         *                       is_underapprox must stay raised as long as the lemma exists or is reused by the loop protection)
+         *
          * TODO explain better
          */
-        void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool is_overapprox = false);
+        void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool is_overapprox = false, bool is_underapprox = false);
+
+        /**
+         * @brief Raise the is_underapprox (@p underapprox = true) or is_overapprox flag of the context.
+         *
+         * The flag turns unsat (resp. sat) into unknown. It stays raised until a pop below the base (user)
+         * scope level at which it was raised, because the lemmas derived from approximations live until then.
+         */
+        void raise_approx_flag(bool underapprox);
 
         /**
          * @brief Checks if the current instance is suitable for Nielsen decision procedure.
