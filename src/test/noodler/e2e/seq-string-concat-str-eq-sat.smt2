@@ -1,0 +1,12 @@
+; (Seq String): a sequence equation over string elements combined with a word equation over the elements.
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const s (Seq String))
+(declare-const t (Seq String))
+(declare-const x String)
+(declare-const y String)
+(assert (= (seq.++ s (seq.unit x)) (seq.++ (seq.unit y) t)))
+(assert (= (str.++ x "c") (str.++ "ab" y)))
+(assert (> (seq.len s) 1))
+(assert (not (= x y)))
+(check-sat)

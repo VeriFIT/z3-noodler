@@ -1,0 +1,11 @@
+; (Seq String): s ++ [x] = [y] ++ s with |s| = 1 implies x = y (not stated directly); compatible regexes.
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const s (Seq String))
+(declare-const x String)
+(declare-const y String)
+(assert (= (seq.++ s (seq.unit x)) (seq.++ (seq.unit y) s)))
+(assert (= (seq.len s) 1))
+(assert (str.in_re x (re.+ (str.to_re "ab"))))
+(assert (str.in_re y (str.to_re "abab")))
+(check-sat)

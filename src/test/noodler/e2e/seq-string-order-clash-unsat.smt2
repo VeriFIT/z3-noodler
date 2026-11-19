@@ -1,0 +1,11 @@
+; (Seq String): swapping two elements with distinct string values is impossible.
+(set-info :smt-lib-version 2.6)
+(set-info :status unsat)
+(declare-const s (Seq String))
+(declare-const x String)
+(declare-const y String)
+(assert (= s (seq.++ (seq.unit x) (seq.unit y))))
+(assert (= s (seq.++ (seq.unit y) (seq.unit x))))
+(assert (= x "a"))
+(assert (= y "b"))
+(check-sat)

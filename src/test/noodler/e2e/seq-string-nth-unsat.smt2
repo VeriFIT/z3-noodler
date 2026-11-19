@@ -1,0 +1,11 @@
+; (Seq String): elements accessed by seq.nth with conflicting (dis)equalities.
+(set-info :smt-lib-version 2.6)
+(set-info :status unsat)
+(declare-const s (Seq String))
+(assert (= (seq.len s) 3))
+(assert (= (seq.nth s 1) "abc"))
+(assert (seq.contains s (seq.unit "zz")))
+(assert (= (seq.nth s 0) "zz"))
+(assert (= (seq.nth s 2) "zz"))
+(assert (not (= (seq.nth s 0) (seq.nth s 2))))
+(check-sat)

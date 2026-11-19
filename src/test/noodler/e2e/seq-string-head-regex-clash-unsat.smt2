@@ -1,0 +1,12 @@
+; (Seq String): equal heads of a sequence force x = y, which contradicts the regex constraints of x and y.
+(set-info :smt-lib-version 2.6)
+(set-info :status unsat)
+(declare-const s (Seq String))
+(declare-const t (Seq String))
+(declare-const x String)
+(declare-const y String)
+(assert (= s (seq.++ (seq.unit x) t)))
+(assert (= s (seq.++ (seq.unit y) t)))
+(assert (str.in_re x (re.+ (str.to_re "a"))))
+(assert (str.in_re y (re.+ (str.to_re "b"))))
+(check-sat)

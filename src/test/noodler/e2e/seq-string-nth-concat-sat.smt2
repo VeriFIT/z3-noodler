@@ -1,0 +1,11 @@
+; (Seq String): a word equation over elements read by seq.nth.
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const s (Seq String))
+(declare-const x String)
+(assert (= (seq.len s) 2))
+(assert (= (str.++ (seq.nth s 0) (seq.nth s 1)) "abc"))
+(assert (= x (seq.nth s 0)))
+(assert (> (str.len x) 1))
+(assert (seq.contains s (seq.unit "c")))
+(check-sat)

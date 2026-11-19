@@ -1,0 +1,12 @@
+; (Seq String): the last element is the concatenation of the first two (via seq.extract).
+(set-info :smt-lib-version 2.6)
+(set-info :status sat)
+(declare-const s (Seq String))
+(declare-const x String)
+(declare-const y String)
+(declare-const z String)
+(assert (= s (seq.++ (seq.unit x) (seq.unit y) (seq.unit z))))
+(assert (= (seq.unit (str.++ x y)) (seq.extract s 2 1)))
+(assert (str.in_re x (re.+ (str.to_re "a"))))
+(assert (str.in_re y (re.+ (str.to_re "b"))))
+(check-sat)
