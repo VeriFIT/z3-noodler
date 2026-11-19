@@ -60,19 +60,19 @@ br_status seq_rewriter::mk_bool_app(func_decl* f, unsigned n, expr* const* args,
     }
 }
 
-bool seq_rewriter::contains_from_ecma2020(expr* r) {
+bool seq_rewriter::contains_from_regex(expr* r) {
     expr* r1 = nullptr, *r2 = nullptr;
     if (re().is_union(r, r1, r2) || re().is_intersection(r, r1, r2) || re().is_xor(r, r1, r2)) {
-        return contains_from_ecma2020(r1) || contains_from_ecma2020(r2);
+        return contains_from_regex(r1) || contains_from_regex(r2);
     }
     if (re().is_complement(r, r1)) {
-        return contains_from_ecma2020(r1);
+        return contains_from_regex(r1);
     }
-    return re().is_from_ecma2020(r);
+    return re().is_from_regex(r);
 }
 
 bool seq_rewriter::is_mergeable_in_re(expr* e, expr*& s, expr*& r) {
-    return str().is_in_re(e, s, r) && !str().is_empty(s) && !contains_from_ecma2020(r);
+    return str().is_in_re(e, s, r) && !str().is_empty(s) && !contains_from_regex(r);
 }
 
 br_status seq_rewriter::mk_bool_app_helper(bool is_and, unsigned n, expr* const* args, expr_ref& result) {
@@ -3681,16 +3681,16 @@ br_status seq_rewriter::mk_str_in_regexp(expr* a, expr* b, expr_ref& result) {
     STRACE(seq_verbose, tout << "mk_str_in_regexp: " << mk_pp(a, m())
                                << ", " << mk_pp(b, m()) << std::endl;);
 
-    // the ECMA regexes cannot be derived, just return fail and don't try to derive them
-    if (re().is_from_ecma2020(b)) {
+    // the regexes given by re.from_regex cannot be derived, just return fail and don't try to derive them
+    if (re().is_from_regex(b)) {
         return BR_FAILED;
     }
 
-    // (re.from_ecma2020 ...) is supported only as the direct argument of str.in_re, so a membership in re.union,
-    // re.inter, re.xor or re.comp containing it is rewritten into or, and, xor or not of memberships, e.g.,
+    // ((_ re.from_regex flavor) ...) is supported only as the direct argument of str.in_re, so a membership in
+    // re.union, re.inter, re.xor or re.comp containing it is rewritten into or, and, xor or not of memberships, e.g.,
     // (str.in_re a (re.union E1 E2)) ==> (or (str.in_re a E1) (str.in_re a E2)). Nested operations are split
     // when the result is rewritten again (BR_REWRITE2).
-    if (contains_from_ecma2020(b)) {
+    if (contains_from_regex(b)) {
         expr* b1 = nullptr, *b2 = nullptr;
         if (re().is_union(b, b1, b2)) {
             result = m().mk_or(re().mk_in_re(a, b1), re().mk_in_re(a, b2));

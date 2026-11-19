@@ -1620,6 +1620,11 @@ namespace smt2 {
                     m_param_stack.push_back(parameter(curr_id()));
                     next();
                 }
+                else if (curr_is_identifier() && !m_ctx.is_func_decl(curr_id())) {
+                    // symbol index that does not name a function, e.g., the flavor in (_ re.from_regex ecma2020)
+                    m_param_stack.push_back(parameter(curr_id()));
+                    next();
+                }
                 else if (curr_is_identifier() || curr_is_lparen()) {
                     m_param_stack.push_back(parameter(parse_func_decl_ref()));
                 }

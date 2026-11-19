@@ -798,12 +798,13 @@ namespace smt::noodler {
 
             // An equation whose sides are congruent (the same operator over arguments from the same equivalence
             // classes) follows from the equations of the arguments, which are checked separately, e.g.,
-            // (re.from_ecma2020 "a") = (re.from_ecma2020 "b") after the literals "a" and "b" were merged.
+            // ((_ re.from_regex ecma2020) "a") = ((_ re.from_regex ecma2020) "b") after the literals "a" and "b" were
+            // merged.
             if (is_equation && smt::congruent(ctx.get_enode(left_side), ctx.get_enode(right_side))) {
                 continue;
             }
 
-            // (re.from_ecma2020 ...) with a regular pattern is compared as the classical regex of the pattern
+            // ((_ re.from_regex flavor) ...) with a regular pattern is compared as the classical regex of the pattern
             const expr_ref left_regex = get_classical_regex(left_side);
             const expr_ref right_regex = get_classical_regex(right_side);
             if (!left_regex || !right_regex ||

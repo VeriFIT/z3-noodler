@@ -1333,12 +1333,12 @@ namespace smt::noodler::ecma {
     };
 
     /**
-     * @brief Replace each (re.from_ecma2020 pattern) in @p regex by the classical regex of its pattern.
+     * @brief Replace each ((_ re.from_regex ecma2020) pattern) in @p regex by the classical regex of its pattern.
      *
      * The classical regex is the one from RegexConstraintBuilder::get_regular_path_regex(), so its language is the set
      * of strings matching the pattern under the semantics given by @p params.
      *
-     * @param regex  The regex in which (re.from_ecma2020 ...) is replaced.
+     * @param regex  The regex in which ((_ re.from_regex ecma2020) ...) is replaced.
      * @param m      The AST manager.
      * @param params The parameters of the string theory (the engine matching semantics).
      * @return expr_ref The classical regex, or null if some pattern is not a string constant or is not regular

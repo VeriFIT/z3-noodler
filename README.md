@@ -110,7 +110,7 @@ Other than the constraints defined in the [SMT-LIB theory of strings](https://sm
  - `str.update`
  - `str.trim`
  - `str.delete`
- - `re.from_ecma2020` 
+ - `re.from_regex`
  - functions for rational relations (finite transducers)
 
 ## Publications

@@ -255,8 +255,8 @@ void seq_decl_plugin::init() {
     m_sigs[OP_SEQ_REPLACE_RE]    = alloc(psig, m, "str.replace_re", 1, 3, seqAreAseqA, seqA);
     m_sigs[OP_SEQ_REPLACE_ALL]   = alloc(psig, m, "str.replace_all", 1, 3, seqAseqAseqA, seqA);
     m_sigs[OP_STRING_CONST]      = nullptr;
-    // Support both parameterized-const (arity=0, zstring parameter) and unary form (String -> RegEx(String))
-    m_sigs[OP_RE_FROM_ECMA2020]  = alloc(psig, m, "re.from_ecma2020", 0, 1, &strT, reT);
+    m_sigs[OP_RE_FROM_REGEX]     = alloc(psig, m, "re.from_regex", 0, 1, &strT, reT);
+    m_sigs[_OP_RE_FROM_ECMA2020] = alloc(psig, m, "re.from_ecma2020", 0, 1, &strT, reT);
     m_sigs[_OP_STRING_STRIDOF]   = alloc(psig, m, "str.indexof", 0, 3, str2TintT, intT);
     m_sigs[_OP_STRING_STRREPL]   = alloc(psig, m, "str.replace", 0, 3, str3T, strT);
     m_sigs[_OP_STRING_FROM_CHAR] = alloc(psig, m, "char", 1, 0, nullptr, strT);
@@ -456,7 +456,6 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
     case OP_RE_COMPLEMENT:
     case OP_RE_REVERSE:
     case OP_RE_DERIVATIVE:
-    case OP_RE_FROM_ECMA2020:
         m_has_re = true;
         Z3_fallthrough;   
     case OP_SEQ_UNIT:
@@ -631,6 +630,30 @@ func_decl* seq_decl_plugin::mk_func_decl(decl_kind k, unsigned num_parameters, p
         zstring zs(i);        
         parameter p(zs);
         return m.mk_const_decl(m_stringc_sym, m_string,func_decl_info(m_family_id, OP_STRING_CONST, 1, &p));
+    }
+
+    case OP_RE_FROM_REGEX: {
+        m_has_re = true;
+        match(*m_sigs[k], arity, domain, range, rng);
+        symbol flavor;
+        if (num_parameters == 1 && parameters[0].is_symbol())
+            flavor = parameters[0].get_symbol();
+        else if (num_parameters == 1 && parameters[0].is_ast() && is_func_decl(parameters[0].get_ast()))
+            // the SMT2 parser passes a symbol index that names a declared function as that function
+            flavor = to_func_decl(parameters[0].get_ast())->get_name();
+        else
+            m.raise_exception("re.from_regex expects a regex flavor as its index, e.g., ((_ re.from_regex ecma2020) pattern)");
+        if (flavor != "ecma2020")
+            m.raise_exception(std::format("unknown regex flavor '{}' of re.from_regex, expected ecma2020", flavor.str()));
+        parameter p(flavor);
+        return m.mk_func_decl(m_sigs[k]->m_name, arity, domain, rng, func_decl_info(m_family_id, k, 1, &p));
+    }
+
+    case _OP_RE_FROM_ECMA2020: {
+        // (re.from_ecma2020 pattern) is a synonym of ((_ re.from_regex ecma2020) pattern)
+        match(*m_sigs[k], arity, domain, range, rng);
+        parameter p(symbol("ecma2020"));
+        return mk_func_decl(OP_RE_FROM_REGEX, 1, &p, arity, domain, range);
     }
         
     case OP_SEQ_REPLACE:
