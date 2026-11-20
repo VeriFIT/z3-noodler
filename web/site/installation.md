@@ -2,8 +2,6 @@
 title: Installation
 ---
 
-[Home](index.md) · [Installation](installation.md) · [Usage](usage.md) · [Publications](publications.md) · [Playground](playground/) · [Finding bugs](bugs/)
-
 # Installation
 
 There are four ways to run Z3-Noodler: a prebuilt binary, a build from source, a Docker image built from source, or the [playground](playground/) in your browser. There are no Python or npm packages: `pip install z3-solver` and `npm install z3-solver` install the upstream Z3, without Z3-Noodler.

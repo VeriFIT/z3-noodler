@@ -1,0 +1,7 @@
+{%- assign b = site.data.bugs -%}
+<div class="stats">
+<div><span class="big">{{ b.total }}</span><span>queries</span></div>
+<div><span class="big stat-bug">{{ b.found }}</span><span>exploits found</span></div>
+<div><span class="big stat-safe">{{ b.proved }}</span><span>fixes proved</span></div>
+<div><span class="big">≤ {{ b.slowest }} s</span><span>per query</span></div>
+</div>

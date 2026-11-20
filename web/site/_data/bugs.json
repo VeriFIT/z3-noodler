@@ -1,0 +1,254 @@
+{
+  "solver": "Z3 version 5.1.0 - 64 bit - build hashcode ccf9f8e330e880b293e1f67df46d093f1550ae1e - mata hashcode d28368a6957a1606162aea3fbe77345f6e1e13d5",
+  "version": "5.1.0",
+  "total": 21,
+  "found": 13,
+  "proved": 8,
+  "slowest": "3.39",
+  "cases": {
+    "cpython-3.11.2": {
+      "answer": "sat",
+      "seconds": 2.085,
+      "model": [
+        [
+          "rest",
+          "\"JAVASCRIPT:alert(1)\""
+        ],
+        [
+          "lead",
+          "\"\\u{0}\""
+        ],
+        [
+          "url",
+          "\"\\u{0}JAVASCRIPT:alert(1)\""
+        ]
+      ],
+      "query": "; CPython 3.11.2, urllib.parse.urlsplit (CVE-2023-24329).  An app blocks\n; dangerous link schemes:\n;\n;   def is_safe_link(url):\n;       return urlsplit(url).scheme not in {\"javascript\", \"data\", \"vbscript\"}\n;\n; urlsplit:\n;   for b in _UNSAFE_URL_BYTES_TO_REMOVE:          # \"\\t\", \"\\r\", \"\\n\"\n;       url = url.replace(b, \"\")\n;   i = url.find(':')\n;   if i > 0 and url[0].isascii() and url[0].isalpha():\n;       for c in url[:i]:\n;           if c not in scheme_chars: break\n;       else:\n;           scheme, url = url[:i].lower(), url[i+1:]\n(set-logic QF_SLIA)\n(declare-const url String)\n(define-fun remove_tabs ((s String)) String           ; drop \\t, \\r, \\n\n  (str.replace_all (str.replace_all (str.replace_all s \"\\u{9}\" \"\") \"\\u{d}\" \"\") \"\\u{a}\" \"\"))\n(define-fun scheme_of ((u String)) String               ; the scheme part of urlsplit\n  (let ((s (str.substr u 0 (str.indexof u \":\" 0))))\n    (ite (and (str.contains u \":\")\n              (str.in_re s (re.++ (re.union (re.range \"a\" \"z\") (re.range \"A\" \"Z\"))\n                                  (re.* (re.union (re.range \"a\" \"z\") (re.range \"A\" \"Z\") (re.range \"0\" \"9\")\n                                                  (str.to_re \"+\") (str.to_re \"-\") (str.to_re \".\"))))))\n         (str.to_lower s)\n         \"\")))\n(define-fun c0_or_space () RegLan (re.range \"\\u{0}\" \" \"))\n; lstrip(C0 control or space): url = lead ++ rest, rest does not start with one\n(declare-const lead String)\n(declare-const rest String)\n(assert (= url (str.++ lead rest)))\n(assert (str.in_re lead (re.* c0_or_space)))\n(assert (not (str.in_re rest (re.++ c0_or_space re.all))))\n; The browser (WHATWG URL standard) strips leading C0 controls and spaces,\n; removes tabs and newlines, and reads the scheme case-insensitively.\n; Does it run a javascript: URL that the blocklist let through?\n(assert (str.prefixof \"javascript:\" (str.to_lower (remove_tabs rest))))\n(assert (str.suffixof \"alert(1)\" url))\n(define-fun scheme () String (scheme_of (remove_tabs url)))\n(assert (not (= scheme \"javascript\")))\n(assert (not (= scheme \"data\")))\n(assert (not (= scheme \"vbscript\")))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=nVZtb9s2EP4rB-1DqcUWZGdfoqAbvMzdBqTrmqQttioQKIm2uTCUQFJOuyD_vXekFMtOkRXTB73cHR_ePXfH0320jbLZJKqaWkRZdApnf352m0bDcTKbJfMJdEYpWSYtN1Yk-GFbJR2ws_fL6TydH0_nPxzPT-IEYKGBty2UqqlubK5PoeZ6LUzTWVBS34CtNuJW2AxVpAWoxQqkLSxfiYIsGKLHWdDRZYTrjIZhT69OAgroxoHUcJ9H__Att5WRrcujCeRRzR0Pb9tykD_0ew5Q_SarxkBJMMW7Py4Xr5bFu4vz4ue_rpaXxdWb4mL5-s37ZQaP13eImef9NnluhheNt0encQt4SffEiFbxSrDSW0VxsJG9diV1zV5kLwYxUgE_Qgpc16T_mF4n0mJgUrL4QKjaDWdjoiiOiuIgm0xej1QQsKuBsEBfUW0wnRmURvCbnbFQVhysDfaTXViEn6jmThgWe_FHeTTLrnPNrHBT1axlBW9fFZfnvy8wNFaLSnEjplWjrfMol85IvQ46JEFMV53GVN82W1E4XlpgzA5Gcf8ycgjLyjQtYB6Q1tzQTecagFlnBsoLrtQ3CKzPXnd_8pBHIUW9oD4U8EfBgd89nc0Kve6e8Tp47jaiXwHYTg5w2VCRPgQlnI_ee2q7Eh_QYU34b6wX8YlWoCMZupPGMXlDyEw6AYyKxFsi145LbQfT3mp39XiFQXeAGZEcHflHpyU2Pr0Zal1czX3c_xITY_HCi_8OfMB_XrT0-_-7w5449eKTr8T0LZeP2zUUdx4deeyxZPpEklCEO573QHwPgB2rQoUclEiVFo0pbItVB9jKF2J9zvcpoApLQ4VBoPQUFO4iW3aWAmXTNAqwxz1InPXNqASvATNnhMVeoDvUjbC-062j-rqTbgONFk_60C8dN-JY6ZF2Sm6tQCzmuz9Ej5t6BLIM8Q5Gu8LyBiHxIwb2rcnT0RK_cV-OY9ZQgu0a0nAKV9hEpWnuEALYh98WVx9-BTy3KWRdc1PH4Kmz3gPqwh2H1h-kHtROCCscOxb8uUM6Le5wEqHWf-HpWNtx11bciil2ltBWOrkV6nNCML8Q7TgUDaabw24gZd4xt-HOg_jJqKTnnyQ4Gtebnw7Yaw2WDvX5eLJRv-_XHRufmH0eDhNhu9UAxRVK2SxGHJqiXz3FqDr7g4uNzrXxRn7tkwy-HAD2h_HzlmFMP2-zG-DBDuXVzdRyRx9rHDe3-NOi8COaRLf-L8ZGWTqJHL7j4xP-z0QPXwA"
+    },
+    "cpython-3.11.4": {
+      "answer": "unsat",
+      "seconds": 3.389,
+      "model": [],
+      "query": "; CPython 3.11.4, the fix: urlsplit first strips leading C0 controls and\n; spaces, like the WHATWG URL standard does.\n;\n;   url = url.lstrip(_WHATWG_C0_CONTROL_OR_SPACE)\n;   for b in _UNSAFE_URL_BYTES_TO_REMOVE: ...      # as before\n;\n; (unsat = the blocklist now sees the scheme the browser sees)\n(set-logic QF_SLIA)\n(declare-const url String)\n(define-fun remove_tabs ((s String)) String           ; drop \\t, \\r, \\n\n  (str.replace_all (str.replace_all (str.replace_all s \"\\u{9}\" \"\") \"\\u{d}\" \"\") \"\\u{a}\" \"\"))\n(define-fun scheme_of ((u String)) String               ; the scheme part of urlsplit\n  (let ((s (str.substr u 0 (str.indexof u \":\" 0))))\n    (ite (and (str.contains u \":\")\n              (str.in_re s (re.++ (re.union (re.range \"a\" \"z\") (re.range \"A\" \"Z\"))\n                                  (re.* (re.union (re.range \"a\" \"z\") (re.range \"A\" \"Z\") (re.range \"0\" \"9\")\n                                                  (str.to_re \"+\") (str.to_re \"-\") (str.to_re \".\"))))))\n         (str.to_lower s)\n         \"\")))\n(define-fun c0_or_space () RegLan (re.range \"\\u{0}\" \" \"))\n; lstrip(C0 control or space): url = lead ++ rest, rest does not start with one\n(declare-const lead String)\n(declare-const rest String)\n(assert (= url (str.++ lead rest)))\n(assert (str.in_re lead (re.* c0_or_space)))\n(assert (not (str.in_re rest (re.++ c0_or_space re.all))))\n; The browser (WHATWG URL standard) strips leading C0 controls and spaces,\n; removes tabs and newlines, and reads the scheme case-insensitively.\n; Does it run a javascript: URL that the blocklist let through?\n(assert (str.prefixof \"javascript:\" (str.to_lower (remove_tabs rest))))\n(assert (str.suffixof \"alert(1)\" url))\n(define-fun scheme () String (scheme_of (remove_tabs rest)))   ; rest = url.lstrip(...)\n(assert (not (= scheme \"javascript\")))\n(assert (not (= scheme \"data\")))\n(assert (not (= scheme \"vbscript\")))\n(check-sat)\n",
+      "playground": "#z=nVVtb9MwEP4rp_AlYW3UCb6sFUKllBdprKMtIFAky03cNsyzK9tpB4j_zp2d0qQrDOEPeTnfPb7Xxz-ibdQ_70S5LkTUjwYwuv7m1lrBk_T8PH3aAbcWsCzv-lAZaTeydPhnrAPrTLmxIAUvSrWCUQ9yrZzR0gJXRaYGYDc8F7YDsrwRHubTm-H802v4ML1Ea1TipoBCC5uiNhkAnQHP6JlKjx-zYMNGPTaaXM2nk0s2mbLZ9XA0ToLJUhtYQKmAfbiaDV-NGcKzF5_n4xmbT9h0_G7ycdyHNE3Br0fALSwEWon61LhSljs8llxcSJ3fyBLjU3oHVgjrxTZfi9sQxMLonRXG76ELsRWuK_WqzOH9Kza7fDskYSFyyY3oYkoQiqKaYThqFfaWpRLdZaXAiFu9FczxhYU4tnulpP6AwxpAYfQGssx18GHooTIFEGOaUiM2ElPNuJT_ILCQRVlW_bj4mUX0GSW1oDgW8N-CI79DOpheotfVX7wOnjcSuOHGAZrte8mHIIXz0XtPbbXAF1TQC_-lKsQdWaAjfXSnlyTkDSHHpRMQYx8FTWo_Xiq7V621DqvGYwbdgdiI9OzMvypVYr_Tl-FqJdCa-7i_Uyaa4qEXfwn5gAcXmT7-3xNa4p4XX5yI6V-Wj9tpijuLzjx2U9K9J0kpwkOeWyBS76j5m1uhQ45aJO8xbZinAIgTmIrVJW-ngDqsFzoMQkoHUE_9gUwAp9uDJP2aHIhwACtnhMVZoKfnEJxX4iTqr13p1qCVuDeH3rQ5iM1Nj3TY5BaHHPvSs1GIHg_1CKQZ4t0rHRrLK4TCNzLQ1iZPGyb-4Lodm1lDCY5rKMMA5g3qiU8QafIAIe_ZmLAC7SCzEe_QnhI7iYVDrqY_gwgt2su5FV2cLKFs6cqtkN-IseElpR3vA4Pl5vCVb7nN0QXX9465NZJqm1Jp0N3a6Gq1fn6UvY3B1qE5z6IGEHZGu-_iJmPWdTguhK2WeyguURqfJ4iDVTzNYtSdNXHFDV47cZAnM1-t1hWFV8u96j7bgzfD2U_JnzQL7vhDOttFGwvl-U0X7y_8iTrRrb_LbdTvdSKH3_i6w1s9-vkL"
+    },
+    "ipaddress-3.9.4": {
+      "answer": "sat",
+      "seconds": 0.555,
+      "model": [
+        [
+          "host",
+          "\"012.00.070.100\""
+        ],
+        [
+          "o4",
+          "\"100\""
+        ],
+        [
+          "o2",
+          "\"00\""
+        ],
+        [
+          "o1",
+          "\"012\""
+        ],
+        [
+          "o3",
+          "\"070\""
+        ]
+      ],
+      "query": "; CPython 3.9.4, ipaddress (CVE-2021-29921).  An SSRF guard:\n;\n;   def is_allowed(host):\n;       return not ipaddress.ip_address(host).is_private\n;   ...\n;   if is_allowed(host): urllib.request.urlopen(f\"http://{host}/\")\n;\n; ipaddress reads every octet as decimal, but the C library that opens the\n; connection (inet_aton) reads an octet with a leading 0 as octal.\n(set-logic QF_SLIA)\n(declare-const o1 String) (declare-const o2 String) (declare-const o3 String) (declare-const o4 String)\n(declare-const host String)\n(assert (= host (str.++ o1 \".\" o2 \".\" o3 \".\" o4)))\n\n; ipaddress._parse_octet: 1-3 ASCII digits, value at most 255\n(define-fun py_octet_ok ((o String)) Bool\n  (and (str.in_re o ((_ re.loop 1 3) (re.range \"0\" \"9\"))) (<= (str.to_int o) 255)))\n\n; inet_aton (glibc, used by getaddrinfo): a leading 0 means octal\n(define-fun digit ((o String) (i Int)) Int (str.to_int (str.at o i)))\n(define-fun aton_octet ((o String)) Int\n  (ite (and (str.prefixof \"0\" o) (> (str.len o) 1))\n       (ite (= (str.len o) 2) (digit o 1) (+ (* 8 (digit o 1)) (digit o 2)))\n       (str.to_int o)))\n(define-fun aton_ok ((o String)) Bool\n  (or (not (str.prefixof \"0\" o)) (str.in_re o (re.+ (re.range \"0\" \"7\")))))\n\n; RFC 1918 private and loopback ranges\n(define-fun private ((a Int) (b Int)) Bool\n  (or (= a 10) (= a 127) (and (= a 172) (<= 16 b 31)) (and (= a 192) (= b 168))))\n\n(assert (and (py_octet_ok o1) (py_octet_ok o2) (py_octet_ok o3) (py_octet_ok o4)))\n(assert (and (aton_ok o1) (aton_ok o2) (aton_ok o3) (aton_ok o4)))\n; Python thinks the address is public, the C library connects to a private one.\n(assert (not (private (str.to_int o1) (str.to_int o2))))\n(assert (private (aton_octet o1) (aton_octet o2)))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=dVVRb9owEP4rpzw5A1KStGuhY1KHVglpD1uR9oQUmcQQi2BntkOHqv73nZ0EEkarqvX57j5_993ZefMO3jQceqnMmDf1HmH-82hyKSAOJsHtEHhJs0wxrYHMf38fReMoHEWTSRT6AcCTgOXy5Rm2FVXZdCUe8RcAMrYBrhNaFPKVZSSX2vjT2mV_FDOVEiCkOaMHvEyaZR0fIECp-IEaVmcGQVAv-BVwqFRR8HWg2J-KaROgKUsmyGbl5caU05ubNxv4frPy_IbmuTDFaKaBHZg6gkwNM0A11pDyPS2GsK4MmJzBHPAARTHG5NSAhdfWYbFSKQRLDUfZCBfMJNRI4TfAVDSor9zkQKHAXS62MLbHoIcWWBjRzIwKueUp_HpOlj8WT8iTIImCKjZCfI1HhrA0ClN9uPREH3riDz23ree_g6xUHSfVmikDZFY7iDYqGAwsnZUXrDx7erOI28Wt72NmT-YgKanSLHFaTCEcxfC0nC8WkPEtN3oIB1pUDFDavT0lurtzvDao52hTCSiPdWoid0CIbPn58E3KYiUACBVZTY6LRDGQGJZgD4JCyhJCiFECtBQVW4Y8x8hz5U1wIBCDfJnVqUYmXKA4viVwLqLtKZAtTkE6hEqzDNZH2DJj6-NiI3EKu83dMyqa_vYLcfV2S8CZgYUwSAP_9mi4tR024I5LF8bSqRXpy4EYTg1uWEeSUmHmX7lpCsf6yNfaUzBhzdDiNxe0zp31_JEdIMdcYiyQAZBP8NDd6wREfhetp-v1Mj5qqVRA7DtxvQb_ot3Y3cGVHt-7Hre9fHmeQzgJH6B5XcBqZEdkTdMduEx9MXlNICHU9QnIuulXj-cM2x-O_WYR3fuN_M68j-ohCz_DGmIn1tk5iVzWGr0PLdHTrXNh3eGXVv7eRnS5EV9u1Pexj9kq7_BORtQ14q5RYzxC830wORc79wJC-5ByDWW1Ljjej_6L2byPGC2x3lZPKVjQIeX6fNK6OzSh37cjv1_OKalzJzpV1XY9kyTNWbobaWqsgbd3tMcPX4GGN_T27kuovel46Blc47-_-E303v8B"
+    },
+    "ipaddress-3.9.5": {
+      "answer": "unsat",
+      "seconds": 0.028,
+      "model": [],
+      "query": "; CPython 3.9.5, the fix: leading zeros are rejected.\n;\n;   if octet_str != '0' and octet_str[0] == '0':\n;       raise ValueError(\"Leading zeros are not permitted in %r\" % octet_str)\n;\n; (unsat = Python and the C library agree on every address Python accepts)\n(set-logic QF_SLIA)\n(declare-const o1 String) (declare-const o2 String) (declare-const o3 String) (declare-const o4 String)\n(declare-const host String)\n(assert (= host (str.++ o1 \".\" o2 \".\" o3 \".\" o4)))\n\n; ipaddress._parse_octet: 1-3 ASCII digits, value at most 255\n(define-fun py_octet_ok ((o String)) Bool\n  (and (str.in_re o ((_ re.loop 1 3) (re.range \"0\" \"9\"))) (<= (str.to_int o) 255)))\n\n; inet_aton (glibc, used by getaddrinfo): a leading 0 means octal\n(define-fun digit ((o String) (i Int)) Int (str.to_int (str.at o i)))\n(define-fun aton_octet ((o String)) Int\n  (ite (and (str.prefixof \"0\" o) (> (str.len o) 1))\n       (ite (= (str.len o) 2) (digit o 1) (+ (* 8 (digit o 1)) (digit o 2)))\n       (str.to_int o)))\n(define-fun aton_ok ((o String)) Bool\n  (or (not (str.prefixof \"0\" o)) (str.in_re o (re.+ (re.range \"0\" \"7\")))))\n\n; RFC 1918 private and loopback ranges\n(define-fun private ((a Int) (b Int)) Bool\n  (or (= a 10) (= a 127) (and (= a 172) (<= 16 b 31)) (and (= a 192) (= b 168))))\n\n(assert (and (py_octet_ok o1) (py_octet_ok o2) (py_octet_ok o3) (py_octet_ok o4)))\n(assert (and (aton_ok o1) (aton_ok o2) (aton_ok o3) (aton_ok o4)))\n; Python thinks the address is public, the C library connects to a private one.\n(assert (not (private (str.to_int o1) (str.to_int o2))))\n(assert (private (aton_octet o1) (aton_octet o2)))\n(define-fun no_leading_zero ((o String)) Bool (or (= o \"0\") (not (str.prefixof \"0\" o))))\n(assert (and (no_leading_zero o1) (no_leading_zero o2) (no_leading_zero o3) (no_leading_zero o4)))\n(check-sat)\n",
+      "playground": "#z=fVVhb9owEP0rt0hVnQERSdq10DFpQ6uE1A_bKu3LmCKTGPAIdmQbVDbtv-_sJJAEOoQgd-c7v3vv7Pzx9t447HupzJg39h5g-uVg1lJAHIyC2z6YNYMlfxlDzmjGxQp-MyU1UMVAsV8sNSwL5uIBvwDAlyDRYxJtFLyZwPXwGqjITs4fw58wcf5xmWE_inLN4DvNd-yzUlKRufd0tpmQBgqmttzgjsAFXKm5B1en0n6FguyEpgYmUPVh97dNTCHnC0XVAehKMQYYYntmzSxTTOvj-jRlhdFYjmhmBrlc8RS-PibPT7OP1pmxNEdAg1QKbUCG8GwUQvWhG4lejcSvRm7qyNlGa4k_pyDVmikDZFIGCBIQ9HoWztwLkBjcvXqI64cb38dMSxEvqp6DpKBKs8SROIZwEMPH5-lsBhlfcaP7sLeiANK5tbtEt7cO15ILNljuBBSHMjWRGyBE1vh8-CRlPhcAxLLvwHGRoIoSlyU4OEEuZQEhxEgBWoqKFUOcQ8Q590ZzD6ECeT8pU41MuEByfAvg1ITAfalBxcgKlU37sNM4GYsDrJix_XGxlP4Y6HFyh7BlVGg7MjRvN-L6bbYAhMNMGISBvy0Y7hkZkcAdlmYZC6dkpE0H1nBscMMalBQKM1_ksmoc-yMfykjOhDVDW786JGXupBWP7AA55BLXAukBeQv3TV9jQeQ3q7V4vdzGa5JKBcSexss9-B25Ud3eBY3vnMa1lt8epxCOwnsoFN9TbNRyZEdkQdMNuEzdmbxqISHU6QRkUenVwjlB-cOhXz1Ed35FvzPvonLIwnewgNiRdQqOIpe1wOh9DfR46tyy5vBLS3_LEXUdcddRnsd2zZp5V-9oRE0jbhpljYf67jJrLjbaXXf1rcY1FLtFztN-5xbEa0Xg9Y2rJfZb8ykFCxqgnM5HrptDE_ptO_Lb7RyTGmei0VVpR2ejJ2RSHdfE3v3nI1jrKstR8v87i-cEd-s7SGfO6JIzvuSsREzXLN0M8L2Dhtf3tu6Vqr3xsO8ZfMa_F3y5en__AQ"
+    },
+    "jinja-3.1.2": {
+      "answer": "sat",
+      "seconds": 0.038,
+      "model": [
+        [
+          "key",
+          "\"\\u{9}onmouseover\""
+        ]
+      ],
+      "query": "; Jinja2 3.1.2, filter xmlattr (CVE-2024-22195):\n;\n;   <div{{ {key: value}|xmlattr }}>   renders   <div key=\"value\">\n;\n;   rv = \" \".join(f'{escape(key)}=\"{escape(value)}\"' for key, value in d.items() ...)\n;\n; The key comes from the user.\n(set-logic QF_SLIA)\n(declare-const key String)\n(define-fun escape ((s String)) String   ; markupsafe.escape\n  (str.replace_all (str.replace_all (str.replace_all (str.replace_all (str.replace_all s\n    \"&\" \"&amp;\") \">\" \"&gt;\") \"<\" \"&lt;\") \"\\u{27}\" \"&#39;\") \"\\u{22}\" \"&#34;\"))\n; In HTML, an attribute name ends at a tab, LF, FF, space, \"/\", \"=\" or \">\".\n; Can the key smuggle in a second attribute, an event handler?\n(assert (str.in_re (escape key)\n  (re.++ re.all (re.union (str.to_re \"\\u{9}\") (str.to_re \"\\u{a}\") (str.to_re \"\\u{c}\")\n                          (str.to_re \" \") (str.to_re \"/\"))\n         (str.to_re \"onmouseover\"))))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=rVPRatswFP2ViwatTW21cTtGkrZjlIV1ZA-jZU-GoNrXjhpbCpJsOjz_-65sp9toHhcc5Ht8zpV0jtSxli1mEct0jmzBlvBVqmeRwCWf8SSCQlYODbzUlXDOQHD343OcXCRXcZLM5u_DRaqW9ADAdS7broNuhz8X0Iqqwf7XQdX3t8QwqHI0duICEW9SNjBTdvvax7RwAymjhz9rqYLitEObiT0GJAh7khzqQRr2KTuFQhvfLxonBqkg59JhbYMQOOfh1P1xi54Gma7RQmF0DY6gxqLhqQosurjSpczg-2rzsL7_RLogx6wSBuNMK-sG9YMzUpXjt0IqjItGwbgmCAJ7-B5OL7SnJdTC7Jq9FQXykZkqgMA6ww3uK5HhRlTVfwGs7wxk38lg4omo98uUheA9HoDSTfX1WFeHOk2bLvnQj-i7y_nfcPIKX3nYGwr3Cr48fltHIBT4mOVT4xCUqBEoaUsYCHDiKYL1KoIV_e2eVhlRn_OU-YHCBEpuWBr3Le-olZtCsnVTltUQpgCL5H_-Z5phUmxROdgKlVdoPlIewlKSbvREqo2hPKZc_NkZLDfIz87oKPLBPBobJbUaJU57ybjjee93_wYWx-HMw6Pxx3__KOBNj_PR0-N0rWpNR1S3aDzNE4Nsi9kutsL5oqRzW9P1rahgEauH-2zZ4iJijt5peKGbzfrf"
+    },
+    "jinja-3.1.3": {
+      "answer": "sat",
+      "seconds": 0.026,
+      "model": [
+        [
+          "key",
+          "\"/onmouseover\""
+        ]
+      ],
+      "query": "; Jinja2 3.1.3, the fix of CVE-2024-22195: keys with white space are rejected.\n;\n;   _space_re = re.compile(r\"\\s\", flags=re.ASCII)\n;   if _space_re.search(key) is not None:\n;       raise ValueError(f\"Spaces are not allowed in attributes: '{key}'\")\n(set-logic QF_SLIA)\n(declare-const key String)\n(define-fun escape ((s String)) String   ; markupsafe.escape\n  (str.replace_all (str.replace_all (str.replace_all (str.replace_all (str.replace_all s\n    \"&\" \"&amp;\") \">\" \"&gt;\") \"<\" \"&lt;\") \"\\u{27}\" \"&#39;\") \"\\u{22}\" \"&#34;\"))\n(assert (not (str.in_re key (re.++ re.all (re.union (str.to_re \" \") (re.range \"\\u{9}\" \"\\u{d}\")) re.all))))\n; In HTML, an attribute name ends at a tab, LF, FF, space, \"/\", \"=\" or \">\".\n; Can the key smuggle in a second attribute, an event handler?\n(assert (str.in_re (escape key)\n  (re.++ re.all (re.union (str.to_re \"\\u{9}\") (str.to_re \"\\u{a}\") (str.to_re \"\\u{c}\")\n                          (str.to_re \" \") (str.to_re \"/\"))\n         (str.to_re \"onmouseover\"))))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=rVRtb9owEP4rJ09aEzWkJXSagLGpqorGxCZNTP1kCbnJJbhNbGQ7pRPiv-_swEAak_ZhERDfc-_3HN6yFzbqJyzXBbIRG8MXqZ5EBoO0nw4ScCuEUr6CLuHu4b6XXWc3vSzrD9-N4Bl_WthIt4LNSjoEuxY5gjAIBp8wd1ikXI3pAwDLoFySbkLaNNfNWtYYGc44t5wlUNaishNS3S7uZrO485Ll0TG1KEy-iihrDNKC0g6-aYWjztQ_RkiL8CDqFu-N0SYqOVt4dxuq8h6irvUGC5AKhHNGPrYO7QguthR2d8EZJY4sul6tK5nD9-lyMZ_derDAvKYgvVwr63zrsCB3VXW6Uirsla0CtLlYI0SRPejj_YHqG0MjzHO7tqLEtLPkCiCyzqQG17VvlAr8L4D1kQE4e8uZ_xXNekzt0fFjB1RuL3_o5Pogc95us_e7Dn0zGJ7C2W_4xsO-eWEtGgeRn26oQipPs59QRKxdXnq-Q4n0bpXUqjNz2puFcHHQGaEq3Ccadnn8sdj5RPsgcRyH1Zgp-Pzj6zwBccIjKNEgoCqIbmIanHhMYD5NYErfsEYJxbzy28bZhBJo043DryncUSi_7L5w27RVVWPYErBInBfHNCEpvqBysBKqqNF8OhnDcQLRfhf8wgaa_2Uah-bjP2FxHs53YWvhr8-ZaZ8iVx2P5821anRrUb-g8WaB8HyF-XPPCueFiv4rDd0cNQksYU24SiwbXSfM0Zler3SpsN0v"
+    },
+    "jinja-3.1.4": {
+      "answer": "unsat",
+      "seconds": 0.04,
+      "model": [],
+      "query": "; Jinja2 3.1.4, the fix of CVE-2024-34064: also reject \"/\", \">\" and \"=\".\n;\n;   _attr_key_re = re.compile(r\"[\\s/>=]\", flags=re.ASCII)\n;   if _attr_key_re.search(key) is not None:\n;       raise ValueError(f\"Invalid character in attribute name: {key!r}\")\n;\n; (unsat = no key gets past the check and injects an attribute)\n(set-logic QF_SLIA)\n(declare-const key String)\n(define-fun escape ((s String)) String   ; markupsafe.escape\n  (str.replace_all (str.replace_all (str.replace_all (str.replace_all (str.replace_all s\n    \"&\" \"&amp;\") \">\" \"&gt;\") \"<\" \"&lt;\") \"\\u{27}\" \"&#39;\") \"\\u{22}\" \"&#34;\"))\n(assert (not (str.in_re key (re.++ re.all (re.union (str.to_re \" \") (re.range \"\\u{9}\" \"\\u{d}\")\n                                                    (str.to_re \"/\") (str.to_re \">\") (str.to_re \"=\")) re.all))))\n; In HTML, an attribute name ends at a tab, LF, FF, space, \"/\", \"=\" or \">\".\n; Can the key smuggle in a second attribute, an event handler?\n(assert (str.in_re (escape key)\n  (re.++ re.all (re.union (str.to_re \"\\u{9}\") (str.to_re \"\\u{a}\") (str.to_re \"\\u{c}\")\n                          (str.to_re \" \") (str.to_re \"/\"))\n         (str.to_re \"onmouseover\"))))\n(check-sat)\n",
+      "playground": "#z=rVRha9swEP0rNw2GTR23S8NGk6WjlJZldIPR0S_TCKp8dtTakpHk0FH633eS3SVZCxtjJrFO76R3p7sn37M1m77OmDQFsimbwUelb8QYDvPX-SQDv0Io1R2YEk6vzkbjg_FkdDg5eDOZgqidAYs3KD1wts9ZRsMxZyB0Qdacs5zrGf0AYCm8t8tb_LG0CHPalUvTtKrGxHL2jXO3fzz_HhjKWlRuTv6Ty9PFIu13q3KHIHcorFwlNEtBOdDGw2ejcdqvDo8VyiFcibrDM2uNTUrOFnotalWAXAkrpEcLSkOgVdedR9CiwSncE-kL-8BZOuSedNoJTzlrA-SDCr2DVjgfSyNXKG_jgalqVAhH9oaTOBKHflSbSkn4cr68vFicBLBAWQuLI2k0EQXaS9qiq95XKo2jstOATooWIUncoz8dDDriDBphb7vWiRLzfiXXAInzNrfY1kLiUtT1fwFcYAZq6itqL71F086oREO_Caj8MH_Xz-vHOefd_fjtQ4--PDzahse_4EmAw-GFc2g9JKGlMQulg2JChRJq_N5ekE5MkcZOK6P7Zd6EZZEujT4rdIVDoKM-TjCLvrPwD89OnP0YZxs5foLMw5mGfNM0jVpeaPjw9dNFtiOTKD1AXZB6PAjw4jqDi_MMzunvWmpCtrlgxArG9gHD_YJTogpSDDVyTVdVNUZhg0OSV7EJE4PiGrWHFSm2Rvt-q-KbYieD7ML1ior6m8I_1jl9CovnYfmnVjzT2N9bsL1_x2l0YzqHZo02LIvaind1RJeZJixjTfzsOTY9yJgnm4Y7-gCyh58"
+    },
+    "open-redirect": {
+      "answer": "sat",
+      "seconds": 0.035,
+      "model": [
+        [
+          "url",
+          "\"/\\u{9}/\""
+        ]
+      ],
+      "query": "; Open redirect: after login, the app redirects to ?next=<url>.  To stay on\n; the same site, it accepts paths but not protocol-relative URLs (//host).\n;\n;   def is_safe_redirect(url):\n;       return url.startswith(\"/\") and not url.startswith(\"//\")\n;\n; What the browser makes of the URL (WHATWG URL standard): it removes tabs\n; and newlines, and treats \"\\\" like \"/\".  Can it start with \"//\", i.e. go to\n; another host?\n(set-logic QF_SLIA)\n(declare-const url String)\n(define-fun browser ((s String)) String\n  (str.replace_all\n    (str.replace_all (str.replace_all (str.replace_all s \"\\u{9}\" \"\") \"\\u{a}\" \"\") \"\\u{d}\" \"\")\n    \"\\u{5c}\" \"/\"))\n(assert (str.prefixof \"/\" url))\n(assert (not (str.prefixof \"//\" url)))\n(assert (str.prefixof \"//\" (browser url)))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=jVNNi9swEP0rg04O2E576KHetstS6AcslHa35GIIE3kcm8iSkcZJyrL_vSN5Y2gDpT7YozfPM-_NoCd1VNXrXGnXkKrUDXwbyYKnpvekuQJsmTwYt-9tDtwR4Dgu6QDs4NbSmd-_m7z5UAI8OgiMv8DZ2t6kHwIO8uqZcugZUGsa5ccRuQuwmxisYxi9Y6edKTwZ5P5I8PPHfYBsve5c4FUptWI5gIZa6MM2YEvbi4pMWq-qOR8fTzx5C4KWIsVzOPXcZbVa12oFaJvU8Tob0y99Nh1y0r7z7hTE_4AHCuDaBIo0yDZf7h43n1MsZWyDvllV0aCnwR2FzLgLsVZqSCfTWwp5OrEnlAnUqq5rBaY_ECRxMr2PaGONJAyiMJiFyehKKmHvZOBzUSdKPMTp3NY2C8RF3JGG75-2D_df78RJ1pA26KnQzoZkGB7Y93Y_51oRVLSTXTxmWbgQVi9BbQGywL70NBrUtEVjInaN_gcwO56e3j6LawllGTOAfwPNAszNZvSNnuG4p2gBg6jmuc_oxc9Z9pPS0esflLjwK95C_FexSMouE1rYuiN9KAJyPOxl9oPcHiMHlashXaegqle5Yonlc5aLpZ5_Aw"
+    },
+    "open-redirect-backslash": {
+      "answer": "sat",
+      "seconds": 0.028,
+      "model": [
+        [
+          "url",
+          "\"/\\u{9}//\""
+        ]
+      ],
+      "query": "; A \"fix\" after the first bug report: also check with backslashes turned\n; into slashes.\n;\n;   def is_safe_redirect(url):\n;       u = url.replace(\"\\\\\", \"/\")\n;       return u.startswith(\"/\") and not u.startswith(\"//\")\n;\n; Is that enough?\n(set-logic QF_SLIA)\n(declare-const url String)\n(define-fun browser ((s String)) String\n  (str.replace_all\n    (str.replace_all (str.replace_all (str.replace_all s \"\\u{9}\" \"\") \"\\u{a}\" \"\") \"\\u{d}\" \"\")\n    \"\\u{5c}\" \"/\"))\n(define-fun u () String (str.replace_all url \"\\u{5c}\" \"/\"))\n(assert (str.prefixof \"/\" u))\n(assert (not (str.prefixof \"//\" u)))\n(assert (str.prefixof \"//\" (browser url)))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=jZJNSwMxEIb_ypBTCm3VgwdXRHoRBC_idaGk2dnd0DSRzEQLpf_dSdMqWhFz2eSZd-d7p95UczVVNnaoGnULC2hV77atAtMzJuARoXeJGFZ5gISvMXEDxlMEO6Jdw7vjEVbGrskbGpGAcwrYteEWXOAIRzwXUBhAhz04WpLpcZmwcwkt65z8pKn2cjLcgaC5xPPGom5VW46aSnYXrZp8KROWeJDnxCYxlWx01YAJHYTIZ7ajg-LjUdIdDQOGmIfxvg2akGc-Ds7C88Py5elxIVLdofUm4czGII2QxOCFkwtDtfUu4KzPAVYpvpP0TGs6CSbHSxsANHE6VbQ03hd2Tv8BCEo_8u5mL2OSq9RagfkJuk9Qg1V6bSsujfhRQgZ9Svk8bin8dw-GpG6uf7wmcbeNfTVD_iYo8zhTHWV_OSoSfepvWZaD-rCBMzJcHoNMbiNr7OWhpmpz2GtSzeVUsdzls5UNV_sP"
+    },
+    "open-redirect-fixed": {
+      "answer": "unsat",
+      "seconds": 0.032,
+      "model": [],
+      "query": "; The fix: an allow-list of characters instead of a deny-list of prefixes.\n;\n;   SAFE = re.compile(r\"/(?:[A-Za-z0-9._~-][A-Za-z0-9._~/-]*)?(?:\\?[A-Za-z0-9=&._~-]*)?\")\n;   def is_safe_redirect(url):\n;       return SAFE.fullmatch(url) is not None\n;\n; Can an accepted url go to another host?  (unsat = no)\n(set-logic QF_SLIA)\n(declare-const url String)\n(define-fun browser ((s String)) String\n  (str.replace_all\n    (str.replace_all (str.replace_all (str.replace_all s \"\\u{9}\" \"\") \"\\u{a}\" \"\") \"\\u{d}\" \"\")\n    \"\\u{5c}\" \"/\"))\n(assert (str.in_re url (re.from_ecma2020 '/(?:[A-Za-z0-9._~-][A-Za-z0-9._~/-]*)?(?:\\?[A-Za-z0-9=&._~-]*)?')))\n(assert (str.prefixof \"//\" (browser url)))\n(check-sat)\n",
+      "playground": "#z=pVJNa9wwEP0rgw6NXFbebaCHOIRlKQ0EQqFsT42CUeTxWlSWlpHcpA3pb-_Y3iQ0uQRqBB69eZp583Evforqw0LY2KCoxCl86xBad1eBCWC8j7fKu5QhtmA7Q8ZmpAQupIymGVEDDYZfT6Q9Ib_GVOpwygcAtpvzz3AGhKWN_d55lKTFUq6rq436btTvlTop6z_q-p_rUl2_L9ZM0nr97Dh7NzHZo0UxR2-wBZfqZFqsCRtHaLMcyBfV7B8_wjxQmISU7eB9b7LtJhI_hRAzfIkBD4I_jXXzsRb3GRtgGuwi5MhozB0SdDHlNYAcQjKZKwuRtciEWfm4cxa-ntfby4vNCDZovSFUNnLDplDbTC7sZl_rAqp2CHBD8TZxZCnTI6E4GDpwppSpJNx7Y7HmmYzYa_QNQAIttB7uTx60GE1RHADzEmiegDnZjH60M7xkfCzBJFad5zwucP-nEiWPuqXY12h7c7w6XsHR_477qHiVb1403jiWw3pAPjZxnOvEth3aH4pnxBexEP2050lUq4XIbPPvjjdePPwF"
+    },
+    "path-traversal": {
+      "answer": "sat",
+      "seconds": 0.024,
+      "model": [
+        [
+          "name",
+          "\"....//.\""
+        ]
+      ],
+      "query": "; Path traversal: a filter that deletes \"../\" from a user-supplied file name.\n;\n;   def safe_open(name):\n;       name = name.replace(\"../\", \"\")\n;       return open(os.path.join(UPLOAD_DIR, name))\n;\n; Can the cleaned name still climb out of UPLOAD_DIR?\n(set-logic QF_SLIA)\n(declare-const name String)                                 ; attacker-controlled\n(define-fun cleaned () String (str.replace_all name \"../\" \"\"))\n(assert (str.contains cleaned \"../\"))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=hVLLasMwEPyVRScbbLe9OpQSGgqBQNOG3gxmK68TNbJkpHUolP5713YexwqDvNLszGikH3VS5UOmtG9IlWoBW-QDcMAThYi2BITWWKYAfECGhiwxRahUUdxVCtrgO4EMkUIeh763hpqxgcBhR0XlFvIBSF8LEVuqfU8uGffSct4Zx1jD49wSqLeoKTkrZCJVqfSGDcRDcDDx-Fj0Yrf48sYlH9vN63JVr9bv2cSUpmf1Z3RinkBbQif2JrXIxlpZMt0n-IHBt3AjeKpcEolz6_dGw9tLvdusl0KXNKQtBsq1d5Fnoh0H4_Yp_DcWgMyojxKUdHPw1lIzUbbGUd4O7mowSc-skEQOl0RqFMOT5CX8KZnRFkbJn2f0SI7GxSvbGT0B9YH0MY_IY7GXE3Zy7VYKlaluegdRlfeZYvmX6VtehPr9Aw"
+    },
+    "path-traversal-fixed": {
+      "answer": "unsat",
+      "seconds": 0.023,
+      "model": [],
+      "query": "; A sound filter: delete every \"..\" (not just \"../\").\n;\n;   name = name.replace(\"..\", \"\")\n;\n; A run of n dots becomes n mod 2 dots, so no \"..\" can be glued together.\n; Can the cleaned name still contain \"..\"?  (unsat = the filter is sound)\n(set-logic QF_SLIA)\n(declare-const name String)\n(assert (str.contains (str.replace_all name \"..\" \"\") \"..\"))\n(check-sat)\n",
+      "playground": "#z=NVHbasMwDP2Vg59SSLPLY8oYZTAY7GX0NVA8W03TOfawlLIx9u9TnAwM8tHl6Ej6MVfT3tXGJU-mNTvswWmKHqchCOUWngIJga6Uv9GZpukMqpgEl4mlOG46s2m6uNMHINqR8FBMk-kzWEfVUlZrtqaumXvkKSKdEOGTMN7JpZFY4Zg87ouzVi2I6b-ts1HT0IeJPCT1JGfKc2c8aUQBXCAbNVhEsAwhwKUodogrxyNQTZGtqMS5YJkSAy9Tq7iKSbYh9YPD2_Px8Pqyn52eXLCZtsqmUxf6g-Qh9nPQMlMWVCy5WdvxgtYFHK0KKUXrJGURK9jMFO5M7mOruhSY2ozlJmza29qI_tV86XXM7x8"
+    },
+    "path-traversal-twice": {
+      "answer": "sat",
+      "seconds": 0.026,
+      "model": [
+        [
+          "name",
+          "\"......///.\""
+        ]
+      ],
+      "query": "; A common \"fix\": run the filter twice.\n;\n;   name = name.replace(\"../\", \"\").replace(\"../\", \"\")\n;\n; Is the double filter safe?\n(set-logic QF_SLIA)\n(declare-const name String)\n(define-fun once ((s String)) String (str.replace_all s \"../\" \"\"))\n(assert (str.contains (once (once name)) \"../\"))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=dVBLa8MwDP4rQicXkmy7pozRy6DQS-nVUDxHSc0ce1jqVhj771Me3W1gLMny9-D7xk9snyr0uSNscQs78HkccwKLfbhZbKFcE8iFoA9RqIB8BU-NTVs9AJDcSPA8l6bQR3SejMWmebBYKYfFzT_PK8OeZ_IuX9_inwa7nl5sMkxSxzwED8fX8-mw3ynKdOSjK1T7nFgW_ZOUkIZl2YdEda-ec_IExvB9u1kbMCzlbursYgSG1dribOJxzFRk-apC4kJiMAvlfE-6SrkCZ4y_kH-v2ck0DGp91FCjDljhOKfM2D5WKNpruWne-PML"
+    },
+    "sql-escape": {
+      "answer": "sat",
+      "seconds": 0.025,
+      "model": [
+        [
+          "name",
+          "\"\\' OR 1=1 -- \""
+        ]
+      ],
+      "query": "; SQL injection: hand-made escaping of a quoted string literal (MySQL-style\n; literals, where \"\\\" escapes the next character).\n;\n;   $sql = \"SELECT * FROM users WHERE name = '\"\n;        . str_replace(\"'\", \"\\\\'\", $name) . \"'\";\n;\n; The literal stays closed iff the escaped text is a sequence of ordinary\n; characters and backslash escapes: ([^'\\\\]|\\\\.)*.  Can the attacker break\n; out of the literal and append SQL of their choice?\n(set-logic QF_SLIA)\n(declare-const name String)\n(define-fun escaped () String (str.replace_all name \"'\" \"\\u{5c}'\"))\n(assert (not (str.in_re escaped (re.from_ecma2020 '([^\\x27\\\\]|\\\\.)*'))))\n(assert (str.suffixof \" OR 1=1 -- \" name))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=VVJha9swEP0rhyjELrFJAmOQUMYoKRuklCaFfai7cJXPsRZZSiR5S2j733eyk271B0unu_fu7t29iN9iOh4KaUsSUzGD1f0ClPlFMihrplCjKbMGSwLyEnfKbMBWgLBvbaASfHDxSatADjUkt0fGZz4cNRVmdn73Q_hTkyMoRFEUoqciD6EmMHQIIGt0KDk2zRkWkQAXfq_hiiGr-WJ-_QCXcLO8u4XWk_Pw49t8OQeDDXHIgGk7SPflsai1o51GSUkh2DvsExfd9SKiUg7rXLNTvgcu5dyFD3j0ILX13KGqqq7OvuYSQqxXeZbA074lIykKYl2pDLpjpHpvhoNMCc8ot16jr89tTyF5_DmI9Ty9xn-eXuYA12i6PBgCA8jBsyPcRj7bhpgi_Fdh5MXdjviI8-q9ynFqqyR9KUziKWTabpSE-5v1avH9a8qPJUmNjjJpjQ-9eqtugL2zUoayqjXvvSbpyQ8Ja5qfNF2j1j24U7DTtn35JN_YSCMTep5RgMTY0AOV4Xn8Y3WUV842a5INTkaTEQxYkKI4TD5_EGWQph_oIpNvq0oduF_Oe7eE8dUYsiwa3VBjtKxJbjOPIRobVqHhzdZsiKFoulX3YjoaisB3Pg689OLtLw"
+    },
+    "sql-escape-fixed": {
+      "answer": "unsat",
+      "seconds": 0.023,
+      "model": [],
+      "query": "; The fix: escape the escape character first (or, better, use a prepared\n; statement).\n;\n;   $esc = str_replace(\"'\", \"\\\\'\", str_replace(\"\\\\\", \"\\\\\\\\\", $name));\n;\n; Can the attacker still break out of the literal?  (unsat = no)\n(set-logic QF_SLIA)\n(declare-const name String)\n(define-fun escaped () String\n  (str.replace_all (str.replace_all name \"\\u{5c}\" \"\\u{5c}\\u{5c}\") \"'\" \"\\u{5c}'\"))\n(assert (not (str.in_re escaped (re.from_ecma2020 '([^\\x27\\\\]|\\\\.)*'))))\n(check-sat)\n",
+      "playground": "#z=ZVJhS8MwEP0rRxiskbbMgQgdIiIIgl9kfjNabul1K2uTkaQymPvvXrqOKeZDc_fecffeNQfxJYrrVGhbkSjEAt42BHWzL4C8xh1B4HwM9QYd6kCOC5wPkFiXwooCIyn0ngBh52iHjiplFuADBurIBJlzGhGACbeCO6ZcyZUtakqUmCqRghKKzxD-ZSN8KThnE4MdSbkYOz-iGZRiCKi3rNCHpm1h5Qi3YPsAth74tmGx2N4DJL3xGFiLsVKZxFPIWrtuNLw-lcuX54cIVqRbdpNpa9hunAjL4BqzPpF1YyirezPup4JEjrwyPIBt5KONElnMP2BoGG31hxt9VOJXfIYkDOu5MJzIOB29J8e_wNhwatwY3tlFiaO8drYrSXc4n81nME3eP5Xaz2_jAj--4zeXV1Mph3Z6Q3qb8UI4EanohjfhRTFLReCYrz2_DnH8AQ"
+    },
+    "sql-truncate": {
+      "answer": "sat",
+      "seconds": 0.043,
+      "model": [
+        [
+          "name",
+          "\"'''''''a'a\""
+        ]
+      ],
+      "query": "; Escaping is now correct, but the escaped value is cut to fit a 16-character\n; column (or a log line, or a cache key) *after* escaping:\n;\n;   $esc = str_replace(\"'\", \"\\\\'\", str_replace(\"\\\\\", \"\\\\\\\\\", $name));\n;   $esc = substr($esc, 0, 16);\n;\n; Can the cut leave an unfinished escape that eats the closing quote?\n(set-logic QF_SLIA)\n(declare-const name String)\n(define-fun escaped () String\n  (str.replace_all (str.replace_all name \"\\u{5c}\" \"\\u{5c}\\u{5c}\") \"'\" \"\\u{5c}'\"))\n(define-fun cut () String (str.substr escaped 0 16))\n(assert (not (str.in_re cut (re.from_ecma2020 '([^\\x27\\\\]|\\\\.)*'))))\n(assert (str.in_re name (re.* (re.union (re.range \"a\" \"z\") (str.to_re \"'\")))))  ; only letters and quotes\n(check-sat)\n(get-model)\n",
+      "playground": "#z=ZVNRaxsxDP4rwhRyDnfhGtgGCaWMscFgL6OP8xZUR5cc9dmd7cvadf3vk3xtsnb34LOk75P8SfaDOqjVea1s2JJaqTV8TBZve7-DPoEPv8CGGMnmGq7HDHlPQAKgLRzQjSQoK4EAXZ8B4fxtY_cY0WaKxq-Z7sbBQxUiB13Yges91VBMi5bz3dC9hjl2TJhPybn6irlCBzhjF1xAynET6dahpcqomVE1GGX4K9uXUXGfAM_WmceBtH6VdrxmbiVWDW3Nxy8AwXxAX_SKPEd4IGDH6Lve92nP-qc-MAQzEOY0gV1I0ryfY8h0aXyVKDcsu7fw9dPm6svn95qdW7IOIzU2-JRBzgVXOTJvCnIJarrRH1td6ae48QAVH3jxJHaDzv3vKAlF_Pjwxj4a9c_-2aWhNPEUYUO_qi7Cj5WnKlO7judqpV_CwpQoMtqHPAF7z_OYMkRadDEMG7IDLttlC7Pq2w9j7pbvZDDf_8i60POZ1i9SnbIUOZJmXtbR98GXXUS_E6FYhPwWVYWWg9CKQEmqAdYQvLvnMWa-ZYkHuZ0mlLgg30F70yTMUn3H4xr4KTg2VK2G8jaSWrW1yrzn3x2_EvX4Fw"
+    },
+    "url-allowlist": {
+      "answer": "sat",
+      "seconds": 0.036,
+      "model": [
+        [
+          "host",
+          "\"api-example.com\""
+        ],
+        [
+          "url",
+          "\"https://api-example.com/\""
+        ],
+        [
+          "path",
+          "\"\""
+        ]
+      ],
+      "query": "; URL allow-list: a webhook may only call our own API servers.\n;\n;   const ALLOWED = /^https:\\/\\/(www|api).example.com\\//;\n;   if (!ALLOWED.test(url)) throw new Error(\"forbidden host\");\n;   fetch(url);\n;\n; Is there an allowed url whose host is NOT example.com or one of its\n; subdomains?\n(set-logic QF_SLIA)\n(declare-const url String)\n(declare-const host String)\n(declare-const path String)\n(assert (str.in_re url (re.from_ecma2020 '^https://(www|api).example.com/.*')))\n(assert (= url (str.++ \"https://\" host \"/\" path)))\n(assert (str.in_re host (re.+ (re.union (re.range \"a\" \"z\") (re.range \"0\" \"9\") (str.to_re \"-\") (str.to_re \".\")))))\n(assert (str.suffixof \".com\" host))                          ; registrable by the attacker\n(assert (not (str.in_re host (re.from_ecma2020 '([a-z0-9-]+\\.)*example\\.com'))))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=dVNRb9MwEP4rh1-arE1a9rZWE6rEkCpVDBiIBwyV61waq4mvst2lG_DfOadBdHSLrPh85-_zd-fzT3Evpq9HQlOBYipm8OXTElRdU5vVxocpKGhxXRFtoVEPQLZ-AM1xoL0Dai3MPyzAo7tH53NpZzwAQJP1AebL5e3Xm7dwDeMfVQg7P5VyzCNp2_aX2pk0x4NqdjXmmhr2j3u0KSF51YPzgD4ke1enKYTKUQsWW7hxjlwiRUlubYoCLVTkgxRpz1Bi0FWHmvWaFp7h6BCUPaaHBXAcWgZihwbj4f3tZzjRBMQ5WgQqwQQfafx-XVCjjPVvpE08hqymjdHw8d3qbrmYp-wsUNfKYXasQTzjLjhjN-ex7tSXgjsVqpOg8lzkAIkPLjd2xYlE5sRhXjpqVqgbdTm5nMCgr_T4-SqP84tBmp4SXh-JIu9wCFL8hUtx1CdFNKOap7h_QrptUcmw---tIdtZTtkNMoFiAike-XqeuCed-6pzR7ZAkU2K7MyTsyc9P97vy9Ic-HJ4R-ygo2JulBe_GTjccFs7ta4R1g-xJ0CFoPQW3Qm7pecz_K_WyTeVPU6yq-z7UMo8vegLzTbLGfSKdYV6m3kV4mLDHdPwU6t5IUai6d6eF9PJSAS2eTrwKxS__wA"
+    },
+    "url-allowlist-fixed": {
+      "answer": "unsat",
+      "seconds": 0.036,
+      "model": [],
+      "query": "; The fix: escape the dot.\n;\n;   const ALLOWED = /^https:\\/\\/(www|api)\\.example\\.com\\//;\n;\n; (unsat = every allowed url goes to a subdomain of example.com)\n(set-logic QF_SLIA)\n(declare-const url String)\n(declare-const host String)\n(declare-const path String)\n(assert (str.in_re url (re.from_ecma2020 '^https://(www|api)\\.example\\.com/.*')))\n(assert (= url (str.++ \"https://\" host \"/\" path)))\n(assert (str.in_re host (re.+ (re.union (re.range \"a\" \"z\") (re.range \"0\" \"9\") (str.to_re \"-\") (str.to_re \".\")))))\n(assert (str.suffixof \".com\" host))                          ; registrable by the attacker\n(assert (not (str.in_re host (re.from_ecma2020 '([a-z0-9-]+\\.)*example\\.com'))))\n(check-sat)\n",
+      "playground": "#z=dZLditswEIVfZdBNrE38071bh71YaAuFQClb6EXVhok8sc3akpHkTXbbvntHTkqTpjFCHp2RPh-P5od4FuWbhdC2IlGKJXxuCLbtvgTyGgeCwOvKhkyZJQ8A0Nb4AA-r1ccv797CPeTfmxAGXyqV80h2u91PHFqpVEZ77IeOONK251y-PEKS0XgMfJaeyb0Adp3dUQWj66C25CFYQPDjprI9tgbsFo6oCJLKJJ5C2tm61fDp_fpx9eEhihXpDh2lB4MR9hhca-rLXGN5upYcMDQnSfSeXIDEB5e1Zu1oIieOsq2z_Zp0j7fFbQGzYxny6yXIs5uZlKfQ-wMssudzUOIPQomDRyViGB2dn_trZtoW3cyneTStNVPk0NTEAGSAEq9KyDO5mOS7SY60YCNNifRCyViRl5_345bbhK-Gd8TrPTiWEq4-S3BUt3wWNx3B5mVqLQwB9RO5E7qx___Df-qdfMX0tUjv0m9zLq-8OSv17OhYN6SfUm42XoiF6Kde96IsFiJwzK89d7349Rs"
+    },
+    "xss-escape": {
+      "answer": "unsat",
+      "seconds": 0.024,
+      "model": [],
+      "query": "; The fix: escape \"<\" instead of deleting tags.\n;\n;   function sanitize(comment) {\n;     return comment.replaceAll(\"<\", \"&lt;\");\n;   }\n;\n; Can the output contain any tag opening at all?  (unsat = no)\n(set-logic QF_SLIA)\n(declare-const comment String)\n(define-fun out () String (str.replace_all comment \"<\" \"&lt;\"))\n(assert (str.contains out \"<\"))\n(check-sat)\n",
+      "playground": "#z=PZHdasMwDIVf5eCLkUBSttt0Y5TBYLCb0V0GinGU1tSVQ6yMbqXvPuWnBYMtSzrnk30xP6Z6KoyLDZnKrPF9ILT-XIGSsx2hNs-1geckZBvEFg0FEs97iN2nVc1rXQDagZ34yEiWvfg_ylw8nYglx2WuAHqSoWcsiVVPXbCONiFkk0uhZg9B1rXJF9HrIv9mGaJgcZBuEBVgsZ5h-XekQOyIRyIrsCG8AtnASYMXcMxrzhJJGeLeO3y977afH5vxsiEXbE-liiW5MWErvSrN-dYzlTrXaIssX3LIkvQ39p363Xvnp7rPMIrYlKiXuWWhTpPcVDuVuAO5Y6m4GpjCnKbvSKZ6LIzoWbezfoy5_gM"
+    },
+    "xss-strip": {
+      "answer": "sat",
+      "seconds": 0.139,
+      "model": [
+        [
+          "comment",
+          "\"<<script>SCRIPT><<script>\""
+        ]
+      ],
+      "query": "; XSS: a \"sanitizer\" that deletes <script> tags from a comment before it is\n; put into an HTML page.\n;\n;   function sanitize(comment) {\n;     return comment.replaceAll(\"<script>\", \"\");\n;   }\n;\n; HTML tag names are case-insensitive, so the browser runs a script if the\n; lower-cased output contains \"<script>\".  Can that happen?\n(set-logic QF_SLIA)\n(declare-const comment String)\n(define-fun out () String (str.replace_all comment \"<script>\" \"\"))\n(assert (str.contains (str.to_lower out) \"<script>\"))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=VVJNa9wwEP0rD51ssJf2ugktIRBa2B7K5pCDYVG0Y6-oPDLSOCkJ-e8d2btLerLGM_O-mHfzYrZfG-PikczW3OBpv9_CojPZshf_RqkzkJMVHCmQUMZtdslP8g1ih4w-xVHnXRxHYsEz9TERvMDnjm8wzfpiibCMH4-_dpjsQBvtlCbQz-zER8aFrToD1XhfJ4BEMie-MGwSTcE6uguh6sxFS2caldyZ-oz7cWZYKFUn2I4q3ao0ZzO1njNxVsYXapCjGiQ8p_iaKSHNrJNYkeH70ixYIb5Sasv6EXGW4sxFFqtY-KxkA9yr2yWzk50m4u8dV5mkDXHwDr8fDvvdz7tafx7JBdXUKk6Wa4Z7SZ6Htd97plZTKoyo6nMPVZZ0SeJgQ7jufhayJlJwbFZjsm5dNS-VxMPiq-DX_20vi-5E7k-brZRiUAuj3knQwjRmXA4nm-2Xxoi-9fNXT8h8_AM"
+    },
+    "xss-strip-nested": {
+      "answer": "sat",
+      "seconds": 0.233,
+      "model": [
+        [
+          "comment",
+          "\"<<SCRIPT>SCRIPT><<SCRIPT>\""
+        ]
+      ],
+      "query": "; The developer adds case folding: lower-case first, then delete the tags.\n;\n;   function sanitize(comment) {\n;     return comment.toLowerCase().replaceAll(\"<script>\", \"\");\n;   }\n;\n; Still exploitable?\n(set-logic QF_SLIA)\n(declare-const comment String)\n(define-fun out () String (str.replace_all (str.to_lower comment) \"<script>\" \"\"))\n(assert (str.contains out \"<script>\"))\n(check-sat)\n(get-model)\n",
+      "playground": "#z=TZHbasMwDIZfRfgqgaRst-nYKIPBoDejuwwUz1ETM8UOltqVlb77lENHwWAd_f2yLuZkqsfCuNigqcwaPjuEBk9IccAEtmkYnGWEQ6TGh7YCij-YyjnmE0sB0mHQHkLB0QaxLa_qsNYDAIdjcOJjALbBi__FzMW-xyA5XOYKgIRyTAGWxEridoS8KiPLVwkHsg43RFltntglP8hzbQqoTW3yhXJdeDvxRIDngaIX-0X4UoeMUUqKrXfw8bbfbd83uQYbdGQTli4Glhta-5NOOecPPmCp8iEeBbJ8yUHGkm6i9lZpU0DifvoZ-J_uXuysdXzWMmOSuUfRYn3gCXBfPlW6Dt13yVZGp9URet0RqWMK009LY1M9FEbU1uus6zPXPw"
+    }
+  }
+}
