@@ -21,6 +21,10 @@
 #include "formula_preprocess.h"
 #include "parikh_image.h"
 
+namespace smt::noodler {
+    class ConversionHandler;
+}
+
 namespace smt::noodler::ca {
 
     using AutMatrix = std::vector<std::vector<mata::nfa::Nfa>>;
@@ -239,9 +243,11 @@ namespace smt::noodler::ca {
      * @param not_conts Not contains
      * @param autass Automata assignmnent after stabilization
      * @param use_tag_proc Whether to use the tag-based procedure
+     * @param conversion_handler Handler of conversions (initialized with the current solution) whose encoding the formula
+     *        should be coupled with, nullptr if there is nothing to couple with
      * @return std::pair<LenNode, LenNodePrecision> LIA formula describing lengths of string models together with the precision.
      */
-    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& not_conts, const AutAssignment& autass, bool use_tag_proc);
+    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& not_conts, const AutAssignment& autass, bool use_tag_proc, const ConversionHandler* conversion_handler = nullptr);
 
 }
 

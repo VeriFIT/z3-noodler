@@ -2,6 +2,7 @@
 #include "ca_str_constr.h"
 #include "formula.h"
 #include "util.h"
+#include "conversion_handler.h"
 #include <mata/nfa/delta.hh>
 #include <mata/nfa/nfa.hh>
 #include <mata/applications/strings.hh>
@@ -604,17 +605,64 @@ namespace smt::noodler::ca {
     }
 
     /**
+     * @brief Get a formula coupling the choice of @p letter for the needle @p needle (with the language @p needle_letters
+     * of one-letter words) of not-contains predicates with the encoding of conversions:
+     *  - the code point of the needle is the code point of @p letter,
+     *  - the integer value of the needle is the value of @p letter (-1 if it is not a digit),
+     *  - the code point of each haystack variable from @p haystack_vars is not the code point of @p letter.
+     *
+     * The dummy symbol represents the symbols that do not occur in the formula, so if @p letter is the dummy symbol,
+     * the code point of the needle is not the code point of any other letter of the needle (the haystack is not
+     * restricted in this case, see prune_subword_from_automaton). If there are integer conversions, digits are not
+     * represented by the dummy symbol, so it is not a digit.
+     */
+    LenNode couple_letter_choice_with_conversions(const BasicTerm& needle, mata::Symbol letter, const std::set<mata::Word>& needle_letters,
+                                                  const std::set<BasicTerm>& haystack_vars, const ConversionHandler& conversion_handler) {
+        LenNode result(LenFormulaType::AND, {});
+        if (!needle.is_literal() && conversion_handler.is_var_code_subst_var(needle)) {
+            const BasicTerm code_var = ConversionHandler::code_var_of(needle);
+            if (!util::is_dummy_symbol(letter)) {
+                result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{code_var, static_cast<unsigned>(letter)});
+            } else {
+                for (const mata::Word& other_letter : needle_letters) {
+                    if (!util::is_dummy_symbol(other_letter.at(0))) {
+                        result.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{code_var, static_cast<unsigned>(other_letter.at(0))});
+                    }
+                }
+            }
+        }
+        if (!needle.is_literal() && conversion_handler.is_var_int_subst_var(needle)) {
+            const bool is_digit = (AutAssignment::DIGIT_SYMBOL_START <= letter && letter <= AutAssignment::DIGIT_SYMBOL_END);
+            const int value = is_digit ? static_cast<int>(letter - AutAssignment::DIGIT_SYMBOL_START) : -1;
+            result.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{ConversionHandler::int_var_of(needle), value});
+        }
+        if (!util::is_dummy_symbol(letter)) {
+            for (const BasicTerm& haystack_var : haystack_vars) {
+                if (!haystack_var.is_literal() && conversion_handler.is_var_code_subst_var(haystack_var)) {
+                    result.succ.emplace_back(LenFormulaType::NEQ, std::vector<LenNode>{ConversionHandler::code_var_of(haystack_var), static_cast<unsigned>(letter)});
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
      * @brief Heuristic for not-contains predicates whose needles are single terms with a finite language
      * consisting only of one-letter words.
      *
      * For such a needle n, not-contains(h, n) holds iff n = c for some letter c of L(n) and c does not occur
      * in h. We therefore enumerate all combinations of letters for the needles, fix each needle to its chosen
      * letter, remove the letter from the haystack languages, and describe lengths of the resulting languages.
-     * All predicates are handled jointly, so the resulting formula is precise.
+     * All predicates are handled jointly, so the resulting formula is precise for not-contains.
+     *
+     * Conversions choose the words of their variables from the automata assignment independently of the letter
+     * chosen here (see issue #566). If @p conversion_handler is given, we therefore couple the chosen letters with
+     * the code-point and integer values of the needles and with the code points of the haystack variables. Other
+     * values (integer values of haystack variables, real values) cannot be coupled, so the heuristic is not applied then.
      *
      * @return Disjunction (over letter choices) of length formulae, or std::nullopt if the heuristic does not apply.
      */
-    std::optional<LenNode> try_solving_notcontains_with_finite_rhs(const std::vector<Predicate>& not_contains_predicates, const AutAssignment& aut_assignment) {
+    std::optional<LenNode> try_solving_notcontains_with_finite_rhs(const std::vector<Predicate>& not_contains_predicates, const AutAssignment& aut_assignment, const ConversionHandler* conversion_handler) {
         // Check that every not-contains has a finite RHS
         // @Note we currently do not support finite languages where RHS contains more than one variable
         std::map<BasicTerm, std::set<mata::Word>> rhs_var_words;
@@ -666,6 +714,16 @@ namespace smt::noodler::ca {
             all_terms.insert(rhs_var);
         }
 
+        if (conversion_handler != nullptr) {
+            for (const BasicTerm& term : all_terms) {
+                if (term.is_literal()) { continue; }
+                if (conversion_handler->is_var_real_subst_var(term) || (!rhs_var_words.contains(term) && conversion_handler->is_var_int_subst_var(term))) {
+                    STRACE(str_not_contains, tout << "* Cannot apply heuristics for finite side not-contains - the chosen letter cannot be coupled with conversions of " << term << std::endl; );
+                    return std::nullopt;
+                }
+            }
+        }
+
         // predicates_sharing_rhs_var and rhs_var_words have the same keys, hence slots are ordered in the same way
         WordChoicesForFiniteLanguages word_choices;
         for (const auto& [var, var_words] : rhs_var_words) {
@@ -704,24 +762,23 @@ namespace smt::noodler::ca {
                 var_idx += 1;
             }
 
-            // We have automata ready, lets compute the lengths of solutions
+            // We have automata ready, lets compute the lengths of solutions. Only the lengths of words are needed, so we
+            // describe the set of lengths of each language directly, instead of a Parikh image whose size grows with
+            // the number of transitions (i.e., with the alphabet) for each letter choice (see issue #500).
             LenNode lengths_of_solutions (LenFormulaType::AND, {});
             for (const auto& [var, var_language] : assignment_for_this_word_choice) {
-                parikh::ParikhImage parikh_image_generator (*var_language);
-                LenNode parikh_image = parikh_image_generator.compute_parikh_image();
+                lengths_of_solutions.succ.push_back(AutAssignment::get_lengths(*var_language, var));
+            }
 
-                LenNode word_length_expr = LenNode(LenFormulaType::PLUS, {});
-                for (const auto& [transition, transition_var] : parikh_image_generator.get_trans_vars()) {
-                    mata::Symbol transition_symbol = std::get<1>(transition);
-                    if (transition_symbol == mata::nfa::EPSILON) continue;
-
-                    word_length_expr.succ.push_back(transition_var);
+            if (conversion_handler != nullptr) {
+                size_t choice_idx = 0;
+                for (const auto& [rhs_var, var_predicates] : predicates_sharing_rhs_var) {
+                    const WordChoice& word_choice_for_var = word_choices.slots[choice_idx++];
+                    lengths_of_solutions.succ.push_back(couple_letter_choice_with_conversions(
+                        rhs_var, word_choice_for_var.current_word->at(0), word_choice_for_var.language,
+                        var_predicates.all_lhs_variables, *conversion_handler
+                    ));
                 }
-
-                LenNode lengths_of_var_words = LenNode(LenFormulaType::EQ, {var, word_length_expr});
-
-                lengths_of_solutions.succ.push_back(parikh_image);
-                lengths_of_solutions.succ.push_back(lengths_of_var_words);
             }
 
             lengths_of_all_solutions.succ.push_back(lengths_of_solutions);
@@ -874,9 +931,9 @@ namespace smt::noodler::ca {
     /**
      * @brief Get LIA formula for a group of not-contains predicates (see get_lia_for_not_contains).
      */
-    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains_group(const std::vector<Predicate>& not_contains_group, const AutAssignment& actual_var_assignment, bool use_tag_proc) {
+    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains_group(const std::vector<Predicate>& not_contains_group, const AutAssignment& actual_var_assignment, bool use_tag_proc, const ConversionHandler* conversion_handler) {
         { // Priority - apply fast heuristics before attempting to use the great LIA hammer
-            std::optional<LenNode> heuristic_solution = try_solving_notcontains_with_finite_rhs(not_contains_group, actual_var_assignment);
+            std::optional<LenNode> heuristic_solution = try_solving_notcontains_with_finite_rhs(not_contains_group, actual_var_assignment, conversion_handler);
             if (heuristic_solution.has_value()) {
                 return { heuristic_solution.value(), LenNodePrecision::PRECISE };
             }
@@ -975,7 +1032,7 @@ namespace smt::noodler::ca {
         return { not_contains_formula, LenNodePrecision::PRECISE };
     }
 
-    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& formula, const AutAssignment& var_assignment, bool use_tag_proc) {
+    std::pair<LenNode, LenNodePrecision> get_lia_for_not_contains(const Formula& formula, const AutAssignment& var_assignment, bool use_tag_proc, const ConversionHandler* conversion_handler) {
         if (formula.get_predicates().empty()) {
             return { LenNode(LenFormulaType::TRUE), LenNodePrecision::PRECISE };
         }
@@ -997,7 +1054,7 @@ namespace smt::noodler::ca {
         LenNode result (LenFormulaType::AND, {});
         LenNodePrecision precision = LenNodePrecision::PRECISE;
         for (const std::vector<Predicate>& group : split_not_contains_into_var_disjoint_groups(formula.get_predicates())) {
-            auto [group_formula, group_precision] = get_lia_for_not_contains_group(group, actual_var_assignment, use_tag_proc);
+            auto [group_formula, group_precision] = get_lia_for_not_contains_group(group, actual_var_assignment, use_tag_proc, conversion_handler);
             if (group_formula.type == LenFormulaType::FALSE && group_precision == LenNodePrecision::PRECISE) {
                 return { group_formula, group_precision };
             }

@@ -1,0 +1,8 @@
+(set-info :status unsat)
+(declare-fun f (Bool) Int)
+(declare-const x String)
+(assert (= (f (= x "a")) 1))
+(assert (= (f true) 0))
+(assert (str.in_re x (re.union (str.to_re "a") (str.to_re "bb"))))
+(assert (= (str.len x) 1))
+(check-sat)

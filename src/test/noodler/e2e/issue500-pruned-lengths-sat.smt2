@@ -1,0 +1,8 @@
+(set-info :status sat)
+(declare-fun x () String)
+(declare-fun y () String)
+(assert (str.in_re x (re.* (re.union (str.to_re "aa") (str.to_re "bbb")))))
+(assert (str.in_re y (re.union (str.to_re "a") (str.to_re "b"))))
+(assert (not (str.contains x y)))
+(assert (= (str.len x) 6))
+(check-sat)
