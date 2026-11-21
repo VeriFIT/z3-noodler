@@ -996,19 +996,40 @@ namespace smt::noodler {
         push_to_worklist(std::move(init_solving_state), true);
     }
 
+    void DecisionProcedure::set_sources(std::vector<SourceSet> pred_sources, std::map<BasicTerm, SourceSet> aut_sources) {
+        if (pred_sources.size() != this->formula.get_predicates().size()) {
+            STRACE(str, tout << "Sources are not tracked (" << pred_sources.size() << " sources for " << this->formula.get_predicates().size() << " predicates)" << std::endl;);
+            return; // the sources do not correspond to the formula, we do not track them
+        }
+        // the initial lengths (before preprocessing) follow only from the initial automata
+        this->initial_lengths_sources = std::set<size_t>{};
+        for (const auto& [term, sources] : aut_sources) {
+            join_sources(this->initial_lengths_sources, sources);
+        }
+        this->pred_sources = std::move(pred_sources);
+        this->aut_sources = std::move(aut_sources);
+    }
+
     lbool DecisionProcedure::preprocess(PreprocessType opt, const BasicTermEqiv &len_eq_vars) {
         // we collect variables used in conversions, some preprocessing rules cannot be applied for them
         std::set<BasicTerm> conv_vars = conversion_handler.get_string_vars_in_conversions();
 
-        FormulaPreprocessor prep_handler{std::move(this->formula), std::move(this->init_aut_ass), std::move(this->init_length_sensitive_vars), m_params, conv_vars};
+        FormulaPreprocessor prep_handler{std::move(this->formula), std::move(this->init_aut_ass), std::move(this->init_length_sensitive_vars), m_params, conv_vars,
+                                         this->pred_sources, this->aut_sources};
+        // remember the sources of the conflict found by preprocessing
+        auto unsat = [&]() {
+            this->conflict_sources = prep_handler.get_conflict_sources();
+            STRACE(str, tout << "Preprocessing conflict depends on " << (this->conflict_sources.has_value() ? std::to_string(this->conflict_sources->size()) : std::string("all")) << " sources" << std::endl;);
+            return l_false;
+        };
 
         // try to replace the not contains predicates (so-far we replace it by regular constraints)
         if(prep_handler.can_unify_not_contains()) {
-            return l_false;
+            return unsat();
         }
 
         if (prep_handler.contains_unsat_eqs_or_diseqs()) {
-            return l_false;
+            return unsat();
         }
 
         // So-far just lightweight preprocessing
@@ -1050,7 +1071,7 @@ namespace smt::noodler {
         prep_handler.propagate_variables();
 
         if (prep_handler.contains_unsat_eqs_or_diseqs()) {
-            return l_false;
+            return unsat();
         }
 
         prep_handler.refine_languages();
@@ -1059,7 +1080,7 @@ namespace smt::noodler {
         prep_handler.reduce_regular_sequence(3);
         prep_handler.remove_regular();
         if(m_params.m_preprocess_nft && prep_handler.has_unsat_transducers()) {
-            return l_false;
+            return unsat();
         }
 
         // the following should help with Leetcode
@@ -1099,11 +1120,11 @@ namespace smt::noodler {
 
         // try to replace the not contains predicates (so-far we replace it by regular constraints)
         if(!prep_handler.replace_not_contains() || prep_handler.can_unify_not_contains()) {
-            return l_false;
+            return unsat();
         }
 
         if(prep_handler.contains_unsat_eqs_or_diseqs()) {
-            return l_false;
+            return unsat();
         }
 
         // reduce automata of only neccessary variables
@@ -1116,9 +1137,11 @@ namespace smt::noodler {
         this->init_length_sensitive_vars = prep_handler.get_len_variables();
         this->preprocessing_len_formula = prep_handler.get_len_formula();
         this->inclusions_from_preprocessing = prep_handler.get_removed_inclusions_for_model();
+        this->initial_lengths_sources = prep_handler.get_len_sources();
 
         if (!this->init_aut_ass.is_sat()) {
             // some automaton in the assignment is empty => we won't find solution
+            this->conflict_sources = prep_handler.get_empty_aut_sources();
             return l_false;
         }
 
