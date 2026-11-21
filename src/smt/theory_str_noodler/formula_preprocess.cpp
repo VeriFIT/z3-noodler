@@ -3,7 +3,7 @@
 
 namespace smt::noodler {
 
-    FormulaVar::FormulaVar(const Formula& conj) : allpreds(), input_size(0) {
+    FormulaVar::FormulaVar(const Formula& conj, const std::vector<SourceSet>& sources) : allpreds(), input_size(0) {
         const std::vector<Predicate>& preds = conj.get_predicates();
         for(size_t i = 0; i < preds.size(); i++) {
             // we skip equations of the form X = X
@@ -16,8 +16,19 @@ namespace smt::noodler {
                 this->update_varmap(preds[i], i);
                 this->max_index = i;
                 this->input_size++;
+                // a duplicate of a predicate is skipped, the kept predicate is justified by its own sources
+                this->pred_sources[i] = (sources.size() == preds.size()) ? sources[i] : std::nullopt;
             }
         }
+    }
+
+    /**
+     * @brief Get sources of the predicate with the index @p index (all sources if it has none assigned).
+     */
+    const SourceSet& FormulaVar::get_pred_sources(size_t index) const {
+        static const SourceSet all_sources = std::nullopt;
+        auto it = this->pred_sources.find(index);
+        return it != this->pred_sources.end() ? it->second : all_sources;
     }
 
     /**
@@ -193,6 +204,7 @@ namespace smt::noodler {
         }
         this->allpreds.erase(this->predicates[index]);
         this->predicates.erase(index);
+        this->pred_sources.erase(index);
     }
 
     /**
@@ -222,6 +234,7 @@ namespace smt::noodler {
         this->predicates[index] = pred;
         this->allpreds.insert(pred);
         update_varmap(pred, size_t(index));
+        this->pred_sources[index] = this->current_just;
         return index;
     }
 
@@ -252,8 +265,13 @@ namespace smt::noodler {
             }
         }
         for(const auto& pr : replace_map) {
+            // the modified predicate follows from the original one and the justification of the replacement
+            SourceSet sources = get_pred_sources(pr.first);
+            join_sources(sources, this->current_just);
             remove_predicate(pr.first);
-            add_predicate(pr.second, pr.first);
+            if(add_predicate(pr.second, pr.first) == int(pr.first)) {
+                this->pred_sources[pr.first] = std::move(sources);
+            }
         }
     }
 
@@ -294,6 +312,79 @@ namespace smt::noodler {
         } else {
             this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(concat);
         }
+        touch_aut(var, std::set<BasicTerm>(upd.begin(), upd.end()));
+    }
+
+    /**
+     * @brief Get sources of the automaton of @p term (no sources if it has none assigned).
+     */
+    SourceSet FormulaPreprocessor::get_aut_sources(const BasicTerm& term) const {
+        if (!this->track_sources) { return std::nullopt; }
+        auto it = this->aut_sources.find(term);
+        return it != this->aut_sources.end() ? it->second : SourceSet(std::set<size_t>{});
+    }
+
+    /**
+     * @brief Get sources of the predicate with the index @p index together with the sources of automata of its terms.
+     */
+    SourceSet FormulaPreprocessor::get_pred_sources_with_aut(size_t index) const {
+        if (!this->track_sources) { return std::nullopt; }
+        SourceSet sources = this->formula.get_pred_sources(index);
+        for (const BasicTerm& term : this->formula.get_predicate(index).get_set()) {
+            join_sources(sources, get_aut_sources(term));
+        }
+        return sources;
+    }
+
+    /**
+     * @brief Get sources of all equations of the formula.
+     */
+    SourceSet FormulaPreprocessor::get_equations_sources() const {
+        if (!this->track_sources) { return std::nullopt; }
+        SourceSet sources = std::set<size_t>{};
+        for (const auto& [index, pred] : this->formula.get_predicates()) {
+            if (pred.is_equation()) {
+                join_sources(sources, this->formula.get_pred_sources(index));
+            }
+        }
+        return sources;
+    }
+
+    /**
+     * @brief Record that the automaton of @p var was modified using the automata of @p reads (justified by the current
+     * justification).
+     */
+    void FormulaPreprocessor::touch_aut(const BasicTerm& var, const std::set<BasicTerm>& reads) {
+        if (!this->track_sources) { return; }
+        SourceSet sources = get_aut_sources(var);
+        join_sources(sources, this->just);
+        for (const BasicTerm& read : reads) {
+            join_sources(sources, get_aut_sources(read));
+        }
+        STRACE(str_prep, if (!sources.has_value() && get_aut_sources(var).has_value()) {
+            tout << "automaton of " << var << " depends on all sources (justification " << (this->just.has_value() ? "given" : "all") << ")" << std::endl; });
+        this->aut_sources[var] = std::move(sources);
+    }
+
+    SourceSet FormulaPreprocessor::get_len_sources() const {
+        if (!this->track_sources) { return std::nullopt; }
+        SourceSet sources = this->len_sources;
+        join_sources(sources, this->subst_sources);
+        for (const auto& [term, term_sources] : this->aut_sources) {
+            join_sources(sources, term_sources);
+        }
+        return sources;
+    }
+
+    SourceSet FormulaPreprocessor::get_empty_aut_sources() const {
+        if (!this->track_sources) { return std::nullopt; }
+        for (const auto& [term, aut] : this->aut_ass) {
+            if (aut->is_lang_empty()) {
+                STRACE(str_prep, tout << "empty automaton of " << term << " with " << (get_aut_sources(term).has_value() ? std::to_string(get_aut_sources(term)->size()) : std::string("all")) << " sources" << std::endl;);
+                return get_aut_sources(term);
+            }
+        }
+        return std::nullopt;
     }
 
     /**
@@ -334,6 +425,8 @@ namespace smt::noodler {
                 continue;
             }
 
+            // all modifications below are justified by the removed equation
+            JustScope just_scope(*this, this->formula.get_pred_sources(pr.first));
             BasicTerm left_var = pr.second.get_left_side()[0];
             update_reg_constr(left_var, pr.second.get_right_side());
 
@@ -402,6 +495,7 @@ namespace smt::noodler {
         for (const auto& [v, word_str] : singletons) {
             BasicTerm lit(BasicTermType::Literal, word_str);
             this->aut_ass[lit] = this->aut_ass.at(v);
+            touch_aut(lit, {v});
             this->formula.replace({v}, {lit});
             substitute_var(v, {lit});
         }
@@ -432,6 +526,8 @@ namespace smt::noodler {
                 this->formula.remove_predicate(index);
                 continue;
             }
+            // all modifications below are justified by the propagated equation
+            JustScope just_scope(*this, this->formula.get_pred_sources(index));
 
             if(!eq.get_left_side()[0].is_variable()) {
                 eq = eq.get_switched_sides_predicate();
@@ -557,6 +653,7 @@ namespace smt::noodler {
     void FormulaPreprocessor::generate_identities() {
         STRACE(str_prep, tout << "Preprocessing step - generate_identities\n";);
         std::set<std::pair<size_t, Predicate>> new_preds;
+        std::map<size_t, SourceSet> new_preds_sources; // a new identity is justified by the pair of equations it was generated from
         std::set<size_t> rem_ids;
         size_t index = this->formula.get_max_index() + 1;
 
@@ -589,6 +686,9 @@ namespace smt::noodler {
                 Predicate new_pred;
                 if(generate_identities_suit(diff, new_pred) && new_pred != pr1.second && new_pred != pr2.second) {
                     new_preds.insert({index, new_pred});
+                    SourceSet sources = this->formula.get_pred_sources(pr1.first);
+                    join_sources(sources, this->formula.get_pred_sources(pr2.first));
+                    new_preds_sources[index] = std::move(sources);
                     // Removing one equation of the pair is justified by the other one (pr1 && pr2 <-> kept && new_pred).
                     // Hence, remove only if none of them is already removed, otherwise the justifications might
                     // form a cycle (e.g., X = Y U, X = Y V, X = Y U W would remove all three equations).
@@ -610,6 +710,7 @@ namespace smt::noodler {
             this->formula.remove_predicate(i);
         }
         for(const auto &pr : new_preds) {
+            JustScope just_scope(*this, new_preds_sources.at(pr.first));
             this->formula.add_predicate(pr.second, pr.first);
         }
         STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
@@ -708,6 +809,9 @@ namespace smt::noodler {
         std::map<Concat, unsigned> regs;
         std::set<Predicate> new_eqs;
         get_regular_sublists(regs);
+        // the fresh variable is defined as the regular sequence, so the modifications do not depend on any source
+        // (the automaton of the fresh variable gets the sources of the automata of the sequence in update_reg_constr)
+        JustScope just_scope(*this, std::set<size_t>{});
 
         for(const auto& pr : regs) {
             if(pr.second >= mn) {
@@ -757,6 +861,19 @@ namespace smt::noodler {
         get_eps_terms(eps_set);
         std::deque<size_t> worklist;
         std::set<size_t> eps_eq_id;
+        // sources justifying that a term is epsilon (initially by its language)
+        std::map<BasicTerm, SourceSet> eps_sources;
+        for(const BasicTerm& t : eps_set) {
+            eps_sources[t] = get_aut_sources(t);
+        }
+        // a term on the other side of an equation is epsilon by the equation and by the epsilon terms on its side
+        auto get_eps_sources_of_side = [&](size_t index, const std::set<BasicTerm>& side) {
+            SourceSet sources = this->formula.get_pred_sources(index);
+            for(const BasicTerm& t : side) {
+                join_sources(sources, eps_sources.at(t));
+            }
+            return sources;
+        };
 
         // get indices of equations containing at least one eps term
         for(const BasicTerm& t : eps_set) {
@@ -779,16 +896,20 @@ namespace smt::noodler {
 
             std::set<BasicTerm> left = eq.get_left_set();
             std::set<BasicTerm> right = eq.get_right_set();
+            SourceSet new_eps_sources;
             if(is_subset(left, eps_set)) {
                 new_eps = set_difference(eq.get_side_vars(Predicate::EquationSideType::Right), eps_set);
+                new_eps_sources = get_eps_sources_of_side(index, left);
                 eps_eq_id.insert(index);
             } else if(is_subset(right, eps_set)) {
                 new_eps = set_difference(eq.get_side_vars(Predicate::EquationSideType::Left), eps_set);
+                new_eps_sources = get_eps_sources_of_side(index, right);
                 eps_eq_id.insert(index);
             }
 
             for(const BasicTerm& t : new_eps) {
                 eps_set.insert(t);
+                eps_sources[t] = new_eps_sources;
                 std::set<VarNode> nds = get_formula().get_var_occurr(t);
                 std::transform(nds.begin(), nds.end(), std::back_inserter(worklist),
                     [](const VarNode& n){ return n.pred_index ; });
@@ -796,6 +917,7 @@ namespace smt::noodler {
         }
 
         for(const BasicTerm& t : eps_set) {
+            JustScope just_scope(*this, eps_sources.at(t)); // the modifications are justified by t being epsilon
             if(t.is_variable()) {
                 update_reg_constr(t, Concat()); // L(t) = L(t) \cap {\eps}
             }
@@ -1115,6 +1237,7 @@ namespace smt::noodler {
         for(const auto& pr :this->formula.get_predicates()) {
             if(!pr.second.is_equation())
                 continue;
+            JustScope just_scope(*this, this->formula.get_pred_sources(pr.first)); // the languages are refined by the equation
 
             if(pr.second.get_left_side().size() == 1) {
                 BasicTerm var = pr.second.get_left_side()[0];
@@ -1136,7 +1259,7 @@ namespace smt::noodler {
 
         // Check if there is a regular constraint of the form "A" in .... 
         // In that case, we construct automaton for "A" and make a product with the 
-        // corresponding language of the Basic Term "A".
+        // corresponding language of the Basic Term "A". (The literal denotes only its word, so the sources do not change.)
         for(const auto& pr : this->aut_ass) {
             if(pr.first.is_literal()) {
                 mata::nfa::Nfa word_aut = AutAssignment::create_word_nfa(pr.first.get_name());
@@ -1185,6 +1308,7 @@ namespace smt::noodler {
                 auto left_set = pr.second.get_left_set();
                 if(left_set.size() > 0 && is_sigma_star(left_set)) {
                     rem_ids.insert(pr.first);
+                    JustScope just_scope(*this, this->formula.get_pred_sources(pr.first));
                     this->add_to_len_formula(pr.second.get_formula_eq());
                     // we add the removed equation to removed_inclusions_for_model, but we have to swap
                     // sides so that the single occurring side is on the right (we are gonna
@@ -1210,6 +1334,7 @@ namespace smt::noodler {
                 auto right_set = pr.second.get_right_set();
                 if(right_set.size() > 0 && is_sigma_star(right_set)) {
                     rem_ids.insert(pr.first);
+                    JustScope just_scope(*this, this->formula.get_pred_sources(pr.first));
                     this->add_to_len_formula(pr.second.get_formula_eq());
                     removed_inclusions_for_model.push_back(pr.second);
                     // if right side contains some length variable,
@@ -1236,7 +1361,21 @@ namespace smt::noodler {
      */
     void FormulaPreprocessor::generate_equiv(const BasicTermEqiv& ec) {
         STRACE(str_prep, tout << "Preprocessing step - generate_equiv\n";);
-        std::set<Predicate> new_preds;
+        // A new equation t1 = t2 is justified by the two equations it was generated from and by |t1| = |t2|. The length
+        // equivalence follows either from the languages of t1 and t2 or from @p ec, which comes from the length
+        // constraints of the context (not from string constraints). Facts from @p ec are not part of any blocked
+        // assignment (also without tracking sources), hence they do not add any sources.
+        std::map<Predicate, SourceSet> new_preds;
+        auto add_new_pred = [&](const BasicTerm& t1, const BasicTerm& t2, size_t index1, size_t index2) {
+            SourceSet sources = this->formula.get_pred_sources(index1);
+            join_sources(sources, this->formula.get_pred_sources(index2));
+            join_sources(sources, get_aut_sources(t1));
+            join_sources(sources, get_aut_sources(t2));
+            auto [it, inserted] = new_preds.try_emplace(Predicate::create_equation({t1}, {t2}), sources);
+            if (!inserted) {
+                join_sources(it->second, sources);
+            }
+        };
         size_t index = this->formula.get_max_index() + 1;
 
         for(const auto& pr1 : this->formula.get_predicates()) {
@@ -1271,8 +1410,7 @@ namespace smt::noodler {
                     if(t1 == t2) {
                         continue;
                     } else if(same_length(ec, t1, t2)) {
-                        Predicate new_pred = Predicate::create_equation({t1}, {t2});
-                        new_preds.insert(new_pred);
+                        add_new_pred(t1, t2, pr1.first, pr2.first);
                     } else {
                         break;
                     }
@@ -1285,16 +1423,16 @@ namespace smt::noodler {
                     if(t1 == t2) {
                         continue;
                     } else if(same_length(ec, t1, t2)) {
-                        Predicate new_pred = Predicate::create_equation({t1}, {t2});
-                        new_preds.insert(new_pred);
+                        add_new_pred(t1, t2, pr1.first, pr2.first);
                     } else {
                         break;
                     }
                 }
             }
         }
-        for(const auto &pr : new_preds) {
-            this->formula.add_predicate(pr);
+        for(const auto &[pred, sources] : new_preds) {
+            JustScope just_scope(*this, sources);
+            this->formula.add_predicate(pred);
         }
         STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
     }
@@ -1360,12 +1498,18 @@ namespace smt::noodler {
         }
 
         // construct new equations from computed separators
+        // (a new equation is justified by the equations defining the separators and by the languages of its terms)
+        const SourceSet equations_sources = get_equations_sources();
         for(const auto& pr : separators) {
             for(const auto& a : pr.second) {
                 if(a.second.size() <=  1) continue;
                 BasicTerm fst = *a.second.begin();
                 for(const BasicTerm& dest : a.second) {
                     if(dest != fst) {
+                        SourceSet sources = equations_sources;
+                        join_sources(sources, get_aut_sources(fst));
+                        join_sources(sources, get_aut_sources(dest));
+                        JustScope just_scope(*this, std::move(sources));
                         this->formula.add_predicate(Predicate::create_equation({fst}, {dest}));
                     }
                 }
@@ -1431,6 +1575,8 @@ namespace smt::noodler {
      */
     void FormulaPreprocessor::common_prefix_propagation() {
         STRACE(str_prep, tout << "Preprocessing step - common_prefix_propagation\n";);
+        // new equations are justified by the pair of equations and by the equations used for flattening
+        JustScope just_scope(*this, get_equations_sources());
         TermReplaceMap replace_map = construct_replace_map();
         std::set<size_t> rem_ids;
         size_t i = 0;
@@ -1495,6 +1641,8 @@ namespace smt::noodler {
      */
     void FormulaPreprocessor::common_suffix_propagation() {
         STRACE(str_prep, tout << "Preprocessing step - common_suffix_propagation\n";);
+        // new equations are justified by the pair of equations and by the equations used for flattening
+        JustScope just_scope(*this, get_equations_sources());
         TermReplaceMap replace_map = construct_replace_map();
         std::set<size_t> rem_ids;
         int i = 0, j = 0;
@@ -1611,6 +1759,7 @@ namespace smt::noodler {
         LenNode lengths = AutAssignment::get_lengths(aut_compl, var);
         this->add_to_len_formula(LenNode(LenFormulaType::NOT, {lengths}));
         this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(this->aut_ass.sigma_star_automaton());
+        touch_aut(var);
         this->len_variables.insert(var);
     }
 
@@ -1636,10 +1785,13 @@ namespace smt::noodler {
                 continue;
             }
 
+            // the language is restricted by the disequation and the languages of its sides
+            JustScope just_scope(*this, get_pred_sources_with_aut(pr.first));
             // we have x != literal -> remove literal from the language of x and remove the disequality
             if (left_side.size() == 1 && left_side[0].is_variable() && (right_side.size() < 1 || (right_side.size() == 1 && right_side[0].is_literal()))) {
                 BasicTerm var = left_side[0];
                 this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*this->aut_ass.at(var), this->aut_ass.complement_aut(aut_right)));
+                touch_aut(var);
                 rem_ids.insert(pr.first);
                 continue;
             }
@@ -1647,6 +1799,7 @@ namespace smt::noodler {
             if (right_side.size() == 1 && right_side[0].is_variable() && (left_side.size() < 1 || (left_side.size() == 1 && left_side[0].is_literal()))) {
                 BasicTerm var = right_side[0];
                 this->aut_ass[var] = std::make_shared<mata::nfa::Nfa>(mata::nfa::intersection(*this->aut_ass.at(var), this->aut_ass.complement_aut(aut_left)));
+                touch_aut(var);
                 rem_ids.insert(pr.first);
                 continue;
             }
@@ -1699,6 +1852,10 @@ namespace smt::noodler {
         };
         for(const auto& pr : this->formula.get_predicates()) {            
             if (pr.second.is_inequation() && can_unify(pr.second.get_left_side(), pr.second.get_right_side(), check)) {
+                // the sides are unified using the equations
+                SourceSet sources = this->formula.get_pred_sources(pr.first);
+                join_sources(sources, get_equations_sources());
+                set_conflict_sources(std::move(sources));
                 return true;
             }
             if (pr.second.is_equation() && pr.second.is_str_const()) {
@@ -1710,7 +1867,10 @@ namespace smt::noodler {
                 for(const BasicTerm& t : pr.second.get_right_side()) {
                     right = right + t.get_name();
                 }
-                if(left != right) return true;
+                if(left != right) {
+                    set_conflict_sources(this->formula.get_pred_sources(pr.first));
+                    return true;
+                }
             }
         }
         return false;
@@ -1772,7 +1932,13 @@ namespace smt::noodler {
                 (conv.type == ConversionType::TO_INT  && mata::nfa::reduce(mata::nfa::intersection(only_digits_aut,                 *aut_ass.at(subst_var))).is_lang_empty()) ||
                 (conv.type == ConversionType::TO_REAL && mata::nfa::reduce(mata::nfa::intersection(only_digits_or_with_decimal_aut, *aut_ass.at(subst_var))).is_lang_empty()))
             {
-                len_formula.succ.emplace_back(LenFormulaType::EQ, std::vector<LenNode>{conv.number_var, -1});
+                // follows from the language of the variable (and the substitution)
+                SourceSet sources = get_aut_sources(subst_var);
+                if (!(subst_var == conv.string_var)) {
+                    join_sources(sources, this->subst_sources);
+                }
+                JustScope just_scope(*this, std::move(sources));
+                add_to_len_formula(LenNode(LenFormulaType::EQ, std::vector<LenNode>{conv.number_var, -1}));
             }
         }
         STRACE(str_prep, tout << print_info(is_trace_enabled(TraceTag::str_nfa)));
@@ -1787,6 +1953,10 @@ namespace smt::noodler {
         for(const auto& [id, pred] : this->formula.get_predicates()) {
             if(!pred.is_not_cont()) continue;
             if(can_unify_contain(pred.get_haystack(), pred.get_needle())) {
+                // the sides are unified using the equations
+                SourceSet sources = this->formula.get_pred_sources(id);
+                join_sources(sources, get_equations_sources());
+                set_conflict_sources(std::move(sources));
                 return true;
             }
 
@@ -1825,7 +1995,9 @@ namespace smt::noodler {
                     }
 
                     mata::nfa::Nfa complement = this->aut_ass.complement_aut(nfa_copy);
+                    JustScope just_scope(*this, get_pred_sources_with_aut(id)); // justified by the not contains and the language of the haystack
                     this->aut_ass.restrict_lang(needle[0], complement);
+                    touch_aut(needle[0]);
                     rem_ids.insert(id);
                     continue;
                 }
@@ -1944,6 +2116,7 @@ namespace smt::noodler {
                         mata::nfa::Nfa sigma_star_with_a = mata::nfa::builder::create_sigma_star_nfa(&alph);
                         sigma_star_with_a.alphabet = nullptr; // remove alphabet because otherwise mata will start to make problems
                         aut_ass[needle_var] = std::make_shared<mata::nfa::Nfa>(sigma_star_with_a);
+                        touch_aut(needle_var);
                         something_changed = true;
                         break;
                     }
@@ -2002,6 +2175,7 @@ namespace smt::noodler {
             subst_replace = std::move(new_replace);
         }
         substitution_map[var] = replace;
+        join_sources(this->subst_sources, this->just);
         /* TODO: It makes sense to delete aut_ass[var] as it is substituted, but we cannot do it, as aut_ass[var] can
          * be empty (meaning that preprocessing decided unsat). We should be checking for unsat after every step instead.
          */

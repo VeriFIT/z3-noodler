@@ -142,6 +142,11 @@ namespace smt::noodler {
         // equation atoms (= l r) created by new_diseq_eh for disequations l != r coming from atoms with other sides (see new_diseq_eh)
         obj_hashtable<expr> m_diseq_atoms_from_other_atoms;
         expr_ref_vector     m_diseq_atoms_from_other_atoms_refs; // keeps the atoms of m_diseq_atoms_from_other_atoms alive
+        // sources (see SourceSet) of the predicates and of the automata of the instance created in the last final_check
+        // (by get_formula_from_relevant and create_aut_assignment_for_formula); source ids enumerate the relevant
+        // constraints in the order of construct_refinement
+        std::vector<SourceSet> m_instance_pred_sources;
+        std::map<BasicTerm, SourceSet> m_instance_aut_sources;
         obj_hashtable<expr> m_has_length;          // is length applied
         expr_ref_vector     m_length;             // length applications themselves
         std::vector<std::pair<expr_ref, stored_instance>> axiomatized_instances;
@@ -361,7 +366,9 @@ namespace smt::noodler {
         void handle_index_of(expr *e);
         void handle_replace(expr *e);
         void handle_replace_re(expr *e);
+        bool is_prefix_char(expr* e, expr*& x, expr*& s, expr*& i);
         void add_prefix_char_axioms(expr* e, expr* x, expr* s, expr* i);
+        void mark_prefix_char_diseq_as_relevant(expr* e);
         void handle_prefix(expr *e);
         void handle_suffix(expr *e);
         void handle_not_prefix(expr *e);
@@ -404,9 +411,12 @@ namespace smt::noodler {
          * solved in final_check (atoms that are not relevant are omited). It includes (dis)equations, regexes, 
          * and notcontains.
          * 
-         * @return expr_ref Conjunction of atomic string constraints
+         * @param sources If given, include only the constraints with these source ids. The constraints are numbered
+         *        (from 0) in the order in which they are added: equations, disequations, memberships, memberships
+         *        in rational relations, not contains (see get_formula_from_relevant).
+         * @return expr_ref Conjunction of atomic string constraints (nullptr if there is none and @p sources are not given)
          */
-        expr_ref construct_refinement();
+        expr_ref construct_refinement(const SourceSet& sources = std::nullopt);
 
         /**
          * @brief Introduce string axioms for a formula @p ex. 
@@ -583,10 +593,12 @@ namespace smt::noodler {
          * @param is_overapprox Was the length formula obtained from the initial or premature length checking (for the loop protection)
          * @param is_underapprox Was the lemma derived from an underapproximation (it is unsound on its own, the context flag
          *                       is_underapprox must stay raised as long as the lemma exists or is reused by the loop protection)
+         * @param sources Sources (see construct_refinement) of the constraints implying @p len_formula. Only these constraints
+         *        are blocked (all if not given). The loop protection always stores all constraints.
          *
          * TODO explain better
          */
-        void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool is_overapprox = false, bool is_underapprox = false);
+        void block_curr_len(expr_ref len_formula, bool add_axiomatized = true, bool is_overapprox = false, bool is_underapprox = false, const SourceSet& sources = std::nullopt);
 
         /**
          * @brief Raise the is_underapprox (@p underapprox = true) or is_overapprox flag of the context.

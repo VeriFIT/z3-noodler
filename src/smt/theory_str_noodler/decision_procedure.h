@@ -136,6 +136,15 @@ namespace smt::noodler {
         // is later reinitialized with the conversions of solving states, which include those created from disequations)
         bool input_contains_conversions = false;
 
+        // sources of the predicates of formula and of the automata of init_aut_ass (see set_sources); if not given,
+        // sources are not tracked and every result depends on all sources
+        std::vector<SourceSet> pred_sources;
+        std::optional<std::map<BasicTerm, SourceSet>> aut_sources;
+        // sources of the conflict if preprocessing returned unsat
+        SourceSet conflict_sources = std::nullopt;
+        // sources of the initial lengths (get_initial_lengths)
+        SourceSet initial_lengths_sources = std::nullopt;
+
         // Becomes true if some solving states get skipped because their premature length checks are unsat
         bool skipped_some_with_len_checks = false;
 
@@ -472,6 +481,20 @@ namespace smt::noodler {
          * @return lbool representing whether preprocessing solved the formula
          */
         lbool preprocess(PreprocessType opt = PreprocessType::PLAIN, const BasicTermEqiv &len_eq_vars = {}) override;
+
+        /**
+         * @brief Set sources of the predicates of the formula and of the automata of the initial automata assignment
+         * (see SourceSet), so that preprocessing tracks on which sources its results depend (can be called only before
+         * preprocess).
+         *
+         * @param pred_sources Sources of predicates (the i-th item for the i-th predicate of the formula)
+         * @param aut_sources Sources of automata (a missing term has no sources)
+         */
+        void set_sources(std::vector<SourceSet> pred_sources, std::map<BasicTerm, SourceSet> aut_sources);
+        /// Sources of the conflict if preprocess() returned unsat (all sources if they are not tracked)
+        const SourceSet& get_conflict_sources() const { return this->conflict_sources; }
+        /// Sources of the formula returned by get_initial_lengths() (all sources if they are not tracked)
+        const SourceSet& get_initial_lengths_sources() const { return this->initial_lengths_sources; }
 
         void init_computation() override;
         lbool compute_next_solution() override;

@@ -173,7 +173,8 @@ namespace smt::noodler {
      * @brief Mark (not (= l r)) as relevant for each string equation (= l r) occurring in the boolean structure of @p ex.
      *
      * Used for expressions that occur both positively and negatively (sides of a boolean equality), as
-     * string_theory_propagation tracks only a single polarity.
+     * string_theory_propagation tracks only a single polarity. Prefixes of the form handled by add_prefix_char_axioms
+     * are equivalent to string equations, so the corresponding disequations are marked as well.
      */
     void theory_str_noodler::mark_nested_str_diseqs_as_relevant(expr *ex) {
         ptr_vector<expr> todo;
@@ -182,7 +183,15 @@ namespace smt::noodler {
         while (!todo.empty()) {
             expr* e = todo.back();
             todo.pop_back();
-            if (visited.contains(e) || !is_app(e) || to_app(e)->get_family_id() != m.get_basic_family_id()) {
+            if (visited.contains(e) || !is_app(e)) {
+                continue;
+            }
+            if (m_util_s.str.is_prefix(e)) {
+                visited.insert(e);
+                mark_prefix_char_diseq_as_relevant(e);
+                continue;
+            }
+            if (to_app(e)->get_family_id() != m.get_basic_family_id()) {
                 continue;
             }
             visited.insert(e);
@@ -259,6 +268,9 @@ namespace smt::noodler {
             )) {
             if(neg) ctx.mark_as_relevant(m.mk_not(ex));
             else ctx.mark_as_relevant(ex);
+        }
+        if(init && neg && m_util_s.str.is_prefix(ex)) {
+            mark_prefix_char_diseq_as_relevant(ex);
         }
 
         // in the initialization phase, we need to mark all string terms as relevant. We want to 
@@ -1862,11 +1874,23 @@ namespace smt::noodler {
 
 
     /**
-     * @brief Axiomatize the special case e = (str.prefixof x (str.substr s i n)) with |x| = 1, i and n numerals and n >= 1:
+     * @brief Check whether @p e is of the form (str.prefixof x (str.substr s i n)) where x is a one-letter string literal,
+     * i and n are numerals and n >= 1 (then e <-> x = (str.at s i)).
+     */
+    bool theory_str_noodler::is_prefix_char(expr* e, expr*& x, expr*& s, expr*& i) {
+        expr *y = nullptr, *len = nullptr;
+        zstring str;
+        rational val;
+        return m_util_s.str.is_prefix(e, x, y) && m_util_s.str.is_string(x, str) && str.length() == 1 &&
+               m_util_s.str.is_extract(y, s, i, len) && m_util_a.is_numeral(i) && m_util_a.is_numeral(len, val) && val.get_int32() >= 1;
+    }
+
+    /**
+     * @brief Axiomatize the special case e = (str.prefixof x (str.substr s i n)) (see is_prefix_char):
      * e <-> x = (str.at s i)
      *
-     * The negative literal is built from (not (x = (str.at s i))) so that the disequation becomes relevant
-     * (negating the literal of the equation marks only the equation as relevant, see issue #564).
+     * Negating the literal of the equation marks only the equation as relevant, so the disequation is marked as
+     * relevant in string_theory_propagation for negative occurrences of e (see mark_prefix_char_diseq_as_relevant and issue #564).
      *
      * @param e prefix term
      * @param x the one-letter string literal
@@ -1875,8 +1899,19 @@ namespace smt::noodler {
      */
     void theory_str_noodler::add_prefix_char_axioms(expr* e, expr* x, expr* s, expr* i) {
         expr_ref at(m_util_s.str.mk_at(s, i), m);
-        add_axiom({mk_literal(m.mk_not(mk_eq_atom(x, at))), mk_literal(e) });
+        add_axiom({~mk_eq(x, at, false), mk_literal(e) });
         add_axiom({mk_eq(x, at, false), ~mk_literal(e) });
+    }
+
+    /**
+     * @brief Mark the disequation x != (str.at s i) as relevant if @p e is of the form handled by add_prefix_char_axioms.
+     * Called for the occurrences of @p e under negation (see issue #564).
+     */
+    void theory_str_noodler::mark_prefix_char_diseq_as_relevant(expr* e) {
+        expr *x = nullptr, *s = nullptr, *i = nullptr;
+        if (is_prefix_char(e, x, s, i)) {
+            ctx.mark_as_relevant(m.mk_not(m.mk_eq(x, m_util_s.str.mk_at(s, i))));
+        }
     }
 
     /**
@@ -1895,11 +1930,9 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_prefix(e, x, y));
 
-        expr * sub_str = nullptr, *sub_ind = nullptr, *sub_len = nullptr;
-        rational val;
-        zstring str;
+        expr * sub_str = nullptr, *sub_ind = nullptr;
         // handle the special case of the form (str.prefix "a" (str.substr s 5 2)) --> (str.at s 5) == "a"
-        if(m_util_s.str.is_string(x, str) && str.length() == 1 && m_util_s.str.is_extract(y, sub_str, sub_ind, sub_len) && m_util_a.is_numeral(sub_ind) && m_util_a.is_numeral(sub_len, val) && val.get_int32() >= 1) {
+        if(is_prefix_char(e, x, sub_str, sub_ind)) {
             add_prefix_char_axioms(e, x, sub_str, sub_ind);
             return;
         }
@@ -1934,11 +1967,10 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_prefix(e, x, y));
 
-        expr * sub_str = nullptr, *sub_ind = nullptr, *sub_len = nullptr;
-        rational val;
+        expr * sub_str = nullptr, *sub_ind = nullptr;
         zstring str;
         // handle the special case of the form (not (str.prefix "a" (str.substr s 5 2))) <-> (str.at s 5) != "a"
-        if(m_util_s.str.is_string(x, str) && str.length() == 1 && m_util_s.str.is_extract(y, sub_str, sub_ind, sub_len) && m_util_a.is_numeral(sub_ind) && m_util_a.is_numeral(sub_len, val) && val.get_int32() >= 1) {
+        if(is_prefix_char(e, x, sub_str, sub_ind)) {
             add_prefix_char_axioms(e, x, sub_str, sub_ind);
             return;
         }
