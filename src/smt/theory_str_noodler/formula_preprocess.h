@@ -8,6 +8,7 @@
 #include <queue>
 #include <algorithm>
 #include <string>
+#include <optional>
 
 #include <mata/nfa/nfa.hh>
 
@@ -257,6 +258,24 @@ namespace smt::noodler {
     using Dependency = std::map<size_t, std::set<size_t>>;
 
     /**
+     * @brief Set of sources justifying a fact derived by preprocessing.
+     *
+     * Sources are identifiers of the input constraints (e.g., literals of the string theory from which the predicates
+     * and the automata were created). The fact is implied by the conjunction of its sources. std::nullopt represents
+     * the set of all sources, i.e., the fact may depend on anything.
+     */
+    using SourceSet = std::optional<std::set<size_t>>;
+
+    /**
+     * @brief Add sources @p src to @p dst (the set of all sources is absorbing).
+     */
+    inline void join_sources(SourceSet& dst, const SourceSet& src) {
+        if (!dst.has_value()) { return; }
+        if (!src.has_value()) { dst = std::nullopt; return; }
+        dst->insert(src->begin(), src->end());
+    }
+
+    /**
      * @brief Class representing a formula with efficient handling of variable occurrences.
      */
     class FormulaVar {
@@ -267,13 +286,25 @@ namespace smt::noodler {
         VarMap varmap; // mapping of a variable name to a set of its occurrences in the formula
         size_t input_size; // number of equations in the input formula
         size_t max_index; // maximum occupied index
+        std::map<size_t, SourceSet> pred_sources; // sources of predicates (see SourceSet)
 
     protected:
         void update_varmap(const Predicate& pred, size_t index);
 
     public:
+        // Sources justifying the current modification of the formula. Added predicates get these sources and they are
+        // added to the sources of modified predicates. By default, the modification may depend on anything.
+        SourceSet current_just = std::nullopt;
 
-        FormulaVar(const Formula& conj);
+        /**
+         * @param conj Formula
+         * @param sources Sources of the predicates of @p conj (the i-th item for the i-th predicate). If it does not
+         *                correspond to @p conj, all predicates depend on all sources.
+         */
+        FormulaVar(const Formula& conj, const std::vector<SourceSet>& sources = {});
+
+        const SourceSet& get_pred_sources(size_t index) const;
+        void set_pred_sources(size_t index, SourceSet sources) { this->pred_sources[index] = std::move(sources); }
 
         std::string to_string() const;
 
@@ -364,6 +395,32 @@ namespace smt::noodler {
 
         Dependency dependency;
 
+        // Tracking of sources of the derived facts (see SourceSet). If track_sources is false, everything depends on all sources.
+        bool track_sources;
+        std::map<BasicTerm, SourceSet> aut_sources; // sources of automata in aut_ass (a missing term has no sources)
+        SourceSet len_sources = std::set<size_t>{}; // sources of len_formula
+        SourceSet subst_sources = std::set<size_t>{}; // sources of substitution_map
+        SourceSet conflict_sources = std::nullopt; // sources of the conflict found by the last unsatisfiability check
+        SourceSet just = std::nullopt; // sources justifying the current modification (see JustScope)
+
+        /**
+         * @brief Sets the sources justifying the modifications done during its lifetime (all sources outside of any scope).
+         */
+        class JustScope {
+            FormulaPreprocessor& prep;
+            SourceSet saved;
+        public:
+            JustScope(FormulaPreprocessor& prep, SourceSet sources) : prep(prep), saved(prep.just) { prep.set_just(std::move(sources)); }
+            ~JustScope() { prep.set_just(std::move(saved)); }
+        };
+        void set_just(SourceSet sources) { this->formula.current_just = sources; this->just = std::move(sources); }
+
+        SourceSet get_aut_sources(const BasicTerm& term) const;
+        SourceSet get_pred_sources_with_aut(size_t index) const;
+        SourceSet get_equations_sources() const;
+        void touch_aut(const BasicTerm& var, const std::set<BasicTerm>& reads = {});
+        void set_conflict_sources(SourceSet sources) { this->conflict_sources = std::move(sources); }
+
     protected:
         void update_reg_constr(const BasicTerm& var, const std::vector<BasicTerm>& upd);
         bool propagate_regular_eqs(const std::set<VarNode>& diff1, const std::set<VarNode>& diff2, Predicate& new_pred) const;
@@ -389,15 +446,23 @@ namespace smt::noodler {
         void substitute_var(const BasicTerm& var, const Concat& replace);
 
     public:
-        FormulaPreprocessor(Formula conj, AutAssignment ass, std::unordered_set<BasicTerm> lv, const theory_str_noodler_params &par, std::set<BasicTerm> conversion_vars) :
-            formula(conj),
+        /**
+         * @param pred_sources Sources of the predicates of @p conj (the i-th item for the i-th predicate)
+         * @param aut_sources Sources of the automata in @p ass (a missing term has no sources). If it is not given (or
+         *                    @p pred_sources does not correspond to @p conj), sources are not tracked.
+         */
+        FormulaPreprocessor(Formula conj, AutAssignment ass, std::unordered_set<BasicTerm> lv, const theory_str_noodler_params &par, std::set<BasicTerm> conversion_vars,
+                            const std::vector<SourceSet>& pred_sources = {}, std::optional<std::map<BasicTerm, SourceSet>> aut_sources = std::nullopt) :
+            formula(conj, pred_sources),
             fresh_var_cnt(0),
             aut_ass(ass),
             len_formula(LenFormulaType::AND, { } ),
             len_variables(lv),
             conversion_vars(conversion_vars),
             m_params(par),
-            dependency() { }
+            dependency(),
+            track_sources(aut_sources.has_value() && pred_sources.size() == conj.get_predicates().size()),
+            aut_sources(aut_sources.value_or(std::map<BasicTerm, SourceSet>{})) { }
 
         const FormulaVar& get_formula() const { return this->formula; }
         std::string to_string() const { return this->formula.to_string(); }
@@ -407,7 +472,14 @@ namespace smt::noodler {
         const SubstitutionMap& get_substitution_map() const { return this->substitution_map; }
         const Dependency& get_dependency() const { return this->dependency; }
         Dependency get_flat_dependency() const;
-        void add_to_len_formula(LenNode len_to_add) { len_formula.succ.push_back(std::move(len_to_add)); }
+        void add_to_len_formula(LenNode len_to_add) { len_formula.succ.push_back(std::move(len_to_add)); join_sources(len_sources, just); }
+
+        /// Sources of the conflict found by the last unsatisfiability check that returned unsat
+        SourceSet get_conflict_sources() const { return this->track_sources ? this->conflict_sources : std::nullopt; }
+        /// Sources of the length formula, the substitution map and the automata (i.e., of the initial lengths after preprocessing)
+        SourceSet get_len_sources() const;
+        /// Sources of an empty automaton in the automata assignment
+        SourceSet get_empty_aut_sources() const;
         const LenNode& get_len_formula() const { return this->len_formula; }
         const std::unordered_set<BasicTerm>& get_len_variables() const { return this->len_variables; }
         const std::vector<Predicate>& get_removed_inclusions_for_model() const {return this->removed_inclusions_for_model; }
@@ -474,8 +546,12 @@ namespace smt::noodler {
          * @param pred New predicate
          */
         void update_predicate(size_t index, const Predicate& pred) {
+            SourceSet sources = this->formula.get_pred_sources(index);
+            join_sources(sources, this->just);
             this->formula.remove_predicate(index);
-            this->formula.add_predicate(pred, index);
+            if (this->formula.add_predicate(pred, index) == int(index)) {
+                this->formula.set_pred_sources(index, std::move(sources));
+            }
         }
         void clean_varmap() { this->formula.clean_varmap(); }
 

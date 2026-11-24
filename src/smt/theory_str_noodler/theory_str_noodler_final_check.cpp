@@ -234,6 +234,8 @@ namespace smt::noodler {
 
         // we do not put into dec_proc directly, because we might do underapproximation that saves into dec_proc
         std::shared_ptr<DecisionProcedure> main_dec_proc = std::make_shared<DecisionProcedure>(instance, aut_assignment, init_length_sensitive_vars, m_params, conversions, m);
+        // track on which relevant constraints the conflicts found by preprocessing depend, so that we block only them
+        main_dec_proc->set_sources(this->m_instance_pred_sources, this->m_instance_aut_sources);
 
         // whether we will be checking length formulae from the decision procedure with the existing context in Z3
         // if there are no length vars in the current string formula, we do not need to check with context
@@ -250,13 +252,15 @@ namespace smt::noodler {
             STRACE(str, tout << "Unsat from initial lengths (1)" << std::endl);
 
             this->statistics.at("stabilization").num_solved_preprocess++;
+            // the sources of the initial lengths before preprocessing
+            SourceSet lengths_sources = main_dec_proc->get_initial_lengths_sources();
             // If the instance is both length unsatisfiable and unsatisfiable from preprocessing,
             // we want to kill it after preprocessing as it generates stronger theory lemma (negation of the string part).
             lbool result = main_dec_proc->preprocess(PreprocessType::PLAIN, this->var_eqs.get_equivalence_bt(aut_assignment, ctx, m_util_s));
             if (result == l_false) {
-                block_curr_len(expr_ref(m.mk_false(), m), false, true);
+                block_curr_len(expr_ref(m.mk_false(), m), false, true, false, main_dec_proc->get_conflict_sources());
             } else {
-                block_curr_len(lengths, true, true);
+                block_curr_len(lengths, true, true, false, lengths_sources);
             }
             return FC_CONTINUE;
 
@@ -290,7 +294,7 @@ namespace smt::noodler {
         if (result == l_false) {
             this->statistics.at("stabilization").num_solved_preprocess++;
             STRACE(str, tout << "Unsat from preprocessing" << std::endl);
-            block_curr_len(expr_ref(m.mk_false(), m), false, true); // we do not store for loop protection
+            block_curr_len(expr_ref(m.mk_false(), m), false, true, false, main_dec_proc->get_conflict_sources()); // we do not store for loop protection
             return FC_CONTINUE;
         } // we do not check for l_true, because we will get it in get_another_solution() anyway TODO: should we check?
 
@@ -300,7 +304,7 @@ namespace smt::noodler {
         if(check_len_sat(lengths, check_len_sat_with_context) == l_false) {
             this->statistics.at("stabilization").num_solved_preprocess++;
             STRACE(str, tout << "Unsat from initial lengths (2)" << std::endl);
-            block_curr_len(lengths, true, true);
+            block_curr_len(lengths, true, true, false, main_dec_proc->get_initial_lengths_sources());
             return FC_CONTINUE;
         }
 
@@ -593,7 +597,18 @@ namespace smt::noodler {
     Formula theory_str_noodler::get_formula_from_relevant(const regex::Alphabet& alph) {
         Formula instance;
 
+        // Sources of the predicates of instance (see construct_refinement for the numbering of source ids). Predicates
+        // gathered from terms (transducer constraints) depend on all sources (they are definitions, this is only to be safe).
+        this->m_instance_pred_sources.clear();
+        auto add_sources_of_new_preds = [&](const SourceSet& sources) {
+            while (this->m_instance_pred_sources.size() < instance.get_predicates().size()) {
+                this->m_instance_pred_sources.push_back(sources);
+            }
+        };
+        size_t source_id = 0;
+
         for (const auto &we: this->m_word_eq_todo_rel) {
+            size_t eq_source_id = source_id++;
             // ignore trivial equations obtained from axiomatization of 
             // transducer constraints, e.g., tmp = replace_all(...)
             if(is_tmp_transducer_eq(ctx.mk_eq_atom(we.first, we.second))) {
@@ -603,18 +618,27 @@ namespace smt::noodler {
             // gather transducer constraints occurring in the concatenation
             regex::gather_transducer_constraints(to_app(we.first), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
             regex::gather_transducer_constraints(to_app(we.second), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
+            add_sources_of_new_preds(std::nullopt);
             instance.add_predicate(inst);
+            add_sources_of_new_preds(std::set<size_t>{eq_source_id});
         }
 
         for (const auto& wd : this->m_word_diseq_todo_rel) {
+            size_t diseq_source_id = source_id++;
             Predicate inst = this->conv_eq_pred(m.mk_not(ctx.mk_eq_atom(wd.first, wd.second)));
             // gather transducer constraints occurring in the concatenation
             regex::gather_transducer_constraints(to_app(wd.first), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
             regex::gather_transducer_constraints(to_app(wd.second), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
+            add_sources_of_new_preds(std::nullopt);
             instance.add_predicate(inst);
+            add_sources_of_new_preds(std::set<size_t>{diseq_source_id});
         }
 
+        // memberships are not predicates, they are part of the automata assignment (see create_aut_assignment_for_formula)
+        source_id += this->m_membership_todo_rel.size();
+
         for (const auto& rat_memb : this->m_rat_membership_todo_rel) {
+            size_t rat_memb_source_id = source_id++;
             if (!std::get<3>(rat_memb)) {
                 util::throw_error("We cannot handle negated membership in rational relations");
             }
@@ -624,11 +648,14 @@ namespace smt::noodler {
             Predicate inst = Predicate::create_transducer(regex::conv_to_nft(to_app(std::get<2>(rat_memb)), m_util_s, m, alph), input, output);
             regex::gather_transducer_constraints(to_app(std::get<0>(rat_memb)), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
             regex::gather_transducer_constraints(to_app(std::get<1>(rat_memb)), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
+            add_sources_of_new_preds(std::nullopt);
             instance.add_predicate(inst);
+            add_sources_of_new_preds(std::set<size_t>{rat_memb_source_id});
         }
 
         // construct not contains predicates
         for(const auto& not_contains : this->m_not_contains_todo_rel) {
+            size_t not_contains_source_id = source_id++;
             std::vector<BasicTerm> left, right;
             util::collect_terms(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, left);
             util::collect_terms(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, right);
@@ -636,7 +663,9 @@ namespace smt::noodler {
             regex::gather_transducer_constraints(to_app(not_contains.first), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
             regex::gather_transducer_constraints(to_app(not_contains.second), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
             Predicate inst = Predicate::create_not_contains(left, right);
+            add_sources_of_new_preds(std::nullopt);
             instance.add_predicate(inst);
+            add_sources_of_new_preds(std::set<size_t>{not_contains_source_id});
         }
 
         for (const auto& conv : this->m_conversion_todo) {
@@ -646,6 +675,7 @@ namespace smt::noodler {
         for (const auto& len: len_vars) {
             regex::gather_transducer_constraints(to_app(len), m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
         }
+        add_sources_of_new_preds(std::nullopt);
 
         return instance;
     }
@@ -703,6 +733,9 @@ namespace smt::noodler {
     AutAssignment theory_str_noodler::create_aut_assignment_for_formula(Formula& instance, const regex::Alphabet& noodler_alphabet) {
         AutAssignment aut_assignment{noodler_alphabet};
         const regex::Alphabet &alph = aut_assignment.get_alphabet();
+        // sources of automata: each membership has its source id (see construct_refinement)
+        this->m_instance_aut_sources.clear();
+        size_t membership_source_id = this->m_word_eq_todo_rel.size() + this->m_word_diseq_todo_rel.size();
         for (const auto &membership: m_membership_todo_rel) {
             const expr_ref& var_expr{ std::get<0>(membership) };
             assert(is_app(var_expr));
@@ -726,9 +759,15 @@ namespace smt::noodler {
             } else { // We create a regular constraint for the current variable for the first time.
                 aut_assignment[term] = std::make_shared<mata::nfa::Nfa>(*nfa);
             }
+            auto [sources_it, inserted] = this->m_instance_aut_sources.try_emplace(term, std::set<size_t>{});
+            join_sources(sources_it->second, std::set<size_t>{membership_source_id++});
 
             // we also need to gather transducer constraints for the var
             regex::gather_transducer_constraints(var_app, m, this->m_util_s, this->predicate_replace, alph, nfa_constructor, instance);
+            // gathered predicates depend on all sources (see get_formula_from_relevant)
+            while (this->m_instance_pred_sources.size() < instance.get_predicates().size()) {
+                this->m_instance_pred_sources.push_back(std::nullopt);
+            }
         }
 
         // create sigma star automaton for our alphabet
@@ -973,13 +1012,19 @@ namespace smt::noodler {
         return expr_ref(mk_and(kept), m);
     }
 
-    expr_ref theory_str_noodler::construct_refinement() {
+    expr_ref theory_str_noodler::construct_refinement(const SourceSet& sources) {
         context& ctx = get_context();
 
         ast_manager& m = get_manager();
         expr *refinement = nullptr;
         STRACE(str, tout << "[Constructing refinement]\n";);
+        // source id of the next constraint (see get_formula_from_relevant), we skip constraints not in sources
+        size_t source_id = 0;
+        auto skip = [&]() {
+            return sources.has_value() && !sources->contains(source_id++);
+        };
         for (const auto& we : this->m_word_eq_todo_rel) {
+            if (skip()) { continue; }
             // we create the equation according to we
             expr *const e = ctx.mk_eq_atom(we.first, we.second);
             refinement = refinement == nullptr ? e : m.mk_and(refinement, e);
@@ -987,6 +1032,7 @@ namespace smt::noodler {
 
         literal_vector ls;
         for (const auto& wi : this->m_word_diseq_todo_rel) {
+            if (skip()) { continue; }
             expr_ref e(m.mk_not(ctx.mk_eq_atom(wi.first, wi.second)), m);
             // e might not be internalized
             if(!ctx.e_internalized(e)) {
@@ -995,6 +1041,7 @@ namespace smt::noodler {
             refinement = refinement == nullptr ? e : m.mk_and(refinement, e);
         }
         for (const auto& in : this->m_membership_todo_rel) {
+            if (skip()) { continue; }
             app_ref in_app(m_util_s.re.mk_in_re(std::get<0>(in), std::get<1>(in)), m);
             if(!std::get<2>(in)){
                 in_app = m.mk_not(in_app);
@@ -1005,6 +1052,7 @@ namespace smt::noodler {
             refinement = refinement == nullptr ? in_app : m.mk_and(refinement, in_app);
         }
         for (const auto& in : this->m_rat_membership_todo_rel) {
+            if (skip()) { continue; }
             app_ref in_app(m_util_s.rat_rel.mk_in_rat(std::get<0>(in), std::get<1>(in),  std::get<2>(in)), m);
             if(!std::get<3>(in)){
                 in_app = m.mk_not(in_app);
@@ -1015,10 +1063,15 @@ namespace smt::noodler {
             refinement = refinement == nullptr ? in_app : m.mk_and(refinement, in_app);
         }
         for(const auto& nc : this->m_not_contains_todo_rel) {
+            if (skip()) { continue; }
             app_ref nc_app(m.mk_not(m_util_s.str.mk_contains(nc.first, nc.second)), m);
             refinement = refinement == nullptr ? nc_app : m.mk_and(refinement, nc_app);
         }
 
+        if (refinement == nullptr && sources.has_value()) {
+            // the blocked fact does not depend on any constraint
+            refinement = m.mk_true();
+        }
         return expr_ref(refinement, m);
     }
 
@@ -1034,7 +1087,7 @@ namespace smt::noodler {
         }
     }
 
-    void theory_str_noodler::block_curr_len(expr_ref len_formula, bool add_axiomatized, bool is_overapprox, bool is_underapprox) {
+    void theory_str_noodler::block_curr_len(expr_ref len_formula, bool add_axiomatized, bool is_overapprox, bool is_underapprox, const SourceSet& sources) {
         STRACE(str_block, tout << __LINE__ << " enter " << __FUNCTION__ << std::endl;);
 
         expr_ref refinement = construct_refinement();
@@ -1044,6 +1097,14 @@ namespace smt::noodler {
         }
         if(m_params.m_loop_protect && add_axiomatized) {
             this->axiomatized_instances.push_back({refinement, stored_instance{ .lengths = len_formula, .is_overapprox = is_overapprox, .is_underapprox = is_underapprox}});
+        }
+        STRACE(str, if (!sources.has_value()) { tout << "Blocking all relevant constraints" << std::endl; });
+        if (sources.has_value()) {
+            // block only the constraints implying len_formula
+            refinement = construct_refinement(sources);
+            STRACE(str, tout << "Blocking " << sources->size() << " of " << this->m_word_eq_todo_rel.size() + this->m_word_diseq_todo_rel.size()
+                + this->m_membership_todo_rel.size() + this->m_rat_membership_todo_rel.size() + this->m_not_contains_todo_rel.size()
+                << " relevant constraints" << std::endl;);
         }
         if (refinement != nullptr) {
             set_input_has_quantifiers(expr_cases::has_quantifier(len_formula, m));

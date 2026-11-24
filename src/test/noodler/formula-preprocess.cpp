@@ -1048,3 +1048,52 @@ TEST_CASE( "Generate identities circular removal", "[noodler]" ) {
         CHECK(std::any_of(eqs.begin(), eqs.end(), [&res](const Predicate& eq) { return res.contains(eq); }));
     } while (std::next_permutation(order.begin(), order.end()));
 }
+
+TEST_CASE( "Sources of preprocessing conflicts", "[noodler]" ) {
+    BasicTerm x{ BasicTermType::Variable, "x"};
+    BasicTerm y{ BasicTermType::Variable, "y"};
+    BasicTerm z{ BasicTermType::Variable, "z"};
+    BasicTerm w{ BasicTermType::Variable, "w"};
+    BasicTerm a{ BasicTermType::Literal, "a"};
+    AutAssignment aut_ass = AutAssignment({
+        {x, regex_to_nfa("b*")},
+        {y, regex_to_nfa("(a|b)*")},
+        {z, regex_to_nfa("(a|b)*")},
+        {w, regex_to_nfa("(a|b)*")},
+        {a, regex_to_nfa("a")},
+    });
+
+    // x = y (source 0), y = "a" (source 1), z != w (source 2), x in b* (source 3)
+    Predicate eq1(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({x}), std::vector<BasicTerm>({y}) })  );
+    Predicate eq2(PredicateType::Equation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({y}), std::vector<BasicTerm>({a}) })  );
+    Predicate ieq(PredicateType::Inequation, std::vector<std::vector<BasicTerm>>({ std::vector<BasicTerm>({z}), std::vector<BasicTerm>({w}) })  );
+    Formula conj;
+    conj.add_predicate(eq1);
+    conj.add_predicate(eq2);
+    conj.add_predicate(ieq);
+    std::vector<SourceSet> pred_sources = { std::set<size_t>{0}, std::set<size_t>{1}, std::set<size_t>{2} };
+    std::map<BasicTerm, SourceSet> aut_sources = { {x, std::set<size_t>{3}} };
+
+    SECTION("tracked") {
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {}, pred_sources, aut_sources);
+        prep.propagate_variables();
+        // L(x) = b* \cap {a} is empty, which follows from the equations and the membership, not from the disequation
+        CHECK(prep.get_empty_aut_sources() == SourceSet(std::set<size_t>{0, 1, 3}));
+        CHECK(prep.get_len_sources() == SourceSet(std::set<size_t>{0, 1, 3}));
+    }
+
+    SECTION("not tracked") {
+        FormulaPreprocessor prep(conj, aut_ass, {}, {}, {});
+        prep.propagate_variables();
+        CHECK(prep.get_empty_aut_sources() == std::nullopt);
+        CHECK(prep.get_len_sources() == std::nullopt);
+    }
+
+    SECTION("not justified modification depends on all sources") {
+        AutAssignment aut_ass_singleton = aut_ass;
+        aut_ass_singleton[y] = std::make_shared<mata::nfa::Nfa>(regex_to_nfa("a"));
+        FormulaPreprocessor prep(conj, aut_ass_singleton, {}, {}, {}, pred_sources, aut_sources);
+        prep.propagate_singletons(); // not annotated with sources -> y is replaced by "a" with all sources
+        CHECK(prep.get_len_sources() == std::nullopt);
+    }
+}

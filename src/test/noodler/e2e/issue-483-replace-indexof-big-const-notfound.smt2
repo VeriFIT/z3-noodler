@@ -1,4 +1,4 @@
-(set-info :status sat)
+(set-info :status unknown)
 (declare-fun x () String)
 (declare-fun v () String)
 (assert (str.in_re x (re.+ (str.to_re "a"))))

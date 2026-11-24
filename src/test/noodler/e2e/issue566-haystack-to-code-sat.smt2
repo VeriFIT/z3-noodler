@@ -1,0 +1,8 @@
+(set-info :status sat)
+(declare-const x String)
+(declare-const z String)
+(assert (str.in_re x (re.union (str.to_re "a") (str.to_re "b"))))
+(assert (str.in_re z (re.union (str.to_re "a") (str.to_re "b"))))
+(assert (= (str.to_code z) (+ (str.to_code x) 1)))
+(assert (not (str.contains z x)))
+(check-sat)

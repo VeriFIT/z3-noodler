@@ -28,6 +28,7 @@ namespace smt::noodler {
         m_util_a(m),
         m_util_s(m),
         var_eqs(m_util_a),
+        m_diseq_atoms_from_other_atoms_refs(m),
         m_length(m),
         axiomatized_instances() {
     }
@@ -172,7 +173,8 @@ namespace smt::noodler {
      * @brief Mark (not (= l r)) as relevant for each string equation (= l r) occurring in the boolean structure of @p ex.
      *
      * Used for expressions that occur both positively and negatively (sides of a boolean equality), as
-     * string_theory_propagation tracks only a single polarity.
+     * string_theory_propagation tracks only a single polarity. Prefixes of the form handled by add_prefix_char_axioms
+     * are equivalent to string equations, so the corresponding disequations are marked as well.
      */
     void theory_str_noodler::mark_nested_str_diseqs_as_relevant(expr *ex) {
         ptr_vector<expr> todo;
@@ -181,7 +183,15 @@ namespace smt::noodler {
         while (!todo.empty()) {
             expr* e = todo.back();
             todo.pop_back();
-            if (visited.contains(e) || !is_app(e) || to_app(e)->get_family_id() != m.get_basic_family_id()) {
+            if (visited.contains(e) || !is_app(e)) {
+                continue;
+            }
+            if (m_util_s.str.is_prefix(e)) {
+                visited.insert(e);
+                mark_prefix_char_diseq_as_relevant(e);
+                continue;
+            }
+            if (to_app(e)->get_family_id() != m.get_basic_family_id()) {
                 continue;
             }
             visited.insert(e);
@@ -235,6 +245,15 @@ namespace smt::noodler {
             // the condition of ite occurs both positively and negatively
             mark_nested_str_diseqs_as_relevant(to_app(ex)->get_arg(0));
         }
+        if (init && is_app(ex) && to_app(ex)->get_family_id() != m.get_basic_family_id()) {
+            // a boolean argument of a function that is not a boolean connective (e.g., uninterpreted function or select),
+            // is a term whose both values matter, so it occurs both positively and negatively (see issue #564)
+            for (expr* arg : *to_app(ex)) {
+                if (m.is_bool(arg)) {
+                    mark_nested_str_diseqs_as_relevant(arg);
+                }
+            }
+        }
 
         // we need to propagate all string predicates (including their negated forms) before the actual solve (in init_search), because we need to ensure these axioms are 
         // generated only once on the decision level 0 (if they are generated on a higher level, they can cause looping for some reason)
@@ -249,6 +268,9 @@ namespace smt::noodler {
             )) {
             if(neg) ctx.mark_as_relevant(m.mk_not(ex));
             else ctx.mark_as_relevant(ex);
+        }
+        if(init && neg && m_util_s.str.is_prefix(ex)) {
+            mark_prefix_char_diseq_as_relevant(ex);
         }
 
         // in the initialization phase, we need to mark all string terms as relevant. We want to 
@@ -674,9 +696,16 @@ namespace smt::noodler {
         app* equation = m.mk_eq(l, r);
         app* disequation = m.mk_not(equation);
 
-        // This is to handle the case containing ite inside disequations
-        // TODO explain better
+        // If the equation atom of l and r does not exist, the disequation does not come from its own atom but from
+        // an atom with different sides (e.g., (not (= a (ite c b d))) gives b != a if c holds). Nothing else marks
+        // such disequation as relevant, so we mark it here. We remember these atoms, because the atom created below
+        // can survive backtracking (e.g., in a learned clause) and then the disequation has to be marked as relevant
+        // also in the following branches (see issue #564).
         if(!ctx.e_internalized(equation)) {
+            m_diseq_atoms_from_other_atoms.insert(equation);
+            m_diseq_atoms_from_other_atoms_refs.push_back(equation);
+        }
+        if(m_diseq_atoms_from_other_atoms.contains(equation)) {
             STRACE(str, tout << "relevanting: " << mk_pp(disequation, m) << std::endl;);
             ctx.mark_as_relevant(disequation);
         }
@@ -1845,6 +1874,47 @@ namespace smt::noodler {
 
 
     /**
+     * @brief Check whether @p e is of the form (str.prefixof x (str.substr s i n)) where x is a one-letter string literal,
+     * i and n are numerals and n >= 1 (then e <-> x = (str.at s i)).
+     */
+    bool theory_str_noodler::is_prefix_char(expr* e, expr*& x, expr*& s, expr*& i) {
+        expr *y = nullptr, *len = nullptr;
+        zstring str;
+        rational val;
+        return m_util_s.str.is_prefix(e, x, y) && m_util_s.str.is_string(x, str) && str.length() == 1 &&
+               m_util_s.str.is_extract(y, s, i, len) && m_util_a.is_numeral(i) && m_util_a.is_numeral(len, val) && val.get_int32() >= 1;
+    }
+
+    /**
+     * @brief Axiomatize the special case e = (str.prefixof x (str.substr s i n)) (see is_prefix_char):
+     * e <-> x = (str.at s i)
+     *
+     * Negating the literal of the equation marks only the equation as relevant, so the disequation is marked as
+     * relevant in string_theory_propagation for negative occurrences of e (see mark_prefix_char_diseq_as_relevant and issue #564).
+     *
+     * @param e prefix term
+     * @param x the one-letter string literal
+     * @param s the string of str.substr
+     * @param i the start index of str.substr
+     */
+    void theory_str_noodler::add_prefix_char_axioms(expr* e, expr* x, expr* s, expr* i) {
+        expr_ref at(m_util_s.str.mk_at(s, i), m);
+        add_axiom({~mk_eq(x, at, false), mk_literal(e) });
+        add_axiom({mk_eq(x, at, false), ~mk_literal(e) });
+    }
+
+    /**
+     * @brief Mark the disequation x != (str.at s i) as relevant if @p e is of the form handled by add_prefix_char_axioms.
+     * Called for the occurrences of @p e under negation (see issue #564).
+     */
+    void theory_str_noodler::mark_prefix_char_diseq_as_relevant(expr* e) {
+        expr *x = nullptr, *s = nullptr, *i = nullptr;
+        if (is_prefix_char(e, x, s, i)) {
+            ctx.mark_as_relevant(m.mk_not(m.mk_eq(x, m_util_s.str.mk_at(s, i))));
+        }
+    }
+
+    /**
      * @brief Handling of str.prefix(x, y) = e (x is a prefix of y)
      * Translates to the following theory axioms:
      * e -> y = x.v
@@ -1860,13 +1930,10 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_prefix(e, x, y));
 
-        expr * sub_str = nullptr, *sub_ind = nullptr, *sub_len = nullptr;
-        rational val;
-        zstring str;
+        expr * sub_str = nullptr, *sub_ind = nullptr;
         // handle the special case of the form (str.prefix "a" (str.substr s 5 2)) --> (str.at s 5) == "a"
-        if(m_util_s.str.is_string(x, str) && str.length() == 1 && m_util_s.str.is_extract(y, sub_str, sub_ind, sub_len) && m_util_a.is_numeral(sub_ind) && m_util_a.is_numeral(sub_len, val) && val.get_int32() >= 1) {
-            add_axiom({~mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), mk_literal(e) });
-            add_axiom({mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), ~mk_literal(e) });
+        if(is_prefix_char(e, x, sub_str, sub_ind)) {
+            add_prefix_char_axioms(e, x, sub_str, sub_ind);
             return;
         }
 
@@ -1900,13 +1967,11 @@ namespace smt::noodler {
         expr *x = nullptr, *y = nullptr;
         VERIFY(m_util_s.str.is_prefix(e, x, y));
 
-        expr * sub_str = nullptr, *sub_ind = nullptr, *sub_len = nullptr;
-        rational val;
+        expr * sub_str = nullptr, *sub_ind = nullptr;
         zstring str;
         // handle the special case of the form (not (str.prefix "a" (str.substr s 5 2))) <-> (str.at s 5) != "a"
-        if(m_util_s.str.is_string(x, str) && str.length() == 1 && m_util_s.str.is_extract(y, sub_str, sub_ind, sub_len) && m_util_a.is_numeral(sub_ind) && m_util_a.is_numeral(sub_len, val) && val.get_int32() >= 1) {
-            add_axiom({mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), ~mk_literal(e) });
-            add_axiom({~mk_eq(x, m_util_s.str.mk_at(sub_str, sub_ind), false), mk_literal(e) });
+        if(is_prefix_char(e, x, sub_str, sub_ind)) {
+            add_prefix_char_axioms(e, x, sub_str, sub_ind);
             return;
         }
 

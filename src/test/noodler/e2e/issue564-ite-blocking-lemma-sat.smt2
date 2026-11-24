@@ -1,0 +1,6 @@
+(set-info :status sat)
+(declare-const y String)
+(declare-const c Bool)
+(assert (str.in_re y ((_ re.loop 1 2) (re.union (str.to_re " ") (str.to_re "a")))))
+(assert (distinct (str.replace_re y (re.+ (str.to_re "a")) "") (ite c (str.substr y 0 2) y)))
+(check-sat)
